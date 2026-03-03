@@ -126,31 +126,45 @@ export default function Dashboard() {
 
       {/* Sticky Header */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
-        {/* Top row: brand left · title center · user right */}
-        {/* On mobile: flex row with brand | title (flex-1 centered) | user */}
-        {/* On sm+: relative with absolute-centered title */}
-        <div className="relative flex items-center px-4 py-2.5 max-w-3xl mx-auto">
+        {/* Top row: centered brand group | user icon right */}
+        <div className="relative flex items-center px-4 py-3 max-w-3xl mx-auto">
 
-          {/* Brand — left */}
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <BarChart3 className="w-3.5 h-3.5 text-primary" />
-            </div>
+          {/* Centered brand group: icon + PREZ BETS + AI MODEL PROJECTIONS */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+            {/* Chart icon */}
+            <BarChart3
+              className="flex-shrink-0 text-primary"
+              style={{ width: "clamp(14px, 2.5vw, 24px)", height: "clamp(14px, 2.5vw, 24px)" }}
+            />
+            {/* PREZ BETS — bold white */}
             <span
-              className="text-xs font-bold uppercase text-foreground whitespace-nowrap"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.12em" }}
+              className="font-black text-white whitespace-nowrap"
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: "clamp(14px, 3.2vw, 26px)",
+                letterSpacing: "0.08em",
+              }}
             >
-              PREZ BETS AI
+              PREZ BETS
+            </span>
+            {/* Divider dot */}
+            <span className="text-border" style={{ fontSize: "clamp(10px, 2vw, 14px)" }}>|</span>
+            {/* AI MODEL PROJECTIONS — light gray */}
+            <span
+              className="font-medium whitespace-nowrap"
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: "clamp(12px, 2.6vw, 21px)",
+                letterSpacing: "0.1em",
+                color: "#9CA3AF",
+              }}
+            >
+              AI MODEL PROJECTIONS
             </span>
           </div>
 
-          {/* Title — centered via flex-1 on mobile, absolute on sm+ */}
-          <h1
-            className="flex-1 text-center sm:flex-none sm:absolute sm:left-1/2 sm:-translate-x-1/2 text-xs font-semibold tracking-[0.22em] uppercase text-muted-foreground pointer-events-none whitespace-nowrap"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
-          >
-            MODEL PROJECTIONS
-          </h1>
+          {/* Invisible spacer to push user icon to the right */}
+          <div className="flex-1" />
 
           {/* User menu — right */}
           <div className="flex-shrink-0 flex items-center gap-2">
