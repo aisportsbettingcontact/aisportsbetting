@@ -49,3 +49,4 @@
 - [x] Remove any nav links pointing to /files
 - [x] Change top-left branding text from "AI MODELS" to "PREZ BETS AI"
 - [x] Keep "MODEL PROJECTIONS" title absolutely centered in the header
+- [x] Redesign header to be more organized and professional

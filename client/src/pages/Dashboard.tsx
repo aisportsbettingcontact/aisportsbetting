@@ -126,13 +126,17 @@ export default function Dashboard() {
 
       {/* Sticky Header */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
-        <div className="relative flex items-center px-4 py-3 max-w-3xl mx-auto">
-          {/* Logo — left */}
-          <div className="flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-primary" />
+        {/* Top row: brand left · title center · user right */}
+        <div className="relative flex items-center px-4 py-2.5 max-w-3xl mx-auto">
+
+          {/* Brand — left */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <BarChart3 className="w-3.5 h-3.5 text-primary" />
+            </div>
             <span
-              className="text-xs font-semibold text-muted-foreground tracking-widest uppercase"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
+              className="text-xs font-bold tracking-widest uppercase text-foreground whitespace-nowrap"
+              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.12em" }}
             >
               PREZ BETS AI
             </span>
@@ -140,32 +144,32 @@ export default function Dashboard() {
 
           {/* Title — absolutely centered */}
           <h1
-            className="absolute left-1/2 -translate-x-1/2 text-sm font-bold tracking-[0.18em] uppercase text-foreground pointer-events-none"
+            className="absolute left-1/2 -translate-x-1/2 text-xs font-semibold tracking-[0.22em] uppercase text-muted-foreground pointer-events-none whitespace-nowrap"
             style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
           >
-            Model Projections
+            MODEL PROJECTIONS
           </h1>
 
-          {/* Right actions — pushed to the right */}
-          <div className="ml-auto" />
-          <div className="flex items-center gap-2">
+          {/* User menu — right */}
+          <div className="ml-auto flex items-center gap-2">
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors"
+                className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors"
+                title={user ? user.name ?? "Account" : "Sign in"}
               >
-                <User className="w-4 h-4 text-muted-foreground" />
+                <User className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
 
               {showUserMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                  <div className="absolute right-0 top-10 z-50 w-48 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
+                  <div className="absolute right-0 top-9 z-50 w-48 bg-card border border-border rounded-lg shadow-xl overflow-hidden">
                     {user ? (
                       <>
                         <div className="px-3 py-2.5 border-b border-border">
-                          <p className="text-xs font-medium text-foreground truncate">{user.name ?? "User"}</p>
-                          <p className="text-xs text-muted-foreground truncate">{user.email ?? ""}</p>
+                          <p className="text-xs font-semibold text-foreground truncate">{user.name ?? "User"}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{user.email ?? ""}</p>
                         </div>
                         <button
                           onClick={handleLogout}
@@ -190,32 +194,35 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sport tabs + sync status */}
-        <div className="flex items-center gap-1 px-4 pb-2 max-w-3xl mx-auto overflow-x-auto">
-          {sports.map((sport) => (
-            <button
-              key={sport}
-              onClick={() => setSelectedSport(sport)}
-              className={`px-3 py-1 rounded-full text-xs font-semibold tracking-wide transition-colors whitespace-nowrap ${
-                selectedSport === sport
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              {sport}
-            </button>
-          ))}
+        {/* Bottom row: sport tabs left · sync status right */}
+        <div className="flex items-center gap-1.5 px-4 pb-2.5 max-w-3xl mx-auto border-t border-border/40">
+          <div className="flex items-center gap-1 overflow-x-auto flex-1 pt-2">
+            {sports.map((sport) => (
+              <button
+                key={sport}
+                onClick={() => setSelectedSport(sport)}
+                className={`px-3 py-1 rounded text-[11px] font-bold tracking-wider transition-all whitespace-nowrap ${
+                  selectedSport === sport
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
+                }`}
+                style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.1em" }}
+              >
+                {sport}
+              </button>
+            ))}
+          </div>
 
-          {/* Sync status + refresh button */}
-          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+          {/* Sync status + refresh */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 pt-2">
             {syncStatus === "syncing" && (
-              <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                Syncing…
+                Syncing
               </span>
             )}
             {syncStatus === "done" && (
-              <span className="text-xs text-green-400 flex items-center gap-1">
+              <span className="text-[11px] text-green-400 flex items-center gap-1">
                 <CheckCircle className="w-3 h-3" />
                 Updated
               </span>
@@ -223,7 +230,7 @@ export default function Dashboard() {
             <button
               onClick={handleManualRefresh}
               disabled={syncStatus === "syncing"}
-              className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors disabled:opacity-40"
+              className="w-6 h-6 rounded flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-40"
               title="Refresh from Google Sheets"
             >
               <RefreshCw className={`w-3 h-3 text-muted-foreground ${syncStatus === "syncing" ? "animate-spin" : ""}`} />
