@@ -146,7 +146,7 @@ function TeamRow({
       </div>
 
       {/* Team name — school on top, nickname on bottom, each strictly one line */}
-      <div className="flex-shrink-0 flex flex-col justify-center overflow-hidden" style={{ width: "clamp(64px, 16vw, 88px)" }}>
+      <div className="flex-shrink-0 flex flex-col justify-center overflow-hidden" style={{ width: "clamp(80px, 22vw, 120px)" }}>
         <div
           className="font-bold leading-none overflow-hidden"
           style={{
@@ -619,7 +619,7 @@ export function GameCard({ game, logoMap = {} }: GameCardProps) {
             className="flex items-center gap-1.5 pb-1.5"
             style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
           >
-            <div className="flex-shrink-0" style={{ width: "clamp(64px, 16vw, 88px)" }} />
+            <div className="flex-shrink-0" style={{ width: "clamp(80px, 22vw, 120px)" }} />
             <div className="w-8 flex-shrink-0" />
             <div className="flex-1 grid text-center" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
               <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Books</span>

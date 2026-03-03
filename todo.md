@@ -58,3 +58,4 @@
 - [x] Set Barlow Condensed as the uniform global font throughout the site
 - [x] Show two-line team names in GameCard: school name on top, nickname on bottom
 - [x] Enforce strict single-line per row for school name and nickname (no wrapping, truncate with ellipsis)
+- [x] Widen name column so no school names are ever truncated
