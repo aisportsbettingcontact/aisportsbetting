@@ -80,3 +80,23 @@ export const games = mysqlTable("games", {
 
 export type Game = typeof games.$inferSelect;
 export type InsertGame = typeof games.$inferInsert;
+
+// ─── ESPN Teams (auto-synced from ESPN) ─────────────────────────────────────
+
+export const espnTeams = mysqlTable("espn_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Normalized slug matching the model file team name, e.g. "duke", "nc_state" */
+  slug: varchar("slug", { length: 128 }).notNull().unique(),
+  /** Full display name from ESPN, e.g. "Duke Blue Devils" */
+  displayName: varchar("displayName", { length: 255 }).notNull(),
+  /** ESPN numeric team ID used to build CDN logo URL */
+  espnId: varchar("espnId", { length: 20 }).notNull(),
+  /** Conference name from ESPN, e.g. "ACC", "Big Ten" */
+  conference: varchar("conference", { length: 128 }).notNull().default(""),
+  /** Sport identifier, e.g. "NCAAM", "NBA" */
+  sport: varchar("sport", { length: 64 }).notNull().default("NCAAM"),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EspnTeam = typeof espnTeams.$inferSelect;
+export type InsertEspnTeam = typeof espnTeams.$inferInsert;

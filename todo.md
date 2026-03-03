@@ -24,3 +24,16 @@
 - [x] Add auto-sync on dashboard load + manual refresh button with status indicator
 - [x] Save checkpoint with Sheets integration
 - [x] Remove NFL and NCAAF tabs from dashboard sport selector
+- [x] Verify all 62 NCAAM logos are present in S3 storage
+- [x] Re-upload any missing logos (none missing)
+- [x] Ensure teamLogos.ts has all 62 entries in A-Z order
+- [x] Rebuild GameCard to match reference screenshot (date header, BOOKS/MODEL LINE/MODEL O/U columns, team rows with logo+spread+O/U pills, edge footer)
+- [ ] Rewrite GameCard to match reference implementation (edge color scale, consensus column, dark pills, formatTeamName, framer-motion) with Google Sheets data
+- [x] Scrape ESPN NCAAM teams page and build slug→ESPN logo URL map
+- [x] Update GameCard to use ESPN CDN logo URLs instead of local PNGs
+- [x] Add espn_teams table to DB schema (slug, espn_id, display_name, conference, sport)
+- [x] Build ESPN scraper service (scrapes on server startup + daily schedule)
+- [x] Add tRPC procedure to expose team data to frontend
+- [x] Update TeamLogo to use ESPN CDN URLs resolved from DB dynamically
+- [x] Remove static teamLogos.ts hardcoded map
+- [x] Delete local PNG files from webdev-static-assets (S3 delete API not available)

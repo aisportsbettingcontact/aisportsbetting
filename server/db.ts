@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { games, modelFiles, users, type InsertGame, type InsertModelFile, type InsertUser } from "../drizzle/schema";
+import { games, modelFiles, users, espnTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertEspnTeam } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -156,6 +156,29 @@ export async function deleteGamesByFileId(fileId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(games).where(eq(games.fileId, fileId));
+}
+
+// ─── ESPN Teams helpers ───────────────────────────────────────────────────────
+
+export async function listEspnTeams(sport = "NCAAM") {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(espnTeams)
+    .where(eq(espnTeams.sport, sport))
+    .orderBy(espnTeams.displayName);
+}
+
+export async function getEspnTeamBySlug(slug: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(espnTeams)
+    .where(eq(espnTeams.slug, slug))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 /**

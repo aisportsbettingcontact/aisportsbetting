@@ -1,9 +1,10 @@
 /**
- * TeamLogo — shows the team's official logo from CDN if available,
- * otherwise falls back to a colored circle badge with initials.
+ * TeamLogo — resolves team logos dynamically from ESPN CDN via the DB.
+ * The server auto-syncs ESPN team data on startup and daily.
+ * Falls back to a colored circle badge with initials if no logo is found.
  */
 
-import { getTeamLogoUrl } from "@/lib/teamLogos";
+import { trpc } from "@/lib/trpc";
 
 const PALETTE = [
   "#e63946", "#2a9d8f", "#e9c46a", "#f4a261", "#264653",
@@ -28,18 +29,27 @@ function abbrev(name: string): string {
 }
 
 interface TeamLogoProps {
+  /** Team slug as it appears in the model file, e.g. "duke", "nc_state" */
   name: string;
   size?: number;
 }
 
 export default function TeamLogo({ name, size = 36 }: TeamLogoProps) {
-  const logoUrl = getTeamLogoUrl(name);
+  const { data: team } = trpc.teams.bySlug.useQuery(
+    { slug: name },
+    {
+      staleTime: 1000 * 60 * 60, // 1 hour — ESPN data is stable
+      retry: false,
+    }
+  );
+
+  const logoUrl = team?.logoUrl;
 
   if (logoUrl) {
     return (
       <img
         src={logoUrl}
-        alt={name}
+        alt={team?.displayName ?? name}
         width={size}
         height={size}
         style={{
@@ -50,7 +60,6 @@ export default function TeamLogo({ name, size = 36 }: TeamLogoProps) {
           borderRadius: "4px",
         }}
         onError={(e) => {
-          // If CDN image fails, hide and show fallback
           (e.target as HTMLImageElement).style.display = "none";
         }}
       />

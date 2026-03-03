@@ -17,6 +17,8 @@ import {
 import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { fetchLatestSheetGames, fetchAllSheetsGames, SHEETS_FILE_ID } from "./sheetsSync";
+import { syncEspnTeams, buildEspnLogoUrl } from "./espnScraper";
+import { listEspnTeams, getEspnTeamBySlug } from "./db";
 import { nanoid } from "nanoid";
 
 export const appRouter = router({
@@ -156,6 +158,44 @@ export const appRouter = router({
         }
         await deleteModelFile(input.fileId);
         return { success: true };
+      }),
+  }),
+
+  // ─── ESPN Teams ───────────────────────────────────────────────────────────
+  teams: router({
+    /**
+     * List all ESPN teams from DB (auto-synced on startup).
+     * Returns slug, displayName, espnId, conference, sport, and logoUrl.
+     */
+    list: publicProcedure
+      .input(z.object({ sport: z.string().optional() }).optional())
+      .query(async ({ input }) => {
+        const teams = await listEspnTeams(input?.sport ?? "NCAAM");
+        return teams.map((t) => ({
+          ...t,
+          logoUrl: buildEspnLogoUrl(t.espnId),
+        }));
+      }),
+
+    /**
+     * Get a single team by slug with its ESPN logo URL.
+     */
+    bySlug: publicProcedure
+      .input(z.object({ slug: z.string() }))
+      .query(async ({ input }) => {
+        const team = await getEspnTeamBySlug(input.slug);
+        if (!team) return null;
+        return { ...team, logoUrl: buildEspnLogoUrl(team.espnId) };
+      }),
+
+    /**
+     * Manually trigger an ESPN sync (admin only).
+     */
+    sync: protectedProcedure
+      .input(z.object({ sport: z.string().optional() }).optional())
+      .mutation(async ({ input }) => {
+        const count = await syncEspnTeams(input?.sport ?? "NCAAM");
+        return { success: true, teamsUpserted: count };
       }),
   }),
 

@@ -15,6 +15,13 @@
       "when": 1772496726793,
       "tag": "0001_gigantic_the_santerians",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1772499580041,
+      "tag": "0002_previous_justice",
+      "breakpoints": true
     }
   ]
 }
