@@ -44,3 +44,6 @@
 - [x] Fix incorrect ESPN IDs (portland_state: 2502, sacramento_state: 16, and 12 others)
 - [x] Update GameCard to use static ESPN ID map as primary logo source (no DB/API needed)
 - [x] All 16 team logos loading correctly across 8 game cards
+- [x] Remove Model Files page (/files route) from App.tsx
+- [x] Remove upload button from Dashboard header
+- [x] Remove any nav links pointing to /files

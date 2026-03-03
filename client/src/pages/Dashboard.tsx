@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Upload, Loader2, RefreshCw, CheckCircle } from "lucide-react";
+import { User, LogOut, BarChart3, Loader2, RefreshCw, CheckCircle } from "lucide-react";
 import { GameCard } from "@/components/GameCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -148,15 +148,6 @@ export default function Dashboard() {
 
           {/* Right actions */}
           <div className="flex items-center gap-2">
-            {isAuthenticated && (
-              <button
-                onClick={() => setLocation("/files")}
-                className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors"
-                title="Upload model files"
-              >
-                <Upload className="w-3.5 h-3.5 text-muted-foreground" />
-              </button>
-            )}
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
@@ -175,13 +166,6 @@ export default function Dashboard() {
                           <p className="text-xs font-medium text-foreground truncate">{user.name ?? "User"}</p>
                           <p className="text-xs text-muted-foreground truncate">{user.email ?? ""}</p>
                         </div>
-                        <button
-                          onClick={() => { setShowUserMenu(false); setLocation("/files"); }}
-                          className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                        >
-                          <Upload className="w-3.5 h-3.5" />
-                          Manage Files
-                        </button>
                         <button
                           onClick={handleLogout}
                           className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
