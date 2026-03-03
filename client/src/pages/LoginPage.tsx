@@ -30,7 +30,6 @@ export default function LoginPage() {
           <BarChart3 className="w-5 h-5 text-violet-400" />
           <span
             className="text-sm font-bold tracking-widest uppercase text-white"
-            style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
           >
             AI Sports Betting Models
           </span>
@@ -50,7 +49,7 @@ export default function LoginPage() {
             </div>
             <h1
               className="text-2xl font-bold tracking-tight text-white"
-              style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.05em" }}
+              style={{ letterSpacing: "0.05em" }}
             >
               Model Projections
             </h1>

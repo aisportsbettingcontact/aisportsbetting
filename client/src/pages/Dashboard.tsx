@@ -140,7 +140,6 @@ export default function Dashboard() {
             <span
               className="font-black text-white whitespace-nowrap"
               style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
                 fontSize: "clamp(14px, 3.2vw, 26px)",
                 letterSpacing: "0.08em",
               }}
@@ -153,7 +152,6 @@ export default function Dashboard() {
             <span
               className="font-medium whitespace-nowrap"
               style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
                 fontSize: "clamp(12px, 2.6vw, 21px)",
                 letterSpacing: "0.1em",
                 color: "#9CA3AF",
@@ -252,14 +250,14 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2 whitespace-nowrap">
                   <span
                     className="font-bold text-foreground tracking-widest uppercase"
-                    style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(11px, 2vw, 13px)' }}
+                    style={{ fontSize: 'clamp(11px, 2vw, 13px)' }}
                   >
                     {formatDateHeader(date)}
                   </span>
                   <span className="text-muted-foreground/40" style={{ fontSize: '10px' }}>·</span>
                   <span
                     className="font-semibold hidden sm:inline"
-                    style={{ color: '#a3a3a3', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '0.06em', fontSize: 'clamp(10px, 1.8vw, 12px)' }}
+                    style={{ color: '#a3a3a3', letterSpacing: '0.06em', fontSize: 'clamp(10px, 1.8vw, 12px)' }}
                   >
                     Men's College Basketball
                   </span>

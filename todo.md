@@ -55,3 +55,4 @@
 - [x] Remove NBA, MLB, NHL tabs — keep only NCAAM
 - [x] Reduce excessive whitespace — tighten header padding, date header, card gaps
 - [x] Fix sticky date row gap — must sit flush against header when scrolling
+- [x] Set Barlow Condensed as the uniform global font throughout the site

@@ -83,7 +83,6 @@ export default function TeamLogo({ name, size = 36 }: TeamLogoProps) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        fontFamily: "'Barlow Condensed', sans-serif",
         fontWeight: 700,
         fontSize,
         color: "#fff",
