@@ -265,7 +265,7 @@ export default function Dashboard() {
           sortedDates.map((date) => (
             <div key={date}>
               {/* Date section header */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-border sticky top-[53px] bg-background/95 backdrop-blur-sm z-10">
+              <div className="flex items-center justify-between px-4 py-2 border-b border-border sticky top-[45px] bg-background/95 backdrop-blur-sm z-10">
                 <span
                   className="text-xs font-bold text-foreground tracking-widest uppercase"
                   style={{ fontFamily: "'Barlow Condensed', sans-serif" }}

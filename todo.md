@@ -54,3 +54,4 @@
 - [x] Header: single centered line with chart icon + "PREZ BETS" (bold white) + "AI MODEL PROJECTIONS" (light gray), user icon right, larger font on desktop
 - [x] Remove NBA, MLB, NHL tabs — keep only NCAAM
 - [x] Reduce excessive whitespace — tighten header padding, date header, card gaps
+- [x] Fix sticky date row gap — must sit flush against header when scrolling
