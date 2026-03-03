@@ -127,31 +127,33 @@ export default function Dashboard() {
       {/* Sticky Header */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
         {/* Top row: brand left · title center · user right */}
+        {/* On mobile: flex row with brand | title (flex-1 centered) | user */}
+        {/* On sm+: relative with absolute-centered title */}
         <div className="relative flex items-center px-4 py-2.5 max-w-3xl mx-auto">
 
           {/* Brand — left */}
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <div className="w-6 h-6 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
               <BarChart3 className="w-3.5 h-3.5 text-primary" />
             </div>
             <span
-              className="text-xs font-bold tracking-widest uppercase text-foreground whitespace-nowrap"
+              className="text-xs font-bold uppercase text-foreground whitespace-nowrap"
               style={{ fontFamily: "'Barlow Condensed', sans-serif", letterSpacing: "0.12em" }}
             >
               PREZ BETS AI
             </span>
           </div>
 
-          {/* Title — absolutely centered */}
+          {/* Title — centered via flex-1 on mobile, absolute on sm+ */}
           <h1
-            className="absolute left-1/2 -translate-x-1/2 text-xs font-semibold tracking-[0.22em] uppercase text-muted-foreground pointer-events-none whitespace-nowrap"
+            className="flex-1 text-center sm:flex-none sm:absolute sm:left-1/2 sm:-translate-x-1/2 text-xs font-semibold tracking-[0.22em] uppercase text-muted-foreground pointer-events-none whitespace-nowrap"
             style={{ fontFamily: "'Barlow Condensed', sans-serif" }}
           >
             MODEL PROJECTIONS
           </h1>
 
           {/* User menu — right */}
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex-shrink-0 flex items-center gap-2">
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
