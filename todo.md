@@ -37,3 +37,5 @@
 - [x] Update TeamLogo to use ESPN CDN URLs resolved from DB dynamically
 - [x] Remove static teamLogos.ts hardcoded map
 - [x] Delete local PNG files from webdev-static-assets (S3 delete API not available)
+- [x] Remove bottom footer from dashboard
+- [x] Change sync toast to "ALL NCAAM Games Updated"

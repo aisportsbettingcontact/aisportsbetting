@@ -36,7 +36,7 @@ export default function Dashboard() {
       setSyncStatus("done");
       refetchGames();
       if (data.gamesUpserted > 0) {
-        toast.success(`Synced ${data.gamesUpserted} games from Google Sheets${data.sheetName ? ` (${data.sheetName})` : ""}`);
+        toast.success("ALL NCAAM Games Updated");
       }
       // Reset status indicator after 3s
       setTimeout(() => setSyncStatus("idle"), 3000);
@@ -287,12 +287,6 @@ export default function Dashboard() {
           ))
         )}
 
-        {/* Footer */}
-        <div className="px-4 py-6 text-center">
-          <p className="text-xs text-muted-foreground">
-            AI Sports Betting Models · Live data from Google Sheets · For informational purposes only · Gamble responsibly
-          </p>
-        </div>
       </main>
     </div>
   );
