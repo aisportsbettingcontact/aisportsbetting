@@ -145,18 +145,30 @@ function TeamRow({
         <TeamLogo slug={slug} name={name} logoUrl={logoUrl} />
       </div>
 
-      {/* Team name — school on top, nickname on bottom */}
-      <div className="flex-shrink-0 flex flex-col justify-center" style={{ width: "clamp(64px, 16vw, 88px)" }}>
+      {/* Team name — school on top, nickname on bottom, each strictly one line */}
+      <div className="flex-shrink-0 flex flex-col justify-center overflow-hidden" style={{ width: "clamp(64px, 16vw, 88px)" }}>
         <div
-          className="font-bold leading-none"
-          style={{ fontSize: "clamp(11px, 2.8vw, 13px)", color: "hsl(var(--foreground))" }}
+          className="font-bold leading-none overflow-hidden"
+          style={{
+            fontSize: "clamp(11px, 2.8vw, 13px)",
+            color: "hsl(var(--foreground))",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
         >
           {name}
         </div>
         {nickname && (
           <div
             className="font-medium leading-none mt-0.5"
-            style={{ fontSize: "clamp(9px, 2.2vw, 11px)", color: "hsl(var(--muted-foreground))" }}
+            style={{
+              fontSize: "clamp(9px, 2.2vw, 11px)",
+              color: "hsl(var(--muted-foreground))",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
           >
             {nickname}
           </div>
