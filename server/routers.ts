@@ -11,10 +11,12 @@ import {
   insertModelFile,
   listGames,
   listModelFiles,
+  upsertSheetGames,
   updateModelFileStatus,
 } from "./db";
 import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
+import { fetchLatestSheetGames, fetchAllSheetsGames, SHEETS_FILE_ID } from "./sheetsSync";
 import { nanoid } from "nanoid";
 
 export const appRouter = router({
@@ -30,11 +32,45 @@ export const appRouter = router({
     }),
   }),
 
+  // ─── Google Sheets Sync ────────────────────────────────────────────────────
+  sheets: router({
+    /**
+     * Fetch the latest sheet from Google Sheets and upsert games into the DB.
+     * Public so the dashboard can auto-sync on load.
+     */
+    syncLatest: publicProcedure.mutation(async () => {
+      const { games, sheetName } = await fetchLatestSheetGames();
+      if (games.length === 0) {
+        return { success: true, gamesUpserted: 0, sheetName: null };
+      }
+      await upsertSheetGames(games);
+      return {
+        success: true,
+        gamesUpserted: games.length,
+        sheetName,
+      };
+    }),
+
+    /**
+     * Fetch ALL historical sheets and upsert all games.
+     * Protected — only authenticated users can trigger a full sync.
+     */
+    syncAll: protectedProcedure.mutation(async () => {
+      const { games, result } = await fetchAllSheetsGames();
+      if (games.length > 0) {
+        await upsertSheetGames(games);
+      }
+      return {
+        success: true,
+        ...result,
+      };
+    }),
+  }),
+
   // ─── Files ─────────────────────────────────────────────────────────────────
   files: router({
     /**
      * Upload a CSV or XLSX model file to S3 and ingest rows into the games table.
-     * Accepts base64-encoded file content from the frontend.
      */
     upload: protectedProcedure
       .input(
@@ -53,13 +89,11 @@ export const appRouter = router({
         const suffix = nanoid(10);
         const fileKey = `model-files/${ctx.user.id}/${suffix}-${input.filename}`;
 
-        // Upload to S3
         const mimeType = input.filename.toLowerCase().endsWith(".xlsx")
           ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           : "text/csv";
         const { url: fileUrl } = await storagePut(fileKey, buffer, mimeType);
 
-        // Insert file record as "processing"
         await insertModelFile({
           uploadedBy: ctx.user.id,
           filename: input.filename,
@@ -73,7 +107,6 @@ export const appRouter = router({
           rowsImported: 0,
         });
 
-        // Get the inserted file ID
         const files = await listModelFiles(ctx.user.id);
         const fileRecord = files.find((f) => f.fileKey === fileKey);
         if (!fileRecord) {
@@ -107,16 +140,10 @@ export const appRouter = router({
         }
       }),
 
-    /**
-     * List all model files uploaded by the current user.
-     */
     list: protectedProcedure.query(async ({ ctx }) => {
       return listModelFiles(ctx.user.id);
     }),
 
-    /**
-     * Delete a model file and its associated game rows.
-     */
     delete: protectedProcedure
       .input(z.object({ fileId: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
@@ -136,7 +163,6 @@ export const appRouter = router({
   games: router({
     /**
      * List all games, optionally filtered by sport and/or date.
-     * Public so unauthenticated users can view projections.
      */
     list: publicProcedure
       .input(

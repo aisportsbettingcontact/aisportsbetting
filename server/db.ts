@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { games, modelFiles, users, type InsertGame, type InsertModelFile, type InsertUser } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -156,4 +156,33 @@ export async function deleteGamesByFileId(fileId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(games).where(eq(games.fileId, fileId));
+}
+
+/**
+ * Upsert games sourced from Google Sheets (fileId = 0).
+ * Strategy: delete all existing rows with fileId = 0 for the affected dates,
+ * then insert the fresh rows. This ensures stale data is replaced.
+ */
+export async function upsertSheetGames(rows: InsertGame[]) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  if (rows.length === 0) return;
+
+  // Collect unique dates in this batch
+  const dates = Array.from(new Set(rows.map((r) => r.gameDate)));
+
+  // Delete existing sheet-sourced rows for those dates
+  for (const date of dates) {
+    await db
+      .delete(games)
+      .where(
+        and(
+          eq(games.fileId, 0),
+          eq(games.gameDate, date)
+        )
+      );
+  }
+
+  // Insert fresh rows
+  await db.insert(games).values(rows);
 }

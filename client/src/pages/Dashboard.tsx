@@ -1,9 +1,9 @@
 // Dashboard — MODEL PROJECTIONS main page
-// Fetches live game data from the database via tRPC
+// Auto-syncs from Google Sheets on load, then shows live game data from DB
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Upload, Loader2, RefreshCw } from "lucide-react";
+import { User, LogOut, BarChart3, Upload, Loader2, RefreshCw, CheckCircle } from "lucide-react";
 import { GameCard } from "@/components/GameCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -15,6 +15,8 @@ export default function Dashboard() {
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [selectedSport, setSelectedSport] = useState("NCAAM");
+  const [syncStatus, setSyncStatus] = useState<"idle" | "syncing" | "done" | "error">("idle");
+  const hasSynced = useRef(false);
   const { user, isAuthenticated } = useAuth();
 
   useEffect(() => {
@@ -22,10 +24,44 @@ export default function Dashboard() {
     if (!accepted) setShowAgeModal(true);
   }, []);
 
-  const { data: games, isLoading, refetch } = trpc.games.list.useQuery(
+  // ─── Games query ──────────────────────────────────────────────────────────
+  const { data: games, isLoading: gamesLoading, refetch: refetchGames } = trpc.games.list.useQuery(
     { sport: selectedSport },
     { refetchOnWindowFocus: false }
   );
+
+  // ─── Sheets sync mutation ─────────────────────────────────────────────────
+  const syncMutation = trpc.sheets.syncLatest.useMutation({
+    onSuccess: (data) => {
+      setSyncStatus("done");
+      refetchGames();
+      if (data.gamesUpserted > 0) {
+        toast.success(`Synced ${data.gamesUpserted} games from Google Sheets${data.sheetName ? ` (${data.sheetName})` : ""}`);
+      }
+      // Reset status indicator after 3s
+      setTimeout(() => setSyncStatus("idle"), 3000);
+    },
+    onError: (err) => {
+      setSyncStatus("error");
+      console.error("[Sheets sync error]", err);
+      setTimeout(() => setSyncStatus("idle"), 3000);
+    },
+  });
+
+  // Auto-sync on first mount
+  useEffect(() => {
+    if (!hasSynced.current) {
+      hasSynced.current = true;
+      setSyncStatus("syncing");
+      syncMutation.mutate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleManualRefresh = () => {
+    setSyncStatus("syncing");
+    syncMutation.mutate();
+  };
 
   const handleAccept = () => {
     sessionStorage.setItem("age-accepted", "true");
@@ -51,7 +87,7 @@ export default function Dashboard() {
     return acc;
   }, {});
 
-  const sortedDates = Object.keys(gamesByDate).sort();
+  const sortedDates = Object.keys(gamesByDate).sort((a, b) => b.localeCompare(a));
 
   function formatDateHeader(dateStr: string): string {
     try {
@@ -68,6 +104,7 @@ export default function Dashboard() {
   }
 
   const sports = ["NCAAM", "NBA", "NFL", "NCAAF", "MLB", "NHL"];
+  const isLoading = gamesLoading || syncStatus === "syncing";
 
   return (
     <div className="min-h-screen bg-background">
@@ -156,7 +193,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sport tabs */}
+        {/* Sport tabs + sync status */}
         <div className="flex items-center gap-1 px-4 pb-2 max-w-3xl mx-auto overflow-x-auto">
           {sports.map((sport) => (
             <button
@@ -171,22 +208,41 @@ export default function Dashboard() {
               {sport}
             </button>
           ))}
-          <button
-            onClick={() => refetch()}
-            className="ml-auto w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors flex-shrink-0"
-            title="Refresh"
-          >
-            <RefreshCw className="w-3 h-3 text-muted-foreground" />
-          </button>
+
+          {/* Sync status + refresh button */}
+          <div className="ml-auto flex items-center gap-1.5 flex-shrink-0">
+            {syncStatus === "syncing" && (
+              <span className="text-xs text-muted-foreground flex items-center gap-1">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                Syncing…
+              </span>
+            )}
+            {syncStatus === "done" && (
+              <span className="text-xs text-green-400 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Updated
+              </span>
+            )}
+            <button
+              onClick={handleManualRefresh}
+              disabled={syncStatus === "syncing"}
+              className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors disabled:opacity-40"
+              title="Refresh from Google Sheets"
+            >
+              <RefreshCw className={`w-3 h-3 text-muted-foreground ${syncStatus === "syncing" ? "animate-spin" : ""}`} />
+            </button>
+          </div>
         </div>
       </header>
 
       {/* Main Content */}
       <main className="max-w-3xl mx-auto pb-12">
-        {isLoading ? (
+        {isLoading && sortedDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading projections...</p>
+            <p className="text-sm text-muted-foreground">
+              {syncStatus === "syncing" ? "Syncing from Google Sheets…" : "Loading projections…"}
+            </p>
           </div>
         ) : sortedDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-6">
@@ -194,26 +250,16 @@ export default function Dashboard() {
             <div>
               <p className="text-sm font-semibold text-foreground mb-1">No projections available</p>
               <p className="text-xs text-muted-foreground">
-                {isAuthenticated
-                  ? "Upload a model file to see projections."
-                  : "Sign in and upload a model file to see projections."}
+                No games found for {selectedSport}. Try refreshing or selecting another sport.
               </p>
             </div>
-            {isAuthenticated ? (
-              <button
-                onClick={() => setLocation("/files")}
-                className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-              >
-                Upload Model File
-              </button>
-            ) : (
-              <button
-                onClick={() => setLocation("/login")}
-                className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
-              >
-                Sign In
-              </button>
-            )}
+            <button
+              onClick={handleManualRefresh}
+              disabled={syncStatus === "syncing"}
+              className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {syncStatus === "syncing" ? "Syncing…" : "Refresh from Google Sheets"}
+            </button>
           </div>
         ) : (
           sortedDates.map((date) => (
@@ -244,7 +290,7 @@ export default function Dashboard() {
         {/* Footer */}
         <div className="px-4 py-6 text-center">
           <p className="text-xs text-muted-foreground">
-            AI Sports Betting Models · For informational purposes only · Gamble responsibly
+            AI Sports Betting Models · Live data from Google Sheets · For informational purposes only · Gamble responsibly
           </p>
         </div>
       </main>

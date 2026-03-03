@@ -17,4 +17,9 @@
 - [x] Build TeamLogo component (CDN logos + colored badge fallback)
 - [x] Write vitest tests for fileParser (13 tests passing)
 - [x] Re-upload logos with original filenames (no hash suffix)
-- [ ] Save checkpoint and deliver
+- [x] Save checkpoint and deliver
+- [x] Inspect Google Sheets structure and verify public CSV export access
+- [x] Build server-side Google Sheets sync (fetch latest sheet, parse, upsert games)
+- [x] Add tRPC procedures: sheets.syncLatest (public) and sheets.syncAll (protected)
+- [x] Add auto-sync on dashboard load + manual refresh button with status indicator
+- [x] Save checkpoint with Sheets integration
