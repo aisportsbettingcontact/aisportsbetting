@@ -244,39 +244,39 @@ export default function Dashboard() {
           sortedDates.map((date) => (
             <div key={date}>
               {/* Date section header */}
-              <div className="relative flex items-center px-4 py-2 border-b border-border sticky top-[45px] bg-background/95 backdrop-blur-sm z-10">
-                {/* Centered: date + separator + sport label */}
-                <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 whitespace-nowrap pointer-events-none">
+              <div className="flex items-center px-4 py-2 border-b border-border sticky top-[45px] bg-background/95 backdrop-blur-sm z-10">
+                {/* Left column (equal width) — empty spacer */}
+                <div className="flex-1" />
+
+                {/* Center: date + separator + sport label */}
+                <div className="flex items-center gap-2 whitespace-nowrap">
                   <span
                     className="font-bold text-foreground tracking-widest uppercase"
                     style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 'clamp(11px, 2vw, 13px)' }}
                   >
                     {formatDateHeader(date)}
                   </span>
-                  <span className="text-border/60" style={{ fontSize: '10px' }}>·</span>
+                  <span className="text-muted-foreground/40" style={{ fontSize: '10px' }}>·</span>
                   <span
-                    className="font-semibold"
+                    className="font-semibold hidden sm:inline"
                     style={{ color: '#a3a3a3', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '0.06em', fontSize: 'clamp(10px, 1.8vw, 12px)' }}
                   >
                     Men's College Basketball
                   </span>
                 </div>
 
-                {/* Invisible spacer */}
-                <div className="flex-1" />
-
-                {/* Right: sync status + refresh */}
-                <div className="flex items-center gap-1.5 flex-shrink-0">
+                {/* Right column (equal width) — sync + refresh aligned right */}
+                <div className="flex-1 flex items-center justify-end gap-1.5">
                   {syncStatus === "syncing" && (
                     <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                       <Loader2 className="w-3 h-3 animate-spin" />
-                      Syncing
+                      <span className="hidden sm:inline">Syncing</span>
                     </span>
                   )}
                   {syncStatus === "done" && (
                     <span className="text-[11px] text-green-400 flex items-center gap-1">
                       <CheckCircle className="w-3 h-3" />
-                      Updated
+                      <span className="hidden sm:inline">Updated</span>
                     </span>
                   )}
                   <button
