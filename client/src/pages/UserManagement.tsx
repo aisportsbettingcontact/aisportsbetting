@@ -59,15 +59,22 @@ const ROLE_COLORS = {
   user: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
 };
 
+const EST_OPTS: Intl.DateTimeFormatOptions = { timeZone: "America/New_York" };
+
 function formatExpiry(expiryDate: number | null) {
   if (!expiryDate) return "Lifetime";
   const d = new Date(expiryDate);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  // Full precision: MM/DD/YYYY HH:MM:SS AM/PM EST
+  const date = d.toLocaleDateString("en-US", { ...EST_OPTS, month: "2-digit", day: "2-digit", year: "numeric" });
+  const time = d.toLocaleTimeString("en-US", { ...EST_OPTS, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+  return `${date} ${time} EST`;
 }
 
 function formatDate(d: Date | null) {
   if (!d) return "Never";
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const dt = new Date(d);
+  const time = dt.toLocaleTimeString("en-US", { ...EST_OPTS, hour: "2-digit", minute: "2-digit", hour12: true });
+  return `${time} EST`;
 }
 
 type FormState = {

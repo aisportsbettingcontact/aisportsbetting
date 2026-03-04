@@ -89,3 +89,9 @@
 - [x] Add search field to User Management (filter by username or email)
 - [x] Fix Role sort hierarchy: Owner→Admin→User (asc), User→Admin→Owner (desc)
 - [x] Fix Expiry sort: ascending = soonest first, Lifetime at bottom; descending = Lifetime at top
+- [x] Enforce expiry date: block login if current time > expiryDate (set hasAccess=false automatically)
+- [x] Add session-level expiry check: even if already logged in, redirect expired users out of dashboard
+- [x] Test expiry enforcement with a test account (expired date)
+- [x] Show Last Sign In as HH:MM AM/PM EST in User Management table
+- [x] Show expiry dates with full precision and EST label in User Management table
+- [x] Add 3 hours to all existing non-lifetime expiry dates in the database
