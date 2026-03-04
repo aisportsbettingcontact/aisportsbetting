@@ -85,3 +85,4 @@
 - [x] Remove Manus OAuth sign-in button and all Manus branding from public-facing pages
 - [x] Add Stay Logged In checkbox to login form (extends session to 90 days vs 1 day)
 - [x] Gate dashboard behind app_session cookie check; redirect unauthenticated users to home
+- [x] Add per-column filter/sort dropdowns to User Management table (sort asc/desc + multi-select filter per column)
