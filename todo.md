@@ -122,3 +122,4 @@
 - [x] Delete all March 3rd games from DB permanently
 - [x] Remove Google Sheets sync code (sheetsSync.ts, syncLatest/syncAll procedures, dashboard auto-sync call)
 - [x] Remove Sheets-related UI (sync button, status indicator) from Dashboard
+- [x] Reorder Publish Projections games to match WagerTalk order (by wagerTalkId / sortOrder)

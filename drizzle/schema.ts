@@ -106,6 +106,8 @@ export const games = mysqlTable("games", {
   conference: varchar("conference", { length: 128 }),
   /** Whether this game has been published to the member feed by the owner */
   publishedToFeed: boolean("publishedToFeed").notNull().default(false),
+  /** WagerTalk display order — lower number appears first */
+  sortOrder: int("sortOrder").notNull().default(9999),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

@@ -178,7 +178,7 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }) {
     .select()
     .from(games)
     .where(and(...conditions))
-    .orderBy(games.gameDate, games.startTimeEst);
+    .orderBy(games.gameDate, games.sortOrder, games.startTimeEst);
 }
 
 export async function deleteGamesByFileId(fileId: number) {
@@ -302,7 +302,7 @@ export async function listStagingGames(gameDate: string) {
     .select()
     .from(games)
     .where(and(eq(games.gameDate, gameDate), eq(games.fileId, 0)))
-    .orderBy(games.startTimeEst);
+    .orderBy(games.sortOrder, games.startTimeEst);
 }
 
 /** Update model projections and edge labels for a single game */

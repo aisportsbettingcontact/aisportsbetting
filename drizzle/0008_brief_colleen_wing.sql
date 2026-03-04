@@ -1,0 +1,1 @@
+ALTER TABLE `games` ADD `sortOrder` int DEFAULT 9999 NOT NULL;
