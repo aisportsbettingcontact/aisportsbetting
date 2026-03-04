@@ -401,8 +401,9 @@ const DB_SLUG_ALIASES: Record<string, string> = {
   pittsburgh: "221",           // DB: pittsburgh → ESPN: pitt
   cleveland_state: "325",       // DB: cleveland_state → ESPN: cleveland_st
   florida_gulf_coast: "526",    // DB: florida_gulf_coast → ESPN: fgcu
-  // No ESPN entry (new programs) — no logo available
-  // lindenwood: not in ESPN
+  ul_lafayette: "309",          // DB: ul_lafayette → ESPN: louisiana (ID 309)
+  georgia_southern: "290",      // DB: georgia_southern → ESPN: georgia-southern (ID 290)
+  lindenwood: "2815",           // DB: lindenwood → ESPN: lindenwood (ID 2815)
 };
 
 export function getEspnLogoUrl(slug: string, size = 80): string | null {

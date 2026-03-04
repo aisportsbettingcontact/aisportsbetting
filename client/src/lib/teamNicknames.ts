@@ -404,6 +404,7 @@ const DB_SLUG_NICKNAME_ALIASES: Record<string, TeamName> = {
   pittsburgh: { school: "Pittsburgh", nickname: "Panthers" },       // DB: pittsburgh → ESPN: pitt
   cleveland_state: { school: "Cleveland State", nickname: "Vikings" }, // DB: cleveland_state → ESPN: cleveland_st
   florida_gulf_coast: { school: "Florida Gulf Coast", nickname: "Eagles" }, // DB: florida_gulf_coast → ESPN: fgcu
+  TBD: { school: "TBD", nickname: "Opponent TBD" },
 };
 
 /**
