@@ -91,28 +91,28 @@ function SearchResultRow({ game, logoMap, onClick }: { game: GameRow; logoMap: R
       <div className="flex items-center px-3 py-2.5 gap-2">
 
         {/* Away side: logo + name block */}
-        <div className="flex items-center gap-2" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
-          <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={26} />
+        <div className="flex items-center gap-1.5 sm:gap-2" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
+          <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={22} />
           <div className="flex flex-col" style={{ minWidth: 0, overflow: "hidden" }}>
-            <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{awaySchool}</span>
-            {awayNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{awayNick}</span>}
+            <span className="font-bold text-white leading-tight sm:text-[12px]" style={{ fontSize: "clamp(9px, 2.6vw, 12px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{awaySchool}</span>
+            {awayNick && <span className="font-normal text-gray-400 leading-tight sm:text-[10px]" style={{ fontSize: "clamp(8px, 2.2vw, 10px)", whiteSpace: "nowrap", display: "block" }}>{awayNick}</span>}
           </div>
         </div>
 
         {/* Center column: @ on top, date·time below */}
-        <div className="flex flex-col items-center flex-shrink-0" style={{ minWidth: 72 }}>
+        <div className="flex flex-col items-center flex-shrink-0" style={{ minWidth: 66 }}>
           <span className="text-[11px] text-gray-500 font-medium leading-tight">@</span>
           <span className="text-[9px] text-gray-500 leading-tight text-center whitespace-nowrap mt-0.5">{dateShort}</span>
           <span className="text-[9px] text-gray-500 leading-tight text-center whitespace-nowrap">{time}</span>
         </div>
 
         {/* Home side: name block + logo */}
-        <div className="flex items-center gap-2 justify-end" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
+        <div className="flex items-center gap-1.5 sm:gap-2 justify-end" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
           <div className="flex flex-col items-end" style={{ minWidth: 0, overflow: "hidden" }}>
-            <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{homeSchool}</span>
-            {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{homeNick}</span>}
+            <span className="font-bold text-white leading-tight sm:text-[12px]" style={{ fontSize: "clamp(9px, 2.6vw, 12px)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{homeSchool}</span>
+            {homeNick && <span className="font-normal text-gray-400 leading-tight sm:text-[10px]" style={{ fontSize: "clamp(8px, 2.2vw, 10px)", whiteSpace: "nowrap", display: "block" }}>{homeNick}</span>}
           </div>
-          <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={26} />
+          <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={22} />
         </div>
 
       </div>
