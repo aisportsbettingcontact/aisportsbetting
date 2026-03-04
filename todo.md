@@ -168,3 +168,4 @@
 - [x] Feed: show ALL games with live VSiN odds (remove publishedToFeed filter from listGames)
 - [x] GameCard: show model projections (MODEL LINE/O/U/edge) only when publishedToFeed=true, otherwise show dashes
 - [x] Fix missing team logos in PublishProjections EditableGameCard (logos show on feed but not admin page)
+- [x] Feed: replace search icon button with always-visible search input bar between header and first date group; dropdown results ordered by start time EST
