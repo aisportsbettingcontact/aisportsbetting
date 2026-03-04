@@ -23,6 +23,8 @@ import { syncEspnTeams, buildEspnLogoUrl } from "./espnScraper";
 import { listEspnTeams, getEspnTeamBySlug } from "./db";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure } from "./routers/appUsers";
+import { scrapeWagerTalkNcaam } from "./wagerTalkScraper";
+import { updateBookOdds } from "./db";
 
 export const appRouter = router({
   system: systemRouter,
@@ -239,6 +241,47 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         await publishAllStagingGames(input.gameDate);
         return { success: true };
+      }),
+
+    /**
+     * Scrape live WagerTalk NCAAM odds and update the Books column for all
+     * games on the given date that have a rotNums value.
+     * Owner-only. Takes ~10-15 seconds.
+     */
+    refreshBooks: ownerProcedure
+      .input(z.object({ gameDate: z.string() }))
+      .mutation(async ({ input }) => {
+        // 1. Fetch all games for the date that have rotation numbers
+        const allGames = await listStagingGames(input.gameDate);
+        const gamesWithRot = allGames.filter((g) => g.rotNums);
+
+        if (gamesWithRot.length === 0) {
+          return { updated: 0, message: "No games with rotation numbers found" };
+        }
+
+        // 2. Scrape WagerTalk
+        const scraped = await scrapeWagerTalkNcaam();
+
+        // Build lookup: rotAway -> scraped odds
+        const byRotAway = new Map(scraped.map((s) => [s.rotAway, s]));
+
+        // 3. Update each game
+        let updated = 0;
+        for (const game of gamesWithRot) {
+          if (!game.rotNums) continue;
+          const rotAway = game.rotNums.split("/")[0];
+          const odds = byRotAway.get(rotAway);
+          if (!odds) continue;
+
+          await updateBookOdds(game.id, {
+            awayBookSpread: odds.awaySpread,
+            homeBookSpread: odds.homeSpread,
+            bookTotal: odds.total,
+          });
+          updated++;
+        }
+
+        return { updated, total: gamesWithRot.length };
       }),
   }),
 });

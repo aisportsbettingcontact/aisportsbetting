@@ -707,6 +707,14 @@ export default function PublishProjections() {
     onError: () => toast.error("Failed to publish all games"),
   });
 
+  const refreshBooksMutation = trpc.games.refreshBooks.useMutation({
+    onSuccess: (data) => {
+      toast.success(`Books refreshed — ${data.updated}/${data.total ?? data.updated} games updated`);
+      refetch();
+    },
+    onError: () => toast.error("Failed to refresh books odds"),
+  });
+
   const handleRefetch = useCallback(() => { refetch(); }, [refetch]);
 
   const filtered = (games ?? []).filter((g) =>
@@ -761,21 +769,37 @@ export default function PublishProjections() {
             </span>
           </div>
 
-          {/* Spacer + Publish All button — right */}
+          {/* Spacer + action buttons — right */}
           <div className="flex-1" />
-          <Button
-            size="sm"
-            onClick={() => publishAllMutation.mutate({ gameDate })}
-            disabled={publishAllMutation.isPending || totalCount === 0}
-            className="gap-1.5 text-xs h-8 font-bold flex-shrink-0"
-            style={{ background: "#39FF14", color: "#000" }}
-          >
-            {publishAllMutation.isPending
-              ? <Loader2 size={12} className="animate-spin" />
-              : <Send size={12} />
-            }
-            Publish All
-          </Button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => refreshBooksMutation.mutate({ gameDate })}
+              disabled={refreshBooksMutation.isPending || totalCount === 0}
+              className="gap-1.5 text-xs h-8 font-semibold border-border"
+              style={{ color: "#FFB800" }}
+            >
+              {refreshBooksMutation.isPending
+                ? <Loader2 size={12} className="animate-spin" />
+                : <span style={{ fontSize: 12 }}>↻</span>
+              }
+              {refreshBooksMutation.isPending ? "Refreshing…" : "Refresh Books"}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => publishAllMutation.mutate({ gameDate })}
+              disabled={publishAllMutation.isPending || totalCount === 0}
+              className="gap-1.5 text-xs h-8 font-bold"
+              style={{ background: "#39FF14", color: "#000" }}
+            >
+              {publishAllMutation.isPending
+                ? <Loader2 size={12} className="animate-spin" />
+                : <Send size={12} />
+              }
+              Publish All
+            </Button>
+          </div>
         </div>
 
         {/* Stats row + filter tabs */}

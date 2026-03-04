@@ -324,6 +324,27 @@ export async function updateGameProjections(
 }
 
 /** Toggle publishedToFeed for a single game */
+/**
+ * Update book odds (spread + total) for a single game.
+ * Called by the WagerTalk live-refresh procedure.
+ */
+export async function updateBookOdds(
+  id: number,
+  data: { awayBookSpread: number | null; homeBookSpread: number | null; bookTotal: number | null }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const { eq } = await import("drizzle-orm");
+  await db
+    .update(games)
+    .set({
+      awayBookSpread: data.awayBookSpread !== null ? String(data.awayBookSpread) : null,
+      homeBookSpread: data.homeBookSpread !== null ? String(data.homeBookSpread) : null,
+      bookTotal: data.bookTotal !== null ? String(data.bookTotal) : null,
+    })
+    .where(eq(games.id, id));
+}
+
 export async function setGamePublished(id: number, published: boolean) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
