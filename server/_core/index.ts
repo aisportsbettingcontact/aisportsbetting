@@ -8,6 +8,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { startEspnSyncSchedule } from "../espnScraper";
+import { startDailyPurgeSchedule } from "../dailyPurge";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -62,6 +63,8 @@ async function startServer() {
     console.log(`Server running on http://localhost:${port}/`);
     // Start ESPN team sync on startup + daily schedule
     startEspnSyncSchedule();
+    // Start daily 6am EST game purge (removes previous day's games)
+    startDailyPurgeSchedule();
   });
 }
 

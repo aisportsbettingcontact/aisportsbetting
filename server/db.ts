@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { games, modelFiles, users, espnTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertEspnTeam } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -179,6 +179,31 @@ export async function deleteGamesByFileId(fileId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   await db.delete(games).where(eq(games.fileId, fileId));
+}
+
+/**
+ * Delete all games whose gameDate is strictly before today's date in EST.
+ * Called by the 6am EST daily cron job to purge previous-day data.
+ * Returns the number of rows deleted.
+ */
+export async function deleteOldGames(): Promise<number> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  // Compute today in EST as YYYY-MM-DD
+  const estStr = new Date().toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  });
+  const [mm, dd, yyyy] = estStr.split("/");
+  const todayStr = `${yyyy}-${mm}-${dd}`;
+
+  const result = await db.delete(games).where(lt(games.gameDate, todayStr));
+  const deleted = (result as unknown as { affectedRows?: number }).affectedRows ?? 0;
+  console.log(`[DailyPurge] Deleted ${deleted} game rows older than ${todayStr} (EST)`);
+  return deleted;
 }
 
 // ─── ESPN Teams helpers ───────────────────────────────────────────────────────
