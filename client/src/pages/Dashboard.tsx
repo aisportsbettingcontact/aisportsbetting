@@ -87,55 +87,40 @@ function SearchResultRow({ game, logoMap, onClick }: { game: GameRow; logoMap: R
       onClick={onClick}
       className="w-full hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0"
     >
-      {/* ── Desktop: single left-to-right row ── */}
-      <div className="hidden sm:flex items-center gap-0 px-3 py-2.5 w-full">
-        {/* Away: logo + School (bold) + Nickname */}
-        <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={26} />
-        <div className="flex items-baseline gap-1.5 ml-2 min-w-0" style={{ flex: "1 1 0" }}>
-          <span className="text-[12px] font-bold text-white leading-tight truncate">{awaySchool}</span>
-          {awayNick && <span className="text-[10px] font-normal text-gray-400 leading-tight truncate flex-shrink-0">{awayNick}</span>}
+      {/* ── Shared layout: works on all screen sizes ── */}
+      <div className="flex flex-col px-3 py-2.5 gap-1">
+
+        {/* Row 1: Away @ Home */}
+        <div className="flex items-center w-full gap-2">
+
+          {/* Away side: logo + name block */}
+          <div className="flex items-center gap-2" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
+            <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={26} />
+            <div className="flex flex-col" style={{ minWidth: 0, overflow: "hidden" }}>
+              <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{awaySchool}</span>
+              {awayNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{awayNick}</span>}
+            </div>
+          </div>
+
+          {/* @ separator — fixed width, centered */}
+          <span className="text-[11px] text-gray-500 font-medium flex-shrink-0 w-5 text-center">@</span>
+
+          {/* Home side: name block + logo */}
+          <div className="flex items-center gap-2 justify-end" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
+            <div className="flex flex-col items-end" style={{ minWidth: 0, overflow: "hidden" }}>
+              <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{homeSchool}</span>
+              {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{homeNick}</span>}
+            </div>
+            <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={26} />
+          </div>
+
         </div>
 
-        {/* @ separator */}
-        <span className="text-[11px] text-gray-500 font-medium flex-shrink-0 px-2">@</span>
-
-        {/* Home: School (bold) + Nickname + logo */}
-        <div className="flex items-baseline gap-1.5 mr-2 min-w-0 justify-end" style={{ flex: "1 1 0" }}>
-          <span className="text-[12px] font-bold text-white leading-tight truncate">{homeSchool}</span>
-          {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight truncate flex-shrink-0">{homeNick}</span>}
-        </div>
-        <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={26} />
-
-        {/* Date + time */}
-        <div className="flex flex-col items-end flex-shrink-0 ml-3" style={{ minWidth: 80 }}>
-          <span className="text-[10px] text-gray-400 leading-tight">{dateShort}</span>
-          <span className="text-[10px] text-gray-400 leading-tight">{time}</span>
-        </div>
-      </div>
-
-      {/* ── Mobile: stacked layout ── */}
-      <div className="flex sm:hidden items-center gap-2 px-3 py-2.5">
-        {/* Away: logo + name stacked */}
-        <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={24} />
-        <div className="flex flex-col min-w-0" style={{ flex: "1 1 0" }}>
-          <span className="text-[11px] font-bold text-white leading-tight truncate">{awaySchool}</span>
-          {awayNick && <span className="text-[9px] font-normal text-gray-400 leading-tight truncate">{awayNick}</span>}
+        {/* Row 2: Date · Time — right-aligned */}
+        <div className="flex justify-end">
+          <span className="text-[10px] text-gray-500 leading-tight">{dateShort} · {time}</span>
         </div>
 
-        <span className="text-[10px] text-gray-500 font-medium flex-shrink-0 px-0.5">@</span>
-
-        {/* Home: name stacked + logo */}
-        <div className="flex flex-col min-w-0 text-right" style={{ flex: "1 1 0" }}>
-          <span className="text-[11px] font-bold text-white leading-tight truncate">{homeSchool}</span>
-          {homeNick && <span className="text-[9px] font-normal text-gray-400 leading-tight truncate">{homeNick}</span>}
-        </div>
-        <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={24} />
-
-        {/* Date + time */}
-        <div className="flex flex-col items-end flex-shrink-0 ml-1" style={{ minWidth: 68 }}>
-          <span className="text-[9px] text-gray-400 leading-tight">{dateShort}</span>
-          <span className="text-[9px] text-gray-400 leading-tight">{time}</span>
-        </div>
       </div>
     </button>
   );
@@ -408,7 +393,7 @@ export default function Dashboard() {
           {showDropdown && (
             <div
               className="absolute left-4 right-4 top-full mt-0.5 z-50 rounded-xl border border-white/10 shadow-2xl overflow-hidden"
-              style={{ background: "#0f0f0f", maxHeight: "calc(3 * 56px + 44px)", overflowY: "auto" }}
+              style={{ background: "#0f0f0f", maxHeight: "calc(3 * 68px + 44px)", overflowY: "auto" }}
             >
               {/* Header row */}
               <div className="flex items-center justify-between px-3 py-2 border-b border-white/8 bg-black/60 sticky top-0">
