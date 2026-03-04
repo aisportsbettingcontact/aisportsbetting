@@ -99,3 +99,9 @@
 - [x] Fix todayEst() date format mismatch: was MM-DD-YYYY, now YYYY-MM-DD to match DB storage (parseDate output)
 - [x] Add daily 6am EST cron job to delete games older than today (purge previous day's games automatically)
 - [x] Replace all user-facing "Google Sheets" references with "Model Database"
+- [x] Scrape WagerTalk for 40 March 4 NCAAM games (22 regular season + 18 conference tournament)
+- [x] Add gameType, conference, and publishedToFeed fields to games DB schema
+- [x] Import 40 March 4 games with Consensus odds, blank model projections, and unpublished status
+- [x] Build owner-only Publish Model Projections page with editable game rows and publish toggles
+- [x] Add Publish Projections to profile dropdown (owner-only)
+- [x] Update public games.list to only return publishedToFeed=true games

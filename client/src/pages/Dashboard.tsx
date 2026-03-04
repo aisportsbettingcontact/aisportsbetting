@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Loader2, RefreshCw, CheckCircle, Crown } from "lucide-react";
+import { User, LogOut, BarChart3, Loader2, RefreshCw, CheckCircle, Crown, Send } from "lucide-react";
 import { GameCard } from "@/components/GameCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -215,13 +215,22 @@ export default function Dashboard() {
                           <p className="text-[11px] text-muted-foreground truncate">{appUser.email}</p>
                         </div>
                         {isOwner && (
-                          <button
-                            onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
-                          >
-                            <Crown className="w-3.5 h-3.5 text-yellow-400" />
-                            User Management
-                          </button>
+                          <>
+                            <button
+                              onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }}
+                              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                            >
+                              <Send className="w-3.5 h-3.5 text-green-400" />
+                              Publish Projections
+                            </button>
+                            <button
+                              onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }}
+                              className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                            >
+                              <Crown className="w-3.5 h-3.5 text-yellow-400" />
+                              User Management
+                            </button>
+                          </>
                         )}
                         <button
                           onClick={() => { setShowUserMenu(false); appLogout(); }}

@@ -165,7 +165,11 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }) {
   // Default to today in EST — never show stale previous-day games
   const targetDate = opts?.gameDate ?? todayEst();
 
-  const conditions = [eq(games.gameDate, targetDate)];
+  const conditions = [
+    eq(games.gameDate, targetDate),
+    // Public feed only shows games explicitly published by the owner
+    eq(games.publishedToFeed, true),
+  ];
   if (opts?.sport) conditions.push(eq(games.sport, opts.sport));
 
   return db
@@ -311,4 +315,52 @@ export async function updateAppUserLastSignedIn(id: number) {
   const db = await getDb();
   if (!db) return;
   await db.update(appUsers).set({ lastSignedIn: new Date() }).where(eq(appUsers.id, id));
+}
+
+// ─── Publish / Model Projection helpers ──────────────────────────────────────
+
+/** List all staging games for a given date (fileId = 0, unpublished) */
+export async function listStagingGames(gameDate: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  return db
+    .select()
+    .from(games)
+    .where(and(eq(games.gameDate, gameDate), eq(games.fileId, 0)))
+    .orderBy(games.startTimeEst);
+}
+
+/** Update model projections and edge labels for a single game */
+export async function updateGameProjections(
+  id: number,
+  data: {
+    awayModelSpread?: string | null;
+    homeModelSpread?: string | null;
+    modelTotal?: string | null;
+    spreadEdge?: string | null;
+    spreadDiff?: string | null;
+    totalEdge?: string | null;
+    totalDiff?: string | null;
+  }
+) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(games).set(data).where(eq(games.id, id));
+}
+
+/** Toggle publishedToFeed for a single game */
+export async function setGamePublished(id: number, published: boolean) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(games).set({ publishedToFeed: published }).where(eq(games.id, id));
+}
+
+/** Bulk publish all staging games for a date */
+export async function publishAllStagingGames(gameDate: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db
+    .update(games)
+    .set({ publishedToFeed: true })
+    .where(and(eq(games.gameDate, gameDate), eq(games.fileId, 0)));
 }

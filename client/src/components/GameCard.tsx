@@ -100,7 +100,7 @@ function toNum(v: string | number | null | undefined): number {
 }
 
 // ── Normalize edge label (matches reference normalizeEdgeLabel) ───────────────
-function normalizeEdgeLabel(label: string): string {
+function normalizeEdgeLabel(label: string | null | undefined): string {
   if (!label || label.toUpperCase() === "PASS") return "PASS";
   // Replace leading slug with formatted team name: "duke (-9.5)" → "Duke (-9.5)"
   return label.replace(/^([a-z][a-z0-9_]*)(\s+\()/i, (_, slug, rest) => formatTeamName(slug) + rest);
@@ -218,10 +218,10 @@ function TeamRow({
 }
 
 // ── VerdictSide ───────────────────────────────────────────────────────────────
-function VerdictSide({ diff, label, isStrong }: { diff: number; label: string; isStrong: boolean }) {
+function VerdictSide({ diff, label, isStrong }: { diff: number | null; label: string | null; isStrong: boolean }) {
   const normalized = normalizeEdgeLabel(label);
-  const isPass = normalized === "PASS" || diff <= 0;
-  const color = getEdgeColor(diff);
+  const isPass = normalized === "PASS" || (diff ?? 0) <= 0;
+  const color = getEdgeColor(diff ?? 0);
 
   if (isPass) {
     return (
@@ -237,7 +237,7 @@ function VerdictSide({ diff, label, isStrong }: { diff: number; label: string; i
   }
 
   const betNameSize = isStrong ? "13px" : "12px";
-  const showArrow = diff >= 3;
+  const showArrow = (diff ?? 0) >= 3;
 
   return (
     <div className="flex flex-col items-center gap-1 py-0.5">
@@ -264,11 +264,11 @@ function VerdictSide({ diff, label, isStrong }: { diff: number; label: string; i
 function EdgeVerdict({
   spreadDiff, spreadEdge, totalDiff, totalEdge,
 }: {
-  spreadDiff: number; spreadEdge: string;
-  totalDiff: number; totalEdge: string;
+  spreadDiff: number | null; spreadEdge: string | null;
+  totalDiff: number | null; totalEdge: string | null;
 }) {
-  const spreadPass = normalizeEdgeLabel(spreadEdge) === "PASS" || spreadDiff <= 0;
-  const totalPass  = normalizeEdgeLabel(totalEdge)  === "PASS" || totalDiff  <= 0;
+  const spreadPass = normalizeEdgeLabel(spreadEdge) === "PASS" || (spreadDiff ?? 0) <= 0;
+  const totalPass  = normalizeEdgeLabel(totalEdge)  === "PASS" || (totalDiff ?? 0)  <= 0;
 
   if (spreadPass && totalPass) {
     return (
@@ -286,7 +286,7 @@ function EdgeVerdict({
     );
   }
 
-  const spreadIsStronger = spreadDiff >= totalDiff;
+  const spreadIsStronger = (spreadDiff ?? 0) >= (totalDiff ?? 0);
 
   return (
     <div
@@ -454,8 +454,8 @@ export function GameCard({ game, logoMap = {} }: GameCardProps) {
       const totalColor  = getEdgeColor(totalDiff);
       const spreadLabel = normalizeEdgeLabel(game.spreadEdge);
       const totalLabel  = normalizeEdgeLabel(game.totalEdge);
-      const spreadPass  = spreadLabel === "PASS" || spreadDiff <= 0;
-      const totalPass   = totalLabel  === "PASS" || totalDiff  <= 0;
+      const spreadPass  = spreadLabel === "PASS" || spreadDiff <= 0 || !game.spreadEdge;
+      const totalPass   = totalLabel  === "PASS" || totalDiff  <= 0 || !game.totalEdge;
 
       const verdictSideHtml = (diff: number, label: string, color: string) => {
         if (label === "PASS" || diff <= 0) {

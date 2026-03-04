@@ -13,6 +13,10 @@ import {
   listModelFiles,
   upsertSheetGames,
   updateModelFileStatus,
+  listStagingGames,
+  updateGameProjections,
+  setGamePublished,
+  publishAllStagingGames,
 } from "./db";
 import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
@@ -217,6 +221,61 @@ export const appRouter = router({
       )
       .query(async ({ input }) => {
         return listGames(input ?? {});
+      }),
+
+    /**
+     * List all staging (unpublished) games for a given date.
+     * Owner-only — used by the Publish Model Projections page.
+     */
+    listStaging: protectedProcedure
+      .input(z.object({ gameDate: z.string() }))
+      .query(async ({ input }) => {
+        return listStagingGames(input.gameDate);
+      }),
+
+    /**
+     * Update model projections (spreads, total, edge labels) for a single game.
+     * Owner-only.
+     */
+    updateProjections: protectedProcedure
+      .input(
+        z.object({
+          id: z.number().int().positive(),
+          awayModelSpread: z.string().nullable().optional(),
+          homeModelSpread: z.string().nullable().optional(),
+          modelTotal: z.string().nullable().optional(),
+          spreadEdge: z.string().nullable().optional(),
+          spreadDiff: z.string().nullable().optional(),
+          totalEdge: z.string().nullable().optional(),
+          totalDiff: z.string().nullable().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { id, ...data } = input;
+        await updateGameProjections(id, data);
+        return { success: true };
+      }),
+
+    /**
+     * Toggle publishedToFeed for a single game.
+     * Owner-only.
+     */
+    setPublished: protectedProcedure
+      .input(z.object({ id: z.number().int().positive(), published: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await setGamePublished(input.id, input.published);
+        return { success: true };
+      }),
+
+    /**
+     * Publish all staging games for a date at once.
+     * Owner-only.
+     */
+    publishAll: protectedProcedure
+      .input(z.object({ gameDate: z.string() }))
+      .mutation(async ({ input }) => {
+        await publishAllStagingGames(input.gameDate);
+        return { success: true };
       }),
   }),
 });
