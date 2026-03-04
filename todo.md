@@ -108,3 +108,5 @@
 - [x] Redesign PublishProjections page to match GameCard feed style with inline MODEL LINE and MODEL O/U inputs
 - [x] Enforce strict owner-only access on PublishProjections (frontend redirect + backend ownerProcedure)
 - [x] Show all 40 March 4 games on Dashboard feed with book lines (model columns empty until published)\n
+- [x] Debug: March 4 games not showing on feed — fixed by using gte(today) instead of eq(today)
+- [x] Show March 3 and March 4 games on feed grouped by date (March 4 below March 3)

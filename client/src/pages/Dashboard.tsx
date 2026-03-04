@@ -124,7 +124,7 @@ export default function Dashboard() {
     return acc;
   }, {});
 
-  const sortedDates = Object.keys(gamesByDate).sort((a, b) => b.localeCompare(a));
+  const sortedDates = Object.keys(gamesByDate).sort((a, b) => a.localeCompare(b));
 
   function formatDateHeader(dateStr: string): string {
     try {

@@ -1,4 +1,4 @@
-import { and, desc, eq, lt } from "drizzle-orm";
+import { and, desc, eq, gte, lt } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import { games, modelFiles, users, espnTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertEspnTeam } from "../drizzle/schema";
 import { ENV } from './_core/env';
@@ -162,13 +162,16 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  // Default to today in EST — never show stale previous-day games
-  const targetDate = opts?.gameDate ?? todayEst();
+  const conditions: ReturnType<typeof eq>[] = [];
 
-  const conditions = [
-    eq(games.gameDate, targetDate),
-    // All games for the date are shown; model projections appear when published
-  ];
+  if (opts?.gameDate) {
+    // Specific date requested — return only that date
+    conditions.push(eq(games.gameDate, opts.gameDate));
+  } else {
+    // Default: show all games from today onwards (EST) so upcoming dates are visible
+    conditions.push(gte(games.gameDate, todayEst()));
+  }
+
   if (opts?.sport) conditions.push(eq(games.sport, opts.sport));
 
   return db
