@@ -12,7 +12,7 @@
  *  - Download button (top-right, low opacity)
  *  - framer-motion fade-in
  *
- * All data comes from the Google Sheets sync pipeline via tRPC → DB.
+ * All data comes from the Model Database sync pipeline via tRPC → DB.
  */
 
 import { useState } from "react";

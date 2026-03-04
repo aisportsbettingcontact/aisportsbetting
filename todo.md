@@ -98,3 +98,4 @@
 - [x] Fix game feed: only show games for today's date (EST), remove previous days' games automatically
 - [x] Fix todayEst() date format mismatch: was MM-DD-YYYY, now YYYY-MM-DD to match DB storage (parseDate output)
 - [x] Add daily 6am EST cron job to delete games older than today (purge previous day's games automatically)
+- [x] Replace all user-facing "Google Sheets" references with "Model Database"

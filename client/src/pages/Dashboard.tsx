@@ -1,5 +1,5 @@
 // Dashboard — MODEL PROJECTIONS main page
-// Auto-syncs from Google Sheets on load, then shows live game data from DB
+// Auto-syncs from Model Database on load, then shows live game data from DB
 
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
@@ -269,7 +269,7 @@ export default function Dashboard() {
           <div className="flex flex-col items-center justify-center py-24 gap-3">
             <Loader2 className="w-8 h-8 text-primary animate-spin" />
             <p className="text-sm text-muted-foreground">
-              {syncStatus === "syncing" ? "Syncing from Google Sheets…" : "Loading projections…"}
+              {syncStatus === "syncing" ? "Syncing from Model Database…" : "Loading projections…"}
             </p>
           </div>
         ) : sortedDates.length === 0 ? (
@@ -286,7 +286,7 @@ export default function Dashboard() {
               disabled={syncStatus === "syncing"}
               className="mt-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity disabled:opacity-50"
             >
-              {syncStatus === "syncing" ? "Syncing…" : "Refresh from Google Sheets"}
+              {syncStatus === "syncing" ? "Syncing…" : "Refresh from Model Database"}
             </button>
           </div>
         ) : (
@@ -337,7 +337,7 @@ export default function Dashboard() {
                     onClick={handleManualRefresh}
                     disabled={syncStatus === "syncing"}
                     className="w-6 h-6 rounded flex items-center justify-center hover:bg-secondary transition-colors disabled:opacity-40"
-                    title="Refresh from Google Sheets"
+                    title="Refresh from Model Database"
                   >
                     <RefreshCw className={`w-3 h-3 text-muted-foreground ${syncStatus === "syncing" ? "animate-spin" : ""}`} />
                   </button>
