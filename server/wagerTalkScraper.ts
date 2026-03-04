@@ -1,28 +1,22 @@
 /**
- * WagerTalk Live Odds Scraper
+ * VSiN College Basketball Betting Splits Scraper
  *
- * Uses Puppeteer to load the WagerTalk NCAAM odds page and extract
- * the current consensus spread and total for each game by rotation number.
+ * Uses Puppeteer to load the VSiN CBB betting splits page and extract
+ * the consensus spread and total for each game by team name matching.
  *
- * HTML structure (per game):
- *   <tr id="g689" class="reg|alt">
- *     <th class="gnum" id="t689g">
- *       <div id="t689g0">689</div>   ← away rot num
- *       <div id="t689g1">690</div>   ← home rot num
- *     </th>
- *     ... book columns ...
- *     <td class="book b15" id="t689b...">   ← last book = Consensus
- *       <div id="t689p0b...r1">155½ </div>  ← total (row 1)
- *       <div id="t689p0b...r2">-2½-10 </div> ← spread (row 2)
- *     </td>
- *   </tr>
+ * The VSiN table is structured as alternating THEAD/TBODY pairs, one per date.
+ * Each TBODY row has 10 cells:
+ *   [0] team names (away + home), [1] spread, [4] total, ...
+ *
+ * Spread format: "+2.5-2.5" or "-3.5+3.5" — first number is away spread
+ * Total format: "154.5154.5" — the number is duplicated, take first occurrence
  */
 
 import puppeteer from "puppeteer";
 
 export interface ScrapedOdds {
-  rotAway: string;
-  rotHome: string;
+  awayTeam: string;
+  homeTeam: string;
   awaySpread: number | null;
   homeSpread: number | null;
   total: number | null;
@@ -31,14 +25,14 @@ export interface ScrapedOdds {
 function parseSpread(text: string): number | null {
   if (!text) return null;
   const clean = text.trim().replace(/\s+/g, "");
-  // Spread looks like "-3½-10", "+7-10", "-14", "pk", "-2.5-10"
-  // We only want the numeric spread part, not the juice
-  const match = clean.match(/^([+-]?\d+\.?\d*|[+-]?\d+½)(?:[+-]\d+)?$/);
+  // Spread looks like "+2.5-2.5", "-3.5+3.5", "pk"
+  // Take the first number (away spread)
+  const match = clean.match(/^([+-]?\d+\.?\d*)/);
   if (!match) {
     if (clean.toLowerCase() === "pk") return 0;
     return null;
   }
-  const val = parseFloat(match[1].replace("½", ".5"));
+  const val = parseFloat(match[1]);
   if (isNaN(val) || Math.abs(val) > 60) return null;
   return val;
 }
@@ -46,15 +40,19 @@ function parseSpread(text: string): number | null {
 function parseTotal(text: string): number | null {
   if (!text) return null;
   const clean = text.trim().replace(/\s+/g, "");
-  // Total looks like "155½", "148.5", "148½o-15", "O148½"
-  const match = clean.match(/^[OU]?(\d{2,3}\.?\d*|½)/i) || clean.match(/(\d{2,3}[½.]?\d*)/);
+  // Total looks like "154.5154.5" — duplicated, take first occurrence
+  const match = clean.match(/^(\d{2,3}\.?\d*)/);
   if (!match) return null;
-  const val = parseFloat(match[1].replace("½", ".5"));
+  const val = parseFloat(match[1]);
   if (isNaN(val) || val < 100 || val > 300) return null;
   return val;
 }
 
-export async function scrapeWagerTalkNcaam(): Promise<ScrapedOdds[]> {
+/**
+ * Scrapes the VSiN CBB betting splits page for a given date label.
+ * @param dateLabel - Partial string to match the date header, e.g. "Mar 4" or "Wednesday"
+ */
+export async function scrapeVsinOdds(dateLabel: string): Promise<ScrapedOdds[]> {
   const browser = await puppeteer.launch({
     headless: true,
     args: [
@@ -62,100 +60,200 @@ export async function scrapeWagerTalkNcaam(): Promise<ScrapedOdds[]> {
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
+      "--no-first-run",
+      "--no-zygote",
+      "--single-process",
     ],
   });
 
   try {
     const page = await browser.newPage();
     await page.setUserAgent(
-      "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
 
-    // Set a longer default timeout for this page
     page.setDefaultNavigationTimeout(60000);
     page.setDefaultTimeout(60000);
 
-    // Navigate to NCAAM odds page (sport=L4)
-    // Use domcontentloaded (faster) then wait for the JS to inject game rows
-    await page.goto("https://www.wagertalk.com/odds?sport=L4", {
+    await page.goto("https://data.vsin.com/college-basketball/betting-splits/", {
       waitUntil: "domcontentloaded",
       timeout: 60000,
     });
 
-    // Wait for game rows to appear (JS-rendered)
-    await page.waitForSelector("tr[id^='g']", { timeout: 45000 }).catch(() => {});
-    // Extra settle time for all book columns to populate
-    await new Promise((r) => setTimeout(r, 2000));
+    // Wait for the freeze table
+    await page.waitForSelector("table.freezetable", { timeout: 30000 });
+    // Brief settle for JS rendering
+    await new Promise((r) => setTimeout(r, 1500));
 
-    // Extract odds data from the rendered DOM
-    const rawGames = await page.evaluate(() => {
-      const results: Array<{
-        rotAway: string;
-        rotHome: string;
-        spreadRaw: string;
-        totalRaw: string;
-      }> = [];
+    const rawGames = await page.evaluate((dateLabel: string) => {
+      const wrapper = document.querySelector(".freezetable")?.closest("[class*='freeze']");
+      if (!wrapper) return [];
 
-      // Each game is a single <tr id="gXXX">
-      const gameRows = Array.from(document.querySelectorAll("tr[id^='g']"));
+      const children = Array.from(wrapper.children);
+      const results: Array<{ teamRaw: string; spreadRaw: string; totalRaw: string }> = [];
 
-      for (const row of gameRows) {
-        const rowId = row.id; // e.g. "g689"
-        const rotBase = rowId.slice(1); // e.g. "689"
+      let currentDate = "";
+      let capture = false;
 
-        // Get rotation numbers from the gnum th
-        const gnumTh = document.getElementById(`t${rotBase}g`);
-        if (!gnumTh) continue;
-
-        const rotAway = gnumTh.querySelector(`#t${rotBase}g0`)?.textContent?.trim() ?? "";
-        const rotHome = gnumTh.querySelector(`#t${rotBase}g1`)?.textContent?.trim() ?? "";
-
-        if (!rotAway || !rotHome || isNaN(parseInt(rotAway))) continue;
-
-        // Get all book columns — the LAST one is Consensus
-        const bookCells = Array.from(row.querySelectorAll("td.book"));
-        if (bookCells.length === 0) continue;
-
-        const consensusCell = bookCells[bookCells.length - 1];
-        const divs = Array.from(consensusCell.querySelectorAll("div"));
-
-        // r1 and r2 can be in either order depending on the game
-        // Detect which is spread vs total by value range:
-        // - Total: 3-digit number like "155½", "148.5"
-        // - Spread: small number like "-2½-15", "+7-10"
-        const r1 = divs.find((d) => d.id.endsWith("r1"))?.textContent?.trim() ?? "";
-        const r2 = divs.find((d) => d.id.endsWith("r2"))?.textContent?.trim() ?? "";
-
-        // Determine which is total (contains 3-digit number) and which is spread
-        const looksLikeTotal = (s: string) => /\d{3}/.test(s);
-        const totalRaw = looksLikeTotal(r1) ? r1 : looksLikeTotal(r2) ? r2 : r1;
-        const spreadRaw = looksLikeTotal(r1) ? r2 : looksLikeTotal(r2) ? r1 : r2;
-
-        results.push({
-          rotAway,
-          rotHome,
-          spreadRaw,
-          totalRaw,
-        });
+      for (const child of children) {
+        if (child.tagName === "THEAD") {
+          const dateCell = child.querySelector("th");
+          currentDate = dateCell?.textContent?.trim() || "";
+          capture = currentDate.includes(dateLabel);
+        } else if (child.tagName === "TBODY" && capture) {
+          const rows = Array.from(child.querySelectorAll("tr"));
+          for (const row of rows) {
+            const cells = Array.from(row.querySelectorAll("td, th")).map(
+              (td) => td.textContent?.trim() || ""
+            );
+            if (cells.length < 5) continue;
+            results.push({
+              teamRaw: cells[0],
+              spreadRaw: cells[1],
+              totalRaw: cells[4],
+            });
+          }
+        }
       }
 
       return results;
-    });
+    }, dateLabel);
 
-    // Parse the raw strings into numbers
-    const results: ScrapedOdds[] = rawGames.map((g) => {
-      const awaySpread = parseSpread(g.spreadRaw);
-      return {
-        rotAway: g.rotAway,
-        rotHome: g.rotHome,
+    const parsed: ScrapedOdds[] = [];
+
+    for (const game of rawGames) {
+      // Team name format: "Away Home        History 2 VSiN Picks"
+      // Strip everything from "History" onwards
+      const teamPart = game.teamRaw
+        .replace(/\s+History.*$/i, "")
+        .replace(/\s*\(\d+\)\s*/g, " ")
+        .trim();
+
+      // Split on 2+ consecutive spaces (the separator between away and home)
+      const teamParts = teamPart.split(/\s{2,}/);
+      let awayTeam = "";
+      let homeTeam = "";
+
+      if (teamParts.length >= 2) {
+        awayTeam = teamParts[0].trim();
+        homeTeam = teamParts[1].trim();
+      } else {
+        // Fallback: split on newline or tab
+        const parts = teamPart.split(/[\n\t]/);
+        if (parts.length >= 2) {
+          awayTeam = parts[0].trim();
+          homeTeam = parts[1].trim();
+        } else {
+          continue; // Can't parse team names
+        }
+      }
+
+      const awaySpread = parseSpread(game.spreadRaw);
+      const total = parseTotal(game.totalRaw);
+
+      parsed.push({
+        awayTeam,
+        homeTeam,
         awaySpread,
         homeSpread: awaySpread !== null ? -awaySpread : null,
-        total: parseTotal(g.totalRaw),
-      };
-    });
+        total,
+      });
+    }
 
-    return results;
+    return parsed;
   } finally {
     await browser.close();
   }
 }
+
+/**
+ * Normalizes a team name for fuzzy matching against DB slugs.
+ */
+export function normalizeTeamName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/\s+/g, "_")
+    .replace(/[^a-z0-9_]/g, "")
+    .trim();
+}
+
+/**
+ * Returns true if a scraped team name matches a stored DB team slug.
+ */
+export function matchTeam(scrapedName: string, storedSlug: string): boolean {
+  const norm = normalizeTeamName(scrapedName);
+  const slug = storedSlug.toLowerCase().replace(/[^a-z0-9_]/g, "");
+
+  if (norm === slug) return true;
+  if (norm.includes(slug) || slug.includes(norm)) return true;
+
+  // Common abbreviation mappings
+  const abbrevMap: Record<string, string> = {
+    n_alabama: "north_alabama",
+    fl_gulf_coast: "florida_gulf_coast",
+    fgcu: "florida_gulf_coast",
+    e_kentucky: "eastern_kentucky",
+    n_florida: "north_florida",
+    sc_upstate: "south_carolina_upstate",
+    chicago_st: "chicago_state",
+    long_island: "liu",
+    liu: "long_island",
+    la_salle: "la_salle",
+    smu: "smu",
+    miami_florida: "miami_fl",
+    miami_fl: "miami_florida",
+    george_washington: "george_washington",
+    st_josephs: "st_josephs",
+    st_bonaventure: "st_bonaventure",
+    penn_state: "penn_state",
+    ohio_state: "ohio_state",
+    colorado_state: "colorado_state",
+    new_mexico: "new_mexico",
+    north_texas: "north_texas",
+    loyola_chicago: "loyola_chicago",
+    saint_louis: "saint_louis",
+    florida_state: "florida_state",
+    ul_lafayette: "ul_lafayette",
+    georgia_southern: "georgia_southern",
+    eastern_illinois: "eastern_illinois",
+    siu_edwardsville: "siu_edwardsville",
+    little_rock: "little_rock",
+    lindenwood: "lindenwood",
+    umkc: "umkc",
+    oral_roberts: "oral_roberts",
+    northern_kentucky: "northern_kentucky",
+    oakland: "oakland",
+    milwaukee: "milwaukee",
+    detroit_mercy: "detroit_mercy",
+    youngstown_state: "youngstown_state",
+    robert_morris: "robert_morris",
+    cleveland_state: "cleveland_state",
+    wright_state: "wright_state",
+    bellarmine: "bellarmine",
+    north_alabama: "north_alabama",
+    florida_gulf_coast: "florida_gulf_coast",
+    eastern_kentucky: "eastern_kentucky",
+    north_florida: "north_florida",
+    west_georgia: "west_georgia",
+    gardner_webb: "gardner_webb",
+    stonehill: "stonehill",
+    le_moyne: "le_moyne",
+    fairleigh_dickinson: "fairleigh_dickinson",
+    mercyhurst: "mercyhurst",
+    wagner: "wagner",
+    central_connecticut: "central_connecticut",
+    chicago_state: "chicago_state",
+  };
+
+  const normMapped = abbrevMap[norm] || norm;
+  const slugMapped = abbrevMap[slug] || slug;
+
+  return (
+    normMapped === slugMapped ||
+    normMapped.includes(slugMapped) ||
+    slugMapped.includes(normMapped)
+  );
+}
+
+// Keep the old export name as an alias for backward compatibility
+export const scrapeWagerTalkNcaam = scrapeVsinOdds;

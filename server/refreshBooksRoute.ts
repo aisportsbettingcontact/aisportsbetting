@@ -2,7 +2,7 @@
  * GET /api/refresh-books?gameDate=2026-03-04
  *
  * Server-Sent Events endpoint. Streams one JSON event per game as its
- * book odds are scraped from WagerTalk and written to the DB.
+ * book odds are scraped from VSiN and written to the DB.
  *
  * Event format:
  *   data: {"type":"start","total":40}
@@ -17,7 +17,7 @@ import { parse as parseCookieHeader } from "cookie";
 import { jwtVerify } from "jose";
 import { ENV } from "./_core/env";
 import { listStagingGames, updateBookOdds, getAppUserById } from "./db";
-import { scrapeWagerTalkNcaam } from "./wagerTalkScraper";
+import { scrapeVsinOdds, matchTeam } from "./wagerTalkScraper";
 
 const APP_USER_COOKIE = "app_session";
 
@@ -56,70 +56,74 @@ export function registerRefreshBooksRoute(app: Express) {
 
     const send = (data: object) => {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
-      // Flush if available (compression middleware may buffer)
       if (typeof (res as any).flush === "function") (res as any).flush();
     };
 
     try {
-      // 1. Load games with rotation numbers
+      // 1. Load all games for this date
       const allGames = await listStagingGames(gameDate);
-      const gamesWithRot = allGames.filter((g) => g.rotNums);
 
-      if (gamesWithRot.length === 0) {
-        send({ type: "error", message: "No games with rotation numbers found for " + gameDate });
+      if (allGames.length === 0) {
+        send({ type: "error", message: "No games found for " + gameDate });
         res.end();
         return;
       }
 
-      send({ type: "start", total: gamesWithRot.length });
+      send({ type: "start", total: allGames.length });
 
-      // 2. Scrape WagerTalk — keep SSE alive with a heartbeat while Puppeteer loads
-      send({ type: "scraping", message: "Loading WagerTalk odds page… (up to 60s)" });
-      // Send periodic heartbeats so the browser doesn't close the SSE connection
+      // 2. Scrape VSiN — keep SSE alive with a heartbeat while Puppeteer loads
+      send({ type: "scraping", message: "Loading VSiN betting splits… (up to 60s)" });
       const heartbeat = setInterval(() => {
         res.write(": heartbeat\n\n");
         if (typeof (res as any).flush === "function") (res as any).flush();
       }, 10000);
+
       let scraped;
       try {
-        scraped = await scrapeWagerTalkNcaam();
+        // Use "Mar 4" style date label — derive from gameDate (e.g. "2026-03-04" → "Mar 4")
+        const d = new Date(gameDate + "T12:00:00Z");
+        const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+        const dateLabel = `${monthNames[d.getUTCMonth()]} ${d.getUTCDate()}`;
+        scraped = await scrapeVsinOdds(dateLabel);
       } finally {
         clearInterval(heartbeat);
       }
-      const byRotAway = new Map(scraped.map((s) => [s.rotAway, s]));
 
-      // 3. Update each game and stream progress
+      // 3. Match each DB game to a scraped game by team name
       let updated = 0;
-      for (let i = 0; i < gamesWithRot.length; i++) {
-        const game = gamesWithRot[i];
-        if (!game.rotNums) continue;
+      for (let i = 0; i < allGames.length; i++) {
+        const game = allGames[i];
 
-        const rotAway = game.rotNums.split("/")[0];
-        const odds = byRotAway.get(rotAway);
+        // Find the scraped entry where both away and home team names match
+        const match = scraped.find(
+          (s) =>
+            matchTeam(s.awayTeam, game.awayTeam) &&
+            matchTeam(s.homeTeam, game.homeTeam)
+        );
 
-        if (odds) {
+        if (match) {
           await updateBookOdds(game.id, {
-            awayBookSpread: odds.awaySpread,
-            homeBookSpread: odds.homeSpread,
-            bookTotal: odds.total,
+            awayBookSpread: match.awaySpread,
+            homeBookSpread: match.homeSpread,
+            bookTotal: match.total,
           });
           updated++;
           send({
             type: "game",
             index: i + 1,
-            total: gamesWithRot.length,
+            total: allGames.length,
             awayTeam: game.awayTeam,
             homeTeam: game.homeTeam,
-            awaySpread: odds.awaySpread,
-            homeSpread: odds.homeSpread,
-            bookTotal: odds.total,
+            awaySpread: match.awaySpread,
+            homeSpread: match.homeSpread,
+            bookTotal: match.total,
             status: "ok",
           });
         } else {
           send({
             type: "game",
             index: i + 1,
-            total: gamesWithRot.length,
+            total: allGames.length,
             awayTeam: game.awayTeam,
             homeTeam: game.homeTeam,
             awaySpread: null,
@@ -130,7 +134,7 @@ export function registerRefreshBooksRoute(app: Express) {
         }
       }
 
-      send({ type: "done", updated, total: gamesWithRot.length });
+      send({ type: "done", updated, total: allGames.length });
     } catch (err: any) {
       send({ type: "error", message: err?.message ?? "Unknown error" });
     } finally {
