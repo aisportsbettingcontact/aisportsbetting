@@ -85,29 +85,57 @@ function SearchResultRow({ game, logoMap, onClick }: { game: GameRow; logoMap: R
   return (
     <button
       onClick={onClick}
-      className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0"
+      className="w-full hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0"
     >
-      {/* Away: logo + name */}
-      <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={24} />
-      <div className="flex flex-col min-w-0" style={{ minWidth: 0, flex: "1 1 0" }}>
-        <span className="text-[11px] font-semibold text-white leading-tight truncate">{awaySchool}</span>
-        {awayNick && <span className="text-[9px] text-gray-400 leading-tight truncate">{awayNick}</span>}
+      {/* ── Desktop: single left-to-right row ── */}
+      <div className="hidden sm:flex items-center gap-0 px-3 py-2.5 w-full">
+        {/* Away: logo + School (bold) + Nickname */}
+        <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={26} />
+        <div className="flex items-baseline gap-1.5 ml-2 min-w-0" style={{ flex: "1 1 0" }}>
+          <span className="text-[12px] font-bold text-white leading-tight truncate">{awaySchool}</span>
+          {awayNick && <span className="text-[10px] font-normal text-gray-400 leading-tight truncate flex-shrink-0">{awayNick}</span>}
+        </div>
+
+        {/* @ separator */}
+        <span className="text-[11px] text-gray-500 font-medium flex-shrink-0 px-2">@</span>
+
+        {/* Home: School (bold) + Nickname + logo */}
+        <div className="flex items-baseline gap-1.5 mr-2 min-w-0 justify-end" style={{ flex: "1 1 0" }}>
+          {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight truncate flex-shrink-0">{homeNick}</span>}
+          <span className="text-[12px] font-bold text-white leading-tight truncate">{homeSchool}</span>
+        </div>
+        <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={26} />
+
+        {/* Date + time */}
+        <div className="flex flex-col items-end flex-shrink-0 ml-3" style={{ minWidth: 80 }}>
+          <span className="text-[10px] text-gray-400 leading-tight">{dateShort}</span>
+          <span className="text-[10px] text-gray-400 leading-tight">{time}</span>
+        </div>
       </div>
 
-      {/* @ separator */}
-      <span className="text-[10px] text-gray-500 font-medium flex-shrink-0 px-0.5">@</span>
+      {/* ── Mobile: stacked layout ── */}
+      <div className="flex sm:hidden items-center gap-2 px-3 py-2.5">
+        {/* Away: logo + name stacked */}
+        <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={24} />
+        <div className="flex flex-col min-w-0" style={{ flex: "1 1 0" }}>
+          <span className="text-[11px] font-bold text-white leading-tight truncate">{awaySchool}</span>
+          {awayNick && <span className="text-[9px] font-normal text-gray-400 leading-tight truncate">{awayNick}</span>}
+        </div>
 
-      {/* Home: name + logo */}
-      <div className="flex flex-col min-w-0 text-right" style={{ minWidth: 0, flex: "1 1 0" }}>
-        <span className="text-[11px] font-semibold text-white leading-tight truncate">{homeSchool}</span>
-        {homeNick && <span className="text-[9px] text-gray-400 leading-tight truncate">{homeNick}</span>}
-      </div>
-      <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={24} />
+        <span className="text-[10px] text-gray-500 font-medium flex-shrink-0 px-0.5">@</span>
 
-      {/* Date + time */}
-      <div className="flex flex-col items-end flex-shrink-0 ml-1.5" style={{ minWidth: 72 }}>
-        <span className="text-[9px] text-gray-400 leading-tight">{dateShort}</span>
-        <span className="text-[9px] text-gray-400 leading-tight">{time}</span>
+        {/* Home: name stacked + logo */}
+        <div className="flex flex-col min-w-0 text-right" style={{ flex: "1 1 0" }}>
+          <span className="text-[11px] font-bold text-white leading-tight truncate">{homeSchool}</span>
+          {homeNick && <span className="text-[9px] font-normal text-gray-400 leading-tight truncate">{homeNick}</span>}
+        </div>
+        <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={24} />
+
+        {/* Date + time */}
+        <div className="flex flex-col items-end flex-shrink-0 ml-1" style={{ minWidth: 68 }}>
+          <span className="text-[9px] text-gray-400 leading-tight">{dateShort}</span>
+          <span className="text-[9px] text-gray-400 leading-tight">{time}</span>
+        </div>
       </div>
     </button>
   );
@@ -124,6 +152,19 @@ export default function Dashboard() {
   const [searchFocused, setSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(88);
+
+  // Measure header height so date banners stick directly below it
+  useEffect(() => {
+    if (!headerRef.current) return;
+    const obs = new ResizeObserver(() => {
+      setHeaderHeight(headerRef.current?.offsetHeight ?? 88);
+    });
+    obs.observe(headerRef.current);
+    setHeaderHeight(headerRef.current.offsetHeight);
+    return () => obs.disconnect();
+  }, []);
   const { user } = useAuth();
   const { appUser, isOwner, loading: appAuthLoading, refetch: refetchAppUser } = useAppAuth();
 
@@ -251,7 +292,7 @@ export default function Dashboard() {
       {showAgeModal && <AgeModal onAccept={() => acceptTermsMutation.mutate()} onClose={appLogout} />}
 
       {/* ── Sticky Header (brand + search bar + user icon) ── */}
-      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
+      <header ref={headerRef} className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
 
         {/* Row 1: brand + user icon */}
         <div className="relative flex items-center px-4 pt-2 pb-1 max-w-3xl mx-auto">
@@ -418,7 +459,7 @@ export default function Dashboard() {
           sortedDates.map((date) => (
             <div key={date}>
               {/* Date section header */}
-              <div className="flex items-center px-4 py-2 border-b border-border sticky top-[88px] bg-background/95 backdrop-blur-sm z-10">
+              <div className="flex items-center px-4 py-2 border-b border-border sticky bg-background/95 backdrop-blur-sm z-10" style={{ top: headerHeight }}>
                 <div className="flex-1" />
                 <div className="flex items-center gap-2 whitespace-nowrap">
                   <span className="font-bold text-foreground tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)" }}>

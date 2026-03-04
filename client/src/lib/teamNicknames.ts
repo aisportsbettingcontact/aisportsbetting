@@ -394,7 +394,7 @@ const DB_SLUG_NICKNAME_ALIASES: Record<string, TeamName> = {
   central_connecticut: { school: "Central Connecticut", nickname: "Blue Devils" },
   colorado_state: { school: "Colorado State", nickname: "Rams" },
   fairleigh_dickinson: { school: "Fairleigh Dickinson", nickname: "Knights" },
-  miami_fl: { school: "Miami", nickname: "Hurricanes" },
+  miami_fl: { school: "Miami (FL)", nickname: "Hurricanes" },
   umkc: { school: "Kansas City", nickname: "Roos" },
   liu: { school: "Long Island", nickname: "Sharks" },
   st_josephs: { school: "St. Joseph's", nickname: "Hawks" },

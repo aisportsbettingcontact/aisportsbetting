@@ -170,3 +170,5 @@
 - [x] Fix missing team logos in PublishProjections EditableGameCard (logos show on feed but not admin page)
 - [x] Feed: replace search icon button with always-visible search input bar between header and first date group; dropdown results ordered by start time EST
 - [x] Feed search: move bar into sticky header, placeholder "Search for Games", 3-at-a-time dropdown with scroll, team logo+name layout, solid bg overlay, highlight animation on select
+- [x] Fix "miami fl" → "Miami (FL)" in teamNicknames.ts; desktop dropdown full-width row layout; mobile stacked
+- [x] Fix gap between sticky search bar and first date banner (no gap on desktop and mobile)
