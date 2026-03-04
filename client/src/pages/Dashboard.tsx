@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
-import { TEAM_NAMES } from "@/lib/teamNicknames";
+import { getTeamName } from "@/lib/teamNicknames";
 import { getEspnLogoUrl } from "@/lib/espnTeamIds";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -53,8 +53,8 @@ function formatDateShort(dateStr: string): string {
 // ─── Team Logo Badge ──────────────────────────────────────────────────────────
 function TeamBadge({ slug, logoMap, size = 22 }: { slug: string; logoMap: Record<string, string>; size?: number }) {
   const logo = getEspnLogoUrl(slug) ?? logoMap[slug];
-  const names = TEAM_NAMES[slug];
-  const initials = (names?.school ?? slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
+  const names = getTeamName(slug);
+  const initials = (names.school || slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
   return (
     <div
       className="rounded overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0"
@@ -73,12 +73,12 @@ function TeamBadge({ slug, logoMap, size = 22 }: { slug: string; logoMap: Record
 type GameRow = { id: number; awayTeam: string; homeTeam: string; gameDate: string; startTimeEst: string | null; awayBookSpread?: string | null };
 
 function SearchResultRow({ game, logoMap, onClick }: { game: GameRow; logoMap: Record<string, string>; onClick: () => void }) {
-  const awayNames = TEAM_NAMES[game.awayTeam];
-  const homeNames = TEAM_NAMES[game.homeTeam];
-  const awaySchool = awayNames?.school ?? game.awayTeam.replace(/_/g, " ");
-  const awayNick = awayNames?.nickname ?? "";
-  const homeSchool = homeNames?.school ?? game.homeTeam.replace(/_/g, " ");
-  const homeNick = homeNames?.nickname ?? "";
+  const awayNames = getTeamName(game.awayTeam);
+  const homeNames = getTeamName(game.homeTeam);
+  const awaySchool = awayNames.school;
+  const awayNick = awayNames.nickname;
+  const homeSchool = homeNames.school;
+  const homeNick = homeNames.nickname;
   const time = formatMilitaryTime(game.startTimeEst);
   const dateShort = formatDateShort(game.gameDate);
 
@@ -101,8 +101,8 @@ function SearchResultRow({ game, logoMap, onClick }: { game: GameRow; logoMap: R
 
         {/* Home: School (bold) + Nickname + logo */}
         <div className="flex items-baseline gap-1.5 mr-2 min-w-0 justify-end" style={{ flex: "1 1 0" }}>
-          {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight truncate flex-shrink-0">{homeNick}</span>}
           <span className="text-[12px] font-bold text-white leading-tight truncate">{homeSchool}</span>
+          {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight truncate flex-shrink-0">{homeNick}</span>}
         </div>
         <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={26} />
 
@@ -215,14 +215,14 @@ export default function Dashboard() {
     if (!games || !q) return [];
     const filtered = games.filter((game) => {
       if (!game) return false;
-      const awayNames = TEAM_NAMES[game.awayTeam];
-      const homeNames = TEAM_NAMES[game.homeTeam];
+      const awayNames = getTeamName(game.awayTeam);
+      const homeNames = getTeamName(game.homeTeam);
       const terms = [
-        awayNames?.school ?? game.awayTeam,
-        awayNames?.nickname ?? "",
+        awayNames.school,
+        awayNames.nickname,
         game.awayTeam.replace(/_/g, " "),
-        homeNames?.school ?? game.homeTeam,
-        homeNames?.nickname ?? "",
+        homeNames.school,
+        homeNames.nickname,
         game.homeTeam.replace(/_/g, " "),
       ].map(s => s.toLowerCase());
       return terms.some(t => t.includes(q));
