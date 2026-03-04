@@ -17,6 +17,7 @@
 
 import { listGamesByDate, updateBookOdds, insertGames } from "./db";
 import { scrapeVsinOdds, matchTeam, normalizeTeamName } from "./vsinScraper";
+import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
 import type { InsertGame } from "../drizzle/schema";
 
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -81,6 +82,19 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
     // Scrape ALL games currently on VSiN (no date filter — we get everything)
     const allScraped = await scrapeVsinOdds("ALL");
 
+    // Fetch NCAA start times for today and tomorrow (best-effort, non-fatal)
+    let startTimeMaps: Map<string, Map<string, string>> = new Map();
+    try {
+      for (const dateStr of [todayStr, datePst(1)]) {
+        const yyyymmdd = dateStr.replace(/-/g, "");
+        const ncaaGames = await fetchNcaaGames(yyyymmdd);
+        startTimeMaps.set(dateStr, buildStartTimeMap(ncaaGames));
+        console.log(`[VSiNAutoRefresh] NCAA start times fetched for ${dateStr}: ${ncaaGames.length} games`);
+      }
+    } catch (ncaaErr) {
+      console.warn("[VSiNAutoRefresh] NCAA start time fetch failed (non-fatal):", ncaaErr);
+    }
+
     if (allScraped.length === 0) {
       console.log("[VSiNAutoRefresh] No games returned from VSiN — skipping.");
       return null;
@@ -108,11 +122,15 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
           s => matchTeam(s.awayTeam, game.awayTeam) && matchTeam(s.homeTeam, game.homeTeam)
         );
         if (match) {
+          const startTimeMap = startTimeMaps.get(todayStr);
+          const startTimeKey = `${game.awayTeam}@${game.homeTeam}`;
+          const startTimeEst = startTimeMap?.get(startTimeKey);
           await updateBookOdds(game.id, {
             awayBookSpread: match.awaySpread,
             homeBookSpread: match.homeSpread,
             bookTotal: match.total,
             sortOrder: match.vsinRowIndex,
+            ...(startTimeEst ? { startTimeEst } : {}),
           });
           todayUpdated++;
         }
@@ -138,10 +156,14 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
 
         if (!alreadyExists) {
           // Insert as unpublished stub
+          const futureStartTimeMap = startTimeMaps.get(futureDate);
+          const futureStartKey = `${normalizeTeamName(scraped.awayTeam)}@${normalizeTeamName(scraped.homeTeam)}`;
+          const futureStartTime = futureStartTimeMap?.get(futureStartKey) ?? "TBD";
+
           const row: InsertGame = {
             fileId: 0,
             gameDate: futureDate,
-            startTimeEst: "TBD",
+            startTimeEst: futureStartTime,
             awayTeam: normalizeTeamName(scraped.awayTeam),
             homeTeam: normalizeTeamName(scraped.homeTeam),
             awayBookSpread: scraped.awaySpread !== null ? String(scraped.awaySpread) : null,

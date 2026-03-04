@@ -134,3 +134,7 @@
 - [x] Remove manual Refresh Books button from Publish Projections UI
 - [x] Show last-auto-refreshed timestamp on Publish Projections page
 - [x] Sort Publish Projections and public feed by VSiN sortOrder
+- [x] Investigate NCAA scoreboard page structure for start time extraction
+- [x] Build ncaaScoreboard.ts scraper: fetch games with EST start times, match to DB slugs
+- [x] Integrate NCAA start time scraper into auto-refresh cron
+- [x] Apply NCAA start times to existing March 4 DB games

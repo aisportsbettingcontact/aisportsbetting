@@ -341,7 +341,7 @@ export async function updateGameProjections(
  */
 export async function updateBookOdds(
   id: number,
-  data: { awayBookSpread: number | null; homeBookSpread: number | null; bookTotal: number | null; sortOrder?: number }
+  data: { awayBookSpread: number | null; homeBookSpread: number | null; bookTotal: number | null; sortOrder?: number; startTimeEst?: string }
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;
@@ -352,6 +352,7 @@ export async function updateBookOdds(
     bookTotal: data.bookTotal !== null ? String(data.bookTotal) : null,
   };
   if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
+  if (data.startTimeEst !== undefined) updateData.startTimeEst = data.startTimeEst;
   await db.update(games).set(updateData).where(eq(games.id, id));
 }
 
