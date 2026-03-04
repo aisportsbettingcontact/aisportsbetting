@@ -723,6 +723,7 @@ export default function PublishProjections() {
   const [refreshTotal, setRefreshTotal] = useState(0);
   const [refreshDone, setRefreshDone] = useState(false);
   const [showProgressPanel, setShowProgressPanel] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
 
   const handleRefreshBooks = useCallback(() => {
     setRefreshing(true);
@@ -744,6 +745,7 @@ export default function PublishProjections() {
         } else if (msg.type === "done") {
           setRefreshDone(true);
           setRefreshing(false);
+          if (msg.refreshedAt) setLastRefreshedAt(msg.refreshedAt as string);
           refetch();
           es.close();
         } else if (msg.type === "error") {
@@ -850,7 +852,7 @@ export default function PublishProjections() {
 
         {/* Stats row + filter tabs */}
         <div className="px-4 pb-2 max-w-3xl mx-auto space-y-2">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="text-[11px]" style={{ color: "#39FF14" }}>
               {publishedCount}/{totalCount} live
             </span>
@@ -858,6 +860,14 @@ export default function PublishProjections() {
             <span className="text-[11px]" style={{ color: "#FFB800" }}>
               {withModelCount} with model data
             </span>
+            {lastRefreshedAt && (
+              <>
+                <span className="text-[11px]" style={{ color: "hsl(var(--muted-foreground))" }}>·</span>
+                <span className="text-[11px]" style={{ color: "hsl(var(--muted-foreground))" }}>
+                  Books updated {new Date(lastRefreshedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              </>
+            )}
           </div>
           <div className="flex gap-2">
             {(["all", "regular_season", "conference_tournament"] as const).map((f) => {

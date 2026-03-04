@@ -80,10 +80,8 @@ export function registerRefreshBooksRoute(app: Express) {
 
       let scraped;
       try {
-        // Use "Mar 4" style date label — derive from gameDate (e.g. "2026-03-04" → "Mar 4")
-        const d = new Date(gameDate + "T12:00:00Z");
-        const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-        const dateLabel = `${monthNames[d.getUTCMonth()]} ${d.getUTCDate()}`;
+        // Convert gameDate (e.g. "2026-03-04") to YYYYMMDD format (e.g. "20260304")
+        const dateLabel = gameDate.replace(/-/g, "");
         scraped = await scrapeVsinOdds(dateLabel);
       } finally {
         clearInterval(heartbeat);
@@ -134,7 +132,7 @@ export function registerRefreshBooksRoute(app: Express) {
         }
       }
 
-      send({ type: "done", updated, total: allGames.length });
+      send({ type: "done", updated, total: allGames.length, refreshedAt: new Date().toISOString() });
     } catch (err: any) {
       send({ type: "error", message: err?.message ?? "Unknown error" });
     } finally {
