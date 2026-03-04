@@ -2,6 +2,10 @@
  * NCAA Scoreboard API scraper
  * Fetches game start times (in EST) from the NCAA GraphQL API.
  * No authentication required — public endpoint.
+ *
+ * NCAA seonames use hyphens (e.g. "michigan-st").
+ * seonameToSlug() converts hyphens to underscores ("michigan_st").
+ * NCAA_ALIAS then maps abbreviated forms to full DB slugs ("michigan_st" -> "michigan_state").
  */
 
 const NCAA_API = "https://sdataprod.ncaa.com/";
@@ -9,9 +13,9 @@ const GET_CONTESTS_SHA =
   "7287cda610a9326931931080cb3a604828febe6fe3c9016a7e4a36db99efdb7c";
 
 export interface NcaaGame {
-  /** NCAA seoname for away team, e.g. "ohio-st" */
+  /** DB-style slug for away team, e.g. "ohio_state" */
   awaySeoname: string;
-  /** NCAA seoname for home team, e.g. "penn-st" */
+  /** DB-style slug for home team, e.g. "penn_state" */
   homeSeoname: string;
   /** Start time in EST as "HH:MM", e.g. "19:30" */
   startTimeEst: string;
@@ -21,9 +25,6 @@ export interface NcaaGame {
   startTimeEpoch: number;
 }
 
-/**
- * Convert a date string "YYYYMMDD" to NCAA API format "MM/DD/YYYY"
- */
 function toNcaaDate(yyyymmdd: string): string {
   const y = yyyymmdd.slice(0, 4);
   const m = yyyymmdd.slice(4, 6);
@@ -31,64 +32,105 @@ function toNcaaDate(yyyymmdd: string): string {
   return `${m}/${d}/${y}`;
 }
 
-/**
- * Convert UTC epoch (seconds) to EST time string "HH:MM"
- * EST = UTC-5 (no DST adjustment — college basketball season is always EST)
- */
 function epochToEst(epochSec: number): string {
   const d = new Date(epochSec * 1000);
-  const utcH = d.getUTCHours();
-  const utcM = d.getUTCMinutes();
-  const estH = ((utcH - 5) + 24) % 24;
-  return `${estH.toString().padStart(2, "0")}:${utcM.toString().padStart(2, "0")}`;
+  const estH = ((d.getUTCHours() - 5) + 24) % 24;
+  return `${estH.toString().padStart(2, "0")}:${d.getUTCMinutes().toString().padStart(2, "0")}`;
 }
 
-/**
- * Normalize an NCAA seoname to a DB-style slug.
- * NCAA uses hyphens, DB uses underscores. Some names differ slightly.
- */
 function seonameToSlug(seoname: string): string {
   return seoname.replace(/-/g, "_");
 }
 
-/** Extra alias overrides for NCAA seonames that differ from DB slugs */
+/**
+ * NCAA seoname (after hyphen->underscore) -> DB slug.
+ * Only entries that differ from the default conversion are listed.
+ */
 const NCAA_ALIAS: Record<string, string> = {
-  // NCAA seoname → DB slug
-  // Abbreviations
-  "eastern_ill": "eastern_illinois",
-  "long_island": "liu",
-  "ualr": "little_rock",
-  "lindenwood_mo": "lindenwood",
-  "usc_upstate": "south_carolina_upstate",
-  "fgcu": "florida_gulf_coast",
-  "north_ala": "north_alabama",
-  "eastern_ky": "eastern_kentucky",
-  "detroit": "detroit_mercy",
-  "saint_josephs": "st_josephs",
-  "ga_southern": "georgia_southern",
-  "old_dominion": "old_dominion",
-  "fdu": "fairleigh_dickinson",
-  "central_conn_st": "central_connecticut",
-  "chicago_st": "chicago_state",
-  // "St" abbreviations → full name
-  "ohio_st": "ohio_state",
-  "penn_st": "penn_state",
-  "florida_st": "florida_state",
-  "colorado_st": "colorado_state",
-  "youngstown_st": "youngstown_state",
-  "cleveland_st": "cleveland_state",
-  "wright_st": "wright_state",
-  "robert_morris": "robert_morris",
+  // _st abbreviations -> _state
+  michigan_st:         "michigan_state",
+  ohio_st:             "ohio_state",
+  penn_st:             "penn_state",
+  iowa_st:             "iowa_state",
+  florida_st:          "florida_state",
+  colorado_st:         "colorado_state",
+  kansas_st:           "kansas_state",
+  oklahoma_st:         "oklahoma_state",
+  oregon_st:           "oregon_state",
+  washington_st:       "washington_state",
+  utah_st:             "utah_state",
+  arizona_st:          "arizona_state",
+  boise_st:            "boise_state",
+  fresno_st:           "fresno_state",
+  san_diego_st:        "san_diego_state",
+  san_jose_st:         "san_jose_state",
+  wichita_st:          "wichita_state",
+  illinois_st:         "illinois_state",
+  indiana_st:          "indiana_state",
+  idaho_st:            "idaho_state",
+  montana_st:          "montana_state",
+  north_dakota_st:     "north_dakota_state",
+  south_dakota_st:     "south_dakota_state",
+  south_carolina_st:   "south_carolina_state",
+  tennessee_st:        "tennessee_state",
+  mississippi_st:      "mississippi_state",
+  missouri_st:         "missouri_state",
+  murray_st:           "murray_state",
+  morehead_st:         "morehead_state",
+  jackson_st:          "jackson_state",
+  norfolk_st:          "norfolk_state",
+  morgan_st:           "morgan_state",
+  savannah_st:         "savannah_state",
+  kennesaw_st:         "kennesaw_state",
+  jacksonville_st:     "jacksonville_state",
+  sam_houston_st:      "sam_houston_state",
+  tarleton_st:         "tarleton_state",
+  texas_st:            "texas_state",
+  new_mexico_st:       "new_mexico_state",
+  portland_st:         "portland_state",
+  sacramento_st:       "sacramento_state",
+  weber_st:            "weber_state",
+  youngstown_st:       "youngstown_state",
+  wright_st:           "wright_state",
+  cleveland_st:        "cleveland_state",
+  chicago_st:          "chicago_state",
+  georgia_st:          "georgia_state",
+  long_beach_st:       "long_beach_state",
+  kent_st:             "kent_state",
+  pittsburg_st:        "pittsburg_state",
+  fort_hays_st:        "fort_hays_state",
+  nicholls_st:         "nicholls_state",
+  north_carolina_st:   "nc_state",
+  southeast_mo_st:     "southeast_missouri_state",
+  northwest_mo_st:     "northwest_missouri_state",
+  northwestern_st:     "northwestern_state",
+  west_virginia_st:    "west_virginia_state",
+  wayne_st_mi:         "wayne_state",
+  // Institutional abbreviations
+  ualr:                "little_rock",
+  fgcu:                "florida_gulf_coast",
+  fdu:                 "fairleigh_dickinson",
+  usc_upstate:         "south_carolina_upstate",
+  long_island:         "liu",
+  lindenwood_mo:       "lindenwood",
+  central_conn_st:     "central_connecticut",
   // Geographic abbreviations
-  "northern_ky": "northern_kentucky",
-  "west_ga": "west_georgia",
-  "southern_california": "usc",
-  "north_florida": "north_florida",
-  // Conference tournament names
-  "umkc": "umkc",
-  "oral_roberts": "oral_roberts",
-  "rice": "rice",
-  "north_texas": "north_texas",
+  north_ala:           "north_alabama",
+  south_ala:           "south_alabama",
+  west_ala:            "west_alabama",
+  west_ga:             "west_georgia",
+  northern_ky:         "northern_kentucky",
+  eastern_ky:          "eastern_kentucky",
+  eastern_ill:         "eastern_illinois",
+  southern_ill:        "southern_illinois",
+  southern_california: "usc",
+  south_fla:           "south_florida",
+  ga_southern:         "georgia_southern",
+  north_ala_2:         "north_alabama", // alias
+  // Display name differences
+  detroit:             "detroit_mercy",
+  saint_josephs:       "st_josephs",
+  humboldt_st:         "cal_poly_humboldt",
 };
 
 function ncaaSlugToDb(seoname: string): string {
@@ -96,43 +138,24 @@ function ncaaSlugToDb(seoname: string): string {
   return NCAA_ALIAS[slug] ?? slug;
 }
 
-/**
- * Fetch all DI men's basketball games for a given date from the NCAA API.
- * @param dateYYYYMMDD - e.g. "20260304"
- */
 export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> {
   const contestDate = toNcaaDate(dateYYYYMMDD);
-  // seasonYear is the year the season STARTED (e.g. 2025 for 2025-26 season)
   const seasonYear = parseInt(dateYYYYMMDD.slice(0, 4)) - 1;
 
-  const variables = {
-    sportCode: "MBB",
-    divisionId: 1,
-    contestDate,
-    seasonYear,
-  };
-  const extensions = {
-    persistedQuery: {
-      version: 1,
-      sha256Hash: GET_CONTESTS_SHA,
-    },
-  };
-
+  const variables = { sportCode: "MBB", divisionId: 1, contestDate, seasonYear };
+  const extensions = { persistedQuery: { version: 1, sha256Hash: GET_CONTESTS_SHA } };
   const url = `${NCAA_API}?variables=${encodeURIComponent(JSON.stringify(variables))}&extensions=${encodeURIComponent(JSON.stringify(extensions))}`;
 
   const resp = await fetch(url, {
     headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
       Origin: "https://www.ncaa.com",
       Referer: "https://www.ncaa.com/",
       Accept: "application/json",
     },
   });
 
-  if (!resp.ok) {
-    throw new Error(`NCAA API returned HTTP ${resp.status}`);
-  }
+  if (!resp.ok) throw new Error(`NCAA API returned HTTP ${resp.status}`);
 
   const data = await resp.json();
   const contests: any[] = data?.data?.contests ?? [];
@@ -143,11 +166,17 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
     const home = c.teams?.find((t: any) => t.isHome);
     if (!away || !home) continue;
 
-    // Use startTime directly — NCAA API returns it already in EST
-    // Fall back to epoch conversion only if startTime is missing
-    const startTimeEst = c.startTime && c.hasStartTime
-      ? c.startTime  // e.g. "19:00" already in EST
-      : (c.startTimeEpoch ? epochToEst(c.startTimeEpoch) : "TBD");
+    // Use startTime if confirmed; fall back to epoch conversion if epoch is available.
+    // NCAA sometimes sets hasStartTime=false even when the epoch is valid (time is known).
+    let startTimeEst: string;
+    if (c.startTime && c.hasStartTime) {
+      startTimeEst = c.startTime;
+    } else if (c.startTimeEpoch) {
+      startTimeEst = epochToEst(c.startTimeEpoch);
+    } else {
+      startTimeEst = "TBD";
+    }
+
     games.push({
       awaySeoname: ncaaSlugToDb(away.seoname),
       homeSeoname: ncaaSlugToDb(home.seoname),
@@ -160,12 +189,7 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
   return games;
 }
 
-/**
- * Build a lookup map: "awaySlug@homeSlug" → startTimeEst
- */
-export function buildStartTimeMap(
-  games: NcaaGame[]
-): Map<string, string> {
+export function buildStartTimeMap(games: NcaaGame[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const g of games) {
     map.set(`${g.awaySeoname}@${g.homeSeoname}`, g.startTimeEst);
