@@ -17,7 +17,7 @@ import { parse as parseCookieHeader } from "cookie";
 import { jwtVerify } from "jose";
 import { ENV } from "./_core/env";
 import { listStagingGames, updateBookOdds, getAppUserById } from "./db";
-import { scrapeVsinOdds, matchTeam } from "./wagerTalkScraper";
+import { scrapeVsinOdds, matchTeam } from "./vsinScraper";
 
 const APP_USER_COOKIE = "app_session";
 

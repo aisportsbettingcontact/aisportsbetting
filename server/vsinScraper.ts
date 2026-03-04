@@ -255,5 +255,3 @@ export function matchTeam(scrapedName: string, storedSlug: string): boolean {
   );
 }
 
-// Keep the old export name as an alias for backward compatibility
-export const scrapeWagerTalkNcaam = scrapeVsinOdds;

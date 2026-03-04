@@ -23,7 +23,7 @@ import { syncEspnTeams, buildEspnLogoUrl } from "./espnScraper";
 import { listEspnTeams, getEspnTeamBySlug } from "./db";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure } from "./routers/appUsers";
-import { scrapeVsinOdds, matchTeam } from "./wagerTalkScraper";
+import { scrapeVsinOdds, matchTeam } from "./vsinScraper";
 import { updateBookOdds } from "./db";
 
 export const appRouter = router({

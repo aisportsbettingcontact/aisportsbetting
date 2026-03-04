@@ -326,7 +326,7 @@ export async function updateGameProjections(
 /** Toggle publishedToFeed for a single game */
 /**
  * Update book odds (spread + total) for a single game.
- * Called by the WagerTalk live-refresh procedure.
+ * Called by the VSiN live-refresh procedure.
  */
 export async function updateBookOdds(
   id: number,
