@@ -141,9 +141,9 @@ function EditablePill({
       style={{
         background: "rgba(255,255,255,0.08)",
         minWidth: prefix ? "64px" : "48px",
-        width: "100%",
+        width: "auto",
         maxWidth: "90px",
-        padding: "0 6px",
+        padding: "0 10px",
         height: "36px",
         cursor: "text",
       }}
