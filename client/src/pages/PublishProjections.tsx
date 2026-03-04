@@ -1,50 +1,383 @@
 /**
  * PublishProjections — Owner-only page for entering model projections and publishing games.
  *
- * Layout:
- *  - Header with date selector and "Publish All" button
- *  - Filter tabs: All | Regular Season | Conference Tournament
- *  - Game rows: each shows book lines, inputs for model spread + total, and a publish toggle
+ * Looks IDENTICAL to the Dashboard GameCard feed. The MODEL LINE and MODEL O/U
+ * pill cells are editable inputs — @prez taps/clicks them and types the value.
+ * Edge verdict at the bottom auto-calculates live as values are typed.
  *
- * Access: owner role only (redirects non-owners to /dashboard)
+ * Access: owner role only — non-owners are immediately redirected to /dashboard.
+ * Backend: all procedures use ownerProcedure (server-side owner check enforced).
  */
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation } from "wouter";
+import { motion } from "framer-motion";
 import { trpc } from "@/lib/trpc";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Loader2, Eye, EyeOff, Send, ChevronLeft, CheckCircle2, Trophy, Calendar } from "lucide-react";
+import { Loader2, Send, ChevronLeft, Eye, EyeOff, Trophy } from "lucide-react";
+import { getEspnLogoUrl } from "@/lib/espnTeamIds";
+import { getTeamName } from "@/lib/teamNicknames";
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ─── Helpers (mirrors GameCard exactly) ──────────────────────────────────────
 
-function formatTime(t: string): string {
-  const clean = t.replace(":", "").padStart(4, "0");
-  let h = parseInt(clean.slice(0, 2));
-  const m = clean.slice(2);
-  const ap = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return `${h}:${m} ${ap}`;
+function formatTeamName(slug: string): string {
+  return slug
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ")
+    .replace("Mount St Marys", "Mt. St. Mary's")
+    .replace("Nc Wilmington", "UNCW")
+    .replace("Uab", "UAB")
+    .replace("Utsa", "UTSA")
+    .replace("College Of Charleston", "Charleston")
+    .replace("Illinois Chicago", "UIC")
+    .replace("Northern Iowa", "UNI")
+    .replace("Southern Illinois", "SIU")
+    .replace("Michigan State", "Michigan St.")
+    .replace("Florida Atlantic", "FAU")
+    .replace("Saint Peters", "Saint Peter's")
+    .replace("Nc State", "NC State")
+    .replace("Iupui", "IUPUI")
+    .replace("Northern Arizona", "NAU")
+    .replace("Iowa State", "Iowa St.")
+    .replace("Eastern Washington", "EWU")
+    .replace("Weber State", "Weber St.")
+    .replace("Portland State", "Portland St.")
+    .replace("Idaho State", "Idaho St.")
+    .replace("Sacramento State", "Sac State");
 }
 
-function spreadDisplay(v: string | number | null | undefined): string {
-  if (v === null || v === undefined || v === "") return "—";
-  const n = typeof v === "number" ? v : parseFloat(v as string);
-  if (isNaN(n)) return "—";
+function formatMilitaryTime(time: string): string {
+  const t = time.replace(":", "").padStart(4, "0");
+  let hours = parseInt(t.slice(0, 2));
+  const minutes = t.slice(2);
+  const ampm = hours >= 12 ? "PM" : "AM";
+  hours = hours % 12 || 12;
+  return `${hours}:${minutes} ${ampm} EST`;
+}
+
+function formatDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr + "T00:00:00");
+    return d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  } catch {
+    return dateStr;
+  }
+}
+
+function getEdgeColor(diff: number): string {
+  if (diff <= 0)  return "hsl(var(--muted-foreground))";
+  if (diff < 1.5) return "#FF3131";
+  if (diff < 2.0) return "#FF6B00";
+  if (diff < 2.5) return "#FF9500";
+  if (diff < 3.0) return "#FFB800";
+  if (diff < 3.5) return "#FFD700";
+  if (diff < 4.0) return "#FFFF33";
+  if (diff < 4.5) return "#AAFF1A";
+  return "#39FF14";
+}
+
+function spreadSign(n: number): string {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-function totalDisplay(v: string | number | null | undefined): string {
-  if (v === null || v === undefined || v === "") return "—";
-  const n = typeof v === "number" ? v : parseFloat(v as string);
-  if (isNaN(n)) return "—";
-  return `${n}`;
+function toNum(v: string | number | null | undefined): number {
+  if (v === null || v === undefined || v === "") return NaN;
+  return typeof v === "number" ? v : parseFloat(v as string);
 }
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+function normalizeEdgeLabel(label: string | null | undefined): string {
+  if (!label || label.toUpperCase() === "PASS") return "PASS";
+  return label.replace(/^([a-z][a-z0-9_]*)(\s+\()/i, (_, slug, rest) => formatTeamName(slug) + rest);
+}
+
+// ─── TeamLogo (identical to GameCard) ────────────────────────────────────────
+
+function TeamLogo({ slug, name, logoUrl }: { slug: string; name: string; logoUrl?: string }) {
+  const [error, setError] = useState(false);
+  if (!logoUrl || error) {
+    return (
+      <div
+        className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{ background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
+      >
+        {name.slice(0, 2).toUpperCase()}
+      </div>
+    );
+  }
+  return (
+    <img
+      src={logoUrl}
+      alt={name}
+      className="w-9 h-9 object-contain flex-shrink-0"
+      style={{ mixBlendMode: "screen" }}
+      onError={() => setError(true)}
+    />
+  );
+}
+
+// ─── EditablePill — looks like the dark pill but is an input ─────────────────
+
+function EditablePill({
+  value,
+  onChange,
+  placeholder,
+  prefix,
+  inputRef,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  prefix?: string;   // "O" or "U" shown before the number
+  inputRef?: React.RefObject<HTMLInputElement | null>;
+}) {
+  const hasValue = value !== "" && !isNaN(parseFloat(value));
+
+  return (
+    <div
+      className="flex items-center justify-center rounded-lg"
+      style={{
+        background: "rgba(255,255,255,0.08)",
+        minWidth: prefix ? "64px" : "48px",
+        width: "100%",
+        maxWidth: "90px",
+        padding: "0 6px",
+        height: "36px",
+        cursor: "text",
+      }}
+    >
+      {prefix && (
+        <span
+          className="font-bold flex-shrink-0 mr-1"
+          style={{
+            fontSize: "clamp(13px, 3.5vw, 15px)",
+            color: hasValue ? "#FFFFFF" : "hsl(var(--muted-foreground))",
+            userSelect: "none",
+          }}
+        >
+          {prefix}
+        </span>
+      )}
+      <input
+        ref={inputRef}
+        type="text"
+        inputMode="decimal"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder ?? "—"}
+        className="bg-transparent border-none outline-none text-center font-bold w-full"
+        style={{
+          fontSize: "clamp(13px, 3.5vw, 15px)",
+          color: hasValue ? "#FFFFFF" : "hsl(var(--muted-foreground))",
+          caretColor: "#39FF14",
+          minWidth: 0,
+        }}
+      />
+    </div>
+  );
+}
+
+// ─── EditableTeamRow — identical layout to GameCard TeamRow ──────────────────
+
+function EditableTeamRow({
+  slug, name, nickname, consensus, modelSpread, modelTotal,
+  logoUrl, isAway, onSpreadChange, onTotalChange, spreadInputRef,
+}: {
+  slug: string; name: string; nickname: string;
+  consensus: string; modelSpread: string; modelTotal: string;
+  logoUrl?: string; isAway: boolean;
+  onSpreadChange: (v: string) => void;
+  onTotalChange: (v: string) => void;
+  spreadInputRef?: React.RefObject<HTMLInputElement | null>;
+}) {
+  const ouPrefix = isAway ? "O" : "U";
+
+  return (
+    <div className="flex items-center gap-1.5 py-1.5 min-w-0">
+      {/* Logo */}
+      <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
+        <TeamLogo slug={slug} name={name} logoUrl={logoUrl} />
+      </div>
+
+      {/* Team name — school on top, nickname on bottom */}
+      <div
+        className="flex-shrink-0 flex flex-col justify-center overflow-hidden"
+        style={{ width: "clamp(80px, 22vw, 120px)" }}
+      >
+        <div
+          className="font-bold leading-none"
+          style={{
+            fontSize: "clamp(11px, 2.8vw, 13px)",
+            color: "hsl(var(--foreground))",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+          }}
+        >
+          {name}
+        </div>
+        {nickname && (
+          <div
+            className="font-medium leading-none mt-0.5"
+            style={{
+              fontSize: "clamp(9px, 2.2vw, 11px)",
+              color: "hsl(var(--muted-foreground))",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {nickname}
+          </div>
+        )}
+      </div>
+
+      {/* 3 data columns: BOOKS | MODEL LINE | MODEL O/U */}
+      <div className="flex-1 grid min-w-0" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: "4px" }}>
+
+        {/* BOOKS — plain consensus number, same as GameCard */}
+        <div className="flex items-center justify-center">
+          <span
+            className="font-bold leading-none whitespace-nowrap"
+            style={{ fontSize: "clamp(13px, 3.5vw, 16px)", color: "#D3D3D3" }}
+          >
+            {consensus}
+          </span>
+        </div>
+
+        {/* MODEL LINE — editable pill */}
+        <div className="flex items-center justify-center">
+          <EditablePill
+            value={modelSpread}
+            onChange={onSpreadChange}
+            placeholder="—"
+            inputRef={spreadInputRef}
+          />
+        </div>
+
+        {/* MODEL O/U — editable pill on away row; mirrored read-only on home row */}
+        <div className="flex items-center justify-center">
+          {isAway ? (
+            <EditablePill
+              value={modelTotal}
+              onChange={onTotalChange}
+              placeholder="—"
+              prefix={ouPrefix}
+            />
+          ) : (
+            // Home row: show U + same total value (read-only mirror)
+            <div
+              className="flex items-center justify-center rounded-lg"
+              style={{
+                background: "rgba(255,255,255,0.08)",
+                minWidth: "64px",
+                width: "100%",
+                maxWidth: "90px",
+                height: "36px",
+              }}
+            >
+              <span
+                className="font-bold leading-none whitespace-nowrap"
+                style={{
+                  fontSize: "clamp(13px, 3.5vw, 15px)",
+                  color: modelTotal !== "" && !isNaN(parseFloat(modelTotal)) ? "#FFFFFF" : "hsl(var(--muted-foreground))",
+                }}
+              >
+                {modelTotal !== "" && !isNaN(parseFloat(modelTotal))
+                  ? `${ouPrefix} ${modelTotal}`
+                  : "—"
+                }
+              </span>
+            </div>
+          )}
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ─── EdgeVerdictLive — auto-calculates as @prez types ────────────────────────
+
+function EdgeVerdictLive({
+  spreadDiff, spreadEdge, totalDiff, totalEdge,
+}: {
+  spreadDiff: number; spreadEdge: string;
+  totalDiff: number; totalEdge: string;
+}) {
+  const spreadPass = normalizeEdgeLabel(spreadEdge) === "PASS" || spreadDiff <= 0;
+  const totalPass  = normalizeEdgeLabel(totalEdge)  === "PASS" || totalDiff  <= 0;
+
+  if (spreadPass && totalPass) {
+    return (
+      <div
+        className="mt-2 pt-2 flex items-center justify-center"
+        style={{ borderTop: "1px solid hsl(var(--border))" }}
+      >
+        <span
+          className="text-xs font-medium tracking-widest uppercase"
+          style={{ color: "hsl(var(--muted-foreground) / 0.35)" }}
+        >
+          PASS
+        </span>
+      </div>
+    );
+  }
+
+  const spreadColor = getEdgeColor(spreadDiff);
+  const totalColor  = getEdgeColor(totalDiff);
+  const isSpreadStrong = spreadDiff >= 3;
+  const isTotalStrong  = totalDiff  >= 3;
+
+  return (
+    <div
+      className="mt-2 pt-2 flex items-center"
+      style={{ borderTop: "1px solid hsl(var(--border))" }}
+    >
+      {!spreadPass && (
+        <div className="flex-1 flex flex-col items-center gap-1 py-0.5">
+          <span
+            className="font-bold leading-none whitespace-nowrap"
+            style={{ fontSize: isSpreadStrong ? "13px" : "12px", color: "hsl(var(--foreground))" }}
+          >
+            {isSpreadStrong && <span className="mr-0.5 text-[10px]" style={{ color: spreadColor }}>▲</span>}
+            {normalizeEdgeLabel(spreadEdge)}
+          </span>
+          <span className="text-[11px] leading-none" style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
+            EDGE:{" "}
+            <span style={{ color: spreadColor, fontWeight: 700 }}>
+              {spreadDiff} {spreadDiff === 1 ? "pt" : "pts"}
+            </span>
+          </span>
+        </div>
+      )}
+      {!spreadPass && !totalPass && (
+        <div style={{ width: 1, alignSelf: "stretch", background: "hsl(var(--border))", margin: "0 8px" }} />
+      )}
+      {!totalPass && (
+        <div className="flex-1 flex flex-col items-center gap-1 py-0.5">
+          <span
+            className="font-bold leading-none whitespace-nowrap"
+            style={{ fontSize: isTotalStrong ? "13px" : "12px", color: "hsl(var(--foreground))" }}
+          >
+            {isTotalStrong && <span className="mr-0.5 text-[10px]" style={{ color: totalColor }}>▲</span>}
+            {normalizeEdgeLabel(totalEdge)}
+          </span>
+          <span className="text-[11px] leading-none" style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
+            EDGE:{" "}
+            <span style={{ color: totalColor, fontWeight: 700 }}>
+              {totalDiff} {totalDiff === 1 ? "pt" : "pts"}
+            </span>
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 type GameRow = {
   id: number;
@@ -67,120 +400,112 @@ type GameRow = {
   conference: string | null;
 };
 
-// ── Row component ─────────────────────────────────────────────────────────────
+// ─── EditableGameCard ─────────────────────────────────────────────────────────
 
-function GameProjectionRow({
-  game,
-  onSaved,
-}: {
-  game: GameRow;
-  onSaved: () => void;
-}) {
-  // Local state for inputs — initialized from DB values
+function EditableGameCard({ game, onSaved }: { game: GameRow; onSaved: () => void }) {
   const [awaySpread, setAwaySpread] = useState(game.awayModelSpread ?? "");
   const [homeSpread, setHomeSpread] = useState(game.homeModelSpread ?? "");
   const [modelTotal, setModelTotal] = useState(game.modelTotal ?? "");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const awaySpreadRef = useRef<HTMLInputElement | null>(null);
 
   const updateMutation = trpc.games.updateProjections.useMutation();
   const publishMutation = trpc.games.setPublished.useMutation();
 
-  // Sync inputs when game data changes from server
+  // Sync from server when game data refreshes (don't overwrite if user is typing)
   useEffect(() => {
-    setAwaySpread(game.awayModelSpread ?? "");
-    setHomeSpread(game.homeModelSpread ?? "");
-    setModelTotal(game.modelTotal ?? "");
-    setDirty(false);
+    if (!dirty) {
+      setAwaySpread(game.awayModelSpread ?? "");
+      setHomeSpread(game.homeModelSpread ?? "");
+      setModelTotal(game.modelTotal ?? "");
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [game.awayModelSpread, game.homeModelSpread, game.modelTotal]);
 
-  const handleChange = (setter: (v: string) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
-    setter(e.target.value);
-    setDirty(true);
-  };
-
-  // When away spread changes, auto-compute home spread as inverse
-  const handleAwaySpreadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
+  // Away spread change → auto-compute home spread as inverse
+  const handleAwaySpreadChange = (val: string) => {
     setAwaySpread(val);
     const n = parseFloat(val);
-    if (!isNaN(n)) {
-      setHomeSpread(String(-n));
-    }
+    if (!isNaN(n)) setHomeSpread(n === 0 ? "0" : String(-n));
     setDirty(true);
   };
 
-  const handleHomeSpreadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
+  // Home spread change → auto-compute away spread as inverse
+  const handleHomeSpreadChange = (val: string) => {
     setHomeSpread(val);
     const n = parseFloat(val);
-    if (!isNaN(n)) {
-      setAwaySpread(String(-n));
-    }
+    if (!isNaN(n)) setAwaySpread(n === 0 ? "0" : String(-n));
     setDirty(true);
   };
+
+  const handleTotalChange = (val: string) => {
+    setModelTotal(val);
+    setDirty(true);
+  };
+
+  // Compute edge labels live from current input values
+  function computeEdges() {
+    const awayN    = parseFloat(awaySpread);
+    const homeN    = parseFloat(homeSpread);
+    const totalN   = parseFloat(modelTotal);
+    const awayBook = toNum(game.awayBookSpread);
+    const homeBook = toNum(game.homeBookSpread);
+    const bookTot  = toNum(game.bookTotal);
+
+    let spreadEdge: string | null = null;
+    let spreadDiff: string | null = null;
+    let totalEdge: string | null  = null;
+    let totalDiffVal: string | null = null;
+
+    if (!isNaN(awayN) && !isNaN(homeN) && !isNaN(awayBook) && !isNaN(homeBook)) {
+      // Positive diff = model is more favorable for that team vs book
+      const awayDiff = awayBook - awayN;
+      const homeDiff = homeBook - homeN;
+      const useAway  = Math.abs(awayDiff) >= Math.abs(homeDiff);
+      const bestDiff = useAway ? awayDiff : homeDiff;
+      const edgeTeam   = useAway ? game.awayTeam : game.homeTeam;
+      const edgeSpread = useAway ? awayN : homeN;
+
+      if (Math.abs(bestDiff) > 0) {
+        spreadEdge = `${edgeTeam} (${edgeSpread > 0 ? "+" : ""}${edgeSpread})`;
+        spreadDiff = String(Math.round(Math.abs(bestDiff) * 10) / 10);
+      } else {
+        spreadEdge = "PASS";
+        spreadDiff = "0";
+      }
+    }
+
+    if (!isNaN(totalN) && !isNaN(bookTot)) {
+      const diff = Math.round((totalN - bookTot) * 10) / 10;
+      if (diff > 0) {
+        totalEdge    = `OVER ${totalN}`;
+        totalDiffVal = String(Math.abs(diff));
+      } else if (diff < 0) {
+        totalEdge    = `UNDER ${totalN}`;
+        totalDiffVal = String(Math.abs(diff));
+      } else {
+        totalEdge    = "PASS";
+        totalDiffVal = "0";
+      }
+    }
+
+    return { spreadEdge, spreadDiff, totalEdge, totalDiff: totalDiffVal };
+  }
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      const awayN = parseFloat(awaySpread);
-      const homeN = parseFloat(homeSpread);
-      const totalN = parseFloat(modelTotal);
-
-      // Compute edge labels and diffs
-      const awayBook = parseFloat(game.awayBookSpread ?? "");
-      const homeBook = parseFloat(game.homeBookSpread ?? "");
-      const bookTot = parseFloat(game.bookTotal ?? "");
-
-      let spreadEdge: string | null = null;
-      let spreadDiff: string | null = null;
-      let totalEdge: string | null = null;
-      let totalDiffVal: string | null = null;
-
-      if (!isNaN(awayN) && !isNaN(homeN) && !isNaN(awayBook) && !isNaN(homeBook)) {
-        // Spread edge: which team has model line better than book?
-        const awayDiff = awayBook - awayN; // positive = model likes away more than book
-        const homeDiff = homeBook - homeN;
-        const bestDiff = Math.abs(awayDiff) >= Math.abs(homeDiff) ? awayDiff : homeDiff;
-        const edgeTeam = Math.abs(awayDiff) >= Math.abs(homeDiff) ? game.awayTeam : game.homeTeam;
-        const edgeSpread = Math.abs(awayDiff) >= Math.abs(homeDiff) ? awayN : homeN;
-
-        if (Math.abs(bestDiff) > 0) {
-          spreadEdge = `${edgeTeam} (${edgeSpread > 0 ? "+" : ""}${edgeSpread})`;
-          spreadDiff = String(Math.abs(bestDiff));
-        } else {
-          spreadEdge = "PASS";
-          spreadDiff = "0";
-        }
-      }
-
-      if (!isNaN(totalN) && !isNaN(bookTot)) {
-        const diff = totalN - bookTot;
-        if (diff > 0) {
-          totalEdge = `OVER ${totalN}`;
-          totalDiffVal = String(Math.abs(diff));
-        } else if (diff < 0) {
-          totalEdge = `UNDER ${totalN}`;
-          totalDiffVal = String(Math.abs(diff));
-        } else {
-          totalEdge = "PASS";
-          totalDiffVal = "0";
-        }
-      }
-
+      const edges = computeEdges();
       await updateMutation.mutateAsync({
         id: game.id,
         awayModelSpread: awaySpread || null,
         homeModelSpread: homeSpread || null,
         modelTotal: modelTotal || null,
-        spreadEdge,
-        spreadDiff,
-        totalEdge,
-        totalDiff: totalDiffVal,
+        ...edges,
       });
-
       setDirty(false);
-      toast.success(`Saved ${game.awayTeam} @ ${game.homeTeam}`);
+      toast.success("Projections saved");
       onSaved();
     } catch {
       toast.error("Failed to save projections");
@@ -190,164 +515,184 @@ function GameProjectionRow({
   };
 
   const handleTogglePublish = async () => {
+    // Auto-save unsaved changes before toggling publish
+    if (dirty) await handleSave();
     try {
       await publishMutation.mutateAsync({ id: game.id, published: !game.publishedToFeed });
-      toast.success(game.publishedToFeed ? "Unpublished" : "Published to feed");
+      toast.success(game.publishedToFeed ? "Removed from feed" : "Published to feed ✓");
       onSaved();
     } catch {
       toast.error("Failed to update publish status");
     }
   };
 
-  const isPublished = game.publishedToFeed;
-  const hasModel = (game.awayModelSpread || game.homeModelSpread) && game.modelTotal;
+  // ── Derived display values ──────────────────────────────────────────────────
+  const awayBookSpread = toNum(game.awayBookSpread);
+  const homeBookSpread = toNum(game.homeBookSpread);
+  const bookTotal      = toNum(game.bookTotal);
+
+  // BOOKS column: show spread for the favorite, total for the underdog (same as GameCard)
+  const awayConsensus = awayBookSpread < 0 ? spreadSign(awayBookSpread) : isNaN(bookTotal) ? "—" : `${bookTotal}`;
+  const homeConsensus = homeBookSpread < 0 ? spreadSign(homeBookSpread) : isNaN(bookTotal) ? "—" : `${bookTotal}`;
+
+  // Live edge preview
+  const edges = computeEdges();
+  const previewSpreadDiff = parseFloat(edges.spreadDiff ?? "0") || 0;
+  const previewTotalDiff  = parseFloat(edges.totalDiff  ?? "0") || 0;
+  const maxDiff = Math.max(previewSpreadDiff, previewTotalDiff);
+
+  // Border color: green if published, edge-colored if has model data, dim if empty
+  const borderColor = game.publishedToFeed
+    ? "#39FF14"
+    : maxDiff > 0
+      ? getEdgeColor(maxDiff)
+      : "hsl(var(--border))";
+
+  const awayTeamName = getTeamName(game.awayTeam);
+  const homeTeamName = getTeamName(game.homeTeam);
+  const awayName     = awayTeamName.school || formatTeamName(game.awayTeam);
+  const homeName     = homeTeamName.school || formatTeamName(game.homeTeam);
+  const awayNickname = awayTeamName.nickname;
+  const homeNickname = homeTeamName.nickname;
+  const awayLogoUrl  = getEspnLogoUrl(game.awayTeam) ?? undefined;
+  const homeLogoUrl  = getEspnLogoUrl(game.homeTeam) ?? undefined;
+  const time      = formatMilitaryTime(game.startTimeEst);
+  const dateLabel = formatDate(game.gameDate);
+
+  const hasAnyModel = awaySpread !== "" || modelTotal !== "";
 
   return (
-    <div
-      className="rounded-xl overflow-hidden"
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="w-full rounded-xl overflow-hidden relative"
       style={{
         background: "hsl(var(--card))",
-        border: `1px solid ${isPublished ? "hsl(142 71% 45% / 0.4)" : "hsl(var(--border))"}`,
-        borderLeft: `3px solid ${isPublished ? "#39FF14" : hasModel ? "#FFB800" : "hsl(var(--border))"}`,
+        border: "1px solid hsl(var(--border))",
+        borderLeft: `3px solid ${borderColor}`,
       }}
     >
-      {/* Game header */}
+      {/* Publish toggle — top right (mirrors the download button position in GameCard) */}
+      <button
+        onClick={handleTogglePublish}
+        disabled={publishMutation.isPending || saving}
+        className="absolute top-1.5 right-2 z-10 flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all"
+        style={game.publishedToFeed
+          ? { background: "rgba(57,255,20,0.15)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.35)" }
+          : { background: "rgba(255,255,255,0.06)", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
+        }
+        title={game.publishedToFeed ? "Remove from feed" : "Publish to feed"}
+      >
+        {publishMutation.isPending || saving
+          ? <Loader2 size={9} className="animate-spin" />
+          : game.publishedToFeed
+            ? <><Eye size={9} /> Live</>
+            : <><EyeOff size={9} /> Off</>
+        }
+      </button>
+
+      {/* Header — identical to GameCard */}
       <div
-        className="flex items-center justify-between px-3 py-2"
+        className="flex items-center justify-center gap-1.5 px-4 py-2"
         style={{ background: "hsl(var(--background))", borderBottom: "1px solid hsl(var(--border))" }}
       >
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-xs font-semibold" style={{ color: "hsl(var(--foreground))" }}>
-            {game.awayTeam} <span style={{ color: "hsl(var(--muted-foreground))" }}>@</span> {game.homeTeam}
-          </span>
-          {game.gameType === "conference_tournament" && game.conference && (
-            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4" style={{ color: "#FFB800", borderColor: "#FFB800" }}>
-              <Trophy size={8} className="mr-0.5" />
+        <span className="text-xs font-semibold" style={{ color: "hsl(var(--foreground))" }}>
+          {dateLabel}
+        </span>
+        <span className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))" }}>·</span>
+        <span className="text-xs font-medium" style={{ color: "hsl(var(--muted-foreground))" }}>
+          {time}
+        </span>
+        {game.gameType === "conference_tournament" && game.conference && (
+          <>
+            <span className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))" }}>·</span>
+            <span className="text-[10px] font-medium flex items-center gap-0.5" style={{ color: "#FFB800" }}>
+              <Trophy size={9} />
               {game.conference}
-            </Badge>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span className="text-xs" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {formatTime(game.startTimeEst)}
-          </span>
-          {isPublished && (
-            <Badge className="text-[10px] px-1.5 py-0 h-4 bg-green-500/20 text-green-400 border-green-500/30">
-              Live
-            </Badge>
-          )}
-        </div>
+            </span>
+          </>
+        )}
       </div>
 
-      {/* Odds + inputs */}
-      <div className="px-3 py-2.5 space-y-2">
-        {/* Column headers */}
-        <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr auto" }}>
-          <div className="text-[10px] uppercase tracking-widest text-center" style={{ color: "#D3D3D3" }}>Book Spread</div>
-          <div className="text-[10px] uppercase tracking-widest text-center" style={{ color: "#D3D3D3" }}>Book O/U</div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: "#39FF14" }}>Model Spread</div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-center" style={{ color: "#39FF14" }}>Model O/U</div>
-          <div className="w-16" />
+      {/* Team rows — identical structure to GameCard */}
+      <div className="px-3 pt-1 pb-3">
+
+        {/* Column labels — BOOKS | MODEL LINE | MODEL O/U */}
+        <div
+          className="flex items-center gap-1.5 pb-1.5"
+          style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
+        >
+          <div className="flex-shrink-0" style={{ width: "clamp(80px, 22vw, 120px)" }} />
+          <div className="w-8 flex-shrink-0" />
+          <div className="flex-1 grid text-center" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Books</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model Line</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model O/U</span>
+          </div>
         </div>
 
         {/* Away row */}
-        <div className="grid items-center gap-2" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr auto" }}>
-          <div className="text-center text-sm font-mono" style={{ color: "hsl(var(--foreground))" }}>
-            {spreadDisplay(game.awayBookSpread)}
-          </div>
-          <div className="text-center text-sm font-mono" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {totalDisplay(game.bookTotal)}
-          </div>
-          <Input
-            value={awaySpread}
-            onChange={handleAwaySpreadChange}
-            placeholder="-3.5"
-            className="h-7 text-xs text-center font-mono"
-            style={{ background: "hsl(var(--background))", borderColor: dirty ? "#39FF14" : undefined }}
-          />
-          <Input
-            value={modelTotal}
-            onChange={handleChange(setModelTotal)}
-            placeholder="142.5"
-            className="h-7 text-xs text-center font-mono"
-            style={{ background: "hsl(var(--background))", borderColor: dirty ? "#39FF14" : undefined }}
-          />
-          <div className="w-16 flex items-center justify-end gap-1">
-            {dirty && (
-              <Button
-                size="sm"
-                onClick={handleSave}
-                disabled={saving}
-                className="h-7 px-2 text-xs"
-                style={{ background: "#39FF14", color: "#000" }}
-              >
-                {saving ? <Loader2 size={10} className="animate-spin" /> : <CheckCircle2 size={10} />}
-              </Button>
-            )}
-          </div>
-        </div>
+        <EditableTeamRow
+          slug={game.awayTeam}
+          name={awayName}
+          nickname={awayNickname}
+          consensus={awayConsensus}
+          modelSpread={awaySpread}
+          modelTotal={modelTotal}
+          logoUrl={awayLogoUrl}
+          isAway={true}
+          onSpreadChange={handleAwaySpreadChange}
+          onTotalChange={handleTotalChange}
+          spreadInputRef={awaySpreadRef}
+        />
+
+        <div className="my-0.5" style={{ height: 1, background: "hsl(var(--border))" }} />
 
         {/* Home row */}
-        <div className="grid items-center gap-2" style={{ gridTemplateColumns: "1fr 1fr 1fr 1fr auto" }}>
-          <div className="text-center text-sm font-mono" style={{ color: "hsl(var(--foreground))" }}>
-            {spreadDisplay(game.homeBookSpread)}
-          </div>
-          <div className="text-center text-sm font-mono" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {totalDisplay(game.bookTotal)}
-          </div>
-          <Input
-            value={homeSpread}
-            onChange={handleHomeSpreadChange}
-            placeholder="+3.5"
-            className="h-7 text-xs text-center font-mono"
-            style={{ background: "hsl(var(--background))", borderColor: dirty ? "#39FF14" : undefined }}
-          />
-          <div className="text-center text-xs font-mono" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {modelTotal ? `${modelTotal}` : "—"}
-          </div>
-          <div className="w-16 flex items-center justify-end">
+        <EditableTeamRow
+          slug={game.homeTeam}
+          name={homeName}
+          nickname={homeNickname}
+          consensus={homeConsensus}
+          modelSpread={homeSpread}
+          modelTotal={modelTotal}
+          logoUrl={homeLogoUrl}
+          isAway={false}
+          onSpreadChange={handleHomeSpreadChange}
+          onTotalChange={() => {}} // total is only editable on away row
+        />
+
+        {/* Save button — appears only when dirty */}
+        {dirty && (
+          <div className="mt-2 flex justify-end">
             <Button
               size="sm"
-              variant="outline"
-              onClick={handleTogglePublish}
-              disabled={publishMutation.isPending}
-              className="h-7 px-2 text-xs gap-1"
-              style={isPublished
-                ? { borderColor: "#39FF14", color: "#39FF14", background: "transparent" }
-                : { borderColor: "hsl(var(--border))", color: "hsl(var(--muted-foreground))" }
-              }
+              onClick={handleSave}
+              disabled={saving}
+              className="h-7 px-4 text-xs gap-1.5 font-bold"
+              style={{ background: "#39FF14", color: "#000" }}
             >
-              {publishMutation.isPending
-                ? <Loader2 size={10} className="animate-spin" />
-                : isPublished
-                  ? <><Eye size={10} /> Live</>
-                  : <><EyeOff size={10} /> Off</>
-              }
+              {saving && <Loader2 size={10} className="animate-spin" />}
+              Save
             </Button>
           </div>
-        </div>
+        )}
 
-        {/* Edge preview (if model data exists) */}
-        {hasModel && (game.spreadEdge || game.totalEdge) && (
-          <div className="flex gap-3 pt-1" style={{ borderTop: "1px solid hsl(var(--border) / 0.4)" }}>
-            {game.spreadEdge && game.spreadEdge !== "PASS" && (
-              <span className="text-[10px]" style={{ color: "#FFB800" }}>
-                Spread: {game.spreadEdge} ({game.spreadDiff && `+${game.spreadDiff}`})
-              </span>
-            )}
-            {game.totalEdge && game.totalEdge !== "PASS" && (
-              <span className="text-[10px]" style={{ color: "#FFB800" }}>
-                Total: {game.totalEdge} ({game.totalDiff && `+${game.totalDiff}`})
-              </span>
-            )}
-          </div>
+        {/* Edge verdict — live preview as @prez types */}
+        {hasAnyModel && (
+          <EdgeVerdictLive
+            spreadDiff={previewSpreadDiff}
+            spreadEdge={edges.spreadEdge ?? "PASS"}
+            totalDiff={previewTotalDiff}
+            totalEdge={edges.totalEdge ?? "PASS"}
+          />
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+// ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function PublishProjections() {
   const [, setLocation] = useLocation();
@@ -355,7 +700,7 @@ export default function PublishProjections() {
   const [filter, setFilter] = useState<"all" | "regular_season" | "conference_tournament">("all");
   const [gameDate] = useState("2026-03-04");
 
-  // Redirect non-owners
+  // ── Strict owner-only guard ─────────────────────────────────────────────────
   useEffect(() => {
     if (!authLoading && (!appUser || !isOwner)) {
       setLocation("/dashboard");
@@ -381,15 +726,15 @@ export default function PublishProjections() {
 
   const handleRefetch = useCallback(() => { refetch(); }, [refetch]);
 
-  const filtered = games?.filter((g) => {
-    if (filter === "all") return true;
-    return g.gameType === filter;
-  }) ?? [];
+  const filtered = (games ?? []).filter((g) =>
+    filter === "all" ? true : g.gameType === filter
+  );
 
-  const publishedCount = games?.filter((g) => g.publishedToFeed).length ?? 0;
-  const totalCount = games?.length ?? 0;
-  const withModelCount = games?.filter((g) => g.awayModelSpread || g.modelTotal).length ?? 0;
+  const publishedCount  = (games ?? []).filter((g) => g.publishedToFeed).length;
+  const totalCount      = games?.length ?? 0;
+  const withModelCount  = (games ?? []).filter((g) => g.awayModelSpread || g.modelTotal).length;
 
+  // Show loading spinner while auth resolves
   if (authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "hsl(var(--background))" }}>
@@ -398,92 +743,111 @@ export default function PublishProjections() {
     );
   }
 
+  // Render nothing while redirect fires
+  if (!isOwner) return null;
+
   return (
     <div className="min-h-screen" style={{ background: "hsl(var(--background))" }}>
-      {/* Top bar */}
-      <div
-        className="sticky top-0 z-20 px-4 py-3 flex items-center gap-3"
-        style={{ background: "hsl(var(--card))", borderBottom: "1px solid hsl(var(--border))" }}
-      >
-        <button
-          onClick={() => setLocation("/dashboard")}
-          className="p-1.5 rounded-lg transition-colors hover:bg-white/10"
-        >
-          <ChevronLeft size={18} style={{ color: "hsl(var(--muted-foreground))" }} />
-        </button>
 
-        <div className="flex-1 min-w-0">
-          <h1 className="text-sm font-bold" style={{ color: "hsl(var(--foreground))" }}>
-            Publish Model Projections
-          </h1>
-          <div className="flex items-center gap-2 mt-0.5">
-            <Calendar size={10} style={{ color: "hsl(var(--muted-foreground))" }} />
-            <span className="text-[11px]" style={{ color: "hsl(var(--muted-foreground))" }}>
-              March 4, 2026
+      {/* Sticky header — mirrors Dashboard header style */}
+      <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
+        <div className="relative flex items-center px-4 py-2 max-w-3xl mx-auto">
+
+          {/* Back button */}
+          <button
+            onClick={() => setLocation("/dashboard")}
+            className="p-1.5 rounded-lg transition-colors hover:bg-white/10 mr-2 flex-shrink-0"
+          >
+            <ChevronLeft size={18} style={{ color: "hsl(var(--muted-foreground))" }} />
+          </button>
+
+          {/* Centered brand — mirrors Dashboard header */}
+          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
+            <span
+              className="font-black text-white whitespace-nowrap"
+              style={{ fontSize: "clamp(13px, 3vw, 20px)", letterSpacing: "0.08em" }}
+            >
+              PREZ BETS
             </span>
-            <span className="text-[11px]" style={{ color: "hsl(var(--muted-foreground))" }}>·</span>
+            <span className="text-border" style={{ fontSize: "clamp(10px, 2vw, 14px)" }}>|</span>
+            <span
+              className="font-medium whitespace-nowrap"
+              style={{ fontSize: "clamp(11px, 2.4vw, 16px)", letterSpacing: "0.1em", color: "#9CA3AF" }}
+            >
+              PUBLISH PROJECTIONS
+            </span>
+          </div>
+
+          {/* Spacer + Publish All button — right */}
+          <div className="flex-1" />
+          <Button
+            size="sm"
+            onClick={() => publishAllMutation.mutate({ gameDate })}
+            disabled={publishAllMutation.isPending || totalCount === 0}
+            className="gap-1.5 text-xs h-8 font-bold flex-shrink-0"
+            style={{ background: "#39FF14", color: "#000" }}
+          >
+            {publishAllMutation.isPending
+              ? <Loader2 size={12} className="animate-spin" />
+              : <Send size={12} />
+            }
+            Publish All
+          </Button>
+        </div>
+
+        {/* Stats row + filter tabs */}
+        <div className="px-4 pb-2 max-w-3xl mx-auto space-y-2">
+          <div className="flex items-center gap-3">
             <span className="text-[11px]" style={{ color: "#39FF14" }}>
               {publishedCount}/{totalCount} live
             </span>
             <span className="text-[11px]" style={{ color: "hsl(var(--muted-foreground))" }}>·</span>
             <span className="text-[11px]" style={{ color: "#FFB800" }}>
-              {withModelCount} with model
+              {withModelCount} with model data
             </span>
           </div>
+          <div className="flex gap-2">
+            {(["all", "regular_season", "conference_tournament"] as const).map((f) => {
+              const count = f === "all" ? totalCount
+                : (games ?? []).filter((g) => g.gameType === f).length;
+              return (
+                <button
+                  key={f}
+                  onClick={() => setFilter(f)}
+                  className="px-3 py-1 rounded-full text-xs font-semibold transition-all"
+                  style={filter === f
+                    ? { background: "#39FF14", color: "#000" }
+                    : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
+                  }
+                >
+                  {f === "all" ? `All (${count})` : f === "regular_season" ? `Regular (${count})` : `Conf. Tourney (${count})`}
+                </button>
+              );
+            })}
+          </div>
         </div>
+      </header>
 
-        <Button
-          size="sm"
-          onClick={() => publishAllMutation.mutate({ gameDate })}
-          disabled={publishAllMutation.isPending || totalCount === 0}
-          className="gap-1.5 text-xs h-8"
-          style={{ background: "#39FF14", color: "#000" }}
-        >
-          {publishAllMutation.isPending
-            ? <Loader2 size={12} className="animate-spin" />
-            : <Send size={12} />
-          }
-          Publish All
-        </Button>
-      </div>
-
-      {/* Filter tabs */}
-      <div className="px-4 pt-3 pb-2 flex gap-2">
-        {(["all", "regular_season", "conference_tournament"] as const).map((f) => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className="px-3 py-1 rounded-full text-xs font-medium transition-all"
-            style={filter === f
-              ? { background: "#39FF14", color: "#000" }
-              : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
-            }
-          >
-            {f === "all" ? `All (${totalCount})` : f === "regular_season" ? "Regular Season" : "Conf. Tournament"}
-          </button>
-        ))}
-      </div>
-
-      {/* Game list */}
-      <div className="px-4 pb-8 space-y-3 mt-1">
+      {/* Game cards — same max-width and padding as Dashboard */}
+      <main className="max-w-3xl mx-auto px-4 pb-8 pt-3 space-y-3">
         {isLoading ? (
-          <div className="flex items-center justify-center py-16">
+          <div className="flex items-center justify-center py-24">
             <Loader2 className="animate-spin" style={{ color: "#39FF14" }} />
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16" style={{ color: "hsl(var(--muted-foreground))" }}>
-            No games found
+          <div className="flex flex-col items-center justify-center py-24 gap-2">
+            <span className="text-sm" style={{ color: "hsl(var(--muted-foreground))" }}>No games found</span>
           </div>
         ) : (
           filtered.map((game) => (
-            <GameProjectionRow
+            <EditableGameCard
               key={game.id}
               game={game as GameRow}
               onSaved={handleRefetch}
             />
           ))
         )}
-      </div>
+      </main>
     </div>
   );
 }

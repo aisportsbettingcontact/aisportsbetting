@@ -49,7 +49,7 @@ export async function verifyAppUserToken(token: string) {
 }
 
 // Owner-only middleware
-const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
+export const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
   if (!token) throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
   const payload = await verifyAppUserToken(token);

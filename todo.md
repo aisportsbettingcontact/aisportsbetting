@@ -105,3 +105,5 @@
 - [x] Build owner-only Publish Model Projections page with editable game rows and publish toggles
 - [x] Add Publish Projections to profile dropdown (owner-only)
 - [x] Update public games.list to only return publishedToFeed=true games
+- [x] Redesign PublishProjections page to match GameCard feed style with inline MODEL LINE and MODEL O/U inputs
+- [x] Enforce strict owner-only access on PublishProjections (frontend redirect + backend ownerProcedure)

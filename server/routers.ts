@@ -24,7 +24,7 @@ import { fetchLatestSheetGames, fetchAllSheetsGames, SHEETS_FILE_ID } from "./sh
 import { syncEspnTeams, buildEspnLogoUrl } from "./espnScraper";
 import { listEspnTeams, getEspnTeamBySlug } from "./db";
 import { nanoid } from "nanoid";
-import { appUsersRouter } from "./routers/appUsers";
+import { appUsersRouter, ownerProcedure } from "./routers/appUsers";
 
 export const appRouter = router({
   system: systemRouter,
@@ -227,7 +227,7 @@ export const appRouter = router({
      * List all staging (unpublished) games for a given date.
      * Owner-only — used by the Publish Model Projections page.
      */
-    listStaging: protectedProcedure
+    listStaging: ownerProcedure
       .input(z.object({ gameDate: z.string() }))
       .query(async ({ input }) => {
         return listStagingGames(input.gameDate);
@@ -237,7 +237,7 @@ export const appRouter = router({
      * Update model projections (spreads, total, edge labels) for a single game.
      * Owner-only.
      */
-    updateProjections: protectedProcedure
+    updateProjections: ownerProcedure
       .input(
         z.object({
           id: z.number().int().positive(),
@@ -260,7 +260,7 @@ export const appRouter = router({
      * Toggle publishedToFeed for a single game.
      * Owner-only.
      */
-    setPublished: protectedProcedure
+    setPublished: ownerProcedure
       .input(z.object({ id: z.number().int().positive(), published: z.boolean() }))
       .mutation(async ({ input }) => {
         await setGamePublished(input.id, input.published);
@@ -271,7 +271,7 @@ export const appRouter = router({
      * Publish all staging games for a date at once.
      * Owner-only.
      */
-    publishAll: protectedProcedure
+    publishAll: ownerProcedure
       .input(z.object({ gameDate: z.string() }))
       .mutation(async ({ input }) => {
         await publishAllStagingGames(input.gameDate);
