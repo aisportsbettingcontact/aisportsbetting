@@ -87,38 +87,32 @@ function SearchResultRow({ game, logoMap, onClick }: { game: GameRow; logoMap: R
       onClick={onClick}
       className="w-full hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0"
     >
-      {/* ── Shared layout: works on all screen sizes ── */}
-      <div className="flex flex-col px-3 py-2.5 gap-1">
+      {/* 3-column layout: away | center(@+date) | home */}
+      <div className="flex items-center px-3 py-2.5 gap-2">
 
-        {/* Row 1: Away @ Home */}
-        <div className="flex items-center w-full gap-2">
-
-          {/* Away side: logo + name block */}
-          <div className="flex items-center gap-2" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
-            <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={26} />
-            <div className="flex flex-col" style={{ minWidth: 0, overflow: "hidden" }}>
-              <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{awaySchool}</span>
-              {awayNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{awayNick}</span>}
-            </div>
+        {/* Away side: logo + name block */}
+        <div className="flex items-center gap-2" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
+          <TeamBadge slug={game.awayTeam} logoMap={logoMap} size={26} />
+          <div className="flex flex-col" style={{ minWidth: 0, overflow: "hidden" }}>
+            <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{awaySchool}</span>
+            {awayNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{awayNick}</span>}
           </div>
-
-          {/* @ separator — fixed width, centered */}
-          <span className="text-[11px] text-gray-500 font-medium flex-shrink-0 w-5 text-center">@</span>
-
-          {/* Home side: name block + logo */}
-          <div className="flex items-center gap-2 justify-end" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
-            <div className="flex flex-col items-end" style={{ minWidth: 0, overflow: "hidden" }}>
-              <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{homeSchool}</span>
-              {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{homeNick}</span>}
-            </div>
-            <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={26} />
-          </div>
-
         </div>
 
-        {/* Row 2: Date · Time — right-aligned */}
-        <div className="flex justify-end">
-          <span className="text-[10px] text-gray-500 leading-tight">{dateShort} · {time}</span>
+        {/* Center column: @ on top, date·time below */}
+        <div className="flex flex-col items-center flex-shrink-0" style={{ minWidth: 72 }}>
+          <span className="text-[11px] text-gray-500 font-medium leading-tight">@</span>
+          <span className="text-[9px] text-gray-500 leading-tight text-center whitespace-nowrap mt-0.5">{dateShort}</span>
+          <span className="text-[9px] text-gray-500 leading-tight text-center whitespace-nowrap">{time}</span>
+        </div>
+
+        {/* Home side: name block + logo */}
+        <div className="flex items-center gap-2 justify-end" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
+          <div className="flex flex-col items-end" style={{ minWidth: 0, overflow: "hidden" }}>
+            <span className="text-[12px] font-bold text-white leading-tight" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "block" }}>{homeSchool}</span>
+            {homeNick && <span className="text-[10px] font-normal text-gray-400 leading-tight" style={{ whiteSpace: "nowrap", display: "block" }}>{homeNick}</span>}
+          </div>
+          <TeamBadge slug={game.homeTeam} logoMap={logoMap} size={26} />
         </div>
 
       </div>
@@ -396,7 +390,7 @@ export default function Dashboard() {
               style={{ background: "#0f0f0f", maxHeight: "calc(3 * 68px + 44px)", overflowY: "auto" }}
             >
               {/* Header row */}
-              <div className="flex items-center justify-between px-3 py-2 border-b border-white/8 bg-black/60 sticky top-0">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 sticky top-0" style={{ background: "#0f0f0f", zIndex: 10 }}>
                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">
                   {dropdownResults.length === 0 ? "No results" : `${dropdownResults.length} game${dropdownResults.length !== 1 ? "s" : ""}`}
                 </span>
