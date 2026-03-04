@@ -143,10 +143,15 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
     const home = c.teams?.find((t: any) => t.isHome);
     if (!away || !home) continue;
 
+    // Use startTime directly — NCAA API returns it already in EST
+    // Fall back to epoch conversion only if startTime is missing
+    const startTimeEst = c.startTime && c.hasStartTime
+      ? c.startTime  // e.g. "19:00" already in EST
+      : (c.startTimeEpoch ? epochToEst(c.startTimeEpoch) : "TBD");
     games.push({
       awaySeoname: ncaaSlugToDb(away.seoname),
       homeSeoname: ncaaSlugToDb(home.seoname),
-      startTimeEst: epochToEst(c.startTimeEpoch),
+      startTimeEst,
       hasStartTime: c.hasStartTime ?? false,
       startTimeEpoch: c.startTimeEpoch,
     });

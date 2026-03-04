@@ -139,3 +139,6 @@
 - [x] Integrate NCAA start time scraper into auto-refresh cron
 - [x] Apply NCAA start times to existing March 4 DB games
 - [x] Fix edge footer: display the book line (the line with the edge), not the model line; recalculate spread and total edge correctly
+- [x] Pull James Madison game spread from VSiN
+- [x] Fix Georgia Southern opponent: TBD → old_dominion
+- [x] Audit and correct all March 4 start times in EST

@@ -389,6 +389,12 @@ export function matchTeam(scrapedName: string, storedSlug: string): boolean {
     bellarmine: "bellarmine",
     george_washington: "george_washington",
     la_salle: "la_salle",
+    old_dominion: "old_dominion",
+    old_dom: "old_dominion",
+    georgia_southern: "georgia_southern",
+    ga_southern: "georgia_southern",
+    james_madison: "james_madison",
+    jmu: "james_madison",
   };
 
   const normMapped = abbrevMap[norm] || norm;
