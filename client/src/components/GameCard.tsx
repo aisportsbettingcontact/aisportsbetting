@@ -426,6 +426,32 @@ export function GameCard({ game, logoMap = {} }: GameCardProps) {
   const maxDiff = Math.max(isNaN(spreadDiff) ? 0 : spreadDiff, isNaN(totalDiff) ? 0 : totalDiff);
   const borderColor = getEdgeColor(maxDiff);
 
+  // ── Compute edge footer labels from book lines (not model lines) ──────────────
+  // Spread: the team whose book line has the edge. If model away < book away (model
+  // thinks away is a bigger fav / smaller dog), the edge is on the away book spread.
+  // i.e. awayModelSpread < awayBookSpread → bet Away at the book number.
+  //      awayModelSpread > awayBookSpread → bet Home at the book number.
+  // "PASS" when spreadDiff <= 0 or data is missing.
+  const computedSpreadEdge: string | null = (() => {
+    if (isNaN(spreadDiff) || spreadDiff <= 0) return "PASS";
+    if (isNaN(awayModelSpread) || isNaN(awayBookSpread)) return game.spreadEdge;
+    // If model gives away a better number (lower spread = better for away), bet away book line
+    if (awayModelSpread < awayBookSpread) {
+      return `${awayName} ${spreadSign(awayBookSpread)}`;
+    } else {
+      return `${homeName} ${spreadSign(homeBookSpread)}`;
+    }
+  })();
+
+  // Total: Over bookTotal if model > book, Under bookTotal if model < book.
+  const computedTotalEdge: string | null = (() => {
+    if (isNaN(totalDiff) || totalDiff <= 0) return "PASS";
+    if (isNaN(modelTotal) || isNaN(bookTotal)) return game.totalEdge;
+    return modelTotal > bookTotal
+      ? `Over ${bookTotal}`
+      : `Under ${bookTotal}`;
+  })();
+
   // Consensus column logic (matches reference):
   // Away row: show away book spread if away is the favorite (negative), else show book total
   // Home row: show home book spread if home is the favorite (negative), else show book total
@@ -463,10 +489,10 @@ export function GameCard({ game, logoMap = {} }: GameCardProps) {
 
       const spreadColor = getEdgeColor(spreadDiff);
       const totalColor  = getEdgeColor(totalDiff);
-      const spreadLabel = normalizeEdgeLabel(game.spreadEdge);
-      const totalLabel  = normalizeEdgeLabel(game.totalEdge);
-      const spreadPass  = spreadLabel === "PASS" || spreadDiff <= 0 || !game.spreadEdge;
-      const totalPass   = totalLabel  === "PASS" || totalDiff  <= 0 || !game.totalEdge;
+      const spreadLabel = normalizeEdgeLabel(computedSpreadEdge);
+      const totalLabel  = normalizeEdgeLabel(computedTotalEdge);
+      const spreadPass  = spreadLabel === "PASS" || spreadDiff <= 0 || !computedSpreadEdge;
+      const totalPass   = totalLabel  === "PASS" || totalDiff  <= 0 || !computedTotalEdge;
 
       const verdictSideHtml = (diff: number, label: string, color: string) => {
         if (label === "PASS" || diff <= 0) {
@@ -667,9 +693,9 @@ export function GameCard({ game, logoMap = {} }: GameCardProps) {
           {(!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
             <EdgeVerdict
               spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
-              spreadEdge={game.spreadEdge}
+              spreadEdge={computedSpreadEdge}
               totalDiff={isNaN(totalDiff) ? null : totalDiff}
-              totalEdge={game.totalEdge}
+              totalEdge={computedTotalEdge}
             />
           )}
         </div>
