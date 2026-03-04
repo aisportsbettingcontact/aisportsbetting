@@ -167,8 +167,7 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }) {
 
   const conditions = [
     eq(games.gameDate, targetDate),
-    // Public feed only shows games explicitly published by the owner
-    eq(games.publishedToFeed, true),
+    // All games for the date are shown; model projections appear when published
   ];
   if (opts?.sport) conditions.push(eq(games.sport, opts.sport));
 

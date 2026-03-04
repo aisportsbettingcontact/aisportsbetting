@@ -90,6 +90,7 @@ function getEdgeColor(diff: number): string {
 
 // ── Spread sign helper ────────────────────────────────────────────────────────
 function spreadSign(n: number): string {
+  if (isNaN(n)) return "—";
   return n > 0 ? `+${n}` : `${n}`;
 }
 
@@ -635,7 +636,7 @@ export function GameCard({ game, logoMap = {} }: GameCardProps) {
             nickname={awayNickname}
             consensus={awayConsensus}
             modelSpread={spreadSign(awayModelSpread)}
-            modelTotal={`O ${modelTotal}`}
+            modelTotal={isNaN(modelTotal) ? "—" : `O ${modelTotal}`}
             logoUrl={awayLogoUrl}
           />
 
@@ -648,17 +649,19 @@ export function GameCard({ game, logoMap = {} }: GameCardProps) {
             nickname={homeNickname}
             consensus={homeConsensus}
             modelSpread={spreadSign(homeModelSpread)}
-            modelTotal={`U ${modelTotal}`}
+            modelTotal={isNaN(modelTotal) ? "—" : `U ${modelTotal}`}
             logoUrl={homeLogoUrl}
           />
 
-          {/* Edge verdict */}
-          <EdgeVerdict
-            spreadDiff={spreadDiff}
-            spreadEdge={game.spreadEdge}
-            totalDiff={totalDiff}
-            totalEdge={game.totalEdge}
-          />
+          {/* Edge verdict — only shown when model projections are available */}
+          {(!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
+            <EdgeVerdict
+              spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
+              spreadEdge={game.spreadEdge}
+              totalDiff={isNaN(totalDiff) ? null : totalDiff}
+              totalEdge={game.totalEdge}
+            />
+          )}
         </div>
       </motion.div>
 

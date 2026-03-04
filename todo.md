@@ -107,3 +107,4 @@
 - [x] Update public games.list to only return publishedToFeed=true games
 - [x] Redesign PublishProjections page to match GameCard feed style with inline MODEL LINE and MODEL O/U inputs
 - [x] Enforce strict owner-only access on PublishProjections (frontend redirect + backend ownerProcedure)
+- [x] Show all 40 March 4 games on Dashboard feed with book lines (model columns empty until published)\n
