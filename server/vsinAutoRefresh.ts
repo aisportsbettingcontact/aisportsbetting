@@ -57,6 +57,7 @@ function slugsMatch(a: string, b: string): boolean {
   if (na === nb) return true;
   // Common suffix aliases
   const aliases: Record<string, string> = {
+    // _st -> _state
     michigan_st: "michigan_state",
     ohio_st: "ohio_state",
     penn_st: "penn_state",
@@ -68,6 +69,7 @@ function slugsMatch(a: string, b: string): boolean {
     youngstown_st: "youngstown_state",
     wright_st: "wright_state",
     iowa_st: "iowa_state",
+    // DB abbreviated slugs -> canonical
     c_conn_st: "central_connecticut",
     lemoyne: "le_moyne",
     w_georgia: "west_georgia",
@@ -79,6 +81,39 @@ function slugsMatch(a: string, b: string): boolean {
     n_kentucky: "northern_kentucky",
     sc_upstate: "south_carolina_upstate",
     e_illinois: "eastern_illinois",
+    // NCAA seoname -> DB slug
+    southern_ill: "s_illinois",
+    middle_tenn: "middle_tenn_st",
+    north_dakota_st: "n_dakota_st",
+    south_dakota_st: "s_dakota_st",
+    southeast_mo_st: "se_missouri_st",
+    ut_martin: "tennessee_martin",
+    md_east_shore: "md_e_shore",
+    mississippi_val: "miss_valley_st",
+    western_ky: "w_kentucky",
+    prairie_view: "prairie_view_a_and_m",
+    grambling: "grambling_st",
+    south_carolina_st: "s_carolina_st",
+    uni: "n_iowa",
+    alcorn: "alcorn_st",
+    cal_st_northridge: "csu_northridge",
+    bakersfield: "csu_bakersfield",
+    cal_st_fullerton: "csu_fullerton",
+    lindenwood_mo: "lindenwood",
+    south_utah: "southern_utah",
+    coppin_st: "coppin_state",
+    delaware_st: "delaware_state",
+    florida_am: "florida_a_and_m",
+    alabama_am: "alabama_a_and_m",
+    alabama_st: "alabama_state",
+    grambling_st: "grambling_st",
+    morgan_st: "morgan_state",
+    norfolk_st: "norfolk_state",
+    kennesaw_st: "kennesaw_state",
+    jacksonville_st: "jacksonville_state",
+    new_mexico_st: "new_mexico_state",
+    tarleton_st: "tarleton_state",
+    arkansas_st: "arkansas_state",
   };
   const resolve = (s: string) => aliases[s] ?? s;
   return resolve(na) === resolve(nb);

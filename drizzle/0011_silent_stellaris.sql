@@ -1,0 +1,1 @@
+ALTER TABLE `games` MODIFY COLUMN `startTimeEst` varchar(12) NOT NULL DEFAULT 'TBD';

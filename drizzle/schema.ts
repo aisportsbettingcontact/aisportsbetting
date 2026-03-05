@@ -86,7 +86,7 @@ export const games = mysqlTable("games", {
   id: int("id").autoincrement().primaryKey(),
   fileId: int("fileId").notNull(),
   gameDate: varchar("gameDate", { length: 20 }).notNull(),
-  startTimeEst: varchar("startTimeEst", { length: 10 }).notNull(),
+  startTimeEst: varchar("startTimeEst", { length: 12 }).notNull().default("TBD"),
   awayTeam: varchar("awayTeam", { length: 128 }).notNull(),
   awayBookSpread: decimal("awayBookSpread", { precision: 6, scale: 1 }),
   awayModelSpread: decimal("awayModelSpread", { precision: 6, scale: 1 }),
