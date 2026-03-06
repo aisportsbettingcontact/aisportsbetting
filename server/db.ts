@@ -193,7 +193,7 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }) {
     .select()
     .from(games)
     .where(and(...conditions))
-    .orderBy(games.gameDate, games.startTimeEst, games.sortOrder);
+    .orderBy(games.gameDate, sql`CASE WHEN ${games.startTimeEst} = '00:00' THEN '24:00' ELSE ${games.startTimeEst} END`, games.sortOrder);
 }
 
 export async function deleteGamesByFileId(fileId: number) {
@@ -317,7 +317,7 @@ export async function listGamesByDate(gameDate: string) {
     .select()
     .from(games)
     .where(eq(games.gameDate, gameDate))
-    .orderBy(games.startTimeEst, games.sortOrder);
+    .orderBy(sql`CASE WHEN ${games.startTimeEst} = '00:00' THEN '24:00' ELSE ${games.startTimeEst} END`, games.sortOrder);
 }
 
 /** List all staging games for a given date (fileId = 0, unpublished) */
@@ -328,7 +328,7 @@ export async function listStagingGames(gameDate: string) {
     .select()
     .from(games)
     .where(and(eq(games.gameDate, gameDate), eq(games.fileId, 0)))
-    .orderBy(games.startTimeEst, games.sortOrder);
+    .orderBy(sql`CASE WHEN ${games.startTimeEst} = '00:00' THEN '24:00' ELSE ${games.startTimeEst} END`, games.sortOrder);
 }
 
 /** Update model projections and edge labels for a single game */
@@ -400,7 +400,7 @@ export async function listStagingGamesRange(fromDate: string, toDate: string) {
       gte(games.gameDate, fromDate),
       lte(games.gameDate, toDate)
     ))
-    .orderBy(games.gameDate, games.startTimeEst, games.sortOrder);
+    .orderBy(games.gameDate, sql`CASE WHEN ${games.startTimeEst} = '00:00' THEN '24:00' ELSE ${games.startTimeEst} END`, games.sortOrder);
 }
 
 /** Look up a game by its NCAA contest ID (for dedup during NCAA-only insert) */

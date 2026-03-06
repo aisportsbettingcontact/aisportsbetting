@@ -220,3 +220,6 @@
 - [x] GameCard: when startTimeEst = "00:00", display header date as gameDate + 1 day (next ET calendar day), e.g. "Fri, Mar 6 · 12:00 AM ET"
 - [x] EditableGameCard (PublishProjections): same fix — show next-day ET date in header for midnight games
 - [x] Game remains grouped under gameDate (Thu, Mar 5) in the feed — only the header label changes
+
+## Midnight Game Sort Order Fix (2026-03-06)
+- [x] DB queries: treat startTimeEst = "00:00" as "24:00" in ORDER BY so midnight games sort last on the day's slate
