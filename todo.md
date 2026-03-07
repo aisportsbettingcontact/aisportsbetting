@@ -340,3 +340,6 @@
 
 ## BettingSplitsPanel Black Bar Fix (2026-03-07)
 - [x] No bar should ever be black in any sport/league — if primary color is black/very dark, fall back to secondary color
+
+## BettingSplitsPanel Adaptive Bar Text Color (2026-03-07)
+- [x] When bar color is white/very light, switch in-bar % text to black for readability

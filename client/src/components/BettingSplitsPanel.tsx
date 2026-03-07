@@ -71,6 +71,24 @@ function isTooDark(hex: string | null | undefined): boolean {
 }
 
 /**
+ * Returns true if a hex color is white or very light (perceived luminance > 85%).
+ * In-bar text should be black on light-colored bars.
+ */
+function isTooLight(hex: string | null | undefined): boolean {
+  if (!hex) return false;
+  const clean = hex.replace(/^#/, "");
+  if (clean.length !== 6 && clean.length !== 3) return false;
+  const full = clean.length === 3
+    ? clean.split("").map(c => c + c).join("")
+    : clean;
+  const r = parseInt(full.slice(0, 2), 16) / 255;
+  const g = parseInt(full.slice(2, 4), 16) / 255;
+  const b = parseInt(full.slice(4, 6), 16) / 255;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.85; // > ~85% luminance = white/near-white
+}
+
+/**
  * Pick the best bar color: primary → secondary → tertiary → fallback.
  * Skips any color that is too dark (black/near-black).
  */
@@ -99,6 +117,9 @@ interface SplitBarProps {
 
 function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarProps) {
   const hasData = awayPct != null && homePct != null;
+  // Adaptive text: black on light bars, white on dark bars
+  const awayTextColor = isTooLight(awayColor) ? "#000000" : "#ffffff";
+  const homeTextColor = isTooLight(homeColor) ? "#000000" : "#ffffff";
   return (
     <div className="flex flex-col gap-0.5">
       {/* Centered label */}
@@ -125,7 +146,7 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
               borderRadius: awayPct! >= 100 ? "9999px" : "9999px 0 0 9999px",
             }}
           >
-            <span className="text-[12px] font-extrabold tabular-nums text-white leading-none drop-shadow-sm">
+            <span className="text-[12px] font-extrabold tabular-nums leading-none drop-shadow-sm" style={{ color: awayTextColor }}>
               {awayPct}%
             </span>
           </div>
@@ -138,7 +159,7 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
               borderRadius: homePct! >= 100 ? "9999px" : "0 9999px 9999px 0",
             }}
           >
-            <span className="text-[12px] font-extrabold tabular-nums text-white leading-none drop-shadow-sm">
+            <span className="text-[12px] font-extrabold tabular-nums leading-none drop-shadow-sm" style={{ color: homeTextColor }}>
               {homePct}%
             </span>
           </div>
