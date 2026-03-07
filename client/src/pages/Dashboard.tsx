@@ -78,9 +78,10 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
-  const awaySchool = awayNcaa?.ncaaName ?? awayNba?.name ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  // For NBA: show city on line 1, nickname on line 2
+  const awaySchool = awayNcaa?.ncaaName ?? awayNba?.city ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const awayNick = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? "";
-  const homeSchool = homeNcaa?.ncaaName ?? homeNba?.name ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const homeSchool = homeNcaa?.ncaaName ?? homeNba?.city ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const homeNick = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? "";
   const time = formatMilitaryTime(game.startTimeEst);
   const dateShort = formatDateShort(game.gameDate);

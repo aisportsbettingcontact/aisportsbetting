@@ -400,8 +400,9 @@ export function GameCard({ game }: GameCardProps) {
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba  = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba  = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
-  const awayName = awayNcaa?.ncaaName ?? awayNba?.name ?? game.awayTeam.replace(/_/g, " ");
-  const homeName = homeNcaa?.ncaaName ?? homeNba?.name ?? game.homeTeam.replace(/_/g, " ");
+  // For NBA: show city on line 1, nickname on line 2 (mirrors NCAAM school/nickname layout)
+  const awayName = awayNcaa?.ncaaName ?? awayNba?.city ?? game.awayTeam.replace(/_/g, " ");
+  const homeName = homeNcaa?.ncaaName ?? homeNba?.city ?? game.homeTeam.replace(/_/g, " ");
   const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? "";
   const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? "";
   const awayLogoUrl = awayNcaa?.logoUrl ?? awayNba?.logoUrl;

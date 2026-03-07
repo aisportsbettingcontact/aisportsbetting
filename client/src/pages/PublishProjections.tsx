@@ -523,8 +523,9 @@ function EditableGameCard({ game, onSaved }: { game: GameRow; onSaved: () => voi
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba  = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba  = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
-  const awayName     = awayNcaa?.ncaaName ?? awayNba?.name ?? formatTeamName(game.awayTeam);
-  const homeName     = homeNcaa?.ncaaName ?? homeNba?.name ?? formatTeamName(game.homeTeam);
+  // For NBA: show city on line 1, nickname on line 2 (mirrors NCAAM school/nickname layout)
+  const awayName     = awayNcaa?.ncaaName ?? awayNba?.city ?? formatTeamName(game.awayTeam);
+  const homeName     = homeNcaa?.ncaaName ?? homeNba?.city ?? formatTeamName(game.homeTeam);
   const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? undefined;
   const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? undefined;
   const awayLogoUrl  = awayNcaa?.logoUrl ?? awayNba?.logoUrl ?? undefined;
