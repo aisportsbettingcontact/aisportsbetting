@@ -346,3 +346,12 @@
 
 ## BettingSplitsPanel WCAG Bar Text Contrast (2026-03-07)
 - [x] Replace simple luminance threshold with WCAG contrast-ratio check for maximum bar text readability
+
+## Splits Auto-Refresh Integration (2026-03-07)
+- [x] Auto-refresh script: extract and persist betting splits alongside lines/odds on every tick
+  - NCAAM update path: already writing all 4 splits fields
+  - NCAAM insert path: fixed — now writes all 4 splits fields on first insert
+  - NBA update path: already writing all 6 splits fields + ML odds
+  - NBA insert path: already writing all 6 splits fields + ML odds
+- [x] Refresh Now button: also update betting splits for each game when triggered
+  - refreshBooksRoute.ts rewritten: scrapes NCAAM + NBA in parallel, writes all splits fields in updateBookOdds call

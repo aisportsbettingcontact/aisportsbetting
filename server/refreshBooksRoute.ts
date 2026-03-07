@@ -2,7 +2,9 @@
  * GET /api/refresh-books?gameDate=YYYY-MM-DD  (defaults to today PST)
  *
  * Server-Sent Events endpoint. Streams one JSON event per game as its
- * book odds are scraped from VSiN and written to the DB.
+ * book odds AND betting splits are scraped from VSiN and written to the DB.
+ *
+ * Handles both NCAAM (scrapeVsinOdds) and NBA (scrapeNbaVsinOdds) games.
  *
  * Event format:
  *   data: {"type":"start","total":40}
@@ -18,6 +20,7 @@ import { jwtVerify } from "jose";
 import { ENV } from "./_core/env";
 import { listStagingGames, updateBookOdds, getAppUserById } from "./db";
 import { scrapeVsinOdds } from "./vsinScraper";
+import { scrapeNbaVsinOdds } from "./nbaVsinScraper";
 
 const APP_USER_COOKIE = "app_session";
 
@@ -65,7 +68,7 @@ export function registerRefreshBooksRoute(app: Express) {
     };
 
     try {
-      // 1. Load all games for this date
+      // 1. Load all games for this date (NCAAM + NBA)
       const allGames = await listStagingGames(gameDate);
 
       if (allGames.length === 0) {
@@ -76,64 +79,135 @@ export function registerRefreshBooksRoute(app: Express) {
 
       send({ type: "start", total: allGames.length });
 
-      // 2. Scrape VSiN — keep SSE alive with a heartbeat while Puppeteer loads
-      send({ type: "scraping", message: "Loading VSiN betting splits… (up to 60s)" });
+      // 2. Scrape VSiN for both sports — keep SSE alive with a heartbeat while Puppeteer loads
+      send({ type: "scraping", message: "Loading VSiN betting splits… (up to 90s)" });
       const heartbeat = setInterval(() => {
         res.write(": heartbeat\n\n");
         if (typeof (res as any).flush === "function") (res as any).flush();
       }, 10000);
 
-      let scraped;
+      const dateLabel = gameDate.replace(/-/g, "");
+      let scrapedNcaam: Awaited<ReturnType<typeof scrapeVsinOdds>> = [];
+      let scrapedNba: Awaited<ReturnType<typeof scrapeNbaVsinOdds>> = [];
+
       try {
-        // Convert gameDate (e.g. "2026-03-04") to YYYYMMDD format (e.g. "20260304")
-        const dateLabel = gameDate.replace(/-/g, "");
-        scraped = await scrapeVsinOdds(dateLabel);
+        // Scrape NCAAM and NBA in parallel for speed
+        [scrapedNcaam, scrapedNba] = await Promise.all([
+          scrapeVsinOdds(dateLabel).catch(err => {
+            console.error("[RefreshBooks] NCAAM scrape failed:", err);
+            return [];
+          }),
+          scrapeNbaVsinOdds(dateLabel).catch(err => {
+            console.error("[RefreshBooks] NBA scrape failed:", err);
+            return [];
+          }),
+        ]);
       } finally {
         clearInterval(heartbeat);
       }
 
-      // 3. Match each DB game to a scraped game by team name
+      // 3. Match each DB game to a scraped game and write odds + splits
       let updated = 0;
       for (let i = 0; i < allGames.length; i++) {
         const game = allGames[i];
+        const isNba = game.sport === "NBA";
 
-        // Find the scraped entry by slug (deterministic href-based slugs)
-        const match = scraped.find(
-          (s) =>
-            s.awaySlug === game.awayTeam &&
-            s.homeSlug === game.homeTeam
-        );
+        if (isNba) {
+          // NBA: match against NBA scraped data
+          const match = scrapedNba.find(
+            (s) => s.awaySlug === game.awayTeam && s.homeSlug === game.homeTeam
+          );
 
-        if (match) {
-          await updateBookOdds(game.id, {
-            awayBookSpread: match.awaySpread,
-            homeBookSpread: match.homeSpread,
-            bookTotal: match.total,
-          });
-          updated++;
-          send({
-            type: "game",
-            index: i + 1,
-            total: allGames.length,
-            awayTeam: game.awayTeam,
-            homeTeam: game.homeTeam,
-            awaySpread: match.awaySpread,
-            homeSpread: match.homeSpread,
-            bookTotal: match.total,
-            status: "ok",
-          });
+          if (match) {
+            await updateBookOdds(game.id, {
+              awayBookSpread: match.awaySpread,
+              homeBookSpread: match.homeSpread,
+              bookTotal: match.total,
+              // NBA betting splits (6 fields + ML odds)
+              spreadAwayBetsPct: match.spreadAwayBetsPct,
+              spreadAwayMoneyPct: match.spreadAwayMoneyPct,
+              totalOverBetsPct: match.totalOverBetsPct,
+              totalOverMoneyPct: match.totalOverMoneyPct,
+              mlAwayBetsPct: match.mlAwayBetsPct,
+              mlAwayMoneyPct: match.mlAwayMoneyPct,
+              awayML: match.awayML,
+              homeML: match.homeML,
+            });
+            updated++;
+            send({
+              type: "game",
+              index: i + 1,
+              total: allGames.length,
+              sport: "NBA",
+              awayTeam: game.awayTeam,
+              homeTeam: game.homeTeam,
+              awaySpread: match.awaySpread,
+              homeSpread: match.homeSpread,
+              bookTotal: match.total,
+              splitsUpdated: true,
+              status: "ok",
+            });
+          } else {
+            send({
+              type: "game",
+              index: i + 1,
+              total: allGames.length,
+              sport: "NBA",
+              awayTeam: game.awayTeam,
+              homeTeam: game.homeTeam,
+              awaySpread: null,
+              homeSpread: null,
+              bookTotal: null,
+              splitsUpdated: false,
+              status: "no_match",
+            });
+          }
         } else {
-          send({
-            type: "game",
-            index: i + 1,
-            total: allGames.length,
-            awayTeam: game.awayTeam,
-            homeTeam: game.homeTeam,
-            awaySpread: null,
-            homeSpread: null,
-            bookTotal: null,
-            status: "no_match",
-          });
+          // NCAAM: match against NCAAM scraped data
+          const match = scrapedNcaam.find(
+            (s) => s.awaySlug === game.awayTeam && s.homeSlug === game.homeTeam
+          );
+
+          if (match) {
+            await updateBookOdds(game.id, {
+              awayBookSpread: match.awaySpread,
+              homeBookSpread: match.homeSpread,
+              bookTotal: match.total,
+              // NCAAM betting splits (4 fields)
+              spreadAwayBetsPct: match.spreadAwayBetsPct,
+              spreadAwayMoneyPct: match.spreadAwayMoneyPct,
+              totalOverBetsPct: match.totalOverBetsPct,
+              totalOverMoneyPct: match.totalOverMoneyPct,
+            });
+            updated++;
+            send({
+              type: "game",
+              index: i + 1,
+              total: allGames.length,
+              sport: "NCAAM",
+              awayTeam: game.awayTeam,
+              homeTeam: game.homeTeam,
+              awaySpread: match.awaySpread,
+              homeSpread: match.homeSpread,
+              bookTotal: match.total,
+              splitsUpdated: true,
+              status: "ok",
+            });
+          } else {
+            send({
+              type: "game",
+              index: i + 1,
+              total: allGames.length,
+              sport: "NCAAM",
+              awayTeam: game.awayTeam,
+              homeTeam: game.homeTeam,
+              awaySpread: null,
+              homeSpread: null,
+              bookTotal: null,
+              splitsUpdated: false,
+              status: "no_match",
+            });
+          }
         }
       }
 

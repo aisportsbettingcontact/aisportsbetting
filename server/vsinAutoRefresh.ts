@@ -252,6 +252,11 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
           rotNums: null,
           sortOrder: scraped.vsinRowIndex,
           ncaaContestId: ncaaContestId ?? null,
+          // NCAAM betting splits (4 fields) — include on insert so splits are captured immediately
+          spreadAwayBetsPct: scraped.spreadAwayBetsPct,
+          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
+          totalOverBetsPct: scraped.totalOverBetsPct,
+          totalOverMoneyPct: scraped.totalOverMoneyPct,
         };
         await insertGames([row]);
         totalInserted++;
