@@ -168,13 +168,19 @@ export const appRouter = router({
           .object({
             sport: z.string().optional(),
             gameDate: z.string().optional(),
+            gameStatus: z.enum(['upcoming', 'live', 'final']).optional(),
           })
           .optional()
       )
       .query(async ({ input }) => {
         const games = await listGames(input ?? {});
         // Filter by the appropriate registry based on sport
-        return games.filter(g => isValidGame(g.awayTeam, g.homeTeam, g.sport));
+        let filtered = games.filter(g => isValidGame(g.awayTeam, g.homeTeam, g.sport));
+        // Filter by game status if provided
+        if (input?.gameStatus) {
+          filtered = filtered.filter(g => g.gameStatus === input.gameStatus);
+        }
+        return filtered;
       }),
 
     /**

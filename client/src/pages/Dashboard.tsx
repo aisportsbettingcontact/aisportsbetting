@@ -131,6 +131,7 @@ export default function Dashboard() {
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA">("NCAAM");
+  const [selectedStatus, setSelectedStatus] = useState<"all" | "upcoming" | "live" | "final">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -179,10 +180,28 @@ export default function Dashboard() {
   });
   const appLogout = () => appLogoutMutation.mutate();
 
+  // Reset status filter when sport changes (NBA doesn't have status tracking yet)
+  useEffect(() => {
+    if (selectedSport === "NBA") setSelectedStatus("all");
+  }, [selectedSport]);
+
   // ─── Data queries ─────────────────────────────────────────────────────────
-  const { data: games, isLoading: gamesLoading } = trpc.games.list.useQuery(
+  const { data: allGames, isLoading: gamesLoading } = trpc.games.list.useQuery(
     { sport: selectedSport }, { refetchOnWindowFocus: false }
   );
+
+  // Count live games for the badge
+  const liveCount = useMemo(() =>
+    (allGames ?? []).filter(g => g?.gameStatus === 'live').length,
+    [allGames]
+  );
+
+  // Apply status filter client-side (avoids extra network round-trip)
+  const games = useMemo(() => {
+    if (!allGames) return allGames;
+    if (selectedStatus === 'all') return allGames;
+    return allGames.filter(g => g?.gameStatus === selectedStatus);
+  }, [allGames, selectedStatus]);
   const { data: lastRefresh } = trpc.games.lastRefresh.useQuery(undefined, {
     refetchInterval: 60_000,
   });
@@ -416,7 +435,56 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Row 3: Search bar (always visible, sticky with header) */}
+        {/* Row 3: Status filter tabs (NCAAM only) */}
+        {selectedSport === "NCAAM" && (
+          <div className="px-4 pb-1 max-w-3xl mx-auto flex items-center gap-1.5">
+            {([
+              { key: "all", label: "ALL" },
+              { key: "upcoming", label: "UPCOMING" },
+              { key: "live", label: "LIVE" },
+              { key: "final", label: "FINAL" },
+            ] as const).map(({ key, label }) => {
+              const isActive = selectedStatus === key;
+              const isLive = key === "live";
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSelectedStatus(key)}
+                  className="relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all"
+                  style={isActive
+                    ? isLive
+                      ? { background: "rgba(239,68,68,0.18)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.45)" }
+                      : { background: "rgba(57,255,20,0.12)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.35)" }
+                    : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
+                  }
+                >
+                  {isLive && liveCount > 0 && (
+                    <span
+                      className="inline-block rounded-full"
+                      style={{
+                        width: 6, height: 6, flexShrink: 0,
+                        background: isActive ? "#ef4444" : "#ef4444",
+                        boxShadow: isActive ? "0 0 6px #ef4444" : "none",
+                        animation: "pulse 1.5s ease-in-out infinite",
+                      }}
+                    />
+                  )}
+                  {label}
+                  {isLive && liveCount > 0 && (
+                    <span
+                      className="ml-0.5 text-[10px] font-black"
+                      style={{ color: isActive ? "#ef4444" : "hsl(var(--muted-foreground))" }}
+                    >
+                      {liveCount}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Row 4: Search bar (always visible, sticky with header) */}
         <div ref={searchRef} className="relative px-4 pb-2 max-w-3xl mx-auto">
           <div
             className="flex items-center gap-2.5 px-3 py-2 rounded-lg border transition-all duration-150"
@@ -492,10 +560,15 @@ export default function Dashboard() {
         ) : sortedDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
             <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
-            <div>
-              <p className="text-sm font-semibold text-foreground mb-1">No projections available</p>
-              <p className="text-xs text-muted-foreground">No {selectedSport} games found.</p>
-            </div>
+          <div>
+            <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
+            <p className="text-xs text-muted-foreground">
+              {selectedStatus !== 'all'
+                ? `No ${selectedStatus} ${selectedSport} games right now.`
+                : `No ${selectedSport} games found.`
+              }
+            </p>
+          </div>
           </div>
         ) : (
           sortedDates.map((date) => (

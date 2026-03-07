@@ -418,10 +418,10 @@ export async function getGameByNcaaContestId(contestId: string) {
   return rows[0] ?? null;
 }
 
-/** Update start time and ncaaContestId for a game (used when NCAA data arrives after VSiN insert) */
+/** Update start time, ncaaContestId, and gameStatus for a game (used when NCAA data arrives after VSiN insert) */
 export async function updateNcaaStartTime(
   id: number,
-  data: { startTimeEst: string; ncaaContestId: string }
+  data: { startTimeEst: string; ncaaContestId: string; gameStatus?: 'upcoming' | 'live' | 'final' }
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;

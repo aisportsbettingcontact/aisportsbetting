@@ -1,0 +1,1 @@
+ALTER TABLE `games` ADD `gameStatus` enum('upcoming','live','final') DEFAULT 'upcoming' NOT NULL;

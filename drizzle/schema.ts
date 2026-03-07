@@ -131,6 +131,8 @@ export const games = mysqlTable("games", {
   sortOrder: int("sortOrder").notNull().default(9999),
   /** NCAA contest ID (unique per game) — used to dedup NCAA-only games (e.g. TBA vs TBA) */
   ncaaContestId: varchar("ncaaContestId", { length: 20 }),
+  /** Game status: 'upcoming' (pre-game), 'live' (in-progress), 'final' (completed) */
+  gameStatus: mysqlEnum("gameStatus", ["upcoming", "live", "final"]).notNull().default("upcoming"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   /** Prevent duplicate rows for the same matchup on the same date */

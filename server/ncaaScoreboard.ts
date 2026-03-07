@@ -15,6 +15,8 @@ const NCAA_API = "https://sdataprod.ncaa.com/";
 const GET_CONTESTS_SHA =
   "7287cda610a9326931931080cb3a604828febe6fe3c9016a7e4a36db99efdb7c";
 
+export type NcaaGameStatus = 'upcoming' | 'live' | 'final';
+
 export interface NcaaGame {
   /** NCAA contest ID — unique per game, used as dedup key */
   contestId: string;
@@ -39,6 +41,11 @@ export interface NcaaGame {
    * Only set when hasStartTime=false but epoch resolves to 00:xx ET.
    */
   isMidnightGame: boolean;
+  /**
+   * Game status derived from NCAA API gameState field:
+   * 'P' (pre) → 'upcoming', 'I' (in-progress) → 'live', 'F' (final) → 'final'
+   */
+  gameStatus: NcaaGameStatus;
 }
 
 function toNcaaDate(yyyymmdd: string): string {
@@ -130,6 +137,12 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
     const awaySeoname = away.seoname === "tba" ? "tba" : ncaaSlugToDb(away.seoname);
     const homeSeoname = home.seoname === "tba" ? "tba" : ncaaSlugToDb(home.seoname);
 
+    // Map NCAA gameState to our status enum
+    const gameStatus: NcaaGameStatus =
+      c.gameState === 'F' ? 'final' :
+      c.gameState === 'I' ? 'live' :
+      'upcoming';
+
     games.push({
       contestId: String(c.contestId),
       awaySeoname,
@@ -138,6 +151,7 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
       hasStartTime: c.hasStartTime ?? false,
       startTimeEpoch: c.startTimeEpoch,
       isMidnightGame,
+      gameStatus,
     });
   }
 

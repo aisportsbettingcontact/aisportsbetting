@@ -381,3 +381,15 @@
 ## Missing Team Colors (2026-03-07)
 - [ ] Identify all NCAAM and NBA teams with null primaryColor in the DB
 - [ ] Populate correct hex colors for all teams missing color data (source: ESPN team pages)
+
+## NCAAM Feed Game Status Filter (2026-03-07)
+- [x] Add gameStatus field to games DB schema (enum: 'upcoming' | 'live' | 'final')
+- [x] Run db:push migration
+- [x] Update ncaaScoreboard.ts NcaaGame interface to include gameStatus from gameState field (P→upcoming, I→live, F→final)
+- [x] Update fetchNcaaGames() to return gameStatus on each game
+- [x] Update vsinAutoRefresh.ts to write gameStatus on insert and update
+- [x] Update db.ts updateNcaaStartTime to also update gameStatus
+- [x] Add ALL/Upcoming/LIVE/FINAL filter tabs to Dashboard NCAAM feed
+- [x] Wire filter tabs to gameStatus field in games.list tRPC procedure
+- [x] Show live game count badge on LIVE tab
+- [ ] Save checkpoint and deliver

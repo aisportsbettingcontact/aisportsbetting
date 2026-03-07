@@ -207,6 +207,7 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         g => g.awaySeoname === awaySlug && g.homeSeoname === homeSlug
       );
       const ncaaContestId = ncaaGame?.contestId ?? null;
+      const ncaaGameStatus = ncaaGame?.gameStatus;
 
       if (existingGame) {
         await updateBookOdds(existingGame.id, {
@@ -221,12 +222,12 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
           totalOverBetsPct: scraped.totalOverBetsPct,
           totalOverMoneyPct: scraped.totalOverMoneyPct,
         });
-        if (ncaaContestId && !existingGame.ncaaContestId) {
-          await updateNcaaStartTime(existingGame.id, {
-            startTimeEst: startTimeEst ?? existingGame.startTimeEst,
-            ncaaContestId,
-          });
-        }
+        // Always update gameStatus when we have NCAA data
+        await updateNcaaStartTime(existingGame.id, {
+          startTimeEst: startTimeEst ?? existingGame.startTimeEst,
+          ncaaContestId: ncaaContestId ?? existingGame.ncaaContestId ?? '',
+          ...(ncaaGameStatus ? { gameStatus: ncaaGameStatus } : {}),
+        });
         totalUpdated++;
       } else {
         const row: InsertGame = {
@@ -252,6 +253,7 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
           rotNums: null,
           sortOrder: scraped.vsinRowIndex,
           ncaaContestId: ncaaContestId ?? null,
+          gameStatus: ncaaGameStatus ?? 'upcoming',
           // NCAAM betting splits (4 fields) — include on insert so splits are captured immediately
           spreadAwayBetsPct: scraped.spreadAwayBetsPct,
           spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
@@ -279,7 +281,7 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
     const existing = await listGamesByDate(dateStr, "NCAAM");
 
     for (const ncaaGame of ncaaGames) {
-      const { contestId, awaySeoname, homeSeoname, startTimeEst, isMidnightGame } = ncaaGame;
+      const { contestId, awaySeoname, homeSeoname, startTimeEst, isMidnightGame, gameStatus } = ncaaGame;
 
       if (!VALID_DB_SLUGS.has(awaySeoname) || !VALID_DB_SLUGS.has(homeSeoname)) {
         if (awaySeoname !== "tba" && homeSeoname !== "tba") {
@@ -300,12 +302,12 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         e => slugsMatch(e.awayTeam, awaySeoname) && slugsMatch(e.homeTeam, homeSeoname)
       );
       if (bySlug) {
-        if (!bySlug.ncaaContestId) {
-          await updateNcaaStartTime(bySlug.id, {
-            startTimeEst: startTimeEst !== "TBD" ? startTimeEst : bySlug.startTimeEst,
-            ncaaContestId: contestId,
-          });
-        }
+        // Always update gameStatus; also patch ncaaContestId if missing
+        await updateNcaaStartTime(bySlug.id, {
+          startTimeEst: startTimeEst !== "TBD" ? startTimeEst : bySlug.startTimeEst,
+          ncaaContestId: bySlug.ncaaContestId ?? contestId,
+          gameStatus,
+        });
         continue;
       }
 
@@ -325,14 +327,15 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         spreadDiff: null,
         totalEdge: null,
         totalDiff: null,
-        sport: "NCAAM",
-        gameType: "regular_season",
-        conference: null,
-        publishedToFeed: false,
-        rotNums: null,
-        sortOrder: 9999,
-        ncaaContestId: contestId,
-      };
+          sport: "NCAAM",
+          gameType: "regular_season",
+          conference: null,
+          publishedToFeed: false,
+          rotNums: null,
+          sortOrder: 9999,
+          ncaaContestId: contestId,
+          gameStatus,
+        };
       await insertGames([row]);
       ncaaInserted++;
       console.log(
