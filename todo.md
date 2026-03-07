@@ -324,3 +324,7 @@
 
 ## GameCard Layout Fix (2026-03-07)
 - [x] Fix GameCard flex layout: splits column must be constrained to fixed width on desktop so model projections are always visible
+
+## GameCard Layout Restructure (2026-03-07)
+- [x] Move betting splits to right side, model projections to left side, 50/50 split
+- [x] Polish overall card spacing, alignment, and justification

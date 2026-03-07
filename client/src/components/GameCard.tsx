@@ -127,11 +127,11 @@ function TeamRow({
       </div>
 
       {/* Team name */}
-      <div className="flex-shrink-0 flex flex-col justify-center overflow-hidden" style={{ width: "clamp(108px, 28vw, 135px)" }}>
+      <div className="flex-shrink-0 flex flex-col justify-center overflow-hidden" style={{ width: 120 }}>
         <div
           className="font-bold leading-none overflow-hidden"
           style={{
-            fontSize: "clamp(11px, 2.8vw, 13px)",
+            fontSize: 13,
             color: "hsl(var(--foreground))",
             whiteSpace: "nowrap",
             overflow: "hidden",
@@ -144,7 +144,7 @@ function TeamRow({
           <div
             className="font-medium leading-none mt-0.5"
             style={{
-              fontSize: "clamp(9px, 2.2vw, 11px)",
+              fontSize: 11,
               color: "hsl(var(--muted-foreground))",
               whiteSpace: "nowrap",
               overflow: "hidden",
@@ -161,7 +161,7 @@ function TeamRow({
         <div className="flex items-center justify-center">
           <span
             className="font-bold leading-none whitespace-nowrap"
-            style={{ fontSize: "clamp(13px, 3.5vw, 16px)", color: "#D3D3D3" }}
+            style={{ fontSize: 15, color: "#D3D3D3" }}
           >
             {consensus}
           </span>
@@ -171,7 +171,7 @@ function TeamRow({
             className="flex items-center justify-center px-2 py-1.5 rounded-lg whitespace-nowrap"
             style={{ background: "rgba(255,255,255,0.08)", minWidth: "48px" }}
           >
-            <span className="font-bold leading-none" style={{ fontSize: "clamp(13px, 3.5vw, 15px)", color: "#FFFFFF" }}>
+            <span className="font-bold leading-none" style={{ fontSize: 14, color: "#FFFFFF" }}>
               {modelSpread}
             </span>
           </span>
@@ -181,7 +181,7 @@ function TeamRow({
             className="flex items-center justify-center px-2 py-1.5 rounded-lg whitespace-nowrap"
             style={{ background: "rgba(255,255,255,0.08)", minWidth: "52px" }}
           >
-            <span className="font-bold leading-none" style={{ fontSize: "clamp(13px, 3.5vw, 15px)", color: "#FFFFFF" }}>
+            <span className="font-bold leading-none" style={{ fontSize: 14, color: "#FFFFFF" }}>
               {modelTotal}
             </span>
           </span>
@@ -620,56 +620,29 @@ export function GameCard({ game }: GameCardProps) {
 
         {/*
           ── Two-column body ─────────────────────────────────────────────────
-          On desktop (≥640px): splits on left (fixed 220px), projections on right (flex-1)
-          On mobile (<640px):  splits on top, projections below
+          On desktop (≥640px): projections left (50%), splits right (50%)
+          On mobile (<640px):  projections on top, splits below
         */}
         <div
           className="flex flex-col sm:flex-row"
           style={{ minHeight: 0 }}
         >
-          {/* ── Left: Betting Splits ─────────────────────────────────────── */}
-          {/* Mobile: full width; Desktop: fixed 220px */}
-          <div
-            className="flex-shrink-0 px-3 py-2 w-full sm:w-[220px]"
-          >
-            <BettingSplitsPanel
-              game={game}
-              awayLabel={awayName}
-              homeLabel={homeName}
-              awayNickname={awayNickname}
-              homeNickname={homeNickname}
-            />
-          </div>
-
-          {/* Vertical divider (desktop only) */}
-          <div
-            className="hidden sm:block self-stretch flex-shrink-0"
-            style={{ width: 1, background: "hsl(var(--border) / 0.5)" }}
-          />
-
-          {/* Horizontal divider (mobile only) */}
-          <div
-            className="sm:hidden mx-3"
-            style={{ height: 1, background: "hsl(var(--border) / 0.5)" }}
-          />
-
-          {/* ── Right: Model Projections ─────────────────────────────────── */}
-          <div className="flex-1 px-3 pt-1 pb-3 min-w-0">
+          {/* ── Left: Model Projections (50%) ──────────────────────────────── */}
+          <div className="w-full sm:w-1/2 px-4 pt-3 pb-4 min-w-0 flex flex-col">
             {/* Column labels */}
             <div
-              className="flex items-center gap-1.5 pb-1.5"
+              className="flex items-center pb-2"
               style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
             >
-              {/* Spacer matching logo + name column */}
-              <div className="flex-shrink-0" style={{ width: "clamp(80px, 22vw, 120px)" }} />
-              <div className="w-8 flex-shrink-0" />
-              <div className="flex-1 grid text-center" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+              {/* Spacer: logo (32px) + gap (6px) + name col (120px) */}
+              <div className="flex-shrink-0" style={{ width: 38 }} />
+              <div className="flex-shrink-0" style={{ width: 120 }} />
+              <div className="flex-1 grid text-center" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
                 <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Books</span>
                 <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model Line</span>
                 <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model O/U</span>
               </div>
             </div>
-
             {/* Away row */}
             <TeamRow
               slug={game.awayTeam}
@@ -680,9 +653,7 @@ export function GameCard({ game }: GameCardProps) {
               modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `O ${modelTotal}`) : "—"}
               logoUrl={awayLogoUrl}
             />
-
-            <div className="my-0.5" style={{ height: 1, background: "hsl(var(--border))" }} />
-
+            <div style={{ height: 1, background: "hsl(var(--border) / 0.6)" }} />
             {/* Home row */}
             <TeamRow
               slug={game.homeTeam}
@@ -693,7 +664,6 @@ export function GameCard({ game }: GameCardProps) {
               modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `U ${modelTotal}`) : "—"}
               logoUrl={homeLogoUrl}
             />
-
             {/* Edge verdict */}
             {game.publishedToFeed && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
               <EdgeVerdict
@@ -703,6 +673,28 @@ export function GameCard({ game }: GameCardProps) {
                 totalEdge={computedTotalEdge}
               />
             )}
+          </div>
+
+          {/* Vertical divider (desktop only) */}
+          <div
+            className="hidden sm:block self-stretch flex-shrink-0"
+            style={{ width: 1, background: "hsl(var(--border) / 0.5)" }}
+          />
+          {/* Horizontal divider (mobile only) */}
+          <div
+            className="sm:hidden mx-4"
+            style={{ height: 1, background: "hsl(var(--border) / 0.5)" }}
+          />
+
+          {/* ── Right: Betting Splits (50%) ─────────────────────────────────── */}
+          <div className="w-full sm:w-1/2 px-4 py-3">
+            <BettingSplitsPanel
+              game={game}
+              awayLabel={awayName}
+              homeLabel={homeName}
+              awayNickname={awayNickname}
+              homeNickname={homeNickname}
+            />
           </div>
         </div>
       </motion.div>
