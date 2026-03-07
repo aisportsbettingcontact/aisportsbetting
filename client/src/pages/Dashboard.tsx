@@ -131,7 +131,8 @@ export default function Dashboard() {
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA">("NCAAM");
-  const [selectedStatus, setSelectedStatus] = useState<"all" | "upcoming" | "live" | "final">("all");
+  // Multi-select status filter: empty Set = ALL
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -182,7 +183,7 @@ export default function Dashboard() {
 
   // Reset status filter when sport changes (NBA doesn't have status tracking yet)
   useEffect(() => {
-    if (selectedSport === "NBA") setSelectedStatus("all");
+    if (selectedSport === "NBA") setSelectedStatuses(new Set());
   }, [selectedSport]);
 
   // ─── Data queries ─────────────────────────────────────────────────────────
@@ -196,12 +197,43 @@ export default function Dashboard() {
     [allGames]
   );
 
-  // Apply status filter client-side (avoids extra network round-trip)
+  // Toggle a status in the multi-select set; selecting all 3 reverts to ALL (empty set)
+  const toggleStatus = (status: "upcoming" | "live" | "final") => {
+    setSelectedStatuses(prev => {
+      const next = new Set(prev);
+      if (next.has(status)) {
+        next.delete(status);
+      } else {
+        next.add(status);
+      }
+      // If all three are selected, revert to ALL
+      if (next.size === 3) return new Set();
+      return next;
+    });
+  };
+
+  // Apply status filter client-side; when ALL (empty set), sort FINAL games to bottom within each date
   const games = useMemo(() => {
     if (!allGames) return allGames;
-    if (selectedStatus === 'all') return allGames;
-    return allGames.filter(g => g?.gameStatus === selectedStatus);
-  }, [allGames, selectedStatus]);
+    if (selectedStatuses.size === 0) {
+      // ALL view: keep order but push FINAL games to the bottom within each date group
+      const byDate: Record<string, typeof allGames> = {};
+      for (const g of allGames) {
+        const d = g!.gameDate;
+        if (!byDate[d]) byDate[d] = [];
+        byDate[d]!.push(g);
+      }
+      const result: typeof allGames = [];
+      for (const d of Object.keys(byDate).sort()) {
+        const group = byDate[d]!;
+        const nonFinal = group.filter(g => g?.gameStatus !== 'final');
+        const finals = group.filter(g => g?.gameStatus === 'final');
+        result.push(...nonFinal, ...finals);
+      }
+      return result;
+    }
+    return allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
+  }, [allGames, selectedStatuses]);
   const { data: lastRefresh } = trpc.games.lastRefresh.useQuery(undefined, {
     refetchInterval: 60_000,
   });
@@ -435,21 +467,30 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Row 3: Status filter tabs (NCAAM only) */}
+        {/* Row 3: Status filter tabs (NCAAM only) — multi-select; selecting all 3 reverts to ALL */}
         {selectedSport === "NCAAM" && (
           <div className="px-4 pb-1 max-w-3xl mx-auto flex items-center gap-1.5">
-            {([
-              { key: "all", label: "ALL" },
-              { key: "upcoming", label: "UPCOMING" },
-              { key: "live", label: "LIVE" },
-              { key: "final", label: "FINAL" },
-            ] as const).map(({ key, label }) => {
-              const isActive = selectedStatus === key;
+            {/* ALL pill — active when nothing is selected */}
+            <button
+              onClick={() => setSelectedStatuses(new Set())}
+              className="relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all"
+              style={selectedStatuses.size === 0
+                ? { background: "rgba(57,255,20,0.12)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.35)" }
+                : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
+              }
+            >
+              ALL
+            </button>
+
+            {/* UPCOMING, LIVE, FINAL — multi-select toggles */}
+            {(["upcoming", "live", "final"] as const).map((key) => {
+              const isActive = selectedStatuses.has(key);
               const isLive = key === "live";
+              const label = key.toUpperCase();
               return (
                 <button
                   key={key}
-                  onClick={() => setSelectedStatus(key)}
+                  onClick={() => toggleStatus(key)}
                   className="relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all"
                   style={isActive
                     ? isLive
@@ -463,7 +504,7 @@ export default function Dashboard() {
                       className="inline-block rounded-full"
                       style={{
                         width: 6, height: 6, flexShrink: 0,
-                        background: isActive ? "#ef4444" : "#ef4444",
+                        background: "#ef4444",
                         boxShadow: isActive ? "0 0 6px #ef4444" : "none",
                         animation: "pulse 1.5s ease-in-out infinite",
                       }}
@@ -563,8 +604,8 @@ export default function Dashboard() {
           <div>
             <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
             <p className="text-xs text-muted-foreground">
-              {selectedStatus !== 'all'
-                ? `No ${selectedStatus} ${selectedSport} games right now.`
+              {selectedStatuses.size > 0
+                ? `No ${Array.from(selectedStatuses).join(' or ')} ${selectedSport} games right now.`
                 : `No ${selectedSport} games found.`
               }
             </p>

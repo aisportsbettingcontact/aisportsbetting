@@ -398,4 +398,10 @@
 - [x] Add ALL/UPCOMING/LIVE/FINAL filter tabs to Publish Projections page (mirrors Dashboard)
 - [x] Apply client-side status filter to the game list on Publish Projections
 - [x] Show live game count badge on LIVE tab
+- [x] Save checkpoint and deliver
+
+## Dashboard Status Filter Multi-Select + FINAL Sort (2026-03-07)
+- [x] Change status filter from single-select to multi-select (UPCOMING, LIVE, FINAL can be combined)
+- [x] When all three are selected simultaneously, auto-revert to ALL (unselect all)
+- [x] When ALL is active, sort FINAL games to the bottom within each date group
 - [ ] Save checkpoint and deliver
