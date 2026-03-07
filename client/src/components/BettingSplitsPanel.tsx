@@ -163,7 +163,7 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
       <div className="flex items-center justify-center">
         <span
           className="text-[9px] uppercase tracking-widest font-semibold"
-          style={{ color: "#ffffff", opacity: 0.75 }}
+          style={{ color: "#ffffff" }}
         >
           {label}
         </span>
@@ -259,7 +259,7 @@ function MarketSection({
         <div className="flex-1" style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
         <span
           className="text-[13px] font-extrabold uppercase tracking-widest"
-          style={{ color: '#d3d3d3', opacity: 0.9 }}
+          style={{ color: '#ffffff' }}
         >
           {title}
         </span>
