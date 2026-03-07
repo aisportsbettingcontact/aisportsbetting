@@ -415,4 +415,9 @@
 - [x] Wire 5-minute score refresh cycle in vsinAutoRefresh.ts
 - [x] Update GameCard to show scores for LIVE and FINAL games
 - [x] Show gameClock for LIVE games (e.g. "15:07 1st")
+- [x] Save checkpoint and deliver
+
+## GameCard LIVE Header Redesign (2026-03-07)
+- [x] Hide date when game is LIVE (date is implied to be today)
+- [x] Reformat LIVE score as: AwayLogo AwayScore-HomeScore HomeLogo
 - [ ] Save checkpoint and deliver
