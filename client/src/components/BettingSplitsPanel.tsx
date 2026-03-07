@@ -2,16 +2,20 @@
  * BettingSplitsPanel
  *
  * DraftKings-style betting splits display for NCAAM and NBA games.
+ * Team colors are fetched from the database (ncaam_teams / nba_teams tables)
+ * via the teamColors.getForGame tRPC procedure — no hardcoded colors.
  *
  * Layout:
  *   - Team header: AWAY XX% ←→ YY% HOME (showing Handle/money%)
  *   - Per market (Spread, Total, and NBA-only Moneyline):
- *       • Handle % row (primary sharp-money signal) — colored bar
- *       • Bets % row (public ticket count) — muted bar
+ *       • Handle % row (primary sharp-money signal) — colored bar using team primary color
+ *       • Bets % row (public ticket count) — muted secondary bar
  *
  * NCAAM: Spread + Total only (no ML)
  * NBA:   Spread + Total + Moneyline
  */
+
+import { trpc } from "@/lib/trpc";
 
 interface BettingSplitsPanelProps {
   game: {
@@ -47,13 +51,20 @@ function toNum(v: string | null | undefined): number {
   return isNaN(n) ? NaN : n;
 }
 
+/** Fallback colors when DB lookup returns null */
+const FALLBACK_AWAY_COLOR = "#39FF14";   // neon green
+const FALLBACK_HOME_COLOR = "#FF6B6B";   // coral red
+const FALLBACK_MUTED = "rgba(255,255,255,0.18)";
+
 // ── SplitBar ─────────────────────────────────────────────────────────────────
 
 interface SplitBarProps {
   /** Percentage for the left (away/over) side — 0-100 */
   pct: number | null | undefined;
-  /** Bar fill color */
-  accentColor: string;
+  /** Bar fill color for left side */
+  awayColor: string;
+  /** Bar fill color for right side */
+  homeColor: string;
   /** Row label shown in center, e.g. "Handle" or "Bets" */
   rowLabel: string;
   /** Left side label, e.g. "ARK +2.5" */
@@ -64,7 +75,9 @@ interface SplitBarProps {
   primary?: boolean;
 }
 
-function SplitBar({ pct, accentColor, rowLabel, leftLabel, rightLabel, primary = false }: SplitBarProps) {
+function SplitBar({
+  pct, awayColor, homeColor, rowLabel, leftLabel, rightLabel, primary = false,
+}: SplitBarProps) {
   const left = pct ?? null;
   const right = left !== null ? 100 - left : null;
   const hasData = left !== null && right !== null;
@@ -80,12 +93,12 @@ function SplitBar({ pct, accentColor, rowLabel, leftLabel, rightLabel, primary =
     <div className="flex flex-col gap-0.5">
       {/* Pct + label row */}
       <div className="flex items-center justify-between gap-1">
-        {/* Left */}
-        <div className="flex items-baseline gap-1" style={{ minWidth: 0, flex: "0 0 auto", maxWidth: "40%" }}>
+        {/* Left (away / over) */}
+        <div className="flex items-baseline gap-1" style={{ minWidth: 0, flex: "0 0 auto", maxWidth: "42%" }}>
           {hasData && (
             <span
               className={`${pctSize} font-bold tabular-nums leading-none`}
-              style={{ color: leftLeads ? accentColor : "hsl(var(--muted-foreground))" }}
+              style={{ color: leftLeads ? awayColor : "hsl(var(--muted-foreground))" }}
             >
               {left}%
             </span>
@@ -106,8 +119,8 @@ function SplitBar({ pct, accentColor, rowLabel, leftLabel, rightLabel, primary =
           {rowLabel}
         </span>
 
-        {/* Right */}
-        <div className="flex items-baseline gap-1 justify-end" style={{ minWidth: 0, flex: "0 0 auto", maxWidth: "40%" }}>
+        {/* Right (home / under) */}
+        <div className="flex items-baseline gap-1 justify-end" style={{ minWidth: 0, flex: "0 0 auto", maxWidth: "42%" }}>
           <span
             className={`${labelSize} truncate text-right`}
             style={{ color: "hsl(var(--muted-foreground))", opacity: 0.55 }}
@@ -117,7 +130,7 @@ function SplitBar({ pct, accentColor, rowLabel, leftLabel, rightLabel, primary =
           {hasData && (
             <span
               className={`${pctSize} font-bold tabular-nums leading-none`}
-              style={{ color: rightLeads ? "#FF6B6B" : "hsl(var(--muted-foreground))" }}
+              style={{ color: rightLeads ? homeColor : "hsl(var(--muted-foreground))" }}
             >
               {right}%
             </span>
@@ -125,15 +138,29 @@ function SplitBar({ pct, accentColor, rowLabel, leftLabel, rightLabel, primary =
         </div>
       </div>
 
-      {/* Bar */}
+      {/* Dual-color bar */}
       {hasData ? (
         <div
           className="relative w-full rounded-full overflow-hidden"
-          style={{ height: barHeight, background: "rgba(255,255,255,0.07)" }}
+          style={{ height: barHeight, background: FALLBACK_MUTED }}
         >
+          {/* Away/Over side */}
           <div
-            className="absolute left-0 top-0 h-full rounded-full transition-all duration-700"
-            style={{ width: `${left}%`, background: accentColor, opacity: primary ? 0.9 : 0.5 }}
+            className="absolute left-0 top-0 h-full rounded-l-full transition-all duration-700"
+            style={{
+              width: `${left}%`,
+              background: awayColor,
+              opacity: primary ? 0.9 : 0.55,
+            }}
+          />
+          {/* Home/Under side — fills from right */}
+          <div
+            className="absolute right-0 top-0 h-full rounded-r-full transition-all duration-700"
+            style={{
+              width: `${right}%`,
+              background: homeColor,
+              opacity: primary ? 0.75 : 0.45,
+            }}
           />
         </div>
       ) : (
@@ -153,7 +180,8 @@ interface MarketSectionProps {
   titleColor: string;
   moneyPct: number | null | undefined;
   betsPct: number | null | undefined;
-  accentColor: string;
+  awayColor: string;
+  homeColor: string;
   leftMoneyLabel: string;
   rightMoneyLabel: string;
   leftBetsLabel: string;
@@ -162,7 +190,7 @@ interface MarketSectionProps {
 
 function MarketSection({
   title, titleColor,
-  moneyPct, betsPct, accentColor,
+  moneyPct, betsPct, awayColor, homeColor,
   leftMoneyLabel, rightMoneyLabel,
   leftBetsLabel, rightBetsLabel,
 }: MarketSectionProps) {
@@ -186,7 +214,8 @@ function MarketSection({
       {moneyPct != null && (
         <SplitBar
           pct={moneyPct}
-          accentColor={accentColor}
+          awayColor={awayColor}
+          homeColor={homeColor}
           rowLabel="Handle"
           leftLabel={leftMoneyLabel}
           rightLabel={rightMoneyLabel}
@@ -198,7 +227,8 @@ function MarketSection({
       {betsPct != null && (
         <SplitBar
           pct={betsPct}
-          accentColor={accentColor}
+          awayColor={awayColor}
+          homeColor={homeColor}
           rowLabel="Bets"
           leftLabel={leftBetsLabel}
           rightLabel={rightBetsLabel}
@@ -212,7 +242,17 @@ function MarketSection({
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 export function BettingSplitsPanel({ game, awayLabel, homeLabel }: BettingSplitsPanelProps) {
-  const isNba = game.sport === "NBA";
+  const sport = game.sport ?? "NCAAM";
+  const isNba = sport === "NBA";
+
+  // Fetch team colors from the database
+  const { data: colors } = trpc.teamColors.getForGame.useQuery(
+    { awayTeam: game.awayTeam, homeTeam: game.homeTeam, sport },
+    { staleTime: 1000 * 60 * 60 } // cache for 1 hour — colors don't change
+  );
+
+  const awayPrimary = colors?.away?.primaryColor ?? FALLBACK_AWAY_COLOR;
+  const homePrimary = colors?.home?.primaryColor ?? FALLBACK_HOME_COLOR;
 
   const hasSpreadSplits = game.spreadAwayMoneyPct != null || game.spreadAwayBetsPct != null;
   const hasTotalSplits = game.totalOverMoneyPct != null || game.totalOverBetsPct != null;
@@ -256,7 +296,7 @@ export function BettingSplitsPanel({ game, awayLabel, homeLabel }: BettingSplits
           {headerPct != null && (
             <span
               className="text-[16px] font-extrabold tabular-nums leading-none"
-              style={{ color: "#39FF14" }}
+              style={{ color: awayPrimary }}
             >
               {headerPct}%
             </span>
@@ -288,7 +328,7 @@ export function BettingSplitsPanel({ game, awayLabel, homeLabel }: BettingSplits
           {headerPct != null && (
             <span
               className="text-[16px] font-extrabold tabular-nums leading-none"
-              style={{ color: "#FF6B6B" }}
+              style={{ color: homePrimary }}
             >
               {100 - headerPct}%
             </span>
@@ -303,7 +343,8 @@ export function BettingSplitsPanel({ game, awayLabel, homeLabel }: BettingSplits
           titleColor="#A78BFA"
           moneyPct={game.mlAwayMoneyPct}
           betsPct={game.mlAwayBetsPct}
-          accentColor="#A78BFA"
+          awayColor={awayPrimary}
+          homeColor={homePrimary}
           leftMoneyLabel={`${awayLabel}${game.awayML ? ` ${game.awayML}` : ""}`}
           rightMoneyLabel={`${game.homeML ? `${game.homeML} ` : ""}${homeLabel}`}
           leftBetsLabel={awayLabel}
@@ -315,10 +356,11 @@ export function BettingSplitsPanel({ game, awayLabel, homeLabel }: BettingSplits
       {hasSpreadSplits && (
         <MarketSection
           title="Spread"
-          titleColor="#39FF14"
+          titleColor={awayPrimary}
           moneyPct={game.spreadAwayMoneyPct}
           betsPct={game.spreadAwayBetsPct}
-          accentColor="#39FF14"
+          awayColor={awayPrimary}
+          homeColor={homePrimary}
           leftMoneyLabel={`${awayLabel}${awaySpreadStr ? ` ${awaySpreadStr}` : ""}`}
           rightMoneyLabel={`${homeSpreadStr ? `${homeSpreadStr} ` : ""}${homeLabel}`}
           leftBetsLabel={`${awayLabel}${awaySpreadStr ? ` ${awaySpreadStr}` : ""}`}
@@ -333,7 +375,8 @@ export function BettingSplitsPanel({ game, awayLabel, homeLabel }: BettingSplits
           titleColor="#FFB800"
           moneyPct={game.totalOverMoneyPct}
           betsPct={game.totalOverBetsPct}
-          accentColor="#FFB800"
+          awayColor={awayPrimary}
+          homeColor={homePrimary}
           leftMoneyLabel={`Over${totalStr ? ` ${totalStr}` : ""}`}
           rightMoneyLabel={`Under${totalStr ? ` ${totalStr}` : ""}`}
           leftBetsLabel={`Over${totalStr ? ` ${totalStr}` : ""}`}

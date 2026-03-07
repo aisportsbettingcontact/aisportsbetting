@@ -294,3 +294,25 @@
 - [x] Integrate BettingSplitsPanel into GameCard with collapsible toggle
 - [x] Integrate BettingSplitsPanel into PublishProjections with collapsible toggle
 - [x] Verify splits data populated in DB (NCAAM: 4 fields, NBA: 6 fields + ML odds)
+
+## Team Colors Database (2026-03-07)
+- [x] Add primaryColor/secondaryColor/tertiaryColor columns to nba_teams table
+- [x] Create ncaam_teams table with all team info + color columns
+- [x] Run db:push migration (migration 0016)
+- [x] Seed 365 NCAAM teams with colors from master CSV
+- [x] Update 30 NBA teams with colors from NBA master CSV
+- [x] Add getTeamColors / getGameTeamColors helpers to db.ts
+- [x] Add teamColors.getForGame tRPC procedure to routers.ts
+- [x] Rewrite BettingSplitsPanel to fetch colors from DB via tRPC
+- [x] No hardcoded colors or CSV references in app code
+
+## Team Colors Database (2026-03-07)
+- [x] Add primaryColor/secondaryColor/tertiaryColor columns to nba_teams table
+- [x] Create ncaam_teams table with all team info + color columns
+- [x] Run db:push migration (migration 0016)
+- [x] Seed 365 NCAAM teams with colors from master CSV
+- [x] Update 30 NBA teams with colors from NBA master CSV
+- [x] Add getTeamColors / getGameTeamColors helpers to db.ts
+- [x] Add teamColors.getForGame tRPC procedure to routers.ts
+- [x] Rewrite BettingSplitsPanel to fetch colors from DB via tRPC
+- [x] No hardcoded colors or CSV references in app code

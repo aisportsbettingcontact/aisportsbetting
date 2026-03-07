@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNotNull, lte, lt, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { games, modelFiles, users, nbaTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam } from "../drizzle/schema";
+import { games, modelFiles, users, nbaTeams, ncaamTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -497,4 +497,64 @@ export async function getNbaTeamByNbaSlug(nbaSlug: string) {
     .where(eq(nbaTeams.nbaSlug, nbaSlug))
     .limit(1);
   return rows[0] ?? null;
+}
+
+// ─── Team Colors ─────────────────────────────────────────────────────────────
+
+export interface TeamColors {
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  tertiaryColor: string | null;
+}
+
+/**
+ * Fetch team colors from the DB for a given team slug and sport.
+ * For NCAAM, looks up ncaam_teams by dbSlug.
+ * For NBA, looks up nba_teams by dbSlug.
+ * Returns null if team not found or no colors stored.
+ */
+export async function getTeamColors(dbSlug: string, sport: string): Promise<TeamColors | null> {
+  const db = await getDb();
+  if (!db) return null;
+
+  if (sport === "NBA") {
+    const rows = await db
+      .select({
+        primaryColor: nbaTeams.primaryColor,
+        secondaryColor: nbaTeams.secondaryColor,
+        tertiaryColor: nbaTeams.tertiaryColor,
+      })
+      .from(nbaTeams)
+      .where(eq(nbaTeams.dbSlug, dbSlug))
+      .limit(1);
+    return rows[0] ?? null;
+  } else {
+    // NCAAM (default)
+    const rows = await db
+      .select({
+        primaryColor: ncaamTeams.primaryColor,
+        secondaryColor: ncaamTeams.secondaryColor,
+        tertiaryColor: ncaamTeams.tertiaryColor,
+      })
+      .from(ncaamTeams)
+      .where(eq(ncaamTeams.dbSlug, dbSlug))
+      .limit(1);
+    return rows[0] ?? null;
+  }
+}
+
+/**
+ * Fetch colors for both teams in a game in a single call.
+ * Returns { away: TeamColors | null, home: TeamColors | null }
+ */
+export async function getGameTeamColors(
+  awayDbSlug: string,
+  homeDbSlug: string,
+  sport: string
+): Promise<{ away: TeamColors | null; home: TeamColors | null }> {
+  const [away, home] = await Promise.all([
+    getTeamColors(awayDbSlug, sport),
+    getTeamColors(homeDbSlug, sport),
+  ]);
+  return { away, home };
 }

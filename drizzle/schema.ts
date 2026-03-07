@@ -162,8 +162,46 @@ export const nbaTeams = mysqlTable("nba_teams", {
   division: varchar("division", { length: 64 }).notNull(),
   /** NBA.com CDN SVG logo URL */
   logoUrl: text("logoUrl").notNull(),
+  /** Primary brand hex color, e.g. "#007A33" */
+  primaryColor: varchar("primaryColor", { length: 16 }),
+  /** Secondary brand hex color */
+  secondaryColor: varchar("secondaryColor", { length: 16 }),
+  /** Tertiary brand hex color */
+  tertiaryColor: varchar("tertiaryColor", { length: 16 }),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 export type NbaTeamRow = typeof nbaTeams.$inferSelect;
 export type InsertNbaTeam = typeof nbaTeams.$inferInsert;
+
+// ─── NCAAM Teams (seeded from NCAAM Mapping master sheet) ───────────────────
+
+export const ncaamTeams = mysqlTable("ncaam_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  /** DB storage key — vsinSlug with hyphens replaced by underscores, e.g. "arkansas" */
+  dbSlug: varchar("dbSlug", { length: 128 }).notNull().unique(),
+  /** NCAA.com seoname slug, e.g. "arkansas" */
+  ncaaSlug: varchar("ncaaSlug", { length: 128 }).notNull().unique(),
+  /** VSiN href slug, e.g. "arkansas" */
+  vsinSlug: varchar("vsinSlug", { length: 128 }).notNull().unique(),
+  /** Full school name, e.g. "Arkansas" */
+  ncaaName: varchar("ncaaName", { length: 255 }).notNull(),
+  /** Team nickname, e.g. "Razorbacks" */
+  ncaaNickname: varchar("ncaaNickname", { length: 128 }).notNull(),
+  /** VSiN display name */
+  vsinName: varchar("vsinName", { length: 255 }).notNull(),
+  /** Conference, e.g. "SEC" */
+  conference: varchar("conference", { length: 128 }).notNull(),
+  /** NCAA.com SVG logo URL */
+  logoUrl: text("logoUrl").notNull(),
+  /** Primary brand hex color, e.g. "#9D2235" */
+  primaryColor: varchar("primaryColor", { length: 16 }),
+  /** Secondary brand hex color */
+  secondaryColor: varchar("secondaryColor", { length: 16 }),
+  /** Tertiary brand hex color */
+  tertiaryColor: varchar("tertiaryColor", { length: 16 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type NcaamTeamRow = typeof ncaamTeams.$inferSelect;
+export type InsertNcaamTeam = typeof ncaamTeams.$inferInsert;

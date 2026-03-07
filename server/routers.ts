@@ -22,7 +22,7 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure } from "./routers/appUsers";
-import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug } from "./db";
+import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors } from "./db";
 import { getLastRefreshResult, runVsinRefresh } from "./vsinAutoRefresh";
 import { VALID_DB_SLUGS } from "@shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS } from "@shared/nbaTeams";
@@ -257,6 +257,23 @@ export const appRouter = router({
       const result = await runVsinRefresh();
       return result ?? { refreshedAt: new Date().toISOString(), updated: 0, inserted: 0, total: 0, gameDate: "" };
     }),
+  }),
+
+  // ─── Team Colors ─────────────────────────────────────────────────────────────
+  teamColors: router({
+    /**
+     * Fetch primary/secondary/tertiary hex colors for both teams in a game.
+     * Used by BettingSplitsPanel to color the split bars with real team branding.
+     */
+    getForGame: publicProcedure
+      .input(z.object({
+        awayTeam: z.string(),
+        homeTeam: z.string(),
+        sport: z.string(),
+      }))
+      .query(async ({ input }) => {
+        return getGameTeamColors(input.awayTeam, input.homeTeam, input.sport);
+      }),
   }),
 });
 
