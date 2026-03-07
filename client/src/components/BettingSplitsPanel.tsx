@@ -52,10 +52,10 @@ const FALLBACK_AWAY = "#1a4a8a";
 const FALLBACK_HOME = "#c84b0c";
 
 /**
- * Returns true if a hex color is black or very dark (perceived luminance < 8%).
- * Bars should never be black — fall back to secondary/tertiary if primary is too dark.
+ * Returns true if a hex color is black or very dark (perceived luminance < 8%)
+ * OR white / very light (luminance > 90%). Bars should never be black or white.
  */
-function isTooDark(hex: string | null | undefined): boolean {
+function isUnusableBarColor(hex: string | null | undefined): boolean {
   if (!hex) return false;
   const clean = hex.replace(/^#/, "");
   if (clean.length !== 6 && clean.length !== 3) return false;
@@ -65,9 +65,36 @@ function isTooDark(hex: string | null | undefined): boolean {
   const r = parseInt(full.slice(0, 2), 16) / 255;
   const g = parseInt(full.slice(2, 4), 16) / 255;
   const b = parseInt(full.slice(4, 6), 16) / 255;
-  // Perceived luminance (sRGB)
   const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum < 0.08; // < ~8% luminance = effectively black
+  return lum < 0.08 || lum > 0.90; // too dark (black) OR too light (white)
+}
+
+// Keep backward-compat alias used in pickBarColor
+const isTooDark = isUnusableBarColor;
+
+/**
+ * Compute perceptual color distance between two hex colors using
+ * a simplified Euclidean distance in sRGB space (0–441 range).
+ * Returns true if the colors are too similar to distinguish on screen.
+ */
+function areColorsTooSimilar(hexA: string, hexB: string, threshold = 60): boolean {
+  const toRgb = (hex: string) => {
+    const clean = hex.replace(/^#/, "");
+    const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
+    return [
+      parseInt(full.slice(0, 2), 16),
+      parseInt(full.slice(2, 4), 16),
+      parseInt(full.slice(4, 6), 16),
+    ];
+  };
+  try {
+    const [r1, g1, b1] = toRgb(hexA);
+    const [r2, g2, b2] = toRgb(hexB);
+    const dist = Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+    return dist < threshold;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -300,18 +327,31 @@ export function BettingSplitsPanel({
     { staleTime: 1000 * 60 * 60 }
   );
 
-  const awayColor = pickBarColor(
-    colors?.away?.primaryColor,
-    colors?.away?.secondaryColor,
-    colors?.away?.tertiaryColor,
-    FALLBACK_AWAY
-  );
+  // Home team keeps primary (unless unusable)
   const homeColor = pickBarColor(
     colors?.home?.primaryColor,
     colors?.home?.secondaryColor,
     colors?.home?.tertiaryColor,
     FALLBACK_HOME
   );
+
+  // Away team: start with primary, then cycle secondary/tertiary/fallback
+  // until the color is both usable AND visually distinct from homeColor
+  const awayColorCandidates: (string | null | undefined)[] = [
+    colors?.away?.primaryColor,
+    colors?.away?.secondaryColor,
+    colors?.away?.tertiaryColor,
+    FALLBACK_AWAY,
+  ];
+  const awayColor = (() => {
+    for (const candidate of awayColorCandidates) {
+      if (!candidate) continue;
+      if (isUnusableBarColor(candidate)) continue;
+      if (!areColorsTooSimilar(candidate, homeColor)) return candidate;
+    }
+    // If all candidates are too similar, just use the fallback regardless
+    return FALLBACK_AWAY;
+  })();
 
   // Live book lines
   const awaySpread = toNum(game.awayBookSpread);

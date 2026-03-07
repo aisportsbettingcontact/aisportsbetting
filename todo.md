@@ -368,3 +368,8 @@
 - [x] Rename "BET %" label to "TICKET %"
 - [x] Make label text white
 - [x] Add border/outline to bars (pills) and to the split divider line between the two halves
+
+## BettingSplitsPanel Color Similarity Fix (2026-03-07)
+- [x] Detect when away/home bar colors are too similar; cycle away team through secondary/tertiary/fallback until visually distinct
+- [x] No white or black allowed on bars (isUnusableBarColor blocks both black <8% luminance and white >90% luminance)
+- [x] Home team keeps primary unless it is white or black
