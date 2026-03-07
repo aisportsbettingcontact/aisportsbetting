@@ -328,3 +328,6 @@
 ## GameCard Layout Restructure (2026-03-07)
 - [x] Move betting splits to right side, model projections to left side, 50/50 split
 - [x] Polish overall card spacing, alignment, and justification
+
+## GameCard Whitespace Fix (2026-03-07)
+- [x] Remove dead vertical whitespace in projections column — both columns must fill height equally with no empty gaps

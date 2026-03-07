@@ -624,11 +624,11 @@ export function GameCard({ game }: GameCardProps) {
           On mobile (<640px):  projections on top, splits below
         */}
         <div
-          className="flex flex-col sm:flex-row"
+          className="flex flex-col sm:flex-row sm:items-stretch"
           style={{ minHeight: 0 }}
         >
           {/* ── Left: Model Projections (50%) ──────────────────────────────── */}
-          <div className="w-full sm:w-1/2 px-4 pt-3 pb-4 min-w-0 flex flex-col">
+          <div className="w-full sm:w-1/2 px-4 pt-3 pb-3 min-w-0 flex flex-col justify-between">
             {/* Column labels */}
             <div
               className="flex items-center pb-2"
@@ -687,7 +687,7 @@ export function GameCard({ game }: GameCardProps) {
           />
 
           {/* ── Right: Betting Splits (50%) ─────────────────────────────────── */}
-          <div className="w-full sm:w-1/2 px-4 py-3">
+          <div className="w-full sm:w-1/2 px-4 pt-3 pb-3">
             <BettingSplitsPanel
               game={game}
               awayLabel={awayName}

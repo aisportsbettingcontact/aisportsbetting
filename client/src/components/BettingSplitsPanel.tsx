@@ -286,7 +286,7 @@ export function BettingSplitsPanel({ game, awayLabel, homeLabel, awayNickname, h
   }
 
   return (
-    <div className="flex flex-col gap-4 px-1 py-2">
+    <div className="flex flex-col gap-3 px-1 py-1">
       {/* Section header */}
       <div className="flex items-center gap-2">
         <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
