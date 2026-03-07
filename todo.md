@@ -316,3 +316,8 @@
 - [x] Add teamColors.getForGame tRPC procedure to routers.ts
 - [x] Rewrite BettingSplitsPanel to fetch colors from DB via tRPC
 - [x] No hardcoded colors or CSV references in app code
+
+## Betting Splits Always-Visible Redesign (2026-03-07)
+- [x] Redesign BettingSplitsPanel: always-visible, two-color bars, team abbreviations, Spread+Total (NCAAM) / Spread+Total+ML (NBA)
+- [x] Restructure GameCard: splits panel left, model projections right on desktop; stacked on mobile
+- [ ] Apply same layout to PublishProjections page (deferred — PublishProjections uses EditableGameCard, separate component)

@@ -1,18 +1,11 @@
 /**
  * BettingSplitsPanel
  *
- * DraftKings-style betting splits display for NCAAM and NBA games.
- * Team colors are fetched from the database (ncaam_teams / nba_teams tables)
- * via the teamColors.getForGame tRPC procedure — no hardcoded colors.
- *
- * Layout:
- *   - Team header: AWAY XX% ←→ YY% HOME (showing Handle/money%)
- *   - Per market (Spread, Total, and NBA-only Moneyline):
- *       • Handle % row (primary sharp-money signal) — colored bar using team primary color
- *       • Bets % row (public ticket count) — muted secondary bar
- *
- * NCAAM: Spread + Total only (no ML)
- * NBA:   Spread + Total + Moneyline
+ * Always-visible betting splits display matching the reference DraftKings/Action Network style.
+ * - Two-color full-width bars (away color left, home color right)
+ * - Team abbreviations above each bar
+ * - Sections: Spread + Total for NCAAM; Spread + Total + Moneyline for NBA
+ * - Team colors fetched from DB via tRPC — no hardcoded colors
  */
 
 import { trpc } from "@/lib/trpc";
@@ -34,16 +27,13 @@ interface BettingSplitsPanelProps {
     awayML: string | null | undefined;
     homeML: string | null | undefined;
   };
-  awayLabel: string;   // e.g. "Arkansas" or "Magic"
+  awayLabel: string;   // e.g. "Arkansas" or "Orlando"
   homeLabel: string;   // e.g. "Missouri" or "Timberwolves"
+  awayNickname?: string; // e.g. "Razorbacks" or "Magic"
+  homeNickname?: string;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-function spreadSign(n: number): string {
-  if (n === 0) return "PK";
-  return n > 0 ? `+${n}` : `${n}`;
-}
 
 function toNum(v: string | null | undefined): number {
   if (v == null) return NaN;
@@ -51,123 +41,126 @@ function toNum(v: string | null | undefined): number {
   return isNaN(n) ? NaN : n;
 }
 
-/** Fallback colors when DB lookup returns null */
-const FALLBACK_AWAY_COLOR = "#39FF14";   // neon green
-const FALLBACK_HOME_COLOR = "#FF6B6B";   // coral red
-const FALLBACK_MUTED = "rgba(255,255,255,0.18)";
-
-// ── SplitBar ─────────────────────────────────────────────────────────────────
-
-interface SplitBarProps {
-  /** Percentage for the left (away/over) side — 0-100 */
-  pct: number | null | undefined;
-  /** Bar fill color for left side */
-  awayColor: string;
-  /** Bar fill color for right side */
-  homeColor: string;
-  /** Row label shown in center, e.g. "Handle" or "Bets" */
-  rowLabel: string;
-  /** Left side label, e.g. "ARK +2.5" */
-  leftLabel: string;
-  /** Right side label, e.g. "MIZZ -2.5" */
-  rightLabel: string;
-  /** Whether this is the primary (Handle) row — larger text */
-  primary?: boolean;
+function spreadSign(n: number): string {
+  if (n === 0) return "PK";
+  return n > 0 ? `+${n}` : `${n}`;
 }
 
-function SplitBar({
-  pct, awayColor, homeColor, rowLabel, leftLabel, rightLabel, primary = false,
-}: SplitBarProps) {
-  const left = pct ?? null;
-  const right = left !== null ? 100 - left : null;
-  const hasData = left !== null && right !== null;
+/** Shorten a team name to an abbreviation (up to 4 chars) */
+function abbrev(name: string): string {
+  // Common abbreviations
+  const ABBREVS: Record<string, string> = {
+    "Michigan": "MICH", "Illinois": "ILL", "Arkansas": "ARK", "Missouri": "MIZZ",
+    "Kentucky": "UK", "Tennessee": "TENN", "Alabama": "ALA", "Auburn": "AUB",
+    "Florida": "FLA", "Georgia": "UGA", "LSU": "LSU", "Mississippi": "MISS",
+    "Mississippi State": "MSST", "South Carolina": "SC", "Vanderbilt": "VAN",
+    "Texas A&M": "TAMU", "Oklahoma": "OU", "Texas": "TEX", "Kansas": "KU",
+    "Duke": "DUKE", "North Carolina": "UNC", "Virginia": "UVA", "Louisville": "LOU",
+    "Syracuse": "SYR", "Pittsburgh": "PITT", "Notre Dame": "ND", "Marquette": "MU",
+    "Villanova": "NOVA", "Georgetown": "GTOWN", "Connecticut": "UCONN",
+    "Providence": "PROV", "Creighton": "CRE", "Xavier": "XAV", "Butler": "BUT",
+    "DePaul": "DEP", "Seton Hall": "SHU", "St. John's": "STJ",
+    "UCLA": "UCLA", "USC": "USC", "Arizona": "ARIZ", "Oregon": "ORE",
+    "Washington": "WASH", "Stanford": "STAN", "California": "CAL",
+    "Utah": "UTAH", "Colorado": "COLO", "Arizona State": "ASU",
+    "Ohio State": "OSU", "Michigan State": "MSU", "Penn State": "PSU",
+    "Indiana": "IND", "Iowa": "IOWA", "Minnesota": "MINN", "Wisconsin": "WIS",
+    "Northwestern": "NW", "Nebraska": "NEB", "Rutgers": "RUT", "Maryland": "MD",
+    "Purdue": "PUR", "Illinois-Chicago": "UIC",
+    // NBA cities (use distinct keys where they differ from college)
+    "Boston": "BOS", "Brooklyn": "BKN", "New York": "NYK", "Philadelphia": "PHI",
+    "Toronto": "TOR", "Chicago": "CHI", "Cleveland": "CLE", "Detroit": "DET",
+    "Milwaukee": "MIL", "Atlanta": "ATL", "Charlotte": "CHA",
+    "Miami": "MIA", "Orlando": "ORL",
+    "Denver": "DEN", "Oklahoma City": "OKC", "Portland": "POR",
+    "Golden State": "GSW", "LA": "LAC", "Los Angeles": "LAL",
+    "Phoenix": "PHX", "Sacramento": "SAC", "Dallas": "DAL", "Houston": "HOU",
+    "Memphis": "MEM", "New Orleans": "NOP", "San Antonio": "SAS",
+  };
+  if (ABBREVS[name]) return ABBREVS[name];
+  // Auto-generate: take first 4 chars of each word, join, uppercase, max 4 chars
+  const words = name.split(/\s+/);
+  if (words.length === 1) return name.slice(0, 4).toUpperCase();
+  return words.map(w => w[0]).join("").toUpperCase().slice(0, 4);
+}
 
-  const leftLeads = hasData && left > right;
-  const rightLeads = hasData && right > left;
+const FALLBACK_AWAY = "#1a4a8a";
+const FALLBACK_HOME = "#c84b0c";
 
-  const pctSize = primary ? "text-[13px]" : "text-[11px]";
-  const labelSize = primary ? "text-[9px]" : "text-[8px]";
-  const barHeight = primary ? 5 : 3;
+// ── SplitRow ─────────────────────────────────────────────────────────────────
+
+interface SplitRowProps {
+  label: string;           // "Bet %" or "Money %"
+  awayPct: number | null;
+  homePct: number | null;
+  awayColor: string;
+  homeColor: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
+}
+
+function SplitRow({ label, awayPct, homePct, awayColor, homeColor, awayAbbrev, homeAbbrev }: SplitRowProps) {
+  const hasData = awayPct != null && homePct != null;
 
   return (
     <div className="flex flex-col gap-0.5">
-      {/* Pct + label row */}
-      <div className="flex items-center justify-between gap-1">
-        {/* Left (away / over) */}
-        <div className="flex items-baseline gap-1" style={{ minWidth: 0, flex: "0 0 auto", maxWidth: "42%" }}>
-          {hasData && (
-            <span
-              className={`${pctSize} font-bold tabular-nums leading-none`}
-              style={{ color: leftLeads ? awayColor : "hsl(var(--muted-foreground))" }}
-            >
-              {left}%
-            </span>
-          )}
-          <span
-            className={`${labelSize} truncate`}
-            style={{ color: "hsl(var(--muted-foreground))", opacity: 0.55 }}
-          >
-            {leftLabel}
-          </span>
-        </div>
-
-        {/* Center label */}
-        <span
-          className="text-[8px] uppercase tracking-widest text-center"
-          style={{ color: "hsl(var(--muted-foreground))", opacity: primary ? 0.6 : 0.4, flex: "1 1 auto" }}
-        >
-          {rowLabel}
+      {/* Labels row: AWAY | label | HOME */}
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.7 }}>
+          {awayAbbrev}
         </span>
-
-        {/* Right (home / under) */}
-        <div className="flex items-baseline gap-1 justify-end" style={{ minWidth: 0, flex: "0 0 auto", maxWidth: "42%" }}>
-          <span
-            className={`${labelSize} truncate text-right`}
-            style={{ color: "hsl(var(--muted-foreground))", opacity: 0.55 }}
-          >
-            {rightLabel}
-          </span>
-          {hasData && (
-            <span
-              className={`${pctSize} font-bold tabular-nums leading-none`}
-              style={{ color: rightLeads ? homeColor : "hsl(var(--muted-foreground))" }}
-            >
-              {right}%
-            </span>
-          )}
-        </div>
+        <span className="text-[9px] uppercase tracking-widest" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.5 }}>
+          {label}
+        </span>
+        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.7 }}>
+          {homeAbbrev}
+        </span>
       </div>
 
-      {/* Dual-color bar */}
+      {/* Two-color bar */}
       {hasData ? (
         <div
           className="relative w-full rounded-full overflow-hidden"
-          style={{ height: barHeight, background: FALLBACK_MUTED }}
+          style={{ height: 28, display: "flex" }}
         >
-          {/* Away/Over side */}
+          {/* Away side */}
           <div
-            className="absolute left-0 top-0 h-full rounded-l-full transition-all duration-700"
+            className="flex items-center justify-start pl-2 transition-all duration-700"
             style={{
-              width: `${left}%`,
+              width: `${awayPct}%`,
               background: awayColor,
-              opacity: primary ? 0.9 : 0.55,
+              minWidth: awayPct! > 0 ? 32 : 0,
+              borderRadius: awayPct! >= 100 ? "9999px" : "9999px 0 0 9999px",
             }}
-          />
-          {/* Home/Under side — fills from right */}
+          >
+            <span className="text-[12px] font-extrabold tabular-nums text-white leading-none drop-shadow-sm">
+              {awayPct}%
+            </span>
+          </div>
+          {/* Home side */}
           <div
-            className="absolute right-0 top-0 h-full rounded-r-full transition-all duration-700"
+            className="flex items-center justify-end pr-2 transition-all duration-700"
             style={{
-              width: `${right}%`,
+              width: `${homePct}%`,
               background: homeColor,
-              opacity: primary ? 0.75 : 0.45,
+              minWidth: homePct! > 0 ? 32 : 0,
+              borderRadius: homePct! >= 100 ? "9999px" : "0 9999px 9999px 0",
             }}
-          />
+          >
+            <span className="text-[12px] font-extrabold tabular-nums text-white leading-none drop-shadow-sm">
+              {homePct}%
+            </span>
+          </div>
         </div>
       ) : (
         <div
-          className="w-full rounded-full"
-          style={{ height: barHeight, background: "rgba(255,255,255,0.05)" }}
-        />
+          className="w-full rounded-full flex items-center justify-center"
+          style={{ height: 28, background: "rgba(255,255,255,0.06)" }}
+        >
+          <span className="text-[9px]" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.4 }}>
+            No data
+          </span>
+        </div>
       )}
     </div>
   );
@@ -177,62 +170,61 @@ function SplitBar({
 
 interface MarketSectionProps {
   title: string;
-  titleColor: string;
+  subtitle?: string;  // e.g. "ARK +2.5 / MIZZ -2.5"
   moneyPct: number | null | undefined;
   betsPct: number | null | undefined;
   awayColor: string;
   homeColor: string;
-  leftMoneyLabel: string;
-  rightMoneyLabel: string;
-  leftBetsLabel: string;
-  rightBetsLabel: string;
+  awayAbbrev: string;
+  homeAbbrev: string;
 }
 
-function MarketSection({
-  title, titleColor,
-  moneyPct, betsPct, awayColor, homeColor,
-  leftMoneyLabel, rightMoneyLabel,
-  leftBetsLabel, rightBetsLabel,
-}: MarketSectionProps) {
+function MarketSection({ title, subtitle, moneyPct, betsPct, awayColor, homeColor, awayAbbrev, homeAbbrev }: MarketSectionProps) {
   const hasAny = moneyPct != null || betsPct != null;
   if (!hasAny) return null;
 
+  const awayMoney = moneyPct != null ? moneyPct : null;
+  const homeMoney = moneyPct != null ? 100 - moneyPct : null;
+  const awayBets = betsPct != null ? betsPct : null;
+  const homeBets = betsPct != null ? 100 - betsPct : null;
+
   return (
-    <div className="flex flex-col gap-1.5">
-      {/* Market title */}
-      <div className="flex items-center gap-1.5">
-        <span
-          className="text-[8px] uppercase tracking-widest font-bold"
-          style={{ color: titleColor, opacity: 0.8 }}
-        >
+    <div className="flex flex-col gap-2">
+      {/* Section header */}
+      <div className="flex items-baseline gap-1.5">
+        <span className="text-[11px] font-bold uppercase tracking-wide" style={{ color: "hsl(var(--foreground))", opacity: 0.85 }}>
           {title}
         </span>
-        <div className="flex-1" style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
+        {subtitle && (
+          <span className="text-[9px]" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.5 }}>
+            {subtitle}
+          </span>
+        )}
       </div>
 
-      {/* Handle % (primary) */}
+      {/* Money % row */}
       {moneyPct != null && (
-        <SplitBar
-          pct={moneyPct}
+        <SplitRow
+          label="Money %"
+          awayPct={awayMoney}
+          homePct={homeMoney}
           awayColor={awayColor}
           homeColor={homeColor}
-          rowLabel="Handle"
-          leftLabel={leftMoneyLabel}
-          rightLabel={rightMoneyLabel}
-          primary
+          awayAbbrev={awayAbbrev}
+          homeAbbrev={homeAbbrev}
         />
       )}
 
-      {/* Bets % (secondary) */}
+      {/* Bets % row */}
       {betsPct != null && (
-        <SplitBar
-          pct={betsPct}
+        <SplitRow
+          label="Bet %"
+          awayPct={awayBets}
+          homePct={homeBets}
           awayColor={awayColor}
           homeColor={homeColor}
-          rowLabel="Bets"
-          leftLabel={leftBetsLabel}
-          rightLabel={rightBetsLabel}
-          primary={false}
+          awayAbbrev={awayAbbrev}
+          homeAbbrev={homeAbbrev}
         />
       )}
     </div>
@@ -241,158 +233,109 @@ function MarketSection({
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-export function BettingSplitsPanel({ game, awayLabel, homeLabel }: BettingSplitsPanelProps) {
+export function BettingSplitsPanel({ game, awayLabel, homeLabel, awayNickname, homeNickname }: BettingSplitsPanelProps) {
   const sport = game.sport ?? "NCAAM";
   const isNba = sport === "NBA";
 
   // Fetch team colors from the database
   const { data: colors } = trpc.teamColors.getForGame.useQuery(
     { awayTeam: game.awayTeam, homeTeam: game.homeTeam, sport },
-    { staleTime: 1000 * 60 * 60 } // cache for 1 hour — colors don't change
+    { staleTime: 1000 * 60 * 60 }
   );
 
-  const awayPrimary = colors?.away?.primaryColor ?? FALLBACK_AWAY_COLOR;
-  const homePrimary = colors?.home?.primaryColor ?? FALLBACK_HOME_COLOR;
+  const awayColor = colors?.away?.primaryColor ?? FALLBACK_AWAY;
+  const homeColor = colors?.home?.primaryColor ?? FALLBACK_HOME;
+
+  // Abbreviations
+  const awayAbbr = abbrev(awayLabel);
+  const homeAbbr = abbrev(homeLabel);
+
+  // Spread values for subtitles
+  const awaySpread = toNum(game.awayBookSpread);
+  const homeSpread = toNum(game.homeBookSpread);
+  const bookTotal = toNum(game.bookTotal);
+  const spreadSubtitle = (!isNaN(awaySpread) && !isNaN(homeSpread))
+    ? `${awayAbbr} ${spreadSign(awaySpread)} / ${homeAbbr} ${spreadSign(homeSpread)}`
+    : undefined;
+  const totalSubtitle = !isNaN(bookTotal) ? `O/U ${bookTotal}` : undefined;
+  const mlSubtitle = (game.awayML && game.homeML)
+    ? `${awayAbbr} ${game.awayML} / ${homeAbbr} ${game.homeML}`
+    : undefined;
 
   const hasSpreadSplits = game.spreadAwayMoneyPct != null || game.spreadAwayBetsPct != null;
   const hasTotalSplits = game.totalOverMoneyPct != null || game.totalOverBetsPct != null;
   const hasMlSplits = isNba && (game.mlAwayMoneyPct != null || game.mlAwayBetsPct != null);
   const hasAnySplits = hasSpreadSplits || hasTotalSplits || hasMlSplits;
 
-  // Spread values for inline labels
-  const awaySpread = toNum(game.awayBookSpread);
-  const homeSpread = toNum(game.homeBookSpread);
-  const bookTotal = toNum(game.bookTotal);
-
-  const awaySpreadStr = !isNaN(awaySpread) ? spreadSign(awaySpread) : "";
-  const homeSpreadStr = !isNaN(homeSpread) ? spreadSign(homeSpread) : "";
-  const totalStr = !isNaN(bookTotal) ? `${bookTotal}` : "";
-
-  // Header percentage (spread Handle% is the primary sharp signal)
-  const headerPct = game.spreadAwayMoneyPct ?? game.spreadAwayBetsPct ?? null;
-
   if (!hasAnySplits) {
     return (
-      <div
-        className="px-3 py-3 flex items-center justify-center"
-        style={{ borderTop: "1px solid hsl(var(--border) / 0.3)" }}
-      >
-        <span className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.4 }}>
-          Splits not yet available
+      <div className="flex flex-col gap-1 px-1 py-3">
+        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.5 }}>
+          Betting Splits
         </span>
+        <div
+          className="w-full rounded-lg flex items-center justify-center"
+          style={{ height: 40, background: "rgba(255,255,255,0.04)" }}
+        >
+          <span className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.35 }}>
+            Not yet available
+          </span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div
-      className="px-3 pt-3 pb-3 flex flex-col gap-3"
-      style={{ borderTop: "1px solid hsl(var(--border) / 0.3)" }}
-    >
-      {/* ── Team header ─────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between gap-2">
-        {/* Away side */}
-        <div className="flex items-baseline gap-1.5" style={{ minWidth: 0, flex: "0 0 auto" }}>
-          {headerPct != null && (
-            <span
-              className="text-[16px] font-extrabold tabular-nums leading-none"
-              style={{ color: awayPrimary }}
-            >
-              {headerPct}%
-            </span>
-          )}
-          <span
-            className="text-[10px] font-bold uppercase tracking-wide truncate"
-            style={{ color: "hsl(var(--foreground))", maxWidth: 80 }}
-          >
-            {awayLabel}
-          </span>
-        </div>
-
-        {/* Center */}
-        <span
-          className="text-[8px] uppercase tracking-widest text-center"
-          style={{ color: "hsl(var(--muted-foreground))", opacity: 0.45, flex: "1 1 auto" }}
-        >
-          % of handle
+    <div className="flex flex-col gap-4 px-1 py-2">
+      {/* Section header */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}>
+          Betting Splits
         </span>
-
-        {/* Home side */}
-        <div className="flex items-baseline gap-1.5 justify-end" style={{ minWidth: 0, flex: "0 0 auto" }}>
-          <span
-            className="text-[10px] font-bold uppercase tracking-wide truncate text-right"
-            style={{ color: "hsl(var(--foreground))", maxWidth: 80 }}
-          >
-            {homeLabel}
-          </span>
-          {headerPct != null && (
-            <span
-              className="text-[16px] font-extrabold tabular-nums leading-none"
-              style={{ color: homePrimary }}
-            >
-              {100 - headerPct}%
-            </span>
-          )}
-        </div>
+        <div className="flex-1" style={{ height: 1, background: "rgba(255,255,255,0.07)" }} />
       </div>
 
-      {/* ── NBA only: Moneyline ──────────────────────────────────────────── */}
-      {isNba && hasMlSplits && (
-        <MarketSection
-          title="Moneyline"
-          titleColor="#A78BFA"
-          moneyPct={game.mlAwayMoneyPct}
-          betsPct={game.mlAwayBetsPct}
-          awayColor={awayPrimary}
-          homeColor={homePrimary}
-          leftMoneyLabel={`${awayLabel}${game.awayML ? ` ${game.awayML}` : ""}`}
-          rightMoneyLabel={`${game.homeML ? `${game.homeML} ` : ""}${homeLabel}`}
-          leftBetsLabel={awayLabel}
-          rightBetsLabel={homeLabel}
-        />
-      )}
-
-      {/* ── Spread ──────────────────────────────────────────────────────── */}
+      {/* Spread */}
       {hasSpreadSplits && (
         <MarketSection
           title="Spread"
-          titleColor={awayPrimary}
+          subtitle={spreadSubtitle}
           moneyPct={game.spreadAwayMoneyPct}
           betsPct={game.spreadAwayBetsPct}
-          awayColor={awayPrimary}
-          homeColor={homePrimary}
-          leftMoneyLabel={`${awayLabel}${awaySpreadStr ? ` ${awaySpreadStr}` : ""}`}
-          rightMoneyLabel={`${homeSpreadStr ? `${homeSpreadStr} ` : ""}${homeLabel}`}
-          leftBetsLabel={`${awayLabel}${awaySpreadStr ? ` ${awaySpreadStr}` : ""}`}
-          rightBetsLabel={`${homeSpreadStr ? `${homeSpreadStr} ` : ""}${homeLabel}`}
+          awayColor={awayColor}
+          homeColor={homeColor}
+          awayAbbrev={awayAbbr}
+          homeAbbrev={homeAbbr}
         />
       )}
 
-      {/* ── Total ───────────────────────────────────────────────────────── */}
+      {/* Total */}
       {hasTotalSplits && (
         <MarketSection
           title="Total"
-          titleColor="#FFB800"
+          subtitle={totalSubtitle}
           moneyPct={game.totalOverMoneyPct}
           betsPct={game.totalOverBetsPct}
-          awayColor={awayPrimary}
-          homeColor={homePrimary}
-          leftMoneyLabel={`Over${totalStr ? ` ${totalStr}` : ""}`}
-          rightMoneyLabel={`Under${totalStr ? ` ${totalStr}` : ""}`}
-          leftBetsLabel={`Over${totalStr ? ` ${totalStr}` : ""}`}
-          rightBetsLabel={`Under${totalStr ? ` ${totalStr}` : ""}`}
+          awayColor={awayColor}
+          homeColor={homeColor}
+          awayAbbrev={`O ${!isNaN(bookTotal) ? bookTotal : ""}`}
+          homeAbbrev={`U ${!isNaN(bookTotal) ? bookTotal : ""}`}
         />
       )}
 
-      {/* Attribution */}
-      <div className="flex items-center justify-center">
-        <span
-          className="text-[7px] uppercase tracking-widest"
-          style={{ color: "hsl(var(--muted-foreground))", opacity: 0.3 }}
-        >
-          via VSiN / DraftKings
-        </span>
-      </div>
+      {/* Moneyline — NBA only */}
+      {hasMlSplits && (
+        <MarketSection
+          title="Moneyline"
+          subtitle={mlSubtitle}
+          moneyPct={game.mlAwayMoneyPct}
+          betsPct={game.mlAwayBetsPct}
+          awayColor={awayColor}
+          homeColor={homeColor}
+          awayAbbrev={awayAbbr}
+          homeAbbrev={homeAbbr}
+        />
+      )}
     </div>
   );
 }

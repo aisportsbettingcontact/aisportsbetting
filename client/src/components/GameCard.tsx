@@ -1,23 +1,22 @@
 /**
  * GameCard — Model Projection Card
  *
- * Matches the reference ModelProjectionCard.tsx exactly:
- *  - Left-border color driven by max(spreadDiff, totalDiff) edge scale
- *  - Header: date · time (dark bg strip)
- *  - Column labels: BOOKS (gray) | MODEL LINE (neon green) | MODEL O/U (neon green)
- *  - Away row: logo | name | consensus (book spread if away is fav, else book total) | model spread pill | O modelTotal pill
- *  - Divider
- *  - Home row: logo | name | consensus (book spread if home is fav, else book total) | model spread pill | U modelTotal pill
- *  - Edge verdict: spread pick (white) + EDGE: N pts (edge-colored) | total pick + EDGE
- *  - Download button (top-right, low opacity)
- *  - framer-motion fade-in
+ * Layout (desktop):
+ *   ┌──────────────────────────────────────────────────────────┐
+ *   │  Header: date · time                                     │
+ *   ├──────────────────────────────┬───────────────────────────┤
+ *   │  Betting Splits (always vis) │  Model Projections        │
+ *   │  • Spread Money/Bets bars    │  • Team rows              │
+ *   │  • Total Money/Bets bars     │  • Edge verdict           │
+ *   │  • ML bars (NBA only)        │                           │
+ *   └──────────────────────────────┴───────────────────────────┘
  *
- * All data comes from the Model Database sync pipeline via tRPC → DB.
+ * Mobile: splits stack above projections (flex-col).
  */
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Download, Link, ImageDown, ChevronDown, ChevronUp } from "lucide-react";
+import { Download, Link, ImageDown } from "lucide-react";
 import { toast } from "sonner";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/lib/trpc";
@@ -51,7 +50,7 @@ function formatDate(dateStr: string): string {
   }
 }
 
-// ── Edge color scale (matches reference exactly) ──────────────────────────────
+// ── Edge color scale ──────────────────────────────────────────────────────────
 function getEdgeColor(diff: number): string {
   if (diff <= 0)  return "hsl(var(--muted-foreground))";
   if (diff < 1.5) return "#FF3131";
@@ -76,16 +75,9 @@ function toNum(v: string | number | null | undefined): number {
   return typeof v === "number" ? v : parseFloat(v);
 }
 
-// ── Safe display helper: returns "-" for NaN/null/undefined ───────────────────
-function dash(v: number, prefix = ""): string {
-  if (isNaN(v)) return "-";
-  return prefix ? `${prefix} ${v}` : `${v}`;
-}
-
-// ── Normalize edge label (matches reference normalizeEdgeLabel) ───────────────
+// ── Normalize edge label ──────────────────────────────────────────────────────
 function normalizeEdgeLabel(label: string | null | undefined): string {
   if (!label || label.toUpperCase() === "PASS") return "PASS";
-  // Replace leading slug with NCAA or NBA name from registry
   return label.replace(/^([a-z][a-z0-9_]*)(\s+\()/i, (_, slug, rest) => {
     const ncaa = getTeamByDbSlug(slug);
     if (ncaa) return ncaa.ncaaName + rest;
@@ -134,8 +126,7 @@ function TeamRow({
         <TeamLogo slug={slug} name={name} logoUrl={logoUrl} />
       </div>
 
-      {/* Team name — school on top, nickname on bottom, each strictly one line */}
-      {/* Width is generous enough for longest NBA city names: "Oklahoma City" (13 chars), "Golden State" (12 chars) */}
+      {/* Team name */}
       <div className="flex-shrink-0 flex flex-col justify-center overflow-hidden" style={{ width: "clamp(108px, 28vw, 135px)" }}>
         <div
           className="font-bold leading-none overflow-hidden"
@@ -167,8 +158,6 @@ function TeamRow({
 
       {/* 3 data columns: BOOKS | MODEL LINE | MODEL O/U */}
       <div className="flex-1 grid min-w-0" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: "4px" }}>
-
-        {/* BOOKS — plain white consensus number */}
         <div className="flex items-center justify-center">
           <span
             className="font-bold leading-none whitespace-nowrap"
@@ -177,8 +166,6 @@ function TeamRow({
             {consensus}
           </span>
         </div>
-
-        {/* MODEL LINE — dark pill */}
         <div className="flex items-center justify-center">
           <span
             className="flex items-center justify-center px-2 py-1.5 rounded-lg whitespace-nowrap"
@@ -189,8 +176,6 @@ function TeamRow({
             </span>
           </span>
         </div>
-
-        {/* MODEL O/U — dark pill */}
         <div className="flex items-center justify-center">
           <span
             className="flex items-center justify-center px-2 py-1.5 rounded-lg whitespace-nowrap"
@@ -201,7 +186,6 @@ function TeamRow({
             </span>
           </span>
         </div>
-
       </div>
     </div>
   );
@@ -381,7 +365,6 @@ interface GameCardProps {
 
 export function GameCard({ game }: GameCardProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
-  const [splitsOpen, setSplitsOpen] = useState(false);
 
   const awayBookSpread = toNum(game.awayBookSpread);
   const homeBookSpread = toNum(game.homeBookSpread);
@@ -389,8 +372,7 @@ export function GameCard({ game }: GameCardProps) {
   const homeModelSpread = toNum(game.homeModelSpread);
   const bookTotal = toNum(game.bookTotal);
   const modelTotal = toNum(game.modelTotal);
-  // Compute diffs client-side from live numbers — DB values may be stale
-  // if book odds were updated after the model file was uploaded.
+
   const spreadDiff = (!isNaN(awayModelSpread) && !isNaN(awayBookSpread))
     ? Math.abs(awayModelSpread - awayBookSpread)
     : toNum(game.spreadDiff);
@@ -398,22 +380,19 @@ export function GameCard({ game }: GameCardProps) {
     ? Math.abs(modelTotal - bookTotal)
     : toNum(game.totalDiff);
 
-   // Resolve team info from NCAA or NBA registry
+  // Resolve team info from NCAA or NBA registry
   const awayNcaa = getTeamByDbSlug(game.awayTeam);
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba  = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba  = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
-  // For NBA: show city on line 1, nickname on line 2 (mirrors NCAAM school/nickname layout)
   const awayName = awayNcaa?.ncaaName ?? awayNba?.city ?? game.awayTeam.replace(/_/g, " ");
   const homeName = homeNcaa?.ncaaName ?? homeNba?.city ?? game.homeTeam.replace(/_/g, " ");
   const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? "";
   const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? "";
   const awayLogoUrl = awayNcaa?.logoUrl ?? awayNba?.logoUrl;
   const homeLogoUrl = homeNcaa?.logoUrl ?? homeNba?.logoUrl;
+
   const time = formatMilitaryTime(game.startTimeEst);
-  // Midnight ET games (startTimeEst = "00:00") are stored under the actual play date (e.g. Mar 5)
-  // but the clock in ET has already rolled over to the next day (e.g. Fri, Mar 6 · 12:00 AM ET).
-  // Display the next calendar day in the header so the label matches the ET clock.
   const displayDate = (() => {
     if (game.startTimeEst === "00:00") {
       const d = new Date(game.gameDate + "T00:00:00");
@@ -424,20 +403,12 @@ export function GameCard({ game }: GameCardProps) {
   })();
   const dateLabel = formatDate(displayDate);
 
-  // Border color driven by max edge diff
   const maxDiff = Math.max(isNaN(spreadDiff) ? 0 : spreadDiff, isNaN(totalDiff) ? 0 : totalDiff);
   const borderColor = getEdgeColor(maxDiff);
 
-  // ── Compute edge footer labels from book lines (not model lines) ──────────────
-  // Spread: the team whose book line has the edge. If model away < book away (model
-  // thinks away is a bigger fav / smaller dog), the edge is on the away book spread.
-  // i.e. awayModelSpread < awayBookSpread → bet Away at the book number.
-  //      awayModelSpread > awayBookSpread → bet Home at the book number.
-  // "PASS" when spreadDiff <= 0 or data is missing.
   const computedSpreadEdge: string | null = (() => {
     if (isNaN(spreadDiff) || spreadDiff <= 0) return "PASS";
     if (isNaN(awayModelSpread) || isNaN(awayBookSpread)) return game.spreadEdge;
-    // If model gives away a better number (lower spread = better for away), bet away book line
     if (awayModelSpread < awayBookSpread) {
       return `${awayName} ${spreadSign(awayBookSpread)}`;
     } else {
@@ -445,7 +416,6 @@ export function GameCard({ game }: GameCardProps) {
     }
   })();
 
-  // Total: Over bookTotal if model > book, Under bookTotal if model < book.
   const computedTotalEdge: string | null = (() => {
     if (isNaN(totalDiff) || totalDiff <= 0) return "PASS";
     if (isNaN(modelTotal) || isNaN(bookTotal)) return game.totalEdge;
@@ -454,9 +424,6 @@ export function GameCard({ game }: GameCardProps) {
       : `Under ${bookTotal}`;
   })();
 
-  // Consensus column logic (matches reference):
-  // Away row: show away book spread if away is the favorite (negative), else show book total
-  // Home row: show home book spread if home is the favorite (negative), else show book total
   const awayConsensus = isNaN(awayBookSpread) && isNaN(bookTotal)
     ? "—"
     : awayBookSpread < 0
@@ -505,7 +472,7 @@ export function GameCard({ game }: GameCardProps) {
           <span style="font-size:13px;font-weight:700;color:${c.fg};white-space:nowrap;line-height:1;">${arrow}${label}</span>
           <span style="font-size:12px;font-weight:700;color:${color};line-height:1;">EDGE: ${diff} pts</span>
         </div>`;
-      }
+      };
 
       const exportEl = document.createElement("div");
       exportEl.style.cssText = `
@@ -651,96 +618,97 @@ export function GameCard({ game }: GameCardProps) {
           </span>
         </div>
 
-        {/* Team rows */}
-        <div className="px-3 pt-1 pb-3">
-          {/* Column labels */}
-          <div
-            className="flex items-center gap-1.5 pb-1.5"
-            style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
-          >
-            <div className="flex-shrink-0" style={{ width: "clamp(80px, 22vw, 120px)" }} />
-            <div className="w-8 flex-shrink-0" />
-            <div className="flex-1 grid text-center" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
-              <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Books</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model Line</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model O/U</span>
-            </div>
-          </div>
-
-          {/* Away row */}
-          <TeamRow
-            slug={game.awayTeam}
-            name={awayName}
-            nickname={awayNickname}
-            consensus={awayConsensus}
-            modelSpread={game.publishedToFeed ? spreadSign(awayModelSpread) : "—"}
-            modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `O ${modelTotal}`) : "—"}
-            logoUrl={awayLogoUrl}
-          />
-
-          <div className="my-0.5" style={{ height: 1, background: "hsl(var(--border))" }} />
-
-          {/* Home row */}
-          <TeamRow
-            slug={game.homeTeam}
-            name={homeName}
-            nickname={homeNickname}
-            consensus={homeConsensus}
-            modelSpread={game.publishedToFeed ? spreadSign(homeModelSpread) : "—"}
-            modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `U ${modelTotal}`) : "—"}
-            logoUrl={homeLogoUrl}
-          />
-
-          {/* Edge verdict — only shown when model projections are published */}
-          {game.publishedToFeed && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
-            <EdgeVerdict
-              spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
-              spreadEdge={computedSpreadEdge}
-              totalDiff={isNaN(totalDiff) ? null : totalDiff}
-              totalEdge={computedTotalEdge}
-            />
-          )}
-        </div>
-
-        {/* Betting Splits toggle */}
-        <button
-          onClick={() => setSplitsOpen(v => !v)}
-          className="w-full flex items-center justify-center gap-1 py-1.5 transition-opacity hover:opacity-80"
-          style={{
-            borderTop: "1px solid hsl(var(--border) / 0.4)",
-            background: "hsl(var(--card))",
-          }}
+        {/*
+          ── Two-column body ─────────────────────────────────────────────────
+          On desktop (≥640px): splits on left (fixed 220px), projections on right (flex-1)
+          On mobile (<640px):  splits on top, projections below
+        */}
+        <div
+          className="flex flex-col sm:flex-row"
+          style={{ minHeight: 0 }}
         >
-          <span
-            className="text-[9px] uppercase tracking-widest font-semibold"
-            style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }}
+          {/* ── Left: Betting Splits ─────────────────────────────────────── */}
+          {/* Mobile: full width; Desktop: fixed 220px */}
+          <div
+            className="flex-shrink-0 px-3 py-2"
+            style={{ width: "100%" }}
           >
-            {splitsOpen ? "Hide Splits" : "Betting Splits"}
-          </span>
-          {splitsOpen
-            ? <ChevronUp size={10} style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }} />
-            : <ChevronDown size={10} style={{ color: "hsl(var(--muted-foreground))", opacity: 0.6 }} />
-          }
-        </button>
-
-        {/* Collapsible splits panel */}
-        <AnimatePresence>
-          {splitsOpen && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              style={{ overflow: "hidden" }}
-            >
+            <style>{`@media (min-width: 640px) { .splits-col { width: 220px !important; } }`}</style>
+            <div className="splits-col" style={{ width: "100%" }}>
               <BettingSplitsPanel
                 game={game}
                 awayLabel={awayName}
                 homeLabel={homeName}
+                awayNickname={awayNickname}
+                homeNickname={homeNickname}
               />
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </div>
+          </div>
+
+          {/* Vertical divider (desktop only) */}
+          <div
+            className="hidden sm:block self-stretch flex-shrink-0"
+            style={{ width: 1, background: "hsl(var(--border) / 0.5)" }}
+          />
+
+          {/* Horizontal divider (mobile only) */}
+          <div
+            className="sm:hidden mx-3"
+            style={{ height: 1, background: "hsl(var(--border) / 0.5)" }}
+          />
+
+          {/* ── Right: Model Projections ─────────────────────────────────── */}
+          <div className="flex-1 px-3 pt-1 pb-3 min-w-0">
+            {/* Column labels */}
+            <div
+              className="flex items-center gap-1.5 pb-1.5"
+              style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
+            >
+              {/* Spacer matching logo + name column */}
+              <div className="flex-shrink-0" style={{ width: "clamp(80px, 22vw, 120px)" }} />
+              <div className="w-8 flex-shrink-0" />
+              <div className="flex-1 grid text-center" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+                <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Books</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model Line</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model O/U</span>
+              </div>
+            </div>
+
+            {/* Away row */}
+            <TeamRow
+              slug={game.awayTeam}
+              name={awayName}
+              nickname={awayNickname}
+              consensus={awayConsensus}
+              modelSpread={game.publishedToFeed ? spreadSign(awayModelSpread) : "—"}
+              modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `O ${modelTotal}`) : "—"}
+              logoUrl={awayLogoUrl}
+            />
+
+            <div className="my-0.5" style={{ height: 1, background: "hsl(var(--border))" }} />
+
+            {/* Home row */}
+            <TeamRow
+              slug={game.homeTeam}
+              name={homeName}
+              nickname={homeNickname}
+              consensus={homeConsensus}
+              modelSpread={game.publishedToFeed ? spreadSign(homeModelSpread) : "—"}
+              modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `U ${modelTotal}`) : "—"}
+              logoUrl={homeLogoUrl}
+            />
+
+            {/* Edge verdict */}
+            {game.publishedToFeed && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
+              <EdgeVerdict
+                spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
+                spreadEdge={computedSpreadEdge}
+                totalDiff={isNaN(totalDiff) ? null : totalDiff}
+                totalEdge={computedTotalEdge}
+              />
+            )}
+          </div>
+        </div>
       </motion.div>
 
       <ShareSheet
