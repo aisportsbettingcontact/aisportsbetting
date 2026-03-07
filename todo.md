@@ -331,3 +331,9 @@
 
 ## GameCard Whitespace Fix (2026-03-07)
 - [x] Remove dead vertical whitespace in projections column — both columns must fill height equally with no empty gaps
+
+## BettingSplitsPanel Header Redesign (2026-03-07)
+- [x] Center "BETTING SPLITS" in h1 style
+- [x] Center "SPREAD" in h2 style with "{Away Team} {Away Spread}" left and "{Home Team} {Home Spread}" right using live book spread
+- [x] Center "TOTAL" in h2 style with "OVER {Total}" left and "UNDER {Total}" right using live O/U
+- [x] Ensure % bars are accurate to each corresponding side
