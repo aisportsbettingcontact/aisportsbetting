@@ -187,8 +187,14 @@ export default function Dashboard() {
   }, [selectedSport]);
 
   // ─── Data queries ─────────────────────────────────────────────────────────
+  // Auto-refresh every 5 minutes when LIVE filter is active so scores stay current
+  const isLiveFilterActive = selectedStatuses.has('live') || selectedStatuses.size === 0;
   const { data: allGames, isLoading: gamesLoading } = trpc.games.list.useQuery(
-    { sport: selectedSport }, { refetchOnWindowFocus: false }
+    { sport: selectedSport },
+    {
+      refetchOnWindowFocus: false,
+      refetchInterval: isLiveFilterActive ? 5 * 60 * 1000 : false,
+    }
   );
 
   // Count live games for the badge

@@ -404,4 +404,15 @@
 - [x] Change status filter from single-select to multi-select (UPCOMING, LIVE, FINAL can be combined)
 - [x] When all three are selected simultaneously, auto-revert to ALL (unselect all)
 - [x] When ALL is active, sort FINAL games to the bottom within each date group
+- [x] Save checkpoint and deliver
+
+## Live/Final Scores on GameCard (2026-03-07)
+- [x] Add awayScore, homeScore, gameClock columns to games DB schema
+- [x] Run db:push migration
+- [x] Update ncaaScoreboard.ts to extract scores and gameClock from NCAA GraphQL API
+- [x] Update vsinAutoRefresh.ts to write scores on insert and update
+- [x] Add updateGameScores helper in db.ts
+- [x] Wire 5-minute score refresh cycle in vsinAutoRefresh.ts
+- [x] Update GameCard to show scores for LIVE and FINAL games
+- [x] Show gameClock for LIVE games (e.g. "15:07 1st")
 - [ ] Save checkpoint and deliver

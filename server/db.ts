@@ -421,7 +421,14 @@ export async function getGameByNcaaContestId(contestId: string) {
 /** Update start time, ncaaContestId, and gameStatus for a game (used when NCAA data arrives after VSiN insert) */
 export async function updateNcaaStartTime(
   id: number,
-  data: { startTimeEst: string; ncaaContestId: string; gameStatus?: 'upcoming' | 'live' | 'final' }
+  data: {
+    startTimeEst: string;
+    ncaaContestId: string;
+    gameStatus?: 'upcoming' | 'live' | 'final';
+    awayScore?: number | null;
+    homeScore?: number | null;
+    gameClock?: string | null;
+  }
 ): Promise<void> {
   const db = await getDb();
   if (!db) return;

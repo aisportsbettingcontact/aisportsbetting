@@ -46,6 +46,15 @@ export interface NcaaGame {
    * 'P' (pre) → 'upcoming', 'I' (in-progress) → 'live', 'F' (final) → 'final'
    */
   gameStatus: NcaaGameStatus;
+  /** Away team current/final score (null when game hasn't started) */
+  awayScore: number | null;
+  /** Home team current/final score (null when game hasn't started) */
+  homeScore: number | null;
+  /**
+   * Game clock string for live games, e.g. "15:07 1st", "HALF", "00:10 OT".
+   * Built from contestClock + currentPeriod. Null for upcoming/final.
+   */
+  gameClock: string | null;
 }
 
 function toNcaaDate(yyyymmdd: string): string {
@@ -143,6 +152,24 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
       c.gameState === 'I' ? 'live' :
       'upcoming';
 
+    // Extract scores (available for live and final games)
+    const awayScore: number | null = (away.score !== null && away.score !== undefined) ? Number(away.score) : null;
+    const homeScore: number | null = (home.score !== null && home.score !== undefined) ? Number(home.score) : null;
+
+    // Build game clock string for live games: "MM:SS Period" e.g. "15:07 1st"
+    let gameClock: string | null = null;
+    if (gameStatus === 'live' && c.currentPeriod) {
+      const period = String(c.currentPeriod);
+      const clock = c.contestClock ? String(c.contestClock) : '';
+      if (period === 'HALF') {
+        gameClock = 'HALF';
+      } else if (clock) {
+        gameClock = `${clock} ${period}`;
+      } else {
+        gameClock = period;
+      }
+    }
+
     games.push({
       contestId: String(c.contestId),
       awaySeoname,
@@ -152,6 +179,9 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
       startTimeEpoch: c.startTimeEpoch,
       isMidnightGame,
       gameStatus,
+      awayScore,
+      homeScore,
+      gameClock,
     });
   }
 

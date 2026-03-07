@@ -133,6 +133,12 @@ export const games = mysqlTable("games", {
   ncaaContestId: varchar("ncaaContestId", { length: 20 }),
   /** Game status: 'upcoming' (pre-game), 'live' (in-progress), 'final' (completed) */
   gameStatus: mysqlEnum("gameStatus", ["upcoming", "live", "final"]).notNull().default("upcoming"),
+  /** Away team current/final score (null = not started) */
+  awayScore: int("awayScore"),
+  /** Home team current/final score (null = not started) */
+  homeScore: int("homeScore"),
+  /** Game clock string for live games, e.g. "15:07 1st" or "HALF" (null = not live) */
+  gameClock: varchar("gameClock", { length: 32 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   /** Prevent duplicate rows for the same matchup on the same date */

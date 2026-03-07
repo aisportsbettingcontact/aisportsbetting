@@ -403,6 +403,14 @@ export function GameCard({ game }: GameCardProps) {
   })();
   const dateLabel = formatDate(displayDate);
 
+  // Score display for live/final games
+  const isLive = game.gameStatus === 'live';
+  const isFinal = game.gameStatus === 'final';
+  const hasScores = (game.awayScore !== null && game.awayScore !== undefined) &&
+                    (game.homeScore !== null && game.homeScore !== undefined);
+  const awayWins = isFinal && hasScores && (game.awayScore! > game.homeScore!);
+  const homeWins = isFinal && hasScores && (game.homeScore! > game.awayScore!);
+
   const maxDiff = Math.max(isNaN(spreadDiff) ? 0 : spreadDiff, isNaN(totalDiff) ? 0 : totalDiff);
   const borderColor = getEdgeColor(maxDiff);
 
@@ -613,9 +621,58 @@ export function GameCard({ game }: GameCardProps) {
             {dateLabel}
           </span>
           <span className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))" }}>·</span>
-          <span className="text-xs font-medium" style={{ color: "hsl(var(--muted-foreground))" }}>
-            {time}
-          </span>
+
+          {/* Live game: show score + pulsing LIVE badge + clock */}
+          {isLive && hasScores ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-bold tabular-nums" style={{ color: "hsl(var(--foreground))" }}>
+                {game.awayScore} – {game.homeScore}
+              </span>
+              <span
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
+                style={{ background: "rgba(239,68,68,0.18)", color: "#ef4444" }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full animate-pulse"
+                  style={{ background: "#ef4444", display: "inline-block" }}
+                />
+                LIVE
+              </span>
+              {game.gameClock && (
+                <span className="text-[10px] font-medium" style={{ color: "hsl(var(--muted-foreground))" }}>
+                  {game.gameClock}
+                </span>
+              )}
+            </div>
+          ) : isFinal && hasScores ? (
+            /* Final game: show score + winner bold + FINAL label */
+            <div className="flex items-center gap-1.5">
+              <span
+                className="text-xs font-bold tabular-nums"
+                style={{ color: awayWins ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}
+              >
+                {game.awayScore}
+              </span>
+              <span className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))" }}>–</span>
+              <span
+                className="text-xs font-bold tabular-nums"
+                style={{ color: homeWins ? "hsl(var(--foreground))" : "hsl(var(--muted-foreground))" }}
+              >
+                {game.homeScore}
+              </span>
+              <span
+                className="px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
+                style={{ background: "rgba(255,255,255,0.07)", color: "hsl(var(--muted-foreground))" }}
+              >
+                FINAL
+              </span>
+            </div>
+          ) : (
+            /* Upcoming: show start time as before */
+            <span className="text-xs font-medium" style={{ color: "hsl(var(--muted-foreground))" }}>
+              {time}
+            </span>
+          )}
         </div>
 
         {/*

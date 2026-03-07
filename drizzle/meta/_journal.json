@@ -127,6 +127,13 @@
       "when": 1772925695227,
       "tag": "0017_whole_stone_men",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "5",
+      "when": 1772927119743,
+      "tag": "0018_mixed_wendigo",
+      "breakpoints": true
     }
   ]
 }

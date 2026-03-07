@@ -222,11 +222,14 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
           totalOverBetsPct: scraped.totalOverBetsPct,
           totalOverMoneyPct: scraped.totalOverMoneyPct,
         });
-        // Always update gameStatus when we have NCAA data
+        // Always update gameStatus, scores, and clock when we have NCAA data
         await updateNcaaStartTime(existingGame.id, {
           startTimeEst: startTimeEst ?? existingGame.startTimeEst,
           ncaaContestId: ncaaContestId ?? existingGame.ncaaContestId ?? '',
           ...(ncaaGameStatus ? { gameStatus: ncaaGameStatus } : {}),
+          awayScore: ncaaGame?.awayScore ?? null,
+          homeScore: ncaaGame?.homeScore ?? null,
+          gameClock: ncaaGame?.gameClock ?? null,
         });
         totalUpdated++;
       } else {
@@ -254,6 +257,9 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
           sortOrder: scraped.vsinRowIndex,
           ncaaContestId: ncaaContestId ?? null,
           gameStatus: ncaaGameStatus ?? 'upcoming',
+          awayScore: ncaaGame?.awayScore ?? null,
+          homeScore: ncaaGame?.homeScore ?? null,
+          gameClock: ncaaGame?.gameClock ?? null,
           // NCAAM betting splits (4 fields) — include on insert so splits are captured immediately
           spreadAwayBetsPct: scraped.spreadAwayBetsPct,
           spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
@@ -302,11 +308,14 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         e => slugsMatch(e.awayTeam, awaySeoname) && slugsMatch(e.homeTeam, homeSeoname)
       );
       if (bySlug) {
-        // Always update gameStatus; also patch ncaaContestId if missing
+        // Always update gameStatus, scores, and clock; also patch ncaaContestId if missing
         await updateNcaaStartTime(bySlug.id, {
           startTimeEst: startTimeEst !== "TBD" ? startTimeEst : bySlug.startTimeEst,
           ncaaContestId: bySlug.ncaaContestId ?? contestId,
           gameStatus,
+          awayScore: ncaaGame.awayScore ?? null,
+          homeScore: ncaaGame.homeScore ?? null,
+          gameClock: ncaaGame.gameClock ?? null,
         });
         continue;
       }
@@ -335,6 +344,9 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
           sortOrder: 9999,
           ncaaContestId: contestId,
           gameStatus,
+          awayScore: ncaaGame.awayScore ?? null,
+          homeScore: ncaaGame.homeScore ?? null,
+          gameClock: ncaaGame.gameClock ?? null,
         };
       await insertGames([row]);
       ncaaInserted++;
@@ -594,23 +606,70 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
 }
 
 /**
+ * Score-only refresh: re-fetches NCAA scoreboard for today and updates
+ * awayScore, homeScore, gameClock, and gameStatus for all NCAAM games.
+ * Runs every 5 minutes so live scores stay current.
+ */
+async function refreshNcaamScores(): Promise<void> {
+  const todayStr = datePst();
+  try {
+    const yyyymmdd = todayStr.replace(/-/g, "");
+    const ncaaGames = await fetchNcaaGames(yyyymmdd);
+    const existing = await listGamesByDate(todayStr, "NCAAM");
+
+    let updated = 0;
+    for (const ncaaGame of ncaaGames) {
+      const dbGame = existing.find(
+        g => g.ncaaContestId === ncaaGame.contestId
+      ) ?? existing.find(
+        g => slugsMatch(g.awayTeam, ncaaGame.awaySeoname) && slugsMatch(g.homeTeam, ncaaGame.homeSeoname)
+      );
+      if (!dbGame) continue;
+
+      await updateNcaaStartTime(dbGame.id, {
+        startTimeEst: dbGame.startTimeEst,
+        ncaaContestId: dbGame.ncaaContestId ?? ncaaGame.contestId,
+        gameStatus: ncaaGame.gameStatus,
+        awayScore: ncaaGame.awayScore ?? null,
+        homeScore: ncaaGame.homeScore ?? null,
+        gameClock: ncaaGame.gameClock ?? null,
+      });
+      updated++;
+    }
+    console.log(`[ScoreRefresh] Updated scores for ${updated} NCAAM games (${todayStr})`);
+  } catch (err) {
+    console.warn("[ScoreRefresh] Score refresh failed (non-fatal):", err);
+  }
+}
+
+const SCORE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
  * Start the 30-minute auto-refresh scheduler.
  * Fires immediately if inside the active window, then every 30 minutes.
+ * Also starts a separate 5-minute score-only refresh for live/final scores.
  */
 export function startVsinAutoRefresh() {
   if (isWithinActiveHours()) {
     void runVsinRefresh();
   } else {
-    console.log("[VSiNAutoRefresh] Outside active hours (6am–midnight PST) — waiting for next tick.");
+    console.log("[VSiNAutoRefresh] Outside active hours (6am\u2013midnight PST) \u2014 waiting for next tick.");
   }
 
   setInterval(() => {
     if (isWithinActiveHours()) {
       void runVsinRefresh();
     } else {
-      console.log("[VSiNAutoRefresh] Tick skipped — outside active hours (6am–midnight PST).");
+      console.log("[VSiNAutoRefresh] Tick skipped \u2014 outside active hours (6am\u2013midnight PST).");
     }
   }, INTERVAL_MS);
 
-  console.log("[VSiNAutoRefresh] Scheduler started — every 30 min (6am–midnight PST).");
+  // 5-minute score refresh (runs independently of the 30-min full refresh)
+  setInterval(() => {
+    if (isWithinActiveHours()) {
+      void refreshNcaamScores();
+    }
+  }, SCORE_INTERVAL_MS);
+
+  console.log("[VSiNAutoRefresh] Scheduler started \u2014 every 30 min (6am\u2013midnight PST) + score refresh every 5 min.");
 }
