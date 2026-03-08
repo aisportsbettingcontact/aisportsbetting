@@ -340,7 +340,7 @@ export default function ModelProjections() {
       {showAgeModal && <AgeModal onAccept={() => acceptTermsMutation.mutate()} onClose={appLogout} />}
 
       {/* ── Sticky Header ── */}
-      <header ref={headerRef} className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
+      <header ref={headerRef} className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm">
 
         {/* Row 1: brand + user icon */}
         <div className="relative flex items-center px-4 pt-2 pb-1">
