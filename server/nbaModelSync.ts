@@ -26,6 +26,20 @@ import { getDb } from "./db";
 import { games } from "../drizzle/schema";
 import { eq, and } from "drizzle-orm";
 
+/** In-memory record of the last completed sync */
+export interface NbaModelSyncResult {
+  synced: number;
+  skipped: number;
+  errors: string[];
+  syncedAt: string; // ISO timestamp
+}
+
+let lastSyncResult: NbaModelSyncResult | null = null;
+
+export function getLastNbaModelSyncResult(): NbaModelSyncResult | null {
+  return lastSyncResult;
+}
+
 const SHEET_ID = "1MWNh0pMkFdUfldhXj60bq9blLPXCg5N5fKh7yYMI0gU";
 const GID = "567059198";
 const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
@@ -333,22 +347,27 @@ export async function syncNbaModelFromSheet(): Promise<{ synced: number; skipped
   if (result.errors.length > 0) {
     console.warn("[NBAModelSync] Errors:", result.errors.join("; "));
   }
+
+  // Store the result with timestamp for the Publish Projections page
+  const syncedAt = new Date().toISOString();
+  lastSyncResult = { ...result, syncedAt };
+
   return result;
 }
 
-/** Returns true if current time is within the 9AM–midnight PST window */
-function isWithinSyncWindow(): boolean {
+/** Get current PST/PDT hour (accounts for daylight saving time) */
+function getPSTHour(): number {
   const now = new Date();
-  // PST = UTC-8 (standard), PDT = UTC-7 (daylight saving)
-  // March 8 is after DST spring forward (2nd Sunday in March = March 9, 2026)
-  // So on March 8 we are still on PST (UTC-8)
-  const pstOffsetMinutes = -8 * 60;
-  const utcMinutes = now.getUTCHours() * 60 + now.getUTCMinutes();
-  let pstMinutes = utcMinutes + pstOffsetMinutes;
-  if (pstMinutes < 0) pstMinutes += 24 * 60;
-  const pstHour = Math.floor(pstMinutes / 60);
-  // Window: 9AM (9) to midnight (24, exclusive)
-  return pstHour >= 9 && pstHour < 24;
+  // Use Intl to get the correct PST/PDT offset automatically
+  const pstTimeStr = now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', hour12: false });
+  return parseInt(pstTimeStr, 10);
+}
+
+/** Returns true if current time is within the 9AM–9PM PST/PDT window */
+function isWithinSyncWindow(): boolean {
+  const pstHour = getPSTHour();
+  // Window: 9AM (9) to 9PM (21, exclusive)
+  return pstHour >= 9 && pstHour < 21;
 }
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
@@ -356,7 +375,7 @@ let syncInterval: ReturnType<typeof setInterval> | null = null;
 export function startNbaModelSyncScheduler(): void {
   if (syncInterval) return; // already running
 
-  const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+  const THIRTY_MIN_MS = 30 * 60 * 1000;
 
   // Run immediately on startup if within window
   if (isWithinSyncWindow()) {
@@ -365,10 +384,10 @@ export function startNbaModelSyncScheduler(): void {
       console.error("[NBAModelSync] Initial sync error:", err)
     );
   } else {
-    console.log("[NBAModelSync] Outside sync window (9AM–midnight PST), skipping initial sync.");
+    console.log("[NBAModelSync] Outside sync window (9AM–9PM PST), skipping initial sync.");
   }
 
-  // Schedule every 3 hours
+  // Schedule every 30 minutes
   syncInterval = setInterval(() => {
     if (isWithinSyncWindow()) {
       console.log("[NBAModelSync] Scheduled sync triggered...");
@@ -376,11 +395,11 @@ export function startNbaModelSyncScheduler(): void {
         console.error("[NBAModelSync] Scheduled sync error:", err)
       );
     } else {
-      console.log("[NBAModelSync] Outside sync window, skipping scheduled sync.");
+      console.log("[NBAModelSync] Outside sync window (9AM–9PM PST), skipping scheduled sync.");
     }
-  }, THREE_HOURS_MS);
+  }, THIRTY_MIN_MS);
 
-  console.log("[NBAModelSync] Scheduler started (every 3 hours, 9AM–midnight PST).");
+  console.log("[NBAModelSync] Scheduler started (every 30 min, 9AM–9PM PST).");
 }
 
 export function stopNbaModelSyncScheduler(): void {

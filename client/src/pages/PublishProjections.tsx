@@ -961,6 +961,13 @@ export default function PublishProjections() {
     refetchOnWindowFocus: true,
   });
 
+  // NBA model sync timestamp — polls every 30s to stay fresh
+  const { data: lastNbaModelSync } = trpc.games.lastNbaModelSync.useQuery(undefined, {
+    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
+    enabled: !!appUser && isOwner,
+  });
+
   // Re-fetch game list whenever the server completes a new refresh
   const lastRefreshKey = lastRefresh?.refreshedAt ?? null;
   const prevRefreshKey = useRef<string | null>(null);
@@ -1334,6 +1341,43 @@ export default function PublishProjections() {
                   : "—"}
               </span>
             </div>
+
+            {/* NBA Model Sync timestamp — only shown when NBA tab is active */}
+            {selectedSport === "NBA" && (
+              <>
+                <div className="col-span-2" style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
+                <div className="col-span-2 flex items-center justify-between">
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[9px] uppercase tracking-widest" style={{ color: "hsl(var(--muted-foreground))" }}>
+                      NBA Model Last Synced
+                    </span>
+                    <span
+                      className="text-[11px] font-mono"
+                      style={{ color: lastNbaModelSync?.syncedAt ? "rgba(200,16,46,0.9)" : "hsl(var(--muted-foreground))" }}
+                    >
+                      {lastNbaModelSync?.syncedAt
+                        ? new Date(lastNbaModelSync.syncedAt).toLocaleTimeString("en-US", {
+                            hour: "2-digit", minute: "2-digit", second: "2-digit",
+                            timeZone: "America/New_York", hour12: true,
+                          }) + " EST"
+                        : "Not yet synced"}
+                    </span>
+                  </div>
+                  {lastNbaModelSync && (
+                    <div className="flex items-center gap-2 text-[10px]" style={{ color: "hsl(var(--muted-foreground))" }}>
+                      <span>
+                        <span className="font-bold" style={{ color: "rgba(57,255,20,0.8)" }}>{lastNbaModelSync.synced}</span> synced
+                      </span>
+                      {lastNbaModelSync.errors.length > 0 && (
+                        <span>
+                          <span className="font-bold" style={{ color: "#FF6B00" }}>{lastNbaModelSync.errors.length}</span> errors
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
         </div>
       </header>
