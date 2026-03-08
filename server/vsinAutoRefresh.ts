@@ -18,7 +18,7 @@
 import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime } from "./db";
 import { scrapeVsinOdds } from "./vsinScraper";
 import { scrapeNbaVsinOdds } from "./nbaVsinScraper";
-import { fetchNcaaGames, buildStartTimeMap, getMidnightGameKeys } from "./ncaaScoreboard";
+import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
 import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "./nbaScoreboard";
 import { VALID_DB_SLUGS, BY_DB_SLUG } from "../shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS } from "../shared/nbaTeams";
@@ -157,23 +157,9 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
       ncaaGamesByDate.set(dateStr, ncaaGames);
       console.log(`[VSiNAutoRefresh] NCAA: ${ncaaGames.length} games for ${dateStr}`);
 
-      // Check next day for midnight games (Hawaii 9 PM PT = midnight ET)
-      const nextYYYYMMDD = new Date(dateStr + "T00:00:00Z");
-      nextYYYYMMDD.setUTCDate(nextYYYYMMDD.getUTCDate() + 1);
-      const nextDateStr = nextYYYYMMDD.toISOString().slice(0, 10).replace(/-/g, "");
-      try {
-        const nextDayGames = await fetchNcaaGames(nextDateStr);
-        const midnightKeys = getMidnightGameKeys(nextDayGames);
-        if (midnightKeys.size > 0) {
-          for (const g of nextDayGames) {
-            if (g.isMidnightGame) {
-              startTimeMaps.get(dateStr)?.set(`${g.awaySeoname}@${g.homeSeoname}`, g.startTimeEst);
-              ncaaGamesByDate.get(dateStr)?.push({ ...g });
-              console.log(`[VSiNAutoRefresh] Midnight game assigned to ${dateStr}: ${g.awaySeoname} @ ${g.homeSeoname}`);
-            }
-          }
-        }
-      } catch { /* non-fatal */ }
+      // Note: midnight ET games (e.g. Hawaii 9 PM PT = 12:00 AM ET) are already
+      // returned by the NCAA API under the correct ET calendar date. No prior-day
+      // adjustment is needed — they stay under the date the API reports them.
     } catch (ncaaErr) {
       console.warn(`[VSiNAutoRefresh] NCAA fetch failed for ${dateStr} (non-fatal):`, ncaaErr);
     }
@@ -287,7 +273,7 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
     const existing = await listGamesByDate(dateStr, "NCAAM");
 
     for (const ncaaGame of ncaaGames) {
-      const { contestId, awaySeoname, homeSeoname, startTimeEst, isMidnightGame, gameStatus } = ncaaGame;
+      const { contestId, awaySeoname, homeSeoname, startTimeEst, gameStatus } = ncaaGame;
 
       if (!VALID_DB_SLUGS.has(awaySeoname) || !VALID_DB_SLUGS.has(homeSeoname)) {
         if (awaySeoname !== "tba" && homeSeoname !== "tba") {
@@ -296,6 +282,8 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         continue;
       }
 
+      // The NCAA API already places each game under the correct ET calendar date.
+      // No date adjustment is needed — use dateStr as-is.
       const effectiveDateStr = dateStr;
 
       const byContestId = await getGameByNcaaContestId(contestId);

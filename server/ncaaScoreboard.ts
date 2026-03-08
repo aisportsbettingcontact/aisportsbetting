@@ -7,6 +7,11 @@
  * looked up directly in the 365-team registry (BY_NCAA_SLUG). If a seoname
  * is not in the registry, the team is not one of the 365 tracked teams and
  * will be filtered out downstream by VALID_DB_SLUGS.
+ *
+ * Date semantics: The NCAA API returns each game under the calendar date it
+ * starts in Eastern Time. A game starting at 12:00 AM ET on March 8 is
+ * returned under March 8 — that is the correct gameDate to store.
+ * There is no "prior day" adjustment needed.
  */
 
 import { BY_NCAA_SLUG } from "../shared/ncaamTeams";
@@ -27,20 +32,15 @@ export interface NcaaGame {
   /**
    * Start time in ET as "HH:MM", e.g. "19:30" (DST-aware).
    * "TBD" when no confirmed start time.
-   * "00:00" means a real late-night West Coast game (9 PM PT = midnight ET) —
-   * check `isMidnightGame` to assign it to the prior calendar day.
+   * "00:00" means a late-night West Coast game (e.g. 9 PM PT = midnight ET).
+   * These games belong to the calendar date the NCAA API returns them under —
+   * no date adjustment is needed.
    */
   startTimeEst: string;
   /** Whether the start time is confirmed (not TBA) */
   hasStartTime: boolean;
   /** Unix epoch in seconds (UTC) */
   startTimeEpoch: number;
-  /**
-   * True when this is a real midnight ET game (e.g. Hawaii home games at 9 PM PT).
-   * These games should be stored under the PRIOR calendar day.
-   * Only set when hasStartTime=false but epoch resolves to 00:xx ET.
-   */
-  isMidnightGame: boolean;
   /**
    * Game status derived from NCAA API gameState field:
    * 'P' (pre) → 'upcoming', 'I' (in-progress) → 'live', 'F' (final) → 'final'
@@ -121,19 +121,19 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
     // - If hasStartTime=true: use the confirmed time directly.
     // - If hasStartTime=false but epoch resolves to 00:xx ET: this is a real
     //   late-night West Coast game (e.g. Hawaii 9 PM PT = midnight ET).
-    //   Mark as isMidnightGame=true so the caller assigns it to the prior day.
+    //   The NCAA API already returns it under the correct ET calendar date.
+    //   Store "00:00" as the start time — no date adjustment needed.
     // - If hasStartTime=false and epoch is NOT midnight: TBD (placeholder epoch).
     let startTimeEst: string;
-    let isMidnightGame = false;
     if (c.hasStartTime && c.startTime) {
       startTimeEst = c.startTime;
     } else if (c.startTimeEpoch) {
       const etTime = epochToEt(c.startTimeEpoch);
       const etHour = parseInt(etTime.split(":")[0] ?? "12", 10);
       if (etHour === 0 || etHour === 24) {
-        // Midnight ET — real late-night West Coast game, not a TBD placeholder
+        // Midnight ET — real late-night West Coast game
+        // The NCAA API already places this under the correct calendar date
         startTimeEst = "00:00";
-        isMidnightGame = true;
       } else {
         // Non-midnight epoch with hasStartTime=false — treat as TBD
         startTimeEst = "TBD";
@@ -177,7 +177,6 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
       startTimeEst,
       hasStartTime: c.hasStartTime ?? false,
       startTimeEpoch: c.startTimeEpoch,
-      isMidnightGame,
       gameStatus,
       awayScore,
       homeScore,
@@ -194,16 +193,4 @@ export function buildStartTimeMap(games: NcaaGame[]): Map<string, string> {
     map.set(`${g.awaySeoname}@${g.homeSeoname}`, g.startTimeEst);
   }
   return map;
-}
-
-/**
- * Returns the set of matchup keys ("away@home") for midnight ET games.
- * These games belong on the PRIOR calendar day (e.g. Hawaii 9 PM PT = midnight ET).
- */
-export function getMidnightGameKeys(games: NcaaGame[]): Set<string> {
-  const keys = new Set<string>();
-  for (const g of games) {
-    if (g.isMidnightGame) keys.add(`${g.awaySeoname}@${g.homeSeoname}`);
-  }
-  return keys;
 }

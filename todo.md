@@ -458,4 +458,13 @@
 
 ## Fix parseLiveSortKey for 2OT/3OT (2026-03-08)
 - [x] Fixed: gameClock stored as "MM:SS 2OT" — added clockOtMatch regex to handle clock+OT-label format
+- [x] Save checkpoint and deliver
+
+## Fix Midnight ET Game Date Grouping (2026-03-08)
+- [x] Audit backend: how gameDate is derived from startTime in NCAA and NBA scrapers
+- [x] Audit frontend: how date groups are computed from gameDate/startTime in Dashboard.tsx
+- [x] Fix backend: removed isMidnightGame prior-day logic; NCAA API already returns games under correct ET calendar date
+- [x] Fix frontend: no change needed — groups by gameDate from DB which is now correct
+- [x] Fixed DB record: Long Beach St @ Hawaii moved from 2026-03-07 to 2026-03-08
+- [x] Test and verify Long Beach St vs Hawaii appears under March 8, not March 7
 - [ ] Save checkpoint and deliver
