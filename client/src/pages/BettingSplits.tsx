@@ -7,7 +7,8 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, TrendingUp, ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
+import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, TrendingUp } from "lucide-react";
+import { CalendarPicker, todayUTC } from "@/components/CalendarPicker";
 
 // CDN icon URLs
 const CDN_TEST_TUBE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-test-tube_0cb720ac.png";
@@ -145,7 +146,7 @@ export default function BettingSplitsPage() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA">("NCAAM");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayUTC());
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -178,7 +179,7 @@ export default function BettingSplitsPage() {
   const appLogoutMutation = trpc.appUsers.logout.useMutation({ onSuccess: () => { setLocation("/"); toast.success("Signed out"); } });
   const appLogout = () => appLogoutMutation.mutate();
 
-  useEffect(() => { setSelectedStatuses(new Set()); setSelectedDate(null); }, [selectedSport]);
+  useEffect(() => { setSelectedStatuses(new Set()); setSelectedDate(todayUTC()); }, [selectedSport]);
 
   const { data: allGames, isLoading: gamesLoading } = trpc.games.list.useQuery(
     { sport: selectedSport },
@@ -233,7 +234,7 @@ export default function BettingSplitsPage() {
   const games = useMemo(() => {
     if (!allGames) return allGames;
     let working = selectedStatuses.size === 0 ? allGames : allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
-    if (selectedDate) working = working.filter(g => g && effectiveGameDate(g.gameDate, g.startTimeEst) === selectedDate);
+    working = working.filter(g => g && effectiveGameDate(g.gameDate, g.startTimeEst) === selectedDate);
     const byDate: Record<string, NonNullable<typeof allGames>[number][]> = {};
     for (const g of working) {
       const d = effectiveGameDate(g!.gameDate, g!.startTimeEst);
@@ -398,46 +399,12 @@ export default function BettingSplitsPage() {
         {/* Row 3: Unified filter bar — DATE | NCAAM | NBA | Search */}
         <div ref={searchRef} className="relative px-3 pt-2 pb-2 flex items-center gap-2">
 
-          {/* DATE picker pill */}
-          <div className="flex items-center gap-1 flex-shrink-0">
-            <button
-              onClick={() => {
-                if (!allDates.length) return;
-                const idx = selectedDate ? allDates.indexOf(selectedDate) : -1;
-                const prev = idx <= 0 ? allDates[allDates.length - 1] : allDates[idx - 1];
-                setSelectedDate(prev ?? null);
-              }}
-              className="flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-white/10 active:bg-white/20"
-              style={{ color: "rgba(255,255,255,0.5)" }}
-              disabled={allDates.length === 0}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <button
-              onClick={() => setSelectedDate(null)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
-              style={!selectedDate
-                ? { background: "rgba(57,255,20,0.12)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.35)" }
-                : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.5)", border: "1px solid hsl(var(--border))" }
-              }
-            >
-              <CalendarDays className="w-3 h-3 flex-shrink-0" />
-              <span>{selectedDate ? formatDateShort(selectedDate) : "ALL"}</span>
-            </button>
-            <button
-              onClick={() => {
-                if (!allDates.length) return;
-                const idx = selectedDate ? allDates.indexOf(selectedDate) : -1;
-                const next = idx === -1 || idx >= allDates.length - 1 ? allDates[0] : allDates[idx + 1];
-                setSelectedDate(next ?? null);
-              }}
-              className="flex items-center justify-center w-6 h-6 rounded-full transition-colors hover:bg-white/10 active:bg-white/20"
-              style={{ color: "rgba(255,255,255,0.5)" }}
-              disabled={allDates.length === 0}
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          {/* DATE picker — calendar dropdown */}
+          <CalendarPicker
+            selectedDate={selectedDate}
+            onSelect={setSelectedDate}
+            availableDates={new Set(allDates)}
+          />
 
           {/* NCAAM pill */}
           <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"

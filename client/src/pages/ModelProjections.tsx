@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock } from "lucide-react";
+import { CalendarPicker, todayUTC } from "@/components/CalendarPicker";
 
 // CDN icon URLs
 const CDN_TEST_TUBE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-test-tube_0cb720ac.png";
@@ -148,6 +149,7 @@ export default function ModelProjections() {
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA">("NCAAM");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
+  const [selectedDate, setSelectedDate] = useState<string>(() => todayUTC());
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -197,6 +199,7 @@ export default function ModelProjections() {
 
   useEffect(() => {
     setSelectedStatuses(new Set());
+    setSelectedDate(todayUTC());
   }, [selectedSport]);
 
   const { data: allGames, isLoading: gamesLoading } = trpc.games.list.useQuery(
@@ -252,15 +255,24 @@ export default function ModelProjections() {
     return sortableMinutes(a?.startTimeEst) - sortableMinutes(b?.startTimeEst);
   };
 
+  // All unique dates available for the current sport (sorted ascending)
+  const allDates = useMemo(() => {
+    if (!allGames) return [];
+    const dateSet = new Set<string>();
+    for (const g of allGames) if (g) dateSet.add(effectiveGameDate(g.gameDate, g.startTimeEst));
+    return Array.from(dateSet).sort();
+  }, [allGames]);
+
   const games = useMemo(() => {
     if (!allGames) return allGames;
-    const working = selectedStatuses.size === 0 ? allGames : allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
+    let working = selectedStatuses.size === 0 ? allGames : allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
+    working = working.filter(g => g && effectiveGameDate(g.gameDate, g.startTimeEst) === selectedDate);
     const byDate: Record<string, NonNullable<typeof allGames>[number][]> = {};
     for (const g of working) { const d = effectiveGameDate(g!.gameDate, g!.startTimeEst); if (!byDate[d]) byDate[d] = []; byDate[d]!.push(g!); }
     const result: NonNullable<typeof allGames>[number][] = [];
     for (const d of Object.keys(byDate).sort()) result.push(...byDate[d]!.sort(compareGames));
     return result;
-  }, [allGames, selectedStatuses]);
+  }, [allGames, selectedStatuses, selectedDate]);
 
   const { data: lastRefresh } = trpc.games.lastRefresh.useQuery(undefined, { refetchInterval: 60_000 });
   const [now, setNow] = useState(() => Date.now());
@@ -412,54 +424,43 @@ export default function ModelProjections() {
           </Link>
         </div>
 
-        {/* Row 3: Sport filter + timestamp */}
-        <div className="px-4 pt-2 pb-1 flex items-center gap-2">
-          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+        {/* Row 3: Unified filter bar — DATE | NCAAM | NBA | Search */}
+        <div ref={searchRef} className="relative px-3 pt-2 pb-2 flex items-center gap-2">
+
+          {/* DATE picker — calendar dropdown */}
+          <CalendarPicker
+            selectedDate={selectedDate}
+            onSelect={setSelectedDate}
+            availableDates={new Set(allDates)}
+          />
+
+          {/* NCAAM pill */}
+          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={18} height={12} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)" }} />
+            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={14} height={10} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
             NCAAM
           </button>
-          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+
+          {/* NBA pill */}
+          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <img src={CDN_NBA} alt="NBA" width={14} height={14} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5 }} />
+            <img src={CDN_NBA} alt="NBA" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
             NBA
           </button>
-          <div className="ml-auto flex items-center gap-1.5">
-            <Clock style={{ width: 11, height: 11, flexShrink: 0, color: "#39FF14" }} />
-            <span style={{ fontSize: 11, whiteSpace: "nowrap", color: "#39FF14", fontWeight: 700, letterSpacing: "0.03em" }}>Updated {splitsAgoLabel}</span>
-          </div>
-        </div>
 
-        {/* Row 4: Status filter tabs */}
-        <div className="px-4 pb-1 flex items-center gap-1.5">
-          <button onClick={() => setSelectedStatuses(new Set())} className="relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all"
-            style={selectedStatuses.size === 0 ? { background: "rgba(57,255,20,0.12)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.35)" } : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }}>
-            ALL
-          </button>
-          {(["upcoming", "live", "final"] as const).map((key) => {
-            const isActive = selectedStatuses.has(key);
-            const isLive = key === "live";
-            return (
-              <button key={key} onClick={() => toggleStatus(key)} className="relative flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold tracking-wide transition-all"
-                style={isActive ? isLive ? { background: "rgba(239,68,68,0.18)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.45)" } : { background: "rgba(57,255,20,0.12)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.35)" } : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }}>
-                {isLive && liveCount > 0 && <span className="inline-block rounded-full" style={{ width: 6, height: 6, flexShrink: 0, background: "#ef4444", boxShadow: isActive ? "0 0 6px #ef4444" : "none", animation: "pulse 1.5s ease-in-out infinite" }} />}
-                {key.toUpperCase()}
-                {isLive && liveCount > 0 && <span className="ml-0.5 text-[10px] font-black" style={{ color: isActive ? "#ef4444" : "hsl(var(--muted-foreground))" }}>{liveCount}</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Row 5: Search bar */}
-        <div ref={searchRef} className="relative px-4 pb-2">
-          <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg border transition-all duration-150"
-            style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
-            <Search className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
-            <input ref={inputRef} type="text" placeholder="Search for Games" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground outline-none" />
-            {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors"><X className="w-3.5 h-3.5" /></button>}
+          {/* Search bar — takes remaining space */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full border transition-all duration-150"
+              style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
+              <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+              <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none" />
+              {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>}
+            </div>
           </div>
+
+          {/* Search dropdown */}
           {showDropdown && (
-            <div className="absolute left-4 right-4 top-full mt-0.5 z-50 rounded-xl border border-white/10 shadow-2xl overflow-hidden" style={{ background: "#0f0f0f", maxHeight: "calc(3 * 68px + 44px)", overflowY: "auto" }}>
+            <div className="absolute left-3 right-3 top-full mt-0.5 z-50 rounded-xl border border-white/10 shadow-2xl overflow-hidden" style={{ background: "#0f0f0f", maxHeight: "calc(3 * 68px + 44px)", overflowY: "auto" }}>
               <div className="flex items-center justify-between px-3 py-2 border-b border-white/10 sticky top-0" style={{ background: "#0f0f0f", zIndex: 10 }}>
                 <span className="text-[10px] text-gray-500 uppercase tracking-widest">{dropdownResults.length === 0 ? "No results" : `${dropdownResults.length} game${dropdownResults.length !== 1 ? "s" : ""}`}</span>
                 {dropdownResults.length > 0 && <span className="text-[10px] text-gray-600">tap to jump</span>}
