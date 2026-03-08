@@ -29,7 +29,7 @@ export interface ScrapedOdds {
   awaySpread: number | null;
   homeSpread: number | null;
   total: number | null;
-  // ─── NCAAM Betting Splits (4 fields only — no ML for NCAAM) ───────────────
+  // ─── Betting Splits ─────────────────────────────────────────────────────────
   /** % of spread bets on away team (0-100), null if not available */
   spreadAwayBetsPct: number | null;
   /** % of spread money on away team (0-100), null if not available */
@@ -38,6 +38,14 @@ export interface ScrapedOdds {
   totalOverBetsPct: number | null;
   /** % of total money on Over (0-100), null if not available */
   totalOverMoneyPct: number | null;
+  /** Away moneyline (e.g. "+130"), null if not available */
+  awayML: string | null;
+  /** Home moneyline (e.g. "-155"), null if not available */
+  homeML: string | null;
+  /** % of ML bets on away team (0-100), null if not available */
+  mlAwayBetsPct: number | null;
+  /** % of ML money on away team (0-100), null if not available */
+  mlAwayMoneyPct: number | null;
   /** 0-based position of this game on the VSiN page (used for sortOrder) */
   vsinRowIndex: number;
   /** Date of the game as YYYYMMDD string, e.g. "20260304" */
@@ -326,19 +334,37 @@ function parseGames(
 
     // Extract total from td[4]: two anchor links (both show same total)
     const totalTexts = getAnchorTexts($, tds[4]);
-    const total = totalTexts.length > 0 ? parseTotal(totalTexts[0]) : null;
-
-    // ─── NCAAM Betting Splits ────────────────────────────────────────────────
-    // VSiN column order (confirmed from raw HTML, Arkansas/Missouri row):
-    //   td[2] = spread Handle% (money) — no cellhightlight5 class → e.g. 41%
-    //   td[3] = spread Bets%           — has cellhightlight5 class → e.g. 70%
-    //   td[5] = total Handle% (money)  — no highlight              → e.g. 93%
-    //   td[6] = total Bets%            — no highlight              → e.g. 73%
+    const total = totalTexts.length > 0 ? parseTotal(totalTexts[0]) : null;    // ─── Betting Splits ─────────────────────────────────────────────────────────────────
+    // VSiN column order (confirmed from raw HTML, 10 <td> per row):
+    //   td[0] = matchup (team names)
+    //   td[1] = spread lines (away/home anchors)
+    //   td[2] = spread Bets%   (cellhightlight5 class) → e.g. 70%
+    //   td[3] = spread Handle% (money)                 → e.g. 41%
+    //   td[4] = total line (O/U anchor)
+    //   td[5] = total Bets%   (over/under)             → e.g. 85%
+    //   td[6] = total Handle% (money)                  → e.g. 71%
+    //   td[7] = ML lines (away/home anchors)            → e.g. +130 / -155
+    //   td[8] = ML Bets%   (away/home)                 → e.g. 49%
+    //   td[9] = ML Handle% (money)                     → e.g. 66%
     // Note: Handle (money%) is the primary sharp-money signal
-    const spreadAwayMoneyPct = tds.length > 2 ? getFirstPct($, tds[2]) : null;  // Handle = td[2]
-    const spreadAwayBetsPct  = tds.length > 3 ? getFirstPct($, tds[3]) : null;  // Bets   = td[3]
-    const totalOverMoneyPct  = tds.length > 5 ? getFirstPct($, tds[5]) : null;  // Handle = td[5]
-    const totalOverBetsPct   = tds.length > 6 ? getFirstPct($, tds[6]) : null;  // Bets   = td[6]
+    const spreadAwayBetsPct  = tds.length > 2 ? getFirstPct($, tds[2]) : null;  // Bets   = td[2]
+    const spreadAwayMoneyPct = tds.length > 3 ? getFirstPct($, tds[3]) : null;  // Handle = td[3]
+    const totalOverBetsPct   = tds.length > 5 ? getFirstPct($, tds[5]) : null;  // Bets   = td[5]
+    const totalOverMoneyPct  = tds.length > 6 ? getFirstPct($, tds[6]) : null;  // Handle = td[6]
+
+    // ─── ML columns (td[7], td[8], td[9]) ─────────────────────────────────────────
+    // td[7]: two anchor links — away ML then home ML (e.g. "+130" / "-155")
+    let awayML: string | null = null;
+    let homeML: string | null = null;
+    if (tds.length > 7) {
+      const mlTexts = getAnchorTexts($, tds[7]);
+      awayML = mlTexts.length > 0 ? mlTexts[0].trim() : null;
+      homeML = mlTexts.length > 1 ? mlTexts[1].trim() : null;
+    }
+    // td[8]: ML Bets% — first div is away %, second is home %
+    const mlAwayBetsPct  = tds.length > 8 ? getFirstPct($, tds[8]) : null;
+    // td[9]: ML Handle% — first div is away %, second is home %
+    const mlAwayMoneyPct = tds.length > 9 ? getFirstPct($, tds[9]) : null;
 
     results.push({
       awayTeam,
@@ -352,6 +378,10 @@ function parseGames(
       spreadAwayMoneyPct,
       totalOverBetsPct,
       totalOverMoneyPct,
+      awayML,
+      homeML,
+      mlAwayBetsPct,
+      mlAwayMoneyPct,
       vsinRowIndex: results.length, // 0-based position on VSiN page
       gameDate,                      // YYYYMMDD string, e.g. "20260304"
     });

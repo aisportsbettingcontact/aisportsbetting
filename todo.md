@@ -532,4 +532,11 @@
 - [x] Each market column: title, side labels, TICKETS bar on top, HANDLE bar on bottom
 - [x] Remove rounded-xl from card, remove border-x from wrapper so cards fill full width edge-to-edge
 - [x] Mobile: vertical stacked layout preserved (< md)
+- [x] Save checkpoint and deliver
+
+## Add ML Betting Splits to VSiN Scraper (NCAAM + NBA) (2026-03-08)
+- [x] Update ScrapedOdds interface to include awayML, homeML, mlAwayBetsPct, mlAwayMoneyPct
+- [x] Parse td[7] (ML lines), td[8] (ML tickets), td[9] (ML handle) in vsinScraper.ts
+- [x] Confirmed vsinAutoRefresh.ts already writes ML fields to DB on upsert
+- [x] Remove isNba guard from BettingSplitsPanel — ML column shows for any sport with data
 - [ ] Save checkpoint and deliver

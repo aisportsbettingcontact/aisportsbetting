@@ -323,8 +323,6 @@ export function BettingSplitsPanel({
   awayNickname: _aN, homeNickname: _hN,
 }: BettingSplitsPanelProps) {
   const sport = game.sport ?? "NCAAM";
-  const isNba = sport === "NBA";
-
   const { data: colors } = trpc.teamColors.getForGame.useQuery(
     { awayTeam: game.awayTeam, homeTeam: game.homeTeam, sport },
     { staleTime: 1000 * 60 * 60 }
@@ -366,7 +364,7 @@ export function BettingSplitsPanel({
 
   const hasSpreadSplits = game.spreadAwayMoneyPct != null || game.spreadAwayBetsPct != null;
   const hasTotalSplits  = game.totalOverMoneyPct  != null || game.totalOverBetsPct  != null;
-  const hasMlSplits     = isNba && (game.mlAwayMoneyPct != null || game.mlAwayBetsPct != null);
+  const hasMlSplits     = (game.mlAwayMoneyPct != null || game.mlAwayBetsPct != null || game.awayML != null);
   const hasAnySplits    = hasSpreadSplits || hasTotalSplits || hasMlSplits;
 
   const header = (
