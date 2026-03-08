@@ -218,6 +218,32 @@ export default function Dashboard() {
     });
   };
 
+  // Parse gameClock string (e.g. "04:03 4th", "07:08 OT", "Half", "Final") into a sort key.
+  // Lower = closer to end of game = higher priority in LIVE sort.
+  // Returns [periodRank (desc), clockSeconds (asc)] — we negate periodRank for ascending sort.
+  const parseLiveSortKey = (gameClock: string | null): [number, number] => {
+    if (!gameClock) return [-1, 9999];
+    const upper = gameClock.trim().toUpperCase();
+    // Halftime — between 1st and 2nd half / 2nd and 3rd period
+    if (upper === 'HALF' || upper === 'HALFTIME') return [2, 0];
+    // OT variants: OT, 2OT, 3OT, etc.
+    const otMatch = upper.match(/^(\d*)OT$/);
+    if (otMatch) {
+      const otNum = otMatch[1] ? parseInt(otMatch[1]) : 1;
+      return [50 + otNum, 0]; // OT always highest period rank
+    }
+    // "MM:SS Period" format
+    const clockMatch = upper.match(/^(\d{1,2}):(\d{2})\s+(\d+)(ST|ND|RD|TH)?$/);
+    if (clockMatch) {
+      const mins = parseInt(clockMatch[1]!);
+      const secs = parseInt(clockMatch[2]!);
+      const period = parseInt(clockMatch[3]!);
+      const totalSecs = mins * 60 + secs;
+      return [period, totalSecs];
+    }
+    return [-1, 9999];
+  };
+
   // Apply status filter client-side; when ALL (empty set), sort FINAL games to bottom within each date
   const games = useMemo(() => {
     if (!allGames) return allGames;
@@ -238,7 +264,44 @@ export default function Dashboard() {
       }
       return result;
     }
-    return allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
+
+    // Filter to selected statuses
+    const filtered = allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
+
+    // When LIVE + FINAL are both selected (upcoming may or may not also be selected):
+    // Sort LIVE games first (closest to end: OT > high period > low clock), then FINAL (by start time asc)
+    const hasLive = selectedStatuses.has('live');
+    const hasFinal = selectedStatuses.has('final');
+    if (hasLive && hasFinal) {
+      return [...filtered].sort((a, b) => {
+        const aStatus = a?.gameStatus;
+        const bStatus = b?.gameStatus;
+        // LIVE before FINAL; UPCOMING after both
+        const statusOrder = (s: string | null | undefined) =>
+          s === 'live' ? 0 : s === 'final' ? 1 : 2;
+        const sSortA = statusOrder(aStatus);
+        const sSortB = statusOrder(bStatus);
+        if (sSortA !== sSortB) return sSortA - sSortB;
+
+        if (aStatus === 'live' && bStatus === 'live') {
+          // Both live: sort by closeness to end
+          // Higher period rank = closer to end = sort first (ascending by negated rank)
+          const [periodA, clockA] = parseLiveSortKey(a?.gameClock ?? null);
+          const [periodB, clockB] = parseLiveSortKey(b?.gameClock ?? null);
+          if (periodA !== periodB) return periodB - periodA; // higher period first
+          return clockA - clockB; // lower clock (less time left) first
+        }
+
+        if (aStatus === 'final' && bStatus === 'final') {
+          // Both final: sort by start time ascending
+          return timeToMinutes(a?.startTimeEst ?? '') - timeToMinutes(b?.startTimeEst ?? '');
+        }
+
+        return 0;
+      });
+    }
+
+    return filtered;
   }, [allGames, selectedStatuses]);
   const { data: lastRefresh } = trpc.games.lastRefresh.useQuery(undefined, {
     refetchInterval: 60_000,

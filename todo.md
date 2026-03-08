@@ -446,4 +446,8 @@
 
 ## Remove Element at PublishProjections line 1065 (2026-03-08)
 - [x] Identify and remove the element(s) around line 1065 that user marked "you can get rid of these"
+- [x] Save checkpoint and deliver
+
+## Dashboard LIVE+FINAL Sort Order (2026-03-08)
+- [x] When LIVE+FINAL selected: LIVE games first (OT top, then period desc, clock asc), FINAL games after sorted by start time asc
 - [ ] Save checkpoint and deliver
