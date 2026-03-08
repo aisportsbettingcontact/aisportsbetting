@@ -177,27 +177,33 @@ export function CalendarPicker({ selectedDate, onSelect, availableDates }: Calen
               const isSelected = dateStr === selectedDate;
               const hasGames = availableDates?.has(dateStr) ?? false;
 
+              // Style priority:
+              // 1. selected + today  → white fill, black text, neon green ring
+              // 2. selected only     → white fill, black text
+              // 3. today only        → neon green ring, white text, subtle bg
+              // 4. has games         → white text
+              // 5. no games          → dimmed text
+              const dayStyle: React.CSSProperties = (() => {
+                if (isSelected && isToday) return { background: "#ffffff", color: "#000000", outline: "2px solid #39FF14", outlineOffset: "1px" };
+                if (isSelected)           return { background: "#ffffff", color: "#000000" };
+                if (isToday)              return { background: "rgba(57,255,20,0.12)", color: "#39FF14", outline: "1.5px solid #39FF14", outlineOffset: "-1px" };
+                if (hasGames)             return { color: "#ffffff" };
+                return { color: "rgba(255,255,255,0.3)" };
+              })();
+
               return (
                 <button
                   key={day}
                   onClick={() => handleDayClick(day)}
                   className="relative flex flex-col items-center justify-center w-full aspect-square rounded-full text-[11px] font-bold transition-all"
-                  style={
-                    isSelected
-                      ? { background: "#ffffff", color: "#000000" }
-                      : isToday
-                      ? { background: "rgba(255,255,255,0.15)", color: "#ffffff", outline: "1.5px solid rgba(255,255,255,0.6)", outlineOffset: "-1px" }
-                      : hasGames
-                      ? { color: "#ffffff" }
-                      : { color: "rgba(255,255,255,0.3)" }
-                  }
+                  style={dayStyle}
                 >
                   {day}
-                  {/* Game dot indicator */}
+                  {/* Game dot indicator — hide when selected */}
                   {hasGames && !isSelected && (
                     <span
                       className="absolute bottom-0.5 left-1/2 -translate-x-1/2 rounded-full"
-                      style={{ width: 3, height: 3, background: isToday ? "#ffffff" : "rgba(57,255,20,0.8)" }}
+                      style={{ width: 3, height: 3, background: isToday ? "#39FF14" : "rgba(57,255,20,0.8)" }}
                     />
                   )}
                 </button>
