@@ -398,7 +398,7 @@ export default function BettingSplitsPage() {
         </div>
 
         {/* Row 3: Unified filter bar — DATE | NCAAM | NBA | Search */}
-        <div ref={searchRef} className="relative px-3 pt-2 pb-2 flex items-center gap-2">
+        <div ref={searchRef} className="relative px-3 pt-1.5 pb-0 flex items-center gap-2">
 
           {/* DATE picker — calendar dropdown */}
           <CalendarPicker
