@@ -727,3 +727,6 @@
 
 ## BettingSplitsPanel Label Redesign
 - [x] Remove current bar labels and replace with AWAY_ABBR (SPREAD) - XX% format for Tickets and Handle rows
+
+## Splits Bar Label Position Fix
+- [x] Move ABBR (LINE) labels above each bar; show only % inside the pill

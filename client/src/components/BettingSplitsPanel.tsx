@@ -121,31 +121,41 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
 
   if (!hasData) {
     return (
-      <div className="w-full rounded-md flex items-center justify-center"
-        style={{ height: 22, background: "rgba(255,255,255,0.05)", minWidth: 0 }}>
-        <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", opacity: 0.35 }}>—</span>
+      <div className="w-full flex flex-col gap-0.5">
+        {/* Header row */}
+        <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.55)", fontWeight: 700, letterSpacing: "0.04em" }}>{awayLineLabel}</span>
+          <span style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{rowLabel}</span>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.55)", fontWeight: 700, letterSpacing: "0.04em" }}>{homeLineLabel}</span>
+        </div>
+        {/* Empty bar */}
+        <div className="w-full rounded-md flex items-center justify-center"
+          style={{ height: 20, background: "rgba(255,255,255,0.05)", minWidth: 0 }}>
+          <span style={{ fontSize: 9, color: "hsl(var(--muted-foreground))", opacity: 0.35 }}>—</span>
+        </div>
       </div>
     );
   }
 
-  const awayFullLabel = `${awayLineLabel} - ${awayPct}%`;
-  const homeFullLabel = `${homeLineLabel} - ${homePct}%`;
-
   return (
     <div className="w-full flex flex-col gap-0.5">
-      {/* Row label */}
-      <span style={{ fontSize: 8, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.08em", lineHeight: 1, paddingLeft: 2 }}>{rowLabel}</span>
-      {/* Bar */}
+      {/* Header row: AWAY_LABEL  [rowLabel]  HOME_LABEL */}
+      <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.7)", fontWeight: 700, letterSpacing: "0.03em" }}>{awayLineLabel}</span>
+        <span style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{rowLabel}</span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.7)", fontWeight: 700, letterSpacing: "0.03em" }}>{homeLineLabel}</span>
+      </div>
+      {/* Bar — only % inside the pill */}
       <div className="relative w-full rounded-md overflow-hidden flex"
         style={{ height: 20, border: "1px solid rgba(255,255,255,0.12)", boxSizing: "border-box", minWidth: 0 }}>
         <div className="flex items-center justify-start pl-1.5 transition-all duration-700 overflow-hidden"
           style={{ width: `${awayPct}%`, background: awayColor, minWidth: awayPct! > 0 ? 20 : 0, borderRadius: awayPct! >= 100 ? "4px" : "4px 0 0 4px", flexShrink: 0 }}>
-          <span className="font-bold leading-none truncate" style={{ fontSize: 9, color: awayTextColor, whiteSpace: "nowrap" }}>{awayFullLabel}</span>
+          <span className="font-extrabold leading-none" style={{ fontSize: 10, color: awayTextColor }}>{awayPct}%</span>
         </div>
         <div style={{ width: 1, background: "rgba(255,255,255,0.25)", flexShrink: 0, alignSelf: "stretch" }} />
         <div className="flex items-center justify-end pr-1.5 transition-all duration-700 overflow-hidden"
           style={{ width: `${homePct}%`, background: homeColor, minWidth: homePct! > 0 ? 20 : 0, borderRadius: homePct! >= 100 ? "4px" : "0 4px 4px 0", flexShrink: 0 }}>
-          <span className="font-bold leading-none truncate" style={{ fontSize: 9, color: homeTextColor, whiteSpace: "nowrap", direction: "rtl" }}>{homeFullLabel}</span>
+          <span className="font-extrabold leading-none" style={{ fontSize: 10, color: homeTextColor }}>{homePct}%</span>
         </div>
       </div>
     </div>
