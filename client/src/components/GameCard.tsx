@@ -861,7 +861,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 <div style={{ minWidth: 140, width: "28%", borderRight: "1px solid hsl(var(--border) / 0.5)", flexShrink: 0 }}>
                   <ScorePanel />
                 </div>
-                <div style={{ minWidth: 180, flex: "1 1 0%" }}>
+                <div style={{ minWidth: 180, flex: "1 1 0%" }} className="flex flex-col justify-center">
                   <OddsLinesPanel
                     awayBookSpread={awayBookSpread}
                     homeBookSpread={homeBookSpread}
@@ -891,8 +891,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               {/* Row 2: EdgeVerdict — compact horizontal row flush below the table */}
               {showModel && (
                 <div
-                  className="flex items-center justify-center w-full px-2 py-0.5"
-                  style={{ borderTop: "1px solid hsl(var(--border) / 0.5)", minHeight: 28 }}
+                  className="flex items-center justify-start w-full px-0 py-0"
+                  style={{ borderTop: "1px solid hsl(var(--border) / 0.5)", minHeight: 24 }}
                 >
                   <EdgeVerdict
                     spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
