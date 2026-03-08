@@ -351,14 +351,14 @@ function OddsLinesPanel({
 
   // 6-column grid: [Spread Book | Spread Model | Total Book | Total Model | ML Book | ML Model]
   const GRID = 'grid-cols-6';
-  const bookCell  = { fontSize: 'clamp(13px,1.9vw,16px)', color: '#E8E8E8', letterSpacing: '0.02em' } as React.CSSProperties;
-  const modelCell = { fontSize: 'clamp(13px,1.9vw,16px)', color: '#39FF14', letterSpacing: '0.02em' } as React.CSSProperties;
-  const dimCell   = { fontSize: 'clamp(13px,1.9vw,16px)', color: 'rgba(57,255,20,0.28)', letterSpacing: '0.02em' } as React.CSSProperties;
+  const bookCell  = { fontSize: 'clamp(11px,1.6vw,13px)', fontWeight: 400, color: '#E8E8E8', letterSpacing: '0.02em' } as React.CSSProperties;
+  const modelCell = { fontSize: 'clamp(11px,1.6vw,13px)', fontWeight: 700, color: '#39FF14', letterSpacing: '0.02em' } as React.CSSProperties;
+  const dimCell   = { fontSize: 'clamp(11px,1.6vw,13px)', fontWeight: 700, color: 'rgba(57,255,20,0.28)', letterSpacing: '0.02em' } as React.CSSProperties;
 
   // Helper: cell value with style
   const Cell = ({ val, style }: { val: string; style: React.CSSProperties }) => (
     <div className="flex items-center justify-center">
-      <span className="font-bold tabular-nums" style={style}>{val}</span>
+      <span className="tabular-nums" style={style}>{val}</span>
     </div>
   );
 
@@ -623,20 +623,20 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       <div className="flex items-center justify-between gap-2 py-3 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={42} />
+          <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={30} />
           <div className="flex flex-col min-w-0">
             <span
-              className="font-bold leading-tight truncate"
+              className="font-semibold leading-tight truncate"
               style={{
-                fontSize: "clamp(14px, 2vw, 17px)",
+                fontSize: "clamp(11px, 1.5vw, 13px)",
                 color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
-                fontWeight: awayWins ? 800 : 700,
+                fontWeight: awayWins ? 700 : 600,
               }}
             >
               {awayName}
             </span>
             {awayNickname && (
-              <span className="text-[10px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
+              <span className="text-[9px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
                 {awayNickname}
               </span>
             )}
@@ -671,20 +671,20 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       <div className="flex items-center justify-between gap-2 py-3 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={42} />
+          <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={30} />
           <div className="flex flex-col min-w-0">
             <span
-              className="font-bold leading-tight truncate"
+              className="font-semibold leading-tight truncate"
               style={{
-                fontSize: "clamp(14px, 2vw, 17px)",
+                fontSize: "clamp(11px, 1.5vw, 13px)",
                 color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
-                fontWeight: homeWins ? 800 : 700,
+                fontWeight: homeWins ? 700 : 600,
               }}
             >
               {homeName}
             </span>
             {homeNickname && (
-              <span className="text-[10px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
+              <span className="text-[9px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
                 {homeNickname}
               </span>
             )}
@@ -859,11 +859,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   />
                 </div>
               </div>
-              {/* Row 2: EdgeVerdict — compact horizontal row below the table */}
+              {/* Row 2: EdgeVerdict — compact horizontal row flush below the table */}
               {showModel && (
                 <div
-                  className="flex items-center justify-center w-full px-2 py-1"
-                  style={{ borderTop: "1px solid hsl(var(--border) / 0.5)", minHeight: 32 }}
+                  className="flex items-center justify-center w-full px-2 py-0.5"
+                  style={{ borderTop: "1px solid hsl(var(--border) / 0.5)", minHeight: 28 }}
                 >
                   <EdgeVerdict
                     spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
