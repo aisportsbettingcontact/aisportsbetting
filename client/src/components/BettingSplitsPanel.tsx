@@ -151,14 +151,14 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
       {/* Bar — only % inside the pill */}
       <div className="relative w-full rounded-md overflow-hidden flex"
         style={{ height: 20, border: "1px solid rgba(255,255,255,0.12)", boxSizing: "border-box", minWidth: 0 }}>
-        <div className="flex items-center justify-start pl-1.5 transition-all duration-700 overflow-hidden"
-          style={{ width: `${awayPct}%`, background: awayColor, minWidth: awayPct! > 0 ? 20 : 0, borderRadius: awayPct! >= 100 ? "4px" : "4px 0 0 4px", flexShrink: 0 }}>
-          <span className="font-extrabold leading-none" style={{ fontSize: 10, color: awayTextColor }}>{awayPct}%</span>
+        <div className="flex items-center justify-start px-1.5 transition-all duration-700"
+          style={{ width: `${awayPct}%`, background: awayColor, minWidth: 32, borderRadius: awayPct! >= 100 ? "4px" : "4px 0 0 4px", flexShrink: 0, overflow: "visible" }}>
+          <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: awayTextColor }}>{awayPct}%</span>
         </div>
         <div style={{ width: 1, background: "rgba(255,255,255,0.25)", flexShrink: 0, alignSelf: "stretch" }} />
-        <div className="flex items-center justify-end pr-1.5 transition-all duration-700 overflow-hidden"
-          style={{ width: `${homePct}%`, background: homeColor, minWidth: homePct! > 0 ? 20 : 0, borderRadius: homePct! >= 100 ? "4px" : "0 4px 4px 0", flexShrink: 0 }}>
-          <span className="font-extrabold leading-none" style={{ fontSize: 10, color: homeTextColor }}>{homePct}%</span>
+        <div className="flex items-center justify-end px-1.5 transition-all duration-700"
+          style={{ width: `${homePct}%`, background: homeColor, minWidth: 32, borderRadius: homePct! >= 100 ? "4px" : "0 4px 4px 0", flexShrink: 0, overflow: "visible" }}>
+          <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: homeTextColor }}>{homePct}%</span>
         </div>
       </div>
     </div>
@@ -191,29 +191,19 @@ function CompactMarketRow({ title, ticketsPct, handlePct, awayColor, homeColor, 
   const marketLabel = title === "Moneyline" ? "ML" : title === "Spread" ? "SPR" : "TOT";
 
   return (
-    <div className="flex items-start gap-1.5 w-full" style={{ padding: "4px 8px" }}>
-      {/* Market label */}
-      <span
-        className="uppercase font-extrabold tracking-widest flex-shrink-0 mt-4"
-        style={{ fontSize: 9, color: "rgba(255,255,255,0.6)", width: 26, letterSpacing: "0.1em", lineHeight: 1 }}
-      >
-        {marketLabel}
-      </span>
-      {/* Tickets + Handle bars stacked */}
-      <div className="flex flex-col flex-1 min-w-0 gap-1.5">
-        <LabeledBar
-          awayPct={awayTickets} homePct={homeTickets}
-          awayColor={awayColor} homeColor={homeColor}
-          awayLineLabel={awayLineLabel} homeLineLabel={homeLineLabel}
-          rowLabel="Tickets"
-        />
-        <LabeledBar
-          awayPct={awayHandle} homePct={homeHandle}
-          awayColor={awayColor} homeColor={homeColor}
-          awayLineLabel={awayLineLabel} homeLineLabel={homeLineLabel}
-          rowLabel="Money"
-        />
-      </div>
+    <div className="flex flex-col w-full" style={{ padding: "2px 8px 4px 8px", gap: 6 }}>
+      <LabeledBar
+        awayPct={awayTickets} homePct={homeTickets}
+        awayColor={awayColor} homeColor={homeColor}
+        awayLineLabel={awayLineLabel} homeLineLabel={homeLineLabel}
+        rowLabel="Tickets"
+      />
+      <LabeledBar
+        awayPct={awayHandle} homePct={homeHandle}
+        awayColor={awayColor} homeColor={homeColor}
+        awayLineLabel={awayLineLabel} homeLineLabel={homeLineLabel}
+        rowLabel="Money"
+      />
     </div>
   );
 }
@@ -387,7 +377,7 @@ export function BettingSplitsPanel({
         {/* 3-way toggle */}
         <div className="flex items-center" style={{ padding: "0 8px 4px 8px", gap: 4 }}>
           {(["spread", "total", "ml"] as MobileMarket[]).map((m) => {
-            const label = m === "spread" ? "SPR" : m === "total" ? "TOT" : "ML";
+            const label = m === "spread" ? "SPREAD" : m === "total" ? "TOTAL" : "MONEYLINE";
             const isActive = m === activeMarket;
             const isAvailable = availableMarkets.includes(m);
             return (

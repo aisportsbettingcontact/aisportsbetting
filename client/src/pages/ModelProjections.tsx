@@ -42,6 +42,25 @@ function timeToMinutes(time: string | null | undefined): number {
   return h * 60 + m;
 }
 
+/** Games starting at midnight (00:00) belong to the previous calendar day. */
+function effectiveGameDate(gameDate: string, startTimeEst: string | null | undefined): string {
+  const mins = timeToMinutes(startTimeEst);
+  if (mins === 0) {
+    try {
+      const d = new Date(gameDate + "T00:00:00");
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    } catch { return gameDate; }
+  }
+  return gameDate;
+}
+
+/** Sort key: midnight (00:00) sorts after all other times as end of previous day */
+function sortableMinutes(time: string | null | undefined): number {
+  const m = timeToMinutes(time);
+  return m === 0 ? 1440 : m;
+}
+
 function formatDateHeader(dateStr: string): string {
   try {
     const d = new Date(dateStr + "T00:00:00");
@@ -232,14 +251,14 @@ export default function ModelProjections() {
       if (periodA !== periodB) return periodB - periodA;
       return clockA - clockB;
     }
-    return timeToMinutes(a?.startTimeEst ?? "") - timeToMinutes(b?.startTimeEst ?? "");
+    return sortableMinutes(a?.startTimeEst) - sortableMinutes(b?.startTimeEst);
   };
 
   const games = useMemo(() => {
     if (!allGames) return allGames;
     const working = selectedStatuses.size === 0 ? allGames : allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
     const byDate: Record<string, NonNullable<typeof allGames>[number][]> = {};
-    for (const g of working) { const d = g!.gameDate; if (!byDate[d]) byDate[d] = []; byDate[d]!.push(g!); }
+    for (const g of working) { const d = effectiveGameDate(g!.gameDate, g!.startTimeEst); if (!byDate[d]) byDate[d] = []; byDate[d]!.push(g!); }
     const result: NonNullable<typeof allGames>[number][] = [];
     for (const d of Object.keys(byDate).sort()) result.push(...byDate[d]!.sort(compareGames));
     return result;
@@ -280,7 +299,7 @@ export default function ModelProjections() {
 
   const gamesByDate = useMemo(() =>
     (games ?? []).reduce<Record<string, NonNullable<typeof games>[number][]>>((acc, game) => {
-      const date = game!.gameDate;
+      const date = effectiveGameDate(game!.gameDate, game!.startTimeEst);
       if (!acc[date]) acc[date] = [];
       acc[date]!.push(game!);
       return acc;

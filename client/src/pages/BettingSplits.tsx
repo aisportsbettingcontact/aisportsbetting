@@ -7,7 +7,31 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, TrendingUp, PieChart } from "lucide-react";
+import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, TrendingUp } from "lucide-react";
+
+// Custom SVG icons
+function TestTubeIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14.5 2L20 7.5" />
+      <path d="M9 13l-6.5 6.5a2.121 2.121 0 0 0 3 3L12 16" />
+      <path d="M2 2l20 20" />
+      <path d="M8.5 2.5l13 13" />
+      <path d="M10.5 7.5L3 15" />
+    </svg>
+  );
+}
+
+function MoneyBagIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v0A2.5 2.5 0 0 1 14.5 2" />
+      <path d="M12 4.5C7 4.5 4 8 4 12c0 5 3.5 8 8 8s8-3 8-8c0-4-3-7.5-8-7.5z" />
+      <path d="M12 8v8" />
+      <path d="M9 10.5c0-.8.7-1.5 1.5-1.5h3c.8 0 1.5.7 1.5 1.5v0c0 .8-.7 1.5-1.5 1.5h-3c-.8 0-1.5.7-1.5 1.5v0c0 .8.7 1.5 1.5 1.5h3c.8 0 1.5-.7 1.5-1.5" />
+    </svg>
+  );
+}
 import { GameCard } from "@/components/GameCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -40,6 +64,26 @@ function timeToMinutes(time: string | null | undefined): number {
   const m = parseInt(mStr ?? "0", 10);
   if (isNaN(h) || isNaN(m)) return 9999;
   return h * 60 + m;
+}
+
+/** Games starting at midnight (00:00) belong to the previous calendar day. */
+function effectiveGameDate(gameDate: string, startTimeEst: string | null | undefined): string {
+  const mins = timeToMinutes(startTimeEst);
+  if (mins === 0) {
+    // subtract one day
+    try {
+      const d = new Date(gameDate + "T00:00:00");
+      d.setDate(d.getDate() - 1);
+      return d.toISOString().slice(0, 10);
+    } catch { return gameDate; }
+  }
+  return gameDate;
+}
+
+/** Sort key for midnight games: treat 00:00 as 24:00 (end of previous day) */
+function sortableMinutes(time: string | null | undefined): number {
+  const m = timeToMinutes(time);
+  return m === 0 ? 1440 : m; // 1440 = 24*60, sorts after all other times
 }
 
 function formatDateHeader(dateStr: string): string {
@@ -193,14 +237,18 @@ export default function BettingSplitsPage() {
       if (periodA !== periodB) return periodB - periodA;
       return clockA - clockB;
     }
-    return timeToMinutes(a?.startTimeEst ?? "") - timeToMinutes(b?.startTimeEst ?? "");
+    return sortableMinutes(a?.startTimeEst) - sortableMinutes(b?.startTimeEst);
   };
 
   const games = useMemo(() => {
     if (!allGames) return allGames;
     const working = selectedStatuses.size === 0 ? allGames : allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
     const byDate: Record<string, NonNullable<typeof allGames>[number][]> = {};
-    for (const g of working) { const d = g!.gameDate; if (!byDate[d]) byDate[d] = []; byDate[d]!.push(g!); }
+    for (const g of working) {
+      const d = effectiveGameDate(g!.gameDate, g!.startTimeEst);
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d]!.push(g!);
+    }
     const result: NonNullable<typeof allGames>[number][] = [];
     for (const d of Object.keys(byDate).sort()) result.push(...byDate[d]!.sort(compareGames));
     return result;
@@ -241,7 +289,7 @@ export default function BettingSplitsPage() {
 
   const gamesByDate = useMemo(() =>
     (games ?? []).reduce<Record<string, NonNullable<typeof games>[number][]>>((acc, game) => {
-      const date = game!.gameDate;
+      const date = effectiveGameDate(game!.gameDate, game!.startTimeEst);
       if (!acc[date]) acc[date] = [];
       acc[date]!.push(game!);
       return acc;
@@ -337,7 +385,7 @@ export default function BettingSplitsPage() {
           <Link href="/projections" className="flex-1">
             <button
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
-              style={{ color: "hsl(var(--muted-foreground))" }}
+              style={{ color: "rgba(255,255,255,0.45)" }}
             >
               <TrendingUp size={14} />
               <span>AI MODEL PROJECTIONS</span>
@@ -346,9 +394,9 @@ export default function BettingSplitsPage() {
           <Link href="/splits" className="flex-1">
             <button
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
-              style={{ color: "#39FF14" }}
+              style={{ color: "#ffffff" }}
             >
-              <PieChart size={14} />
+              <TestTubeIcon size={14} />
               <span>BETTING SPLITS</span>
               {/* active underline */}
               <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full" style={{ background: "#39FF14" }} />
@@ -359,13 +407,13 @@ export default function BettingSplitsPage() {
         {/* Row 3: Sport filter + timestamp */}
         <div className="px-4 pb-1 flex items-center gap-2">
           <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
-            style={selectedSport === "NCAAM" ? { background: "rgba(57,255,20,0.15)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.4)" } : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }}>
-            <img src="https://www.ncaa.com/march-madness-live/assets/icons/ncaa/disc.svg" alt="NCAA" width={16} height={16} style={{ opacity: selectedSport === "NCAAM" ? 1 : 0.5 }} />
+            style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            <TestTubeIcon size={14} />
             NCAAM
           </button>
           <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
-            style={selectedSport === "NBA" ? { background: "rgba(200,16,46,0.15)", color: "#C8102E", border: "1px solid rgba(200,16,46,0.5)" } : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }}>
-            <img src="https://cdn.nba.com/logos/leagues/logo-nba.svg" alt="NBA" width={16} height={16} style={{ opacity: selectedSport === "NBA" ? 1 : 0.5 }} />
+            style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            <MoneyBagIcon size={14} />
             NBA
           </button>
           <div className="ml-auto flex items-center gap-1.5">
@@ -428,7 +476,7 @@ export default function BettingSplitsPage() {
           </div>
         ) : sortedDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
-            <PieChart className="w-10 h-10 text-muted-foreground/40" />
+            <TestTubeIcon size={40} />
             <div>
               <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
               <p className="text-xs text-muted-foreground">
@@ -439,7 +487,7 @@ export default function BettingSplitsPage() {
         ) : (
           sortedDates.map((date) => (
             <div key={date}>
-              <div className="flex items-center px-4 py-2 border-b border-border sticky bg-background/95 backdrop-blur-sm z-10" style={{ top: headerHeight }}>
+              <div className="flex items-center px-4 py-2 border-b border-border sticky bg-background/95 backdrop-blur-sm z-10" style={{ top: headerHeight, marginTop: 0 }}>
                 <div className="flex-1" />
                 <div className="flex items-center gap-2 whitespace-nowrap">
                   <span className="font-bold text-foreground tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)" }}>{formatDateHeader(date)}</span>

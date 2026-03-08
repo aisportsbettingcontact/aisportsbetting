@@ -733,3 +733,14 @@
 
 ## Mobile Splits Market Toggle
 - [x] Add 3-way toggle (SPREAD / ML / TOTAL) to mobile splits panel; show only active market's bars
+
+## Visual Edit Batch (Mar 8)
+- [x] BettingSplitsPanel: rename toggle labels to SPREAD/TOTAL/MONEYLINE
+- [x] BettingSplitsPanel: fix pill overflow so both % values are always readable with padding
+- [x] BettingSplitsPanel: remove market label span (SPR/TOT/ML text left of bars)
+- [x] BettingSplits page: unselected tabs use light gray text (not white), selected stays white+bold
+- [x] BettingSplits page: NCAAM icon → test tube clipart
+- [x] BettingSplits page: NBA icon → money bag clipart
+- [x] BettingSplits page: NCAAM/NBA tab selection style → white border only, no neon green fill
+- [x] BettingSplits page: fix sticky date header gap when scrolling
+- [x] Fix midnight EST game ordering (between March 7 and March 8 games)
