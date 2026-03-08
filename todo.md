@@ -724,3 +724,6 @@
 
 ## Share/Export Button Removal
 - [x] Remove share/export buttons and ShareSheet from GameCard
+
+## BettingSplitsPanel Label Redesign
+- [x] Remove current bar labels and replace with AWAY_ABBR (SPREAD) - XX% format for Tickets and Handle rows
