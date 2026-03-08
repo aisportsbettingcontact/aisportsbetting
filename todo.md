@@ -430,3 +430,8 @@
 - [x] Add ALL/UPCOMING/LIVE/FINAL filter tabs to Dashboard for NBA sport
 - [x] Verify GameCard LIVE/FINAL header displays correctly for NBA games
 - [x] Save checkpoint and deliver
+
+## 30-Second Score Refresh (2026-03-08)
+- [x] Change SCORE_INTERVAL_MS from 5 minutes to 30 seconds in vsinAutoRefresh.ts
+- [x] Update frontend refetchInterval from 5 minutes to 30 seconds in Dashboard
+- [ ] Save checkpoint and deliver

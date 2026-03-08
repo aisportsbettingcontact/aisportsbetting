@@ -642,11 +642,11 @@ async function refreshNcaamScores(): Promise<void> {
   }
 }
 
-const SCORE_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+const SCORE_INTERVAL_MS = 30 * 1000; // 30 seconds
 
 /**
  * Refreshes NBA live/final scores and game status from the NBA live scoreboard API.
- * Runs every 5 minutes so live scores stay current.
+ * Runs every 30 seconds so live scores stay current.
  */
 async function refreshNbaScores(): Promise<void> {
   const todayStr = datePst();
