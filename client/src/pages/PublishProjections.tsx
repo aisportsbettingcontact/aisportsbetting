@@ -349,9 +349,6 @@ function EdgeVerdictLive({
               {spreadDiff} {spreadDiff === 1 ? "pt" : "pts"}
             </span>
           </span>
-          <span className="text-[10px] font-black leading-none tracking-widest uppercase mt-0.5" style={{ color: spreadColor }}>
-            EV: {getEvGrade(spreadDiff)}
-          </span>
         </div>
       )}
       {!spreadPass && !totalPass && (
@@ -371,9 +368,6 @@ function EdgeVerdictLive({
             <span style={{ color: totalColor, fontWeight: 700 }}>
               {totalDiff} {totalDiff === 1 ? "pt" : "pts"}
             </span>
-          </span>
-          <span className="text-[10px] font-black leading-none tracking-widest uppercase mt-0.5" style={{ color: totalColor }}>
-            EV: {getEvGrade(totalDiff)}
           </span>
         </div>
       )}
