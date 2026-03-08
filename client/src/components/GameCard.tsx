@@ -569,11 +569,11 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                 fontWeight: awayWins ? 800 : 600,
               }}
             >
-              {awayName}
+              {awayNickname || awayName}
             </span>
             {awayNickname && (
               <span className="text-[10px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
-                {awayNickname}
+                {awayName}
               </span>
             )}
           </div>
@@ -617,11 +617,11 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                 fontWeight: homeWins ? 800 : 600,
               }}
             >
-              {homeName}
+              {homeNickname || homeName}
             </span>
             {homeNickname && (
               <span className="text-[10px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
-                {homeNickname}
+                {homeName}
               </span>
             )}
           </div>
