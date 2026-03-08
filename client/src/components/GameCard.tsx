@@ -363,7 +363,7 @@ function OddsLinesPanel({
   );
 
   return (
-    <div className="flex flex-col h-full pl-2 pr-0 pt-1.5 pb-0 min-w-0">
+    <div className="flex flex-col h-full pl-2 pr-0 pt-0 pb-0 min-w-0 justify-center">
       {/* Top-level column group headers: SPREAD | TOTAL | MONEYLINE */}
       <div className={`grid ${GRID} pb-0.5`}>
         <span className="col-span-2 text-center text-[11px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Spread</span>
