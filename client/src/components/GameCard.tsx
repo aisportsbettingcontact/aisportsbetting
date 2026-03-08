@@ -187,6 +187,194 @@ function EdgeVerdict({
   );
 }
 
+// ── OddsLinesPanel ───────────────────────────────────────────────────────────
+// IMPORTANT: This MUST be defined at module level (not inside GameCard) to avoid
+// React treating it as a new component type on every render, which causes an
+// infinite re-render loop / "Maximum call stack size exceeded" error.
+
+interface OddsLinesPanelProps {
+  // Book values
+  awayBookSpread: number;
+  homeBookSpread: number;
+  bookTotal: number;
+  awayML: string;
+  homeML: string;
+  // Model values
+  awayModelSpread: number;
+  homeModelSpread: number;
+  modelTotal: number;
+  modelAwayML: string | null | undefined;
+  modelHomeML: string | null | undefined;
+  // Computed edge values
+  spreadDiff: number;
+  totalDiff: number;
+  computedSpreadEdge: string | null;
+  computedTotalEdge: string | null;
+}
+
+function OddsLinesPanel({
+  awayBookSpread: awaySpread,
+  homeBookSpread: homeSpread,
+  bookTotal: bkTotal,
+  awayML: awayMl,
+  homeML: homeMl,
+  awayModelSpread: mdlAwaySpread,
+  homeModelSpread: mdlHomeSpread,
+  modelTotal: mdlTotal,
+  modelAwayML,
+  modelHomeML,
+  spreadDiff,
+  totalDiff,
+  computedSpreadEdge,
+  computedTotalEdge,
+}: OddsLinesPanelProps) {
+  const [tab, setTab] = useState<'book' | 'model'>('book');
+
+  const mdlAwayMl = modelAwayML ?? '—';
+  const mdlHomeMl = modelHomeML ?? '—';
+
+  // Whether model data is available (any model field populated)
+  const hasModelData = !isNaN(mdlAwaySpread) || !isNaN(mdlTotal) || mdlAwayMl !== '—';
+
+  // Displayed values based on active tab
+  // MODEL tab: if no model data at all → show '—' for everything
+  // MODEL tab: if model data exists → always show model values (not gated by publishedToFeed)
+  const dispAwaySpread = tab === 'book'
+    ? (!isNaN(awaySpread) ? spreadSign(awaySpread) : '—')
+    : !hasModelData
+      ? '—'
+      : !isNaN(mdlAwaySpread)
+        ? spreadSign(mdlAwaySpread)
+        : '—';
+  const dispHomeSpread = tab === 'book'
+    ? (!isNaN(homeSpread) ? spreadSign(homeSpread) : '—')
+    : !hasModelData
+      ? '—'
+      : !isNaN(mdlHomeSpread)
+        ? spreadSign(mdlHomeSpread)
+        : '—';
+  const dispOverTotal = tab === 'book'
+    ? (!isNaN(bkTotal) ? String(bkTotal) : '—')
+    : !hasModelData
+      ? '—'
+      : !isNaN(mdlTotal)
+        ? String(mdlTotal)
+        : '—';
+  const dispUnderTotal = tab === 'book'
+    ? (!isNaN(bkTotal) ? String(bkTotal) : '—')
+    : !hasModelData
+      ? '—'
+      : !isNaN(mdlTotal)
+        ? String(mdlTotal)
+        : '—';
+  const dispAwayMl = tab === 'book' ? awayMl : (!hasModelData ? '—' : mdlAwayMl);
+  const dispHomeMl = tab === 'book' ? homeMl : (!hasModelData ? '—' : mdlHomeMl);
+
+  const isModel = tab === 'model';
+  const accentColor = isModel ? '#39FF14' : '#D3D3D3';
+
+  return (
+    <div className="flex flex-col h-full px-3 py-3 min-w-0">
+      {/* ODDS/LINES title — matches BETTING SPLITS header style */}
+      <div className="flex items-center gap-2 mb-2">
+        <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
+        <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: '#d3d3d3', opacity: 0.85 }}>
+          Odds/Lines
+        </span>
+        <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
+      </div>
+
+      {/* BOOK / MODEL toggle */}
+      <div
+        className="flex rounded-md mb-3 overflow-hidden flex-shrink-0"
+        style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}
+      >
+        {(['book', 'model'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className="flex-1 py-1 text-[10px] font-bold uppercase tracking-widest transition-colors"
+            style={{
+              background: tab === t ? (t === 'model' ? 'rgba(57,255,20,0.15)' : 'rgba(255,255,255,0.12)') : 'transparent',
+              color: tab === t ? (t === 'model' ? '#39FF14' : '#ffffff') : 'rgba(255,255,255,0.4)',
+              borderRight: t === 'book' ? '1px solid rgba(255,255,255,0.12)' : 'none',
+            }}
+          >
+            {t === 'book' ? 'Book' : 'Model'}
+          </button>
+        ))}
+      </div>
+
+      {/* Column headers: SPREAD | TOTAL | MONEYLINE */}
+      <div
+        className="grid pb-1.5 mb-0.5"
+        style={{ gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.1)' }}
+      >
+        {['Spread', 'Total', 'Moneyline'].map((col) => (
+          <span
+            key={col}
+            className="text-center uppercase tracking-widest font-extrabold"
+            style={{ fontSize: 10, color: accentColor }}
+          >
+            {col}
+          </span>
+        ))}
+      </div>
+
+      {/* Away row */}
+      <div className="grid py-2" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
+            {dispAwaySpread}
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
+            O {dispOverTotal !== '—' ? dispOverTotal : '—'}
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
+            {dispAwayMl}
+          </span>
+        </div>
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
+
+      {/* Home row */}
+      <div className="grid py-2" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
+            {dispHomeSpread}
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
+            U {dispUnderTotal !== '—' ? dispUnderTotal : '—'}
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
+            {dispHomeMl}
+          </span>
+        </div>
+      </div>
+
+      {/* Edge verdict (model tab only, when model data exists) */}
+      {isModel && hasModelData && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
+        <EdgeVerdict
+          spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
+          spreadEdge={computedSpreadEdge}
+          totalDiff={isNaN(totalDiff) ? null : totalDiff}
+          totalEdge={computedTotalEdge}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Main GameCard ─────────────────────────────────────────────────────────────
 
 interface GameCardProps {
@@ -478,177 +666,8 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
     </div>
   );
 
-  // ── Odds/Lines Panel ─────────────────────────────────────────────────────────
-  // BOOK/MODEL toggle with SPREAD | TOTAL | MONEYLINE columns
-  // Matches the height and alignment of BettingSplitsPanel
-  const OddsLinesPanel = () => {
-    const [tab, setTab] = useState<'book' | 'model'>('book');
-
-    // Book values (from VSiN)
-    const awaySpread = toNum(game.awayBookSpread);
-    const homeSpread = toNum(game.homeBookSpread);
-    const bkTotal    = toNum(game.bookTotal);
-    const awayMl     = game.awayML ?? '—';
-    const homeMl     = game.homeML ?? '—';
-
-    // Model values
-    const mdlAwaySpread = awayModelSpread;
-    const mdlHomeSpread = homeModelSpread;
-    const mdlTotal      = modelTotal;
-    // Model ML from schema (Fair_ML_Away / Fair_ML_Home from Google Sheet)
-    const mdlAwayMl = game.modelAwayML ?? '—';
-    const mdlHomeMl = game.modelHomeML ?? '—';
-
-    // Determine which side has the edge (for MODEL mode — only edge side shows model value)
-    // Spread edge: if awayModelSpread < awayBookSpread, model likes the away team (away is the edge side)
-    const spreadHasEdge = !isNaN(mdlAwaySpread) && !isNaN(awaySpread) && mdlAwaySpread !== awaySpread;
-    const awayHasSpreadEdge = spreadHasEdge && mdlAwaySpread < awaySpread;
-    // Total edge: if modelTotal < bookTotal → UNDER has edge; if modelTotal > bookTotal → OVER has edge
-    const totalHasEdge = !isNaN(mdlTotal) && !isNaN(bkTotal) && mdlTotal !== bkTotal;
-    const overHasTotalEdge = totalHasEdge && mdlTotal > bkTotal;
-    const underHasTotalEdge = totalHasEdge && mdlTotal < bkTotal;
-
-    // Whether model data is available (any model field populated)
-    const hasModelData = !isNaN(mdlAwaySpread) || !isNaN(mdlTotal) || mdlAwayMl !== '—';
-
-    // Displayed values based on active tab
-    // MODEL tab: if no model data at all → show '—' for everything
-    // MODEL tab: if model data exists → always show model values (not gated by publishedToFeed)
-    const dispAwaySpread = tab === 'book'
-      ? (!isNaN(awaySpread) ? spreadSign(awaySpread) : '—')
-      : !hasModelData
-        ? '—'
-        : !isNaN(mdlAwaySpread)
-          ? spreadSign(mdlAwaySpread)
-          : '—';
-    const dispHomeSpread = tab === 'book'
-      ? (!isNaN(homeSpread) ? spreadSign(homeSpread) : '—')
-      : !hasModelData
-        ? '—'
-        : !isNaN(mdlHomeSpread)
-          ? spreadSign(mdlHomeSpread)
-          : '—';
-    const dispOverTotal = tab === 'book'
-      ? (!isNaN(bkTotal) ? String(bkTotal) : '—')
-      : !hasModelData
-        ? '—'
-        : !isNaN(mdlTotal)
-          ? String(mdlTotal)
-          : '—';
-    const dispUnderTotal = tab === 'book'
-      ? (!isNaN(bkTotal) ? String(bkTotal) : '—')
-      : !hasModelData
-        ? '—'
-        : !isNaN(mdlTotal)
-          ? String(mdlTotal)
-          : '—';
-    const dispAwayMl = tab === 'book' ? awayMl : (!hasModelData ? '—' : mdlAwayMl);
-    const dispHomeMl = tab === 'book' ? homeMl : (!hasModelData ? '—' : mdlHomeMl);
-
-    const isModel = tab === 'model';
-    const accentColor = isModel ? '#39FF14' : '#D3D3D3';
-
-    return (
-      <div className="flex flex-col h-full px-3 py-3 min-w-0">
-        {/* ODDS/LINES title — matches BETTING SPLITS header style */}
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
-          <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: '#d3d3d3', opacity: 0.85 }}>
-            Odds/Lines
-          </span>
-          <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
-        </div>
-
-        {/* BOOK / MODEL toggle */}
-        <div
-          className="flex rounded-md mb-3 overflow-hidden flex-shrink-0"
-          style={{ border: '1px solid rgba(255,255,255,0.12)', background: 'rgba(255,255,255,0.04)' }}
-        >
-          {(['book', 'model'] as const).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className="flex-1 py-1 text-[10px] font-bold uppercase tracking-widest transition-colors"
-              style={{
-                background: tab === t ? (t === 'model' ? 'rgba(57,255,20,0.15)' : 'rgba(255,255,255,0.12)') : 'transparent',
-                color: tab === t ? (t === 'model' ? '#39FF14' : '#ffffff') : 'rgba(255,255,255,0.4)',
-                borderRight: t === 'book' ? '1px solid rgba(255,255,255,0.12)' : 'none',
-              }}
-            >
-              {t === 'book' ? 'Book' : 'Model'}
-            </button>
-          ))}
-        </div>
-
-        {/* Column headers: SPREAD | TOTAL | MONEYLINE */}
-        <div
-          className="grid pb-1.5 mb-0.5"
-          style={{ gridTemplateColumns: '1fr 1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.1)' }}
-        >
-          {['Spread', 'Total', 'Moneyline'].map((col) => (
-            <span
-              key={col}
-              className="text-center uppercase tracking-widest font-extrabold"
-              style={{ fontSize: 10, color: accentColor }}
-            >
-              {col}
-            </span>
-          ))}
-        </div>
-
-        {/* Away row */}
-        <div className="grid py-2" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
-          <div className="flex items-center justify-center">
-            <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
-              {dispAwaySpread}
-            </span>
-          </div>
-          <div className="flex items-center justify-center">
-            <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
-              O {dispOverTotal !== '—' ? dispOverTotal : '—'}
-            </span>
-          </div>
-          <div className="flex items-center justify-center">
-            <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
-              {dispAwayMl}
-            </span>
-          </div>
-        </div>
-
-        {/* Divider */}
-        <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
-
-        {/* Home row */}
-        <div className="grid py-2" style={{ gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
-          <div className="flex items-center justify-center">
-            <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
-              {dispHomeSpread}
-            </span>
-          </div>
-          <div className="flex items-center justify-center">
-            <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
-              U {dispUnderTotal !== '—' ? dispUnderTotal : '—'}
-            </span>
-          </div>
-          <div className="flex items-center justify-center">
-            <span className="font-bold tabular-nums text-center" style={{ fontSize: 'clamp(11px,1.8vw,14px)', color: '#D3D3D3' }}>
-              {dispHomeMl}
-            </span>
-          </div>
-        </div>
-
-        {/* Edge verdict (model tab only, when model data exists) */}
-        {isModel && hasModelData && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
-          <EdgeVerdict
-            spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
-            spreadEdge={computedSpreadEdge}
-            totalDiff={isNaN(totalDiff) ? null : totalDiff}
-            totalEdge={computedTotalEdge}
-          />
-        )}
-      </div>
-    );
-  };
+  // OddsLinesPanel is now a top-level component (defined above GameCard)
+  // to prevent infinite re-render loops from component identity changes.
 
   return (
     <>
@@ -695,7 +714,22 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                 borderRight: mode === "full" ? "1px solid hsl(var(--border) / 0.5)" : undefined,
               }}
             >
-              <OddsLinesPanel />
+              <OddsLinesPanel
+                awayBookSpread={awayBookSpread}
+                homeBookSpread={homeBookSpread}
+                bookTotal={bookTotal}
+                awayML={game.awayML ?? '—'}
+                homeML={game.homeML ?? '—'}
+                awayModelSpread={awayModelSpread}
+                homeModelSpread={homeModelSpread}
+                modelTotal={modelTotal}
+                modelAwayML={game.modelAwayML}
+                modelHomeML={game.modelHomeML}
+                spreadDiff={spreadDiff}
+                totalDiff={totalDiff}
+                computedSpreadEdge={computedSpreadEdge}
+                computedTotalEdge={computedTotalEdge}
+              />
             </div>
           )}
 
@@ -722,7 +756,22 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                 <ScorePanel />
               </div>
               <div className="flex-1" style={{ minWidth: 160 }}>
-                <OddsLinesPanel />
+                <OddsLinesPanel
+                awayBookSpread={awayBookSpread}
+                homeBookSpread={homeBookSpread}
+                bookTotal={bookTotal}
+                awayML={game.awayML ?? '—'}
+                homeML={game.homeML ?? '—'}
+                awayModelSpread={awayModelSpread}
+                homeModelSpread={homeModelSpread}
+                modelTotal={modelTotal}
+                modelAwayML={game.modelAwayML}
+                modelHomeML={game.modelHomeML}
+                spreadDiff={spreadDiff}
+                totalDiff={totalDiff}
+                computedSpreadEdge={computedSpreadEdge}
+                computedTotalEdge={computedTotalEdge}
+              />
               </div>
             </div>
           )}
@@ -755,7 +804,22 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                   <ScorePanel />
                 </div>
                 <div className="flex-1" style={{ minWidth: 160 }}>
-                  <OddsLinesPanel />
+                  <OddsLinesPanel
+                awayBookSpread={awayBookSpread}
+                homeBookSpread={homeBookSpread}
+                bookTotal={bookTotal}
+                awayML={game.awayML ?? '—'}
+                homeML={game.homeML ?? '—'}
+                awayModelSpread={awayModelSpread}
+                homeModelSpread={homeModelSpread}
+                modelTotal={modelTotal}
+                modelAwayML={game.modelAwayML}
+                modelHomeML={game.modelHomeML}
+                spreadDiff={spreadDiff}
+                totalDiff={totalDiff}
+                computedSpreadEdge={computedSpreadEdge}
+                computedTotalEdge={computedTotalEdge}
+              />
                 </div>
               </div>
               <div className="w-full px-3 py-3">
