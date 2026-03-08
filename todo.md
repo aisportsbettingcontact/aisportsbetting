@@ -507,4 +507,14 @@
 - [x] Change SCORE_INTERVAL_MS from 30s to 15s in vsinAutoRefresh.ts
 - [x] Wire Feed page to auto-poll scores every 15s (refetchInterval) without page refresh
 - [x] Animate score updates on GameCard: score flashes green with glow for 800ms when it changes
+- [x] Save checkpoint and deliver
+
+## GameCard Score App Redesign (2026-03-08)
+- [x] Rebuild GameCard: Score-app style score panel (left), Books/Model table (center), Betting Splits (right) on desktop
+- [x] Mobile: Score panel (left half), Betting Splits (right half), Model table full-width below
+- [x] Upcoming games: show date + start time in score panel instead of scores
+- [x] Large per-team score rows: logo + name left, big clamp(22-36px) score number right
+- [x] Game clock / LIVE badge / FINAL badge above the score rows
+- [x] Full responsive scaling: clamp() font sizes, lg breakpoint for 3-col vs 2-row layout
+- [x] Winner highlighting: winning team name bold white, loser muted on FINAL
 - [ ] Save checkpoint and deliver

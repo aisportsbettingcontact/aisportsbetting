@@ -1,17 +1,22 @@
 /**
  * GameCard — Model Projection Card
  *
- * Layout (desktop):
- *   ┌──────────────────────────────────────────────────────────┐
- *   │  Header: date · time                                     │
- *   ├──────────────────────────────┬───────────────────────────┤
- *   │  Betting Splits (always vis) │  Model Projections        │
- *   │  • Spread Money/Bets bars    │  • Team rows              │
- *   │  • Total Money/Bets bars     │  • Edge verdict           │
- *   │  • ML bars (NBA only)        │                           │
- *   └──────────────────────────────┴───────────────────────────┘
+ * Layout (desktop ≥ lg):
+ *   ┌──────────────────┬──────────────────────────────┬──────────────────┐
+ *   │  SCORE PANEL     │  BOOKS | MODEL LINE | O/U    │  BETTING SPLITS  │
+ *   │  Clock/Status    │  Column headers              │                  │
+ *   │  Away logo+name  │  Away row                    │                  │
+ *   │  [score]         │  Home row                    │                  │
+ *   │  Home logo+name  │  Edge verdict                │                  │
+ *   │  [score]         │                              │                  │
+ *   └──────────────────┴──────────────────────────────┴──────────────────┘
  *
- * Mobile: splits stack above projections (flex-col).
+ * Layout (mobile < lg):
+ *   ┌────────────────────────────────────────────────────────────────────┐
+ *   │  SCORE PANEL (left)  │  BETTING SPLITS (right)                    │
+ *   ├────────────────────────────────────────────────────────────────────┤
+ *   │  BOOKS | MODEL LINE | O/U  (full width below)                     │
+ *   └────────────────────────────────────────────────────────────────────┘
  */
 
 import { useState, useRef, useEffect } from "react";
@@ -88,13 +93,17 @@ function normalizeEdgeLabel(label: string | null | undefined): string {
 }
 
 // ── TeamLogo ──────────────────────────────────────────────────────────────────
-function TeamLogo({ slug, name, logoUrl }: { slug: string; name: string; logoUrl?: string }) {
+function TeamLogo({ slug, name, logoUrl, size = 36 }: { slug: string; name: string; logoUrl?: string; size?: number }) {
   const [error, setError] = useState(false);
   if (!logoUrl || error) {
     return (
       <div
-        className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-        style={{ background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))" }}
+        className="rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
+        style={{
+          width: size, height: size,
+          background: "hsl(var(--muted))", color: "hsl(var(--muted-foreground))",
+          fontSize: Math.max(9, size * 0.28),
+        }}
       >
         {name.slice(0, 2).toUpperCase()}
       </div>
@@ -104,90 +113,9 @@ function TeamLogo({ slug, name, logoUrl }: { slug: string; name: string; logoUrl
     <img
       src={logoUrl}
       alt={name}
-      className="w-9 h-9 object-contain flex-shrink-0"
-      style={{ mixBlendMode: "screen" }}
+      style={{ width: size, height: size, objectFit: "contain", mixBlendMode: "screen", flexShrink: 0 }}
       onError={() => setError(true)}
     />
-  );
-}
-
-// ── TeamRow ───────────────────────────────────────────────────────────────────
-function TeamRow({
-  slug, name, nickname, consensus, modelSpread, modelTotal, logoUrl,
-}: {
-  slug: string; name: string; nickname: string;
-  consensus: string; modelSpread: string; modelTotal: string;
-  logoUrl?: string;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 py-1.5 min-w-0">
-      {/* Logo */}
-      <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center">
-        <TeamLogo slug={slug} name={name} logoUrl={logoUrl} />
-      </div>
-
-      {/* Team name */}
-      <div className="flex-shrink-0 flex flex-col justify-center overflow-hidden" style={{ width: 120 }}>
-        <div
-          className="font-bold leading-none overflow-hidden"
-          style={{
-            fontSize: 13,
-            color: "hsl(var(--foreground))",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-        >
-          {name}
-        </div>
-        {nickname && (
-          <div
-            className="font-medium leading-none mt-0.5"
-            style={{
-              fontSize: 11,
-              color: "hsl(var(--muted-foreground))",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            {nickname}
-          </div>
-        )}
-      </div>
-
-      {/* 3 data columns: BOOKS | MODEL LINE | MODEL O/U */}
-      <div className="flex-1 grid min-w-0" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: "4px" }}>
-        <div className="flex items-center justify-center">
-          <span
-            className="font-bold leading-none whitespace-nowrap"
-            style={{ fontSize: 15, color: "#D3D3D3" }}
-          >
-            {consensus}
-          </span>
-        </div>
-        <div className="flex items-center justify-center">
-          <span
-            className="flex items-center justify-center px-2 py-1.5 rounded-lg whitespace-nowrap"
-            style={{ background: "rgba(255,255,255,0.08)", minWidth: "48px" }}
-          >
-            <span className="font-bold leading-none" style={{ fontSize: 14, color: "#FFFFFF" }}>
-              {modelSpread}
-            </span>
-          </span>
-        </div>
-        <div className="flex items-center justify-center">
-          <span
-            className="flex items-center justify-center px-2 py-1.5 rounded-lg whitespace-nowrap"
-            style={{ background: "rgba(255,255,255,0.08)", minWidth: "52px" }}
-          >
-            <span className="font-bold leading-none" style={{ fontSize: 14, color: "#FFFFFF" }}>
-              {modelTotal}
-            </span>
-          </span>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -200,10 +128,7 @@ function VerdictSide({ diff, label, isStrong }: { diff: number | null; label: st
   if (isPass) {
     return (
       <div className="flex flex-col items-center gap-0.5 py-0.5">
-        <span
-          className="text-[11px] font-medium tracking-wide"
-          style={{ color: "hsl(var(--muted-foreground) / 0.35)" }}
-        >
+        <span className="text-[11px] font-medium tracking-wide" style={{ color: "hsl(var(--muted-foreground) / 0.35)" }}>
           PASS
         </span>
       </div>
@@ -215,20 +140,13 @@ function VerdictSide({ diff, label, isStrong }: { diff: number | null; label: st
 
   return (
     <div className="flex flex-col items-center gap-1 py-0.5">
-      <span
-        className="font-bold leading-none whitespace-nowrap"
-        style={{ fontSize: betNameSize, color: "hsl(var(--foreground))" }}
-      >
-        {showArrow && (
-          <span className="mr-0.5 text-[10px]" style={{ color }}>▲</span>
-        )}
+      <span className="font-bold leading-none whitespace-nowrap" style={{ fontSize: betNameSize, color: "hsl(var(--foreground))" }}>
+        {showArrow && <span className="mr-0.5 text-[10px]" style={{ color }}>▲</span>}
         {normalized}
       </span>
       <span className="text-[11px] leading-none" style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
         EDGE:{" "}
-        <span style={{ color, fontWeight: 700 }}>
-          {diff} {diff === 1 ? "pt" : "pts"}
-        </span>
+        <span style={{ color, fontWeight: 700 }}>{diff} {diff === 1 ? "pt" : "pts"}</span>
       </span>
     </div>
   );
@@ -246,14 +164,8 @@ function EdgeVerdict({
 
   if (spreadPass && totalPass) {
     return (
-      <div
-        className="mt-2 pt-2 flex items-center justify-center"
-        style={{ borderTop: "1px solid hsl(var(--border))" }}
-      >
-        <span
-          className="text-xs font-medium tracking-widest uppercase"
-          style={{ color: "hsl(var(--muted-foreground) / 0.35)" }}
-        >
+      <div className="mt-2 pt-2 flex items-center justify-center" style={{ borderTop: "1px solid hsl(var(--border))" }}>
+        <span className="text-xs font-medium tracking-widest uppercase" style={{ color: "hsl(var(--muted-foreground) / 0.35)" }}>
           PASS
         </span>
       </div>
@@ -263,10 +175,7 @@ function EdgeVerdict({
   const spreadIsStronger = (spreadDiff ?? 0) >= (totalDiff ?? 0);
 
   return (
-    <div
-      className="mt-2 pt-2 flex items-center"
-      style={{ borderTop: "1px solid hsl(var(--border))" }}
-    >
+    <div className="mt-2 pt-2 flex items-center" style={{ borderTop: "1px solid hsl(var(--border))" }}>
       <div className="flex-1 flex items-center justify-center">
         <VerdictSide diff={spreadDiff} label={spreadEdge} isStrong={spreadIsStronger && !spreadPass} />
       </div>
@@ -302,23 +211,15 @@ function ShareSheet({
             className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl px-4 pb-10 pt-5"
             style={{ background: "hsl(var(--card))", border: "1px solid hsl(var(--border))" }}
           >
-            <div
-              className="mx-auto mb-4 h-1 w-10 rounded-full"
-              style={{ background: "hsl(var(--muted-foreground) / 0.4)" }}
-            />
-            <p className="text-center text-sm font-semibold mb-5" style={{ color: "hsl(var(--foreground))" }}>
-              Share Card
-            </p>
+            <div className="mx-auto mb-4 h-1 w-10 rounded-full" style={{ background: "hsl(var(--muted-foreground) / 0.4)" }} />
+            <p className="text-center text-sm font-semibold mb-5" style={{ color: "hsl(var(--foreground))" }}>Share Card</p>
             <div className="flex flex-col gap-2">
               <button
                 onClick={() => { onCopyLink(); onClose(); }}
                 className="flex items-center gap-4 w-full px-4 py-3.5 rounded-xl active:scale-[0.98]"
                 style={{ background: "hsl(var(--muted) / 0.5)" }}
               >
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center"
-                  style={{ background: "rgba(99,102,241,0.15)" }}
-                >
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(99,102,241,0.15)" }}>
                   <Link size={18} style={{ color: "#6366f1" }} />
                 </div>
                 <div className="text-left">
@@ -331,10 +232,7 @@ function ShareSheet({
                 className="flex items-center gap-4 w-full px-4 py-3.5 rounded-xl active:scale-[0.98]"
                 style={{ background: "hsl(var(--muted) / 0.5)" }}
               >
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center"
-                  style={{ background: "rgba(57,255,20,0.15)" }}
-                >
+                <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: "rgba(57,255,20,0.15)" }}>
                   <ImageDown size={18} style={{ color: "#39FF14" }} />
                 </div>
                 <div className="text-left">
@@ -403,15 +301,16 @@ export function GameCard({ game }: GameCardProps) {
   })();
   const dateLabel = formatDate(displayDate);
 
-  // Score display for live/final games
+  // Score state
   const isLive = game.gameStatus === 'live';
   const isFinal = game.gameStatus === 'final';
+  const isUpcoming = !isLive && !isFinal;
   const hasScores = (game.awayScore !== null && game.awayScore !== undefined) &&
                     (game.homeScore !== null && game.homeScore !== undefined);
   const awayWins = isFinal && hasScores && (game.awayScore! > game.homeScore!);
   const homeWins = isFinal && hasScores && (game.homeScore! > game.awayScore!);
 
-  // Score flash animation: briefly highlight score when it changes
+  // Score flash animation
   const prevScoreRef = useRef<string | null>(null);
   const [scoreFlash, setScoreFlash] = useState(false);
   const scoreKey = hasScores ? `${game.awayScore}-${game.homeScore}` : null;
@@ -440,9 +339,7 @@ export function GameCard({ game }: GameCardProps) {
   const computedTotalEdge: string | null = (() => {
     if (isNaN(totalDiff) || totalDiff <= 0) return "PASS";
     if (isNaN(modelTotal) || isNaN(bookTotal)) return game.totalEdge;
-    return modelTotal > bookTotal
-      ? `Over ${bookTotal}`
-      : `Under ${bookTotal}`;
+    return modelTotal > bookTotal ? `Over ${bookTotal}` : `Under ${bookTotal}`;
   })();
 
   const awayConsensus = isNaN(awayBookSpread) && isNaN(bookTotal)
@@ -603,6 +500,223 @@ export function GameCard({ game }: GameCardProps) {
     }
   };
 
+  // ── Score Panel ─────────────────────────────────────────────────────────────
+  // Shows: game clock/status at top, then two team rows (logo + name + big score)
+  // For upcoming games: shows start time instead of scores
+  const ScorePanel = () => (
+    <div className="flex flex-col justify-center h-full px-3 py-3 min-w-0" style={{ minWidth: 0 }}>
+      {/* Status row: clock / LIVE badge / FINAL / start time */}
+      <div className="flex items-center gap-1.5 mb-2.5">
+        {isLive ? (
+          <>
+            <span
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide flex-shrink-0"
+              style={{ background: "rgba(239,68,68,0.18)", color: "#ef4444" }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: "#ef4444" }} />
+              LIVE
+            </span>
+            {game.gameClock && (
+              <span className="text-[11px] font-semibold tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>
+                {game.gameClock}
+              </span>
+            )}
+          </>
+        ) : isFinal ? (
+          <span
+            className="px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
+            style={{ background: "rgba(255,255,255,0.07)", color: "hsl(var(--muted-foreground))" }}
+          >
+            FINAL
+          </span>
+        ) : (
+          <div className="flex flex-col">
+            <span className="text-[10px] font-medium" style={{ color: "hsl(var(--muted-foreground))" }}>
+              {dateLabel}
+            </span>
+            <span className="text-[13px] font-bold" style={{ color: "hsl(var(--foreground))" }}>
+              {time}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Away team row */}
+      <div className="flex items-center gap-2 mb-1">
+        <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={32} />
+        <div className="flex flex-col flex-1 min-w-0">
+          <span
+            className="font-bold leading-tight truncate"
+            style={{
+              fontSize: "clamp(11px, 1.8vw, 14px)",
+              color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
+              fontWeight: awayWins ? 800 : 600,
+            }}
+          >
+            {awayName}
+          </span>
+          {awayNickname && (
+            <span className="text-[10px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
+              {awayNickname}
+            </span>
+          )}
+        </div>
+        {(isLive || isFinal) && hasScores && (
+          <span
+            className="tabular-nums font-black flex-shrink-0 transition-colors duration-300"
+            style={{
+              fontSize: "clamp(22px, 3.5vw, 36px)",
+              lineHeight: 1,
+              color: scoreFlash
+                ? "#39FF14"
+                : awayWins
+                ? "hsl(var(--foreground))"
+                : isFinal
+                ? "hsl(var(--muted-foreground))"
+                : "hsl(var(--foreground))",
+              textShadow: scoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
+            }}
+          >
+            {game.awayScore}
+          </span>
+        )}
+      </div>
+
+      {/* Divider */}
+      <div style={{ height: 1, background: "hsl(var(--border) / 0.4)", margin: "2px 0" }} />
+
+      {/* Home team row */}
+      <div className="flex items-center gap-2 mt-1">
+        <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={32} />
+        <div className="flex flex-col flex-1 min-w-0">
+          <span
+            className="font-bold leading-tight truncate"
+            style={{
+              fontSize: "clamp(11px, 1.8vw, 14px)",
+              color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
+              fontWeight: homeWins ? 800 : 600,
+            }}
+          >
+            {homeName}
+          </span>
+          {homeNickname && (
+            <span className="text-[10px] leading-none truncate" style={{ color: "hsl(var(--muted-foreground))" }}>
+              {homeNickname}
+            </span>
+          )}
+        </div>
+        {(isLive || isFinal) && hasScores && (
+          <span
+            className="tabular-nums font-black flex-shrink-0 transition-colors duration-300"
+            style={{
+              fontSize: "clamp(22px, 3.5vw, 36px)",
+              lineHeight: 1,
+              color: scoreFlash
+                ? "#39FF14"
+                : homeWins
+                ? "hsl(var(--foreground))"
+                : isFinal
+                ? "hsl(var(--muted-foreground))"
+                : "hsl(var(--foreground))",
+              textShadow: scoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
+            }}
+          >
+            {game.homeScore}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── Model Table Panel ───────────────────────────────────────────────────────
+  // Books | Model Line | Model O/U columns with two team rows + edge verdict
+  const ModelTablePanel = () => (
+    <div className="flex flex-col justify-between px-3 py-3 min-w-0 h-full">
+      {/* Column headers */}
+      <div
+        className="grid pb-2"
+        style={{
+          gridTemplateColumns: "1fr 1fr 1fr",
+          borderBottom: "1px solid hsl(var(--border) / 0.5)",
+        }}
+      >
+        <span className="text-center text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Books</span>
+        <span className="text-center text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model Line</span>
+        <span className="text-center text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model O/U</span>
+      </div>
+
+      {/* Away row */}
+      <div className="grid py-2" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 2vw, 16px)", color: "#D3D3D3" }}>
+            {awayConsensus}
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span
+            className="flex items-center justify-center px-2 py-1.5 rounded-lg"
+            style={{ background: "rgba(255,255,255,0.08)", minWidth: 44 }}
+          >
+            <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 2vw, 15px)", color: "#FFFFFF" }}>
+              {game.publishedToFeed ? spreadSign(awayModelSpread) : "—"}
+            </span>
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span
+            className="flex items-center justify-center px-2 py-1.5 rounded-lg"
+            style={{ background: "rgba(255,255,255,0.08)", minWidth: 50 }}
+          >
+            <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 2vw, 15px)", color: "#FFFFFF" }}>
+              {game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `O ${modelTotal}`) : "—"}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <div style={{ height: 1, background: "hsl(var(--border) / 0.6)" }} />
+
+      {/* Home row */}
+      <div className="grid py-2" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
+        <div className="flex items-center justify-center">
+          <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 2vw, 16px)", color: "#D3D3D3" }}>
+            {homeConsensus}
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span
+            className="flex items-center justify-center px-2 py-1.5 rounded-lg"
+            style={{ background: "rgba(255,255,255,0.08)", minWidth: 44 }}
+          >
+            <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 2vw, 15px)", color: "#FFFFFF" }}>
+              {game.publishedToFeed ? spreadSign(homeModelSpread) : "—"}
+            </span>
+          </span>
+        </div>
+        <div className="flex items-center justify-center">
+          <span
+            className="flex items-center justify-center px-2 py-1.5 rounded-lg"
+            style={{ background: "rgba(255,255,255,0.08)", minWidth: 50 }}
+          >
+            <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 2vw, 15px)", color: "#FFFFFF" }}>
+              {game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `U ${modelTotal}`) : "—"}
+            </span>
+          </span>
+        </div>
+      </div>
+
+      {/* Edge verdict */}
+      {game.publishedToFeed && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
+        <EdgeVerdict
+          spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
+          spreadEdge={computedSpreadEdge}
+          totalDiff={isNaN(totalDiff) ? null : totalDiff}
+          totalEdge={computedTotalEdge}
+        />
+      )}
+    </div>
+  );
+
   return (
     <>
       <motion.div
@@ -625,177 +739,30 @@ export function GameCard({ game }: GameCardProps) {
           <Download size={12} style={{ color: "hsl(var(--muted-foreground))" }} />
         </button>
 
-        {/* Header */}
-        <div
-          className="flex items-center justify-center gap-1.5 px-4 py-2"
-          style={{ background: "hsl(var(--background))", borderBottom: "1px solid hsl(var(--border))" }}
-        >
-          {isLive && hasScores ? (
-            /* LIVE: hide date (implied today), show AwayLogo Score-Score HomeLogo + badge + clock */
-            <div className="flex items-center gap-2">
-              {/* Away logo */}
-              {awayLogoUrl && (
-                <img
-                  src={awayLogoUrl}
-                  alt={awayName}
-                  className="w-5 h-5 object-contain flex-shrink-0"
-                  style={{ mixBlendMode: "screen" }}
-                />
-              )}
-              {/* Score */}
-              <span
-                className="text-sm font-bold tabular-nums transition-colors duration-300"
-                style={{
-                  color: scoreFlash ? "#39FF14" : "hsl(var(--foreground))",
-                  textShadow: scoreFlash ? "0 0 8px rgba(57,255,20,0.7)" : "none",
-                }}
-              >
-                {game.awayScore}-{game.homeScore}
-              </span>
-              {/* Home logo */}
-              {homeLogoUrl && (
-                <img
-                  src={homeLogoUrl}
-                  alt={homeName}
-                  className="w-5 h-5 object-contain flex-shrink-0"
-                  style={{ mixBlendMode: "screen" }}
-                />
-              )}
-              {/* Pulsing LIVE badge */}
-              <span
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
-                style={{ background: "rgba(239,68,68,0.18)", color: "#ef4444" }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full animate-pulse"
-                  style={{ background: "#ef4444", display: "inline-block" }}
-                />
-                LIVE
-              </span>
-              {/* Game clock */}
-              {game.gameClock && (
-                <span className="text-[10px] font-medium" style={{ color: "hsl(var(--muted-foreground))" }}>
-                  {game.gameClock}
-                </span>
-              )}
-            </div>
-          ) : isFinal && hasScores ? (
-            /* FINAL: hide date (same as LIVE), show AwayLogo Score-Score HomeLogo + FINAL badge */
-            <div className="flex items-center gap-2">
-              {/* Away logo */}
-              {awayLogoUrl && (
-                <img
-                  src={awayLogoUrl}
-                  alt={awayName}
-                  className="w-5 h-5 object-contain flex-shrink-0"
-                  style={{ mixBlendMode: "screen" }}
-                />
-              )}
-              {/* Score */}
-              <span className="text-sm font-bold tabular-nums" style={{ color: "hsl(var(--foreground))" }}>
-                {game.awayScore}-{game.homeScore}
-              </span>
-              {/* Home logo */}
-              {homeLogoUrl && (
-                <img
-                  src={homeLogoUrl}
-                  alt={homeName}
-                  className="w-5 h-5 object-contain flex-shrink-0"
-                  style={{ mixBlendMode: "screen" }}
-                />
-              )}
-              {/* FINAL badge */}
-              <span
-                className="px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
-                style={{ background: "rgba(255,255,255,0.07)", color: "hsl(var(--muted-foreground))" }}
-              >
-                FINAL
-              </span>
-            </div>
-          ) : (
-            /* UPCOMING: show date · time */
-            <>
-              <span className="text-xs font-semibold" style={{ color: "hsl(var(--foreground))" }}>
-                {dateLabel}
-              </span>
-              <span className="text-[10px]" style={{ color: "hsl(var(--muted-foreground))" }}>·</span>
-              <span className="text-xs font-medium" style={{ color: "hsl(var(--muted-foreground))" }}>
-                {time}
-              </span>
-            </>
-          )}
-        </div>
-
         {/*
-          ── Two-column body ─────────────────────────────────────────────────
-          On desktop (≥640px): projections left (50%), splits right (50%)
-          On mobile (<640px):  projections on top, splits below
+          ── DESKTOP (≥ lg / 1024px): 3-column layout ──────────────────────────
+          Score panel | Model table | Betting splits
+          Widths: ~26% | ~40% | ~34%
+
+          ── MOBILE (< lg): 2-row layout ───────────────────────────────────────
+          Row 1: Score panel (left ~45%) | Betting splits (right ~55%)
+          Row 2: Model table (full width)
         */}
-        <div
-          className="flex flex-col sm:flex-row sm:items-stretch"
-          style={{ minHeight: 0 }}
-        >
-          {/* ── Left: Model Projections (50%) ──────────────────────────────── */}
-          <div className="w-full sm:w-1/2 px-4 pt-3 pb-3 min-w-0 flex flex-col justify-between">
-            {/* Column labels */}
-            <div
-              className="flex items-center pb-2"
-              style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
-            >
-              {/* Spacer: logo (32px) + gap (6px) + name col (120px) */}
-              <div className="flex-shrink-0" style={{ width: 38 }} />
-              <div className="flex-shrink-0" style={{ width: 120 }} />
-              <div className="flex-1 grid text-center" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: 4 }}>
-                <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Books</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model Line</span>
-                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model O/U</span>
-              </div>
-            </div>
-            {/* Away row */}
-            <TeamRow
-              slug={game.awayTeam}
-              name={awayName}
-              nickname={awayNickname}
-              consensus={awayConsensus}
-              modelSpread={game.publishedToFeed ? spreadSign(awayModelSpread) : "—"}
-              modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `O ${modelTotal}`) : "—"}
-              logoUrl={awayLogoUrl}
-            />
-            <div style={{ height: 1, background: "hsl(var(--border) / 0.6)" }} />
-            {/* Home row */}
-            <TeamRow
-              slug={game.homeTeam}
-              name={homeName}
-              nickname={homeNickname}
-              consensus={homeConsensus}
-              modelSpread={game.publishedToFeed ? spreadSign(homeModelSpread) : "—"}
-              modelTotal={game.publishedToFeed ? (isNaN(modelTotal) ? "—" : `U ${modelTotal}`) : "—"}
-              logoUrl={homeLogoUrl}
-            />
-            {/* Edge verdict */}
-            {game.publishedToFeed && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
-              <EdgeVerdict
-                spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
-                spreadEdge={computedSpreadEdge}
-                totalDiff={isNaN(totalDiff) ? null : totalDiff}
-                totalEdge={computedTotalEdge}
-              />
-            )}
+
+        {/* DESKTOP: 3-column flex row */}
+        <div className="hidden lg:flex items-stretch">
+          {/* Col 1: Score panel */}
+          <div className="flex-shrink-0" style={{ width: "26%", borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
+            <ScorePanel />
           </div>
 
-          {/* Vertical divider (desktop only) */}
-          <div
-            className="hidden sm:block self-stretch flex-shrink-0"
-            style={{ width: 1, background: "hsl(var(--border) / 0.5)" }}
-          />
-          {/* Horizontal divider (mobile only) */}
-          <div
-            className="sm:hidden mx-4"
-            style={{ height: 1, background: "hsl(var(--border) / 0.5)" }}
-          />
+          {/* Col 2: Model table */}
+          <div className="flex-1" style={{ borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
+            <ModelTablePanel />
+          </div>
 
-          {/* ── Right: Betting Splits (50%) ─────────────────────────────────── */}
-          <div className="w-full sm:w-1/2 px-4 pt-3 pb-3">
+          {/* Col 3: Betting splits */}
+          <div className="flex-shrink-0 px-3 py-3" style={{ width: "34%" }}>
             <BettingSplitsPanel
               game={game}
               awayLabel={awayName}
@@ -803,6 +770,32 @@ export function GameCard({ game }: GameCardProps) {
               awayNickname={awayNickname}
               homeNickname={homeNickname}
             />
+          </div>
+        </div>
+
+        {/* MOBILE: 2-row layout */}
+        <div className="lg:hidden">
+          {/* Row 1: Score panel + Betting splits side by side */}
+          <div className="flex items-stretch" style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}>
+            {/* Score panel */}
+            <div className="flex-shrink-0" style={{ width: "45%", borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
+              <ScorePanel />
+            </div>
+            {/* Betting splits */}
+            <div className="flex-1 px-2 py-3">
+              <BettingSplitsPanel
+                game={game}
+                awayLabel={awayName}
+                homeLabel={homeName}
+                awayNickname={awayNickname}
+                homeNickname={homeNickname}
+              />
+            </div>
+          </div>
+
+          {/* Row 2: Model table full width */}
+          <div>
+            <ModelTablePanel />
           </div>
         </div>
       </motion.div>
