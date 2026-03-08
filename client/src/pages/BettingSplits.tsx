@@ -372,8 +372,9 @@ export default function BettingSplitsPage() {
           </div>
         </div>
 
-        {/* Row 2: Page tab bar */}
+        {/* Row 2: Page tab bar — AI MODEL PROJECTIONS (left, dimmed) | BETTING SPLITS (right, active) */}
         <div className="flex w-full" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+          {/* Left: AI MODEL PROJECTIONS — inactive/dimmed on this page */}
           <Link href="/projections" className="flex-1">
             <button
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
@@ -383,6 +384,7 @@ export default function BettingSplitsPage() {
               <span>AI MODEL PROJECTIONS</span>
             </button>
           </Link>
+          {/* Right: BETTING SPLITS — active on this page */}
           <Link href="/splits" className="flex-1">
             <button
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
@@ -390,7 +392,6 @@ export default function BettingSplitsPage() {
             >
               <img src={CDN_MONEY_BAG} alt="Money bag" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)" }} />
               <span>BETTING SPLITS</span>
-              {/* active underline */}
               <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full" style={{ background: "#39FF14" }} />
             </button>
           </Link>

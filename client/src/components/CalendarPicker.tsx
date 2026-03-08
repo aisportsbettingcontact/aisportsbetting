@@ -140,7 +140,7 @@ export function CalendarPicker({ selectedDate, onSelect, availableDates }: Calen
             >
               <ChevronLeft className="w-3.5 h-3.5" />
             </button>
-            <span className="text-xs font-bold text-white tracking-wide">
+            <span className="text-xs font-bold text-white tracking-widest uppercase">
               {MONTHS[viewMonth]} {viewYear}
             </span>
             <button
