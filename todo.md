@@ -713,3 +713,7 @@
 
 - [x] Fix GameCard splits-mode: give splits panel more width (score narrower)
 - [x] Fix BettingSplitsPanel: full-width bars, no-wrap labels, readable at any width
+
+## Mobile Splits Height Fix
+
+- [x] Shrink mobile MarketBlock height to match compact score panel height
