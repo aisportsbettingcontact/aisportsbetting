@@ -910,6 +910,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 </div>
               )}
               {/* Subtle card separator */}
+              <div style={{ height: 8 }} />
               <div style={{ height: 1, background: "rgba(255,255,255,0.07)", width: "100%" }} />
             </div>
           )}
