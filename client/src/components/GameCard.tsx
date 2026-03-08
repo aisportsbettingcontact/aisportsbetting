@@ -546,9 +546,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   // Score sits immediately after the team name, not pushed to the far right.
   // For upcoming games: shows start time instead of scores.
   const ScorePanel = () => (
-    <div className="flex flex-col justify-center h-full px-2 py-1.5 min-w-0" style={{ minWidth: 0 }}>
-      {/* Status row: clock / LIVE badge / FINAL / start time */}
-      <div className="flex items-center gap-1.5 mb-1.5">
+    <div className="flex flex-col h-full pl-2 pr-1 py-1.5 min-w-0" style={{ minWidth: 0 }}>
+      {/* Status row: clock / LIVE badge / FINAL / start time — mirrors OddsLinesPanel header height */}
+      <div className="flex items-center gap-1.5 mb-1">
         {isLive ? (
           <>
             <span
@@ -578,8 +578,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
       </div>
 
-      {/* Away team row: logo+name on left, score pushed to far right */}
-      <div className="flex items-center justify-between gap-2 mb-0.5 w-full">
+      {/* Spacer matching OddsLinesPanel group-headers + sub-headers height (~28px) */}
+      <div style={{ height: 28 }} />
+
+      {/* Away team row — py-3 mirrors OddsLinesPanel away row height */}
+      <div className="flex items-center justify-between gap-2 py-3 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={42} />
@@ -623,11 +626,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
       </div>
 
-      {/* Divider */}
-      <div style={{ height: 1, background: "hsl(var(--border) / 0.4)", margin: "3px 0" }} />
+      {/* Divider — mirrors OddsLinesPanel divider */}
+      <div style={{ height: 1, background: "hsl(var(--border) / 0.4)" }} />
 
-      {/* Home team row: logo+name on left, score pushed to far right */}
-      <div className="flex items-center justify-between gap-2 mt-0.5 w-full">
+      {/* Home team row — py-3 mirrors OddsLinesPanel home row height */}
+      <div className="flex items-center justify-between gap-2 py-3 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={42} />
