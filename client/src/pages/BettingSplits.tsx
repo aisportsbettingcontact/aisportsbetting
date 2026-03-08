@@ -386,7 +386,7 @@ export default function BettingSplitsPage() {
         </div>
 
         {/* Row 3: Sport filter + timestamp */}
-        <div className="px-4 pb-1 flex items-center gap-2">
+        <div className="px-4 pt-2 pb-1 flex items-center gap-2">
           <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
             style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
             <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={18} height={12} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)" }} />
