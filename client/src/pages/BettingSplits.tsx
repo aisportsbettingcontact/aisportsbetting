@@ -9,28 +9,18 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
 import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, TrendingUp } from "lucide-react";
 
-// Custom SVG icons
+// CDN icon URLs
+const CDN_TEST_TUBE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-test-tube_0cb720ac.png";
+const CDN_MONEY_BAG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-money-bag_b9c73c5d.png";
+const CDN_MARCH_MADNESS = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-march-madness_ecd8f481.png";
+const CDN_NBA = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-nba_3fa4f508.png";
+
 function TestTubeIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M14.5 2L20 7.5" />
-      <path d="M9 13l-6.5 6.5a2.121 2.121 0 0 0 3 3L12 16" />
-      <path d="M2 2l20 20" />
-      <path d="M8.5 2.5l13 13" />
-      <path d="M10.5 7.5L3 15" />
-    </svg>
-  );
+  return <img src={CDN_TEST_TUBE} alt="Test tube" width={size} height={size} style={{ objectFit: "contain", filter: "invert(1)" }} />;
 }
 
 function MoneyBagIcon({ size = 14 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v0A2.5 2.5 0 0 1 14.5 2" />
-      <path d="M12 4.5C7 4.5 4 8 4 12c0 5 3.5 8 8 8s8-3 8-8c0-4-3-7.5-8-7.5z" />
-      <path d="M12 8v8" />
-      <path d="M9 10.5c0-.8.7-1.5 1.5-1.5h3c.8 0 1.5.7 1.5 1.5v0c0 .8-.7 1.5-1.5 1.5h-3c-.8 0-1.5.7-1.5 1.5v0c0 .8.7 1.5 1.5 1.5h3c.8 0 1.5-.7 1.5-1.5" />
-    </svg>
-  );
+  return <img src={CDN_MONEY_BAG} alt="Money bag" width={size} height={size} style={{ objectFit: "contain", filter: "invert(1)" }} />;
 }
 import { GameCard } from "@/components/GameCard";
 import { AgeModal } from "@/components/AgeModal";
@@ -387,7 +377,7 @@ export default function BettingSplitsPage() {
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
               style={{ color: "rgba(255,255,255,0.45)" }}
             >
-              <TrendingUp size={14} />
+              <img src={CDN_TEST_TUBE} alt="Test tube" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)", opacity: 0.45 }} />
               <span>AI MODEL PROJECTIONS</span>
             </button>
           </Link>
@@ -396,7 +386,7 @@ export default function BettingSplitsPage() {
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
               style={{ color: "#ffffff" }}
             >
-              <TestTubeIcon size={14} />
+              <img src={CDN_MONEY_BAG} alt="Money bag" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)" }} />
               <span>BETTING SPLITS</span>
               {/* active underline */}
               <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full" style={{ background: "#39FF14" }} />
@@ -408,12 +398,12 @@ export default function BettingSplitsPage() {
         <div className="px-4 pb-1 flex items-center gap-2">
           <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
             style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <TestTubeIcon size={14} />
+            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={18} height={12} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)" }} />
             NCAAM
           </button>
           <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
             style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <MoneyBagIcon size={14} />
+            <img src={CDN_NBA} alt="NBA" width={14} height={14} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5 }} />
             NBA
           </button>
           <div className="ml-auto flex items-center gap-1.5">
@@ -476,7 +466,7 @@ export default function BettingSplitsPage() {
           </div>
         ) : sortedDates.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
-            <TestTubeIcon size={40} />
+            <img src={CDN_TEST_TUBE} alt="Test tube" width={40} height={40} style={{ objectFit: "contain", filter: "invert(1)", opacity: 0.4 }} />
             <div>
               <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
               <p className="text-xs text-muted-foreground">

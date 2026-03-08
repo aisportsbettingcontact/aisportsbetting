@@ -7,7 +7,13 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, TrendingUp, PieChart } from "lucide-react";
+import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock } from "lucide-react";
+
+// CDN icon URLs
+const CDN_TEST_TUBE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-test-tube_0cb720ac.png";
+const CDN_MONEY_BAG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-money-bag_b9c73c5d.png";
+const CDN_MARCH_MADNESS = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-march-madness_ecd8f481.png";
+const CDN_NBA = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-nba_3fa4f508.png";
 import { GameCard } from "@/components/GameCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -397,7 +403,7 @@ export default function ModelProjections() {
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
               style={{ color: "#39FF14" }}
             >
-              <TrendingUp size={14} />
+              <img src={CDN_TEST_TUBE} alt="Test tube" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)" }} />
               <span>AI MODEL PROJECTIONS</span>
               {/* active underline */}
               <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full" style={{ background: "#39FF14" }} />
@@ -408,7 +414,7 @@ export default function ModelProjections() {
               className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
               style={{ color: "hsl(var(--muted-foreground))" }}
             >
-              <PieChart size={14} />
+              <img src={CDN_MONEY_BAG} alt="Money bag" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)", opacity: 0.45 }} />
               <span>BETTING SPLITS</span>
             </button>
           </Link>
@@ -417,13 +423,13 @@ export default function ModelProjections() {
         {/* Row 3: Sport filter + timestamp */}
         <div className="px-4 pb-1 flex items-center gap-2">
           <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
-            style={selectedSport === "NCAAM" ? { background: "rgba(57,255,20,0.15)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.4)" } : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }}>
-            <img src="https://www.ncaa.com/march-madness-live/assets/icons/ncaa/disc.svg" alt="NCAA" width={16} height={16} style={{ opacity: selectedSport === "NCAAM" ? 1 : 0.5 }} />
+            style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={18} height={12} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)" }} />
             NCAAM
           </button>
           <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
-            style={selectedSport === "NBA" ? { background: "rgba(200,16,46,0.15)", color: "#C8102E", border: "1px solid rgba(200,16,46,0.5)" } : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }}>
-            <img src="https://cdn.nba.com/logos/leagues/logo-nba.svg" alt="NBA" width={16} height={16} style={{ opacity: selectedSport === "NBA" ? 1 : 0.5 }} />
+            style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            <img src={CDN_NBA} alt="NBA" width={14} height={14} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5 }} />
             NBA
           </button>
           <div className="ml-auto flex items-center gap-1.5">

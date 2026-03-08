@@ -744,3 +744,7 @@
 - [x] BettingSplits page: NCAAM/NBA tab selection style → white border only, no neon green fill
 - [x] BettingSplits page: fix sticky date header gap when scrolling
 - [x] Fix midnight EST game ordering (between March 7 and March 8 games)
+- [x] Replace AI MODEL PROJECTIONS tab icon with test tube image
+- [x] Replace BETTING SPLITS tab icon with money bag image
+- [x] Replace NCAAM filter icon with March Madness logo
+- [x] Replace NBA filter icon with NBA logo
