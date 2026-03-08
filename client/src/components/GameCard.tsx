@@ -67,20 +67,6 @@ function getEdgeColor(diff: number): string {
   if (diff < 4.5) return "#AAFF1A";
   return "#39FF14";
 }
-function getEvGrade(diff: number | null): string {
-  const d = diff ?? 0;
-  if (d <= 0)   return "F";
-  if (d < 0.5)  return "D";
-  if (d < 1.0)  return "C";
-  if (d < 1.5)  return "C+";
-  if (d < 2.0)  return "B-";
-  if (d < 2.5)  return "B";
-  if (d < 3.0)  return "B+";
-  if (d < 3.5)  return "A-";
-  if (d < 4.0)  return "A";
-  if (d < 4.5)  return "A+";
-  return "A+";
-}
 
 
 // ── Spread sign helper ────────────────────────────────────────────────────────
@@ -162,9 +148,6 @@ function VerdictSide({ diff, label, isStrong }: { diff: number | null; label: st
       <span className="text-[11px] leading-none" style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
         EDGE:{" "}
         <span style={{ color, fontWeight: 700 }}>{diff} {diff === 1 ? "pt" : "pts"}</span>
-      </span>
-      <span className="text-[10px] font-black leading-none tracking-widest uppercase mt-0.5" style={{ color }}>
-        EV: {getEvGrade(diff)}
       </span>
     </div>
   );
