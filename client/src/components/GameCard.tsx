@@ -144,7 +144,7 @@ function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName }: {
     );
   }
 
-  const betNameSize = isStrong ? "13px" : "12px";
+  const betNameSize = isStrong ? "15px" : "13px";
   const showArrow = (diff ?? 0) >= 3;
 
   return (
@@ -158,9 +158,9 @@ function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName }: {
           {normalized}
         </span>
       </div>
-      <span className="text-[11px] leading-none" style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
+      <span className="text-[12px] leading-none" style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
         EDGE:{" "}
-        <span style={{ color, fontWeight: 700 }}>{diff} {diff === 1 ? "pt" : "pts"}</span>
+        <span style={{ color, fontWeight: 800 }}>{diff} {diff === 1 ? "pt" : "pts"}</span>
       </span>
     </div>
   );
@@ -251,6 +251,9 @@ interface OddsLinesPanelProps {
   homeSlug?: string;
   awayDisplayName?: string;
   homeDisplayName?: string;
+  // Controlled model toggle (lifted to parent)
+  showModel: boolean;
+  onToggleModel: () => void;
 }
 
 function OddsLinesPanel({
@@ -274,8 +277,9 @@ function OddsLinesPanel({
   homeSlug,
   awayDisplayName,
   homeDisplayName,
+  showModel,
+  onToggleModel,
 }: OddsLinesPanelProps) {
-  const [showModel, setShowModel] = useState(true);
 
   const mdlAwayMl = modelAwayML ?? '—';
   const mdlHomeMl = modelHomeML ?? '—';
@@ -297,9 +301,9 @@ function OddsLinesPanel({
 
   // 6-column grid: [Spread Book | Spread Model | Total Book | Total Model | ML Book | ML Model]
   const GRID = 'grid-cols-6';
-  const bookCell  = { fontSize: 'clamp(10px,1.5vw,13px)', color: '#D3D3D3' } as React.CSSProperties;
-  const modelCell = { fontSize: 'clamp(10px,1.5vw,13px)', color: '#39FF14' } as React.CSSProperties;
-  const dimCell   = { fontSize: 'clamp(10px,1.5vw,13px)', color: 'rgba(57,255,20,0.3)' } as React.CSSProperties;
+  const bookCell  = { fontSize: 'clamp(12px,1.8vw,15px)', color: '#E8E8E8', letterSpacing: '0.02em' } as React.CSSProperties;
+  const modelCell = { fontSize: 'clamp(12px,1.8vw,15px)', color: '#39FF14', letterSpacing: '0.02em' } as React.CSSProperties;
+  const dimCell   = { fontSize: 'clamp(12px,1.8vw,15px)', color: 'rgba(57,255,20,0.28)', letterSpacing: '0.02em' } as React.CSSProperties;
 
   // Helper: cell value with style
   const Cell = ({ val, style }: { val: string; style: React.CSSProperties }) => (
@@ -309,17 +313,17 @@ function OddsLinesPanel({
   );
 
   return (
-    <div className="flex flex-col h-full px-3 py-3 min-w-0">
+    <div className="flex flex-col h-full px-3 py-2 min-w-0">
       {/* Header: ODDS/LINES title + sliding Model toggle */}
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex items-center gap-2 mb-1.5">
         <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
-        <span className="text-[13px] font-black uppercase tracking-widest" style={{ color: '#d3d3d3', opacity: 0.85 }}>
+        <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#d3d3d3', opacity: 0.7 }}>
           Odds/Lines
         </span>
         <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
         {/* Sliding pill toggle */}
         <button
-          onClick={() => setShowModel((v) => !v)}
+          onClick={onToggleModel}
           aria-pressed={showModel}
           className="relative flex-shrink-0 flex items-center rounded-full transition-colors duration-200"
           style={{
@@ -347,21 +351,21 @@ function OddsLinesPanel({
 
       {/* Top-level column group headers: SPREAD | TOTAL | MONEYLINE */}
       <div className={`grid ${GRID} pb-0.5`}>
-        <span className="col-span-2 text-center text-[9px] font-extrabold uppercase tracking-widest" style={{ color: '#D3D3D3' }}>Spread</span>
-        <span className="col-span-2 text-center text-[9px] font-extrabold uppercase tracking-widest" style={{ color: '#D3D3D3' }}>Total</span>
-        <span className="col-span-2 text-center text-[9px] font-extrabold uppercase tracking-widest" style={{ color: '#D3D3D3' }}>Moneyline</span>
+        <span className="col-span-2 text-center text-[10px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Spread</span>
+        <span className="col-span-2 text-center text-[10px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Total</span>
+        <span className="col-span-2 text-center text-[10px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Moneyline</span>
       </div>
 
       {/* Sub-headers: BOOK | MODEL per group */}
       <div
-        className={`grid ${GRID} pb-1.5 mb-0.5`}
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.1)' }}
+        className={`grid ${GRID} pb-1 mb-0.5`}
+        style={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}
       >
         {['Book', 'Model', 'Book', 'Model', 'Book', 'Model'].map((lbl, i) => (
           <span
             key={i}
-            className="text-center text-[8px] font-bold uppercase tracking-widest"
-            style={{ color: lbl === 'Model' ? (showModel ? '#39FF14' : 'rgba(57,255,20,0.25)') : 'rgba(255,255,255,0.45)' }}
+            className="text-center text-[9px] font-bold uppercase tracking-widest"
+            style={{ color: lbl === 'Model' ? (showModel ? '#39FF14' : 'rgba(57,255,20,0.22)') : 'rgba(255,255,255,0.5)' }}
           >
             {lbl}
           </span>
@@ -369,7 +373,7 @@ function OddsLinesPanel({
       </div>
 
       {/* Away row */}
-      <div className={`grid ${GRID} py-2`}>
+      <div className={`grid ${GRID} py-2.5`}>
         <Cell val={bkAwaySpread} style={bookCell} />
         <Cell val={mdlAwaySpreadStr} style={showModel ? modelCell : dimCell} />
         <Cell val={`O ${bkOverTotal}`} style={bookCell} />
@@ -382,7 +386,7 @@ function OddsLinesPanel({
       <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
 
       {/* Home row */}
-      <div className={`grid ${GRID} py-2`}>
+      <div className={`grid ${GRID} py-2.5`}>
         <Cell val={bkHomeSpread} style={bookCell} />
         <Cell val={mdlHomeSpreadStr} style={showModel ? modelCell : dimCell} />
         <Cell val={`U ${bkUnderTotal}`} style={bookCell} />
@@ -391,21 +395,6 @@ function OddsLinesPanel({
         <Cell val={mdlHomeMlStr} style={showModel ? modelCell : dimCell} />
       </div>
 
-      {/* Edge verdict (when model is toggled on and data exists) */}
-      {showModel && hasModelData && (!isNaN(spreadDiff) || !isNaN(totalDiff)) && (
-        <EdgeVerdict
-          spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
-          spreadEdge={computedSpreadEdge}
-          totalDiff={isNaN(totalDiff) ? null : totalDiff}
-          totalEdge={computedTotalEdge}
-          awayLogoUrl={awayLogoUrl}
-          homeLogoUrl={homeLogoUrl}
-          awaySlug={awaySlug}
-          homeSlug={homeSlug}
-          awayDisplayName={awayDisplayName}
-          homeDisplayName={homeDisplayName}
-        />
-      )}
     </div>
   );
 }
@@ -464,6 +453,10 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                     (game.homeScore !== null && game.homeScore !== undefined);
   const awayWins = isFinal && hasScores && (game.awayScore! > game.homeScore!);
   const homeWins = isFinal && hasScores && (game.homeScore! > game.awayScore!);
+
+  // Model toggle state (lifted from OddsLinesPanel)
+  const [showModel, setShowModel] = useState(true);
+  const toggleModel = () => setShowModel((v) => !v);
 
   // Score flash animation
   const prevScoreRef = useRef<string | null>(null);
@@ -572,9 +565,9 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
   // Score sits immediately after the team name, not pushed to the far right.
   // For upcoming games: shows start time instead of scores.
   const ScorePanel = () => (
-    <div className="flex flex-col justify-center h-full px-3 py-3 min-w-0" style={{ minWidth: 0 }}>
+    <div className="flex flex-col justify-center h-full px-3 py-2 min-w-0" style={{ minWidth: 0 }}>
       {/* Status row: clock / LIVE badge / FINAL / start time */}
-      <div className="flex items-center gap-1.5 mb-2.5">
+      <div className="flex items-center gap-1.5 mb-2">
         {isLive ? (
           <>
             <span
@@ -610,17 +603,17 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
       </div>
 
       {/* Away team row: logo+name on left, score pushed to far right */}
-      <div className="flex items-center justify-between gap-2 mb-1 w-full">
+      <div className="flex items-center justify-between gap-2 mb-0.5 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={32} />
+          <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={38} />
           <div className="flex flex-col min-w-0">
             <span
               className="font-bold leading-tight truncate"
               style={{
-                fontSize: "clamp(11px, 1.8vw, 14px)",
+                fontSize: "clamp(13px, 2vw, 16px)",
                 color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
-                fontWeight: awayWins ? 800 : 600,
+                fontWeight: awayWins ? 800 : 700,
               }}
             >
               {awayNickname || awayName}
@@ -655,20 +648,20 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
       </div>
 
       {/* Divider */}
-      <div style={{ height: 1, background: "hsl(var(--border) / 0.4)", margin: "2px 0" }} />
+      <div style={{ height: 1, background: "hsl(var(--border) / 0.4)", margin: "4px 0" }} />
 
       {/* Home team row: logo+name on left, score pushed to far right */}
-      <div className="flex items-center justify-between gap-2 mt-1 w-full">
+      <div className="flex items-center justify-between gap-2 mt-0.5 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={32} />
+          <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={38} />
           <div className="flex flex-col min-w-0">
             <span
               className="font-bold leading-tight truncate"
               style={{
-                fontSize: "clamp(11px, 1.8vw, 14px)",
+                fontSize: "clamp(13px, 2vw, 16px)",
                 color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
-                fontWeight: homeWins ? 800 : 600,
+                fontWeight: homeWins ? 800 : 700,
               }}
             >
               {homeNickname || homeName}
@@ -747,9 +740,9 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
             <div
               className="flex-shrink-0"
               style={{
-                width: mode === "projections" ? "78%" : "28%",
+                width: mode === "projections" ? "52%" : "28%",
                 minWidth: 200,
-                borderRight: mode === "full" ? "1px solid hsl(var(--border) / 0.5)" : undefined,
+                borderRight: "1px solid hsl(var(--border) / 0.5)",
               }}
             >
               <OddsLinesPanel
@@ -773,11 +766,32 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                 homeSlug={game.homeTeam}
                 awayDisplayName={awayDisplayName}
                 homeDisplayName={homeDisplayName}
+                showModel={showModel}
+                onToggleModel={toggleModel}
               />
             </div>
           )}
 
-          {/* Col 3: Betting splits — hidden in projections mode */}
+          {/* Col 3: Edge Verdict (projections) or Betting Splits (full/splits) */}
+          {mode === "projections" && showModel && (
+            <div
+              className="flex-1 flex items-center justify-center px-3 py-2"
+              style={{ minWidth: 160, borderLeft: "none" }}
+            >
+              <EdgeVerdict
+                spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
+                spreadEdge={computedSpreadEdge}
+                totalDiff={isNaN(totalDiff) ? null : totalDiff}
+                totalEdge={computedTotalEdge}
+                awayLogoUrl={awayLogoUrl}
+                homeLogoUrl={homeLogoUrl}
+                awaySlug={game.awayTeam}
+                homeSlug={game.homeTeam}
+                awayDisplayName={awayDisplayName}
+                homeDisplayName={homeDisplayName}
+              />
+            </div>
+          )}
           {mode !== "projections" && (
             <div className="flex-1 px-3 py-3" style={{ minWidth: 220 }}>
               <BettingSplitsPanel
@@ -793,13 +807,13 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
 
         {/* ── Mobile layout ── */}
         <div className="flex lg:hidden flex-col w-full">
-          {/* Projections mode: Score (left) + Odds/Lines (right) side-by-side, no splits */}
+          {/* Projections mode: Score | Odds/Lines | EdgeVerdict */}
           {mode === "projections" && (
             <div className="flex items-stretch w-full" style={{ overflowX: "auto" }}>
-              <div className="flex-1" style={{ minWidth: 160, borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
+              <div style={{ minWidth: 140, width: "28%", borderRight: "1px solid hsl(var(--border) / 0.5)", flexShrink: 0 }}>
                 <ScorePanel />
               </div>
-              <div className="flex-1" style={{ minWidth: 160 }}>
+              <div style={{ minWidth: 180, flex: "1 1 0%", borderRight: showModel ? "1px solid hsl(var(--border) / 0.5)" : undefined }}>
                 <OddsLinesPanel
                 awayBookSpread={awayBookSpread}
                 homeBookSpread={homeBookSpread}
@@ -821,8 +835,26 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                 homeSlug={game.homeTeam}
                 awayDisplayName={awayDisplayName}
                 homeDisplayName={homeDisplayName}
+                showModel={showModel}
+                onToggleModel={toggleModel}
               />
               </div>
+              {showModel && (
+                <div className="flex items-center justify-center px-3 py-2" style={{ minWidth: 130, flex: "0 0 auto" }}>
+                  <EdgeVerdict
+                    spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
+                    spreadEdge={computedSpreadEdge}
+                    totalDiff={isNaN(totalDiff) ? null : totalDiff}
+                    totalEdge={computedTotalEdge}
+                    awayLogoUrl={awayLogoUrl}
+                    homeLogoUrl={homeLogoUrl}
+                    awaySlug={game.awayTeam}
+                    homeSlug={game.homeTeam}
+                    awayDisplayName={awayDisplayName}
+                    homeDisplayName={homeDisplayName}
+                  />
+                </div>
+              )}
             </div>
           )}
 
@@ -875,6 +907,8 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
                 homeSlug={game.homeTeam}
                 awayDisplayName={awayDisplayName}
                 homeDisplayName={homeDisplayName}
+                showModel={showModel}
+                onToggleModel={toggleModel}
               />
                 </div>
               </div>
