@@ -450,4 +450,8 @@
 
 ## Dashboard LIVE+FINAL Sort Order (2026-03-08)
 - [x] When LIVE+FINAL selected: LIVE games first (OT top, then period desc, clock asc), FINAL games after sorted by start time asc
+- [x] Save checkpoint and deliver
+
+## Fix LIVE Sort Always-On (2026-03-08)
+- [x] Apply OT-first LIVE sort in ALL filter states (LIVE only, LIVE+FINAL, ALL), not just LIVE+FINAL
 - [ ] Save checkpoint and deliver

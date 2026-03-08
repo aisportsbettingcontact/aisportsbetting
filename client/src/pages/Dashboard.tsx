@@ -244,64 +244,52 @@ export default function Dashboard() {
     return [-1, 9999];
   };
 
-  // Apply status filter client-side; when ALL (empty set), sort FINAL games to bottom within each date
+  // Unified game comparator — applied in every filter state.
+  // Priority: LIVE > UPCOMING > FINAL (within same status, use sub-sort below)
+  // LIVE sub-sort: OT first, then highest period, then lowest clock (most time elapsed)
+  // FINAL sub-sort: by start time ascending (earliest tip-off first)
+  // UPCOMING sub-sort: by start time ascending
+  const compareGames = (a: NonNullable<typeof allGames>[number], b: NonNullable<typeof allGames>[number]): number => {
+    const aStatus = a?.gameStatus;
+    const bStatus = b?.gameStatus;
+    const statusOrder = (s: string | null | undefined) =>
+      s === 'live' ? 0 : s === 'upcoming' ? 1 : s === 'final' ? 2 : 3;
+    const sSortA = statusOrder(aStatus);
+    const sSortB = statusOrder(bStatus);
+    if (sSortA !== sSortB) return sSortA - sSortB;
+
+    if (aStatus === 'live' && bStatus === 'live') {
+      const [periodA, clockA] = parseLiveSortKey(a?.gameClock ?? null);
+      const [periodB, clockB] = parseLiveSortKey(b?.gameClock ?? null);
+      if (periodA !== periodB) return periodB - periodA; // higher period first
+      return clockA - clockB; // lower clock (less time remaining) first
+    }
+
+    // FINAL and UPCOMING: sort by start time ascending
+    return timeToMinutes(a?.startTimeEst ?? '') - timeToMinutes(b?.startTimeEst ?? '');
+  };
+
+  // Apply status filter client-side; always apply compareGames sort within each date group
   const games = useMemo(() => {
     if (!allGames) return allGames;
-    if (selectedStatuses.size === 0) {
-      // ALL view: keep order but push FINAL games to the bottom within each date group
-      const byDate: Record<string, typeof allGames> = {};
-      for (const g of allGames) {
-        const d = g!.gameDate;
-        if (!byDate[d]) byDate[d] = [];
-        byDate[d]!.push(g);
-      }
-      const result: typeof allGames = [];
-      for (const d of Object.keys(byDate).sort()) {
-        const group = byDate[d]!;
-        const nonFinal = group.filter(g => g?.gameStatus !== 'final');
-        const finals = group.filter(g => g?.gameStatus === 'final');
-        result.push(...nonFinal, ...finals);
-      }
-      return result;
+
+    // Determine the working set
+    const working = selectedStatuses.size === 0
+      ? allGames // ALL: include everything
+      : allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
+
+    // Group by date, sort within each date group, then flatten
+    const byDate: Record<string, NonNullable<typeof allGames>[number][]> = {};
+    for (const g of working) {
+      const d = g!.gameDate;
+      if (!byDate[d]) byDate[d] = [];
+      byDate[d]!.push(g!);
     }
-
-    // Filter to selected statuses
-    const filtered = allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
-
-    // When LIVE + FINAL are both selected (upcoming may or may not also be selected):
-    // Sort LIVE games first (closest to end: OT > high period > low clock), then FINAL (by start time asc)
-    const hasLive = selectedStatuses.has('live');
-    const hasFinal = selectedStatuses.has('final');
-    if (hasLive && hasFinal) {
-      return [...filtered].sort((a, b) => {
-        const aStatus = a?.gameStatus;
-        const bStatus = b?.gameStatus;
-        // LIVE before FINAL; UPCOMING after both
-        const statusOrder = (s: string | null | undefined) =>
-          s === 'live' ? 0 : s === 'final' ? 1 : 2;
-        const sSortA = statusOrder(aStatus);
-        const sSortB = statusOrder(bStatus);
-        if (sSortA !== sSortB) return sSortA - sSortB;
-
-        if (aStatus === 'live' && bStatus === 'live') {
-          // Both live: sort by closeness to end
-          // Higher period rank = closer to end = sort first (ascending by negated rank)
-          const [periodA, clockA] = parseLiveSortKey(a?.gameClock ?? null);
-          const [periodB, clockB] = parseLiveSortKey(b?.gameClock ?? null);
-          if (periodA !== periodB) return periodB - periodA; // higher period first
-          return clockA - clockB; // lower clock (less time left) first
-        }
-
-        if (aStatus === 'final' && bStatus === 'final') {
-          // Both final: sort by start time ascending
-          return timeToMinutes(a?.startTimeEst ?? '') - timeToMinutes(b?.startTimeEst ?? '');
-        }
-
-        return 0;
-      });
+    const result: NonNullable<typeof allGames>[number][] = [];
+    for (const d of Object.keys(byDate).sort()) {
+      result.push(...byDate[d]!.sort(compareGames));
     }
-
-    return filtered;
+    return result;
   }, [allGames, selectedStatuses]);
   const { data: lastRefresh } = trpc.games.lastRefresh.useQuery(undefined, {
     refetchInterval: 60_000,
