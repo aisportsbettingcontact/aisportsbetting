@@ -434,4 +434,8 @@
 ## 30-Second Score Refresh (2026-03-08)
 - [x] Change SCORE_INTERVAL_MS from 5 minutes to 30 seconds in vsinAutoRefresh.ts
 - [x] Update frontend refetchInterval from 5 minutes to 30 seconds in Dashboard
+- [x] Save checkpoint and deliver
+
+## GameCard FINAL Header Score Format (2026-03-08)
+- [x] Update FINAL game header to use AwayLogo AwayScore-HomeScore HomeLogo (same as LIVE)
 - [ ] Save checkpoint and deliver
