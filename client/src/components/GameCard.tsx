@@ -430,13 +430,16 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
   const maxDiff = Math.max(isNaN(spreadDiff) ? 0 : spreadDiff, isNaN(totalDiff) ? 0 : totalDiff);
   const borderColor = getEdgeColor(maxDiff);
 
+  const awayDisplayName = awayNickname || awayName;
+  const homeDisplayName = homeNickname || homeName;
+
   const computedSpreadEdge: string | null = (() => {
     if (isNaN(spreadDiff) || spreadDiff <= 0) return "PASS";
     if (isNaN(awayModelSpread) || isNaN(awayBookSpread)) return game.spreadEdge;
     if (awayModelSpread < awayBookSpread) {
-      return `${awayName} ${spreadSign(awayBookSpread)}`;
+      return `${awayDisplayName} ${spreadSign(awayBookSpread)}`;
     } else {
-      return `${homeName} ${spreadSign(homeBookSpread)}`;
+      return `${homeDisplayName} ${spreadSign(homeBookSpread)}`;
     }
   })();
 
