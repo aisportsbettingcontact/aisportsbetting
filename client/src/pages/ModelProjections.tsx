@@ -141,6 +141,42 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   );
 }
 
+// ─── Stable sort helpers (defined outside component to avoid infinite useMemo loops) ───
+const parseLiveSortKey = (gameClock: string | null): [number, number] => {
+  if (!gameClock) return [-1, 9999];
+  const upper = gameClock.trim().toUpperCase();
+  if (upper === "HALF" || upper === "HALFTIME") return [2, 0];
+  const bareOtMatch = upper.match(/^(\d*)OT$/);
+  if (bareOtMatch) { const otNum = bareOtMatch[1] ? parseInt(bareOtMatch[1]) : 1; return [50 + otNum, 0]; }
+  const clockOtMatch = upper.match(/^(\d{1,2}):(\d{2})\s+(\d*)OT$/);
+  if (clockOtMatch) {
+    const mins = parseInt(clockOtMatch[1]!); const secs = parseInt(clockOtMatch[2]!);
+    const otNum = clockOtMatch[3] ? parseInt(clockOtMatch[3]) : 1;
+    return [50 + otNum, mins * 60 + secs];
+  }
+  const clockMatch = upper.match(/^(\d{1,2}):(\d{2})\s+(\d+)(ST|ND|RD|TH)?$/);
+  if (clockMatch) {
+    const mins = parseInt(clockMatch[1]!); const secs = parseInt(clockMatch[2]!);
+    const period = parseInt(clockMatch[3]!);
+    return [period, mins * 60 + secs];
+  }
+  return [-1, 9999];
+};
+
+type AnyGame = { gameStatus?: string | null; gameClock?: string | null; startTimeEst?: string | null };
+const compareGames = (a: AnyGame, b: AnyGame): number => {
+  const statusOrder = (s: string | null | undefined) => s === "live" ? 0 : s === "upcoming" ? 1 : s === "final" ? 2 : 3;
+  const sSortA = statusOrder(a?.gameStatus); const sSortB = statusOrder(b?.gameStatus);
+  if (sSortA !== sSortB) return sSortA - sSortB;
+  if (a?.gameStatus === "live" && b?.gameStatus === "live") {
+    const [periodA, clockA] = parseLiveSortKey(a?.gameClock ?? null);
+    const [periodB, clockB] = parseLiveSortKey(b?.gameClock ?? null);
+    if (periodA !== periodB) return periodB - periodA;
+    return clockA - clockB;
+  }
+  return sortableMinutes(a?.startTimeEst) - sortableMinutes(b?.startTimeEst);
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function ModelProjections() {
@@ -219,40 +255,6 @@ export default function ModelProjections() {
       if (next.size === 3) return new Set();
       return next;
     });
-  };
-
-  const parseLiveSortKey = (gameClock: string | null): [number, number] => {
-    if (!gameClock) return [-1, 9999];
-    const upper = gameClock.trim().toUpperCase();
-    if (upper === "HALF" || upper === "HALFTIME") return [2, 0];
-    const bareOtMatch = upper.match(/^(\d*)OT$/);
-    if (bareOtMatch) { const otNum = bareOtMatch[1] ? parseInt(bareOtMatch[1]) : 1; return [50 + otNum, 0]; }
-    const clockOtMatch = upper.match(/^(\d{1,2}):(\d{2})\s+(\d*)OT$/);
-    if (clockOtMatch) {
-      const mins = parseInt(clockOtMatch[1]!); const secs = parseInt(clockOtMatch[2]!);
-      const otNum = clockOtMatch[3] ? parseInt(clockOtMatch[3]) : 1;
-      return [50 + otNum, mins * 60 + secs];
-    }
-    const clockMatch = upper.match(/^(\d{1,2}):(\d{2})\s+(\d+)(ST|ND|RD|TH)?$/);
-    if (clockMatch) {
-      const mins = parseInt(clockMatch[1]!); const secs = parseInt(clockMatch[2]!);
-      const period = parseInt(clockMatch[3]!);
-      return [period, mins * 60 + secs];
-    }
-    return [-1, 9999];
-  };
-
-  const compareGames = (a: NonNullable<typeof allGames>[number], b: NonNullable<typeof allGames>[number]): number => {
-    const statusOrder = (s: string | null | undefined) => s === "live" ? 0 : s === "upcoming" ? 1 : s === "final" ? 2 : 3;
-    const sSortA = statusOrder(a?.gameStatus); const sSortB = statusOrder(b?.gameStatus);
-    if (sSortA !== sSortB) return sSortA - sSortB;
-    if (a?.gameStatus === "live" && b?.gameStatus === "live") {
-      const [periodA, clockA] = parseLiveSortKey(a?.gameClock ?? null);
-      const [periodB, clockB] = parseLiveSortKey(b?.gameClock ?? null);
-      if (periodA !== periodB) return periodB - periodA;
-      return clockA - clockB;
-    }
-    return sortableMinutes(a?.startTimeEst) - sortableMinutes(b?.startTimeEst);
   };
 
   // All unique dates available for the current sport (sorted ascending)
