@@ -170,6 +170,8 @@ export const nbaTeams = mysqlTable("nba_teams", {
   division: varchar("division", { length: 64 }).notNull(),
   /** NBA.com CDN SVG logo URL */
   logoUrl: text("logoUrl").notNull(),
+  /** Standard NBA abbreviation, e.g. "BOS", "LAL", "GSW" */
+  abbrev: varchar("abbrev", { length: 8 }),
   /** Primary brand hex color, e.g. "#007A33" */
   primaryColor: varchar("primaryColor", { length: 16 }),
   /** Secondary brand hex color */

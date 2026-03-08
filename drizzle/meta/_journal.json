@@ -141,6 +141,13 @@
       "when": 1772944916309,
       "tag": "0019_true_james_howlett",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "5",
+      "when": 1772945315419,
+      "tag": "0020_faithful_deathbird",
+      "breakpoints": true
     }
   ]
 }

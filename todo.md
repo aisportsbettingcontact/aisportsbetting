@@ -547,3 +547,10 @@
 - [x] Bulk-upsert all abbreviations from provided list (match by vsinName/ncaaName)
 - [x] Verified: 365/365 teams matched and updated (0 unmatched)
 - [x] Save checkpoint and deliver
+
+## Add NBA Team Abbreviations to DB (2026-03-08)
+- [x] Add abbrev column to nba_teams schema
+- [x] Run db:push migration (0020_faithful_deathbird.sql)
+- [x] Seed all 30 NBA abbreviations
+- [x] Verified: 30/30 teams matched (0 unmatched)
+- [ ] Save checkpoint and deliver

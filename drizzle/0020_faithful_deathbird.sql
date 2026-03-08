@@ -1,0 +1,1 @@
+ALTER TABLE `nba_teams` ADD `abbrev` varchar(8);
