@@ -616,9 +616,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   // Score sits immediately after the team name, not pushed to the far right.
   // For upcoming games: shows start time instead of scores.
   const ScorePanel = () => (
-    <div className="flex flex-col h-full pl-2 pr-1 py-1.5 min-w-0" style={{ minWidth: 0 }}>
+    <div className="flex flex-col pl-2 pr-1 pt-0 pb-0 min-w-0" style={{ minWidth: 0 }}>
       {/* Status row: clock / LIVE badge / FINAL / start time — mirrors OddsLinesPanel header height */}
-      <div className="flex items-center gap-1.5 mb-1">
+      <div className="flex items-center gap-1.5 mb-0.5">
         {isLive ? (
           <>
             <span
@@ -648,11 +648,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
       </div>
 
-      {/* Spacer — keeps team rows close to start time while maintaining rough alignment */}
-      <div style={{ height: 6 }} />
-
-      {/* Away team row — py-3 mirrors OddsLinesPanel away row height */}
-      <div className="flex items-center justify-between gap-2 py-3 w-full">
+      {/* Away team row — py-2 mirrors OddsLinesPanel away row height */}
+      <div className="flex items-center justify-between gap-2 py-2 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={30} />
@@ -699,8 +696,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       {/* Divider — mirrors OddsLinesPanel divider */}
       <div style={{ height: 1, background: "hsl(var(--border) / 0.4)" }} />
 
-      {/* Home team row — py-3 mirrors OddsLinesPanel home row height */}
-      <div className="flex items-center justify-between gap-2 py-3 w-full">
+      {/* Home team row — py-2 mirrors OddsLinesPanel home row height */}
+      <div className="flex items-center justify-between gap-2 py-2 w-full">
         {/* Left: logo + name/nickname */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={30} />
