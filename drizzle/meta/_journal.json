@@ -134,6 +134,13 @@
       "when": 1772927119743,
       "tag": "0018_mixed_wendigo",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "5",
+      "when": 1772944916309,
+      "tag": "0019_true_james_howlett",
+      "breakpoints": true
     }
   ]
 }

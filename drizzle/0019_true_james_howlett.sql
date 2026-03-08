@@ -1,0 +1,1 @@
+ALTER TABLE `ncaam_teams` ADD `abbrev` varchar(16);

@@ -539,4 +539,11 @@
 - [x] Parse td[7] (ML lines), td[8] (ML tickets), td[9] (ML handle) in vsinScraper.ts
 - [x] Confirmed vsinAutoRefresh.ts already writes ML fields to DB on upsert
 - [x] Remove isNba guard from BettingSplitsPanel — ML column shows for any sport with data
+- [x] Save checkpoint and deliver
+
+## Add NCAAM Team Abbreviations to DB (2026-03-08)
+- [x] Add abbrev column to ncaam_teams schema
+- [x] Run db:push migration (0019_true_james_howlett.sql)
+- [x] Bulk-upsert all abbreviations from provided list (match by vsinName/ncaaName)
+- [x] Verified: 365/365 teams matched and updated (0 unmatched)
 - [ ] Save checkpoint and deliver
