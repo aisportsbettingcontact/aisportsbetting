@@ -318,12 +318,10 @@ function OddsLinesPanel({
   return (
     <div className="flex flex-col h-full pl-2 pr-0 py-1.5 min-w-0">
       {/* Header: ODDS/LINES title */}
-      <div className="flex items-center gap-2 mb-1">
-        <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
+      <div className="flex items-center mb-1">
         <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#d3d3d3', opacity: 0.7 }}>
           Odds/Lines
         </span>
-        <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
       </div>
 
       {/* Top-level column group headers: SPREAD | TOTAL | MONEYLINE */}
