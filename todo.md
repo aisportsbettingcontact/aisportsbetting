@@ -708,3 +708,8 @@
 ## BettingSplitsPanel Redesign
 
 - [x] Redesign BettingSplitsPanel: maximized padding, centering, spacing, large values, clear labels
+
+## BettingSplitsPanel Readability Fix
+
+- [x] Fix GameCard splits-mode: give splits panel more width (score narrower)
+- [x] Fix BettingSplitsPanel: full-width bars, no-wrap labels, readable at any width

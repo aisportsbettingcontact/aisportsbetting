@@ -1,13 +1,14 @@
 /*
- * BettingSplitsPanel — Redesigned for maximum readability
+ * BettingSplitsPanel
  *
- * Layout: 3 equal columns side-by-side (SPREAD | TOTAL | MONEYLINE)
- * Each column:
- *   - Market title (centered, bold, spaced)
- *   - Side labels (team abbr + line value, centered)
- *   - TICKETS bar (tall, full-width, large %)
- *   - HANDLE bar  (tall, full-width, large %)
- *   - Generous padding/spacing throughout
+ * Mobile  (< lg): 3 markets stacked vertically — each gets full-width bars
+ * Desktop (≥ lg): 3 markets side-by-side in equal columns
+ *
+ * Each market shows:
+ *   MARKET TITLE  (centered, bold)
+ *   Side labels   (away left / home right, or OVER · value · UNDER)
+ *   TICKETS bar   (full-width, 30px tall)
+ *   HANDLE bar    (full-width, 30px tall)
  */
 
 import { trpc } from "@/lib/trpc";
@@ -55,9 +56,7 @@ function isUnusableBarColor(hex: string | null | undefined): boolean {
   if (!hex) return false;
   const clean = hex.replace(/^#/, "");
   if (clean.length !== 6 && clean.length !== 3) return false;
-  const full = clean.length === 3
-    ? clean.split("").map(c => c + c).join("")
-    : clean;
+  const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
   const r = parseInt(full.slice(0, 2), 16) / 255;
   const g = parseInt(full.slice(2, 4), 16) / 255;
   const b = parseInt(full.slice(4, 6), 16) / 255;
@@ -69,27 +68,18 @@ function areColorsTooSimilar(hexA: string, hexB: string, threshold = 60): boolea
   const toRgb = (hex: string) => {
     const clean = hex.replace(/^#/, "");
     const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
-    return [
-      parseInt(full.slice(0, 2), 16),
-      parseInt(full.slice(2, 4), 16),
-      parseInt(full.slice(4, 6), 16),
-    ];
+    return [parseInt(full.slice(0, 2), 16), parseInt(full.slice(2, 4), 16), parseInt(full.slice(4, 6), 16)];
   };
   try {
     const [r1, g1, b1] = toRgb(hexA);
     const [r2, g2, b2] = toRgb(hexB);
-    const dist = Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
-    return dist < threshold;
-  } catch {
-    return false;
-  }
+    return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2) < threshold;
+  } catch { return false; }
 }
 
 function relativeLuminance(hex: string): number {
   const clean = hex.replace(/^#/, "");
-  const full = clean.length === 3
-    ? clean.split("").map(c => c + c).join("")
-    : clean;
+  const full = clean.length === 3 ? clean.split("").map(c => c + c).join("") : clean;
   const toLinear = (c: number) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
   const r = toLinear(parseInt(full.slice(0, 2), 16) / 255);
   const g = toLinear(parseInt(full.slice(2, 4), 16) / 255);
@@ -100,9 +90,7 @@ function relativeLuminance(hex: string): number {
 function bestTextColor(hex: string | null | undefined): string {
   if (!hex || !/^#[0-9a-fA-F]{3,6}$/.test(hex)) return "#ffffff";
   const bgLum = relativeLuminance(hex);
-  const contrastWithWhite = (1 + 0.05) / (bgLum + 0.05);
-  const contrastWithBlack = (bgLum + 0.05) / (0 + 0.05);
-  return contrastWithBlack > contrastWithWhite ? "#000000" : "#ffffff";
+  return (bgLum + 0.05) / 0.05 > 1.05 / (bgLum + 0.05) ? "#000000" : "#ffffff";
 }
 
 function pickBarColor(
@@ -134,14 +122,12 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
 
   return (
     <div className="flex flex-col gap-1 w-full">
-      {/* Bar label */}
       <span
         className="text-center uppercase tracking-widest font-bold"
-        style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", letterSpacing: "0.12em" }}
+        style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", letterSpacing: "0.12em" }}
       >
         {label}
       </span>
-
       {hasData ? (
         <div
           className="relative w-full rounded-full overflow-hidden"
@@ -152,39 +138,30 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
             boxSizing: "border-box",
           }}
         >
-          {/* Away side */}
           <div
             className="flex items-center justify-start pl-2 transition-all duration-700"
             style={{
               width: `${awayPct}%`,
               background: awayColor,
-              minWidth: awayPct! > 0 ? 32 : 0,
+              minWidth: awayPct! > 0 ? 36 : 0,
               borderRadius: awayPct! >= 100 ? "9999px" : "9999px 0 0 9999px",
             }}
           >
-            <span
-              className="font-extrabold tabular-nums leading-none"
-              style={{ fontSize: 12, color: awayTextColor }}
-            >
+            <span className="font-extrabold tabular-nums leading-none" style={{ fontSize: 13, color: awayTextColor }}>
               {awayPct}%
             </span>
           </div>
-          {/* Divider */}
           <div style={{ width: 1.5, background: "rgba(255,255,255,0.3)", flexShrink: 0, alignSelf: "stretch" }} />
-          {/* Home side */}
           <div
             className="flex items-center justify-end pr-2 transition-all duration-700"
             style={{
               width: `${homePct}%`,
               background: homeColor,
-              minWidth: homePct! > 0 ? 32 : 0,
+              minWidth: homePct! > 0 ? 36 : 0,
               borderRadius: homePct! >= 100 ? "9999px" : "0 9999px 9999px 0",
             }}
           >
-            <span
-              className="font-extrabold tabular-nums leading-none"
-              style={{ fontSize: 12, color: homeTextColor }}
-            >
+            <span className="font-extrabold tabular-nums leading-none" style={{ fontSize: 13, color: homeTextColor }}>
               {homePct}%
             </span>
           </div>
@@ -201,9 +178,10 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
   );
 }
 
-// ── MarketColumn ──────────────────────────────────────────────────────────────
+// ── MarketBlock ───────────────────────────────────────────────────────────────
+// One market section: title + labels + two full-width bars
 
-interface MarketColumnProps {
+interface MarketBlockProps {
   title: string;
   awayLabel: string;
   homeLabel: string;
@@ -214,7 +192,7 @@ interface MarketColumnProps {
   homeColor: string;
 }
 
-function MarketColumn({ title, awayLabel, homeLabel, totalValue, ticketsPct, handlePct, awayColor, homeColor }: MarketColumnProps) {
+function MarketBlock({ title, awayLabel, homeLabel, totalValue, ticketsPct, handlePct, awayColor, homeColor }: MarketBlockProps) {
   const hasTickets = ticketsPct != null;
   const hasHandle  = handlePct  != null;
   if (!hasTickets && !hasHandle) return null;
@@ -223,19 +201,15 @@ function MarketColumn({ title, awayLabel, homeLabel, totalValue, ticketsPct, han
   const homeTickets = hasTickets ? 100 - ticketsPct! : null;
   const awayHandle  = hasHandle  ? handlePct!  : null;
   const homeHandle  = hasHandle  ? 100 - handlePct!  : null;
-
   const isTotalMarket = totalValue !== undefined && !isNaN(totalValue);
 
   return (
-    <div
-      className="flex flex-col flex-1 min-w-0"
-      style={{ padding: "12px 10px", gap: 10 }}
-    >
-      {/* Market title — centered with flanking rules */}
+    <div className="flex flex-col w-full" style={{ gap: 8, padding: "10px 12px" }}>
+      {/* Market title */}
       <div className="flex items-center gap-2">
         <div className="flex-1" style={{ height: 1, background: "rgba(255,255,255,0.08)" }} />
         <span
-          className="uppercase tracking-widest font-extrabold whitespace-nowrap text-center"
+          className="uppercase tracking-widest font-extrabold whitespace-nowrap"
           style={{ fontSize: 11, color: "#ffffff", letterSpacing: "0.14em" }}
         >
           {title}
@@ -246,50 +220,24 @@ function MarketColumn({ title, awayLabel, homeLabel, totalValue, ticketsPct, han
       {/* Side labels */}
       {isTotalMarket ? (
         <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 600, letterSpacing: "0.06em" }}>
-            OVER
-          </span>
-          <span style={{ fontSize: 13, color: "#ffffff", fontWeight: 700, letterSpacing: "0.04em" }}>
-            {totalValue}
-          </span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 600, letterSpacing: "0.06em" }}>
-            UNDER
-          </span>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600, letterSpacing: "0.06em" }}>OVER</span>
+          <span style={{ fontSize: 14, color: "#ffffff", fontWeight: 700 }}>{totalValue}</span>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600, letterSpacing: "0.06em" }}>UNDER</span>
         </div>
       ) : (
-        <div className="flex items-start justify-between" style={{ paddingLeft: 2, paddingRight: 2, gap: 4 }}>
-          <span
-            className="uppercase leading-tight"
-            style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 600, maxWidth: "48%", wordBreak: "break-word", letterSpacing: "0.04em" }}
-          >
+        <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
+          <span className="uppercase truncate" style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600, maxWidth: "48%", letterSpacing: "0.04em" }}>
             {awayLabel}
           </span>
-          <span
-            className="uppercase leading-tight text-right"
-            style={{ fontSize: 11, color: "rgba(255,255,255,0.75)", fontWeight: 600, maxWidth: "48%", wordBreak: "break-word", letterSpacing: "0.04em" }}
-          >
+          <span className="uppercase truncate text-right" style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", fontWeight: 600, maxWidth: "48%", letterSpacing: "0.04em" }}>
             {homeLabel}
           </span>
         </div>
       )}
 
-      {/* Tickets bar */}
-      <SplitBar
-        label="Tickets"
-        awayPct={awayTickets}
-        homePct={homeTickets}
-        awayColor={awayColor}
-        homeColor={homeColor}
-      />
-
-      {/* Handle bar */}
-      <SplitBar
-        label="Handle"
-        awayPct={awayHandle}
-        homePct={homeHandle}
-        awayColor={awayColor}
-        homeColor={homeColor}
-      />
+      {/* Bars */}
+      <SplitBar label="Tickets" awayPct={awayTickets} homePct={homeTickets} awayColor={awayColor} homeColor={homeColor} />
+      <SplitBar label="Handle"  awayPct={awayHandle}  homePct={homeHandle}  awayColor={awayColor} homeColor={homeColor} />
     </div>
   );
 }
@@ -336,27 +284,19 @@ export function BettingSplitsPanel({
   const awayAbbr = colors?.away?.abbrev ?? awayLabel;
   const homeAbbr = colors?.home?.abbrev ?? homeLabel;
 
-  const awaySpreadLabel = !isNaN(awaySpread)
-    ? `${awayAbbr} (${spreadSign(awaySpread)})`
-    : awayAbbr;
-  const homeSpreadLabel = !isNaN(homeSpread)
-    ? `${homeAbbr} (${spreadSign(homeSpread)})`
-    : homeAbbr;
-
-  const awayMlLabel = game.awayML ? `${awayAbbr} (${game.awayML})` : awayAbbr;
-  const homeMlLabel = game.homeML ? `${homeAbbr} (${game.homeML})` : homeAbbr;
+  const awaySpreadLabel = !isNaN(awaySpread) ? `${awayAbbr} (${spreadSign(awaySpread)})` : awayAbbr;
+  const homeSpreadLabel = !isNaN(homeSpread) ? `${homeAbbr} (${spreadSign(homeSpread)})` : homeAbbr;
+  const awayMlLabel     = game.awayML ? `${awayAbbr} (${game.awayML})` : awayAbbr;
+  const homeMlLabel     = game.homeML ? `${homeAbbr} (${game.homeML})` : homeAbbr;
 
   const hasSpreadSplits = game.spreadAwayMoneyPct != null || game.spreadAwayBetsPct != null;
   const hasTotalSplits  = game.totalOverMoneyPct  != null || game.totalOverBetsPct  != null;
-  const hasMlSplits     = (game.mlAwayMoneyPct != null || game.mlAwayBetsPct != null || game.awayML != null);
+  const hasMlSplits     = game.mlAwayMoneyPct != null || game.mlAwayBetsPct != null || game.awayML != null;
   const hasAnySplits    = hasSpreadSplits || hasTotalSplits || hasMlSplits;
 
   if (!hasAnySplits) {
     return (
-      <div
-        className="w-full flex items-center justify-center"
-        style={{ minHeight: 80, padding: "16px 12px" }}
-      >
+      <div className="w-full flex items-center justify-center" style={{ minHeight: 80, padding: "16px 12px" }}>
         <span style={{ fontSize: 11, color: "hsl(var(--muted-foreground))", opacity: 0.4, letterSpacing: "0.06em" }}>
           Splits not yet available
         </span>
@@ -364,60 +304,72 @@ export function BettingSplitsPanel({
     );
   }
 
+  const spreadBlock = hasSpreadSplits ? (
+    <MarketBlock
+      title="Spread"
+      awayLabel={awaySpreadLabel}
+      homeLabel={homeSpreadLabel}
+      ticketsPct={game.spreadAwayBetsPct}
+      handlePct={game.spreadAwayMoneyPct}
+      awayColor={awayColor}
+      homeColor={homeColor}
+    />
+  ) : null;
+
+  const totalBlock = hasTotalSplits ? (
+    <MarketBlock
+      title="Total"
+      awayLabel=""
+      homeLabel=""
+      totalValue={isNaN(bookTotal) ? undefined : bookTotal}
+      ticketsPct={game.totalOverBetsPct}
+      handlePct={game.totalOverMoneyPct}
+      awayColor={awayColor}
+      homeColor={homeColor}
+    />
+  ) : null;
+
+  const mlBlock = hasMlSplits ? (
+    <MarketBlock
+      title="Moneyline"
+      awayLabel={awayMlLabel}
+      homeLabel={homeMlLabel}
+      ticketsPct={game.mlAwayBetsPct}
+      handlePct={game.mlAwayMoneyPct}
+      awayColor={awayColor}
+      homeColor={homeColor}
+    />
+  ) : null;
+
   return (
-    <div
-      className="flex items-stretch w-full"
-      style={{ minHeight: 0 }}
-    >
-      {/* SPREAD */}
-      {hasSpreadSplits && (
-        <MarketColumn
-          title="Spread"
-          awayLabel={awaySpreadLabel}
-          homeLabel={homeSpreadLabel}
-          ticketsPct={game.spreadAwayBetsPct}
-          handlePct={game.spreadAwayMoneyPct}
-          awayColor={awayColor}
-          homeColor={homeColor}
-        />
-      )}
+    <>
+      {/* ── Mobile (< lg): vertical stack — each market full width ── */}
+      <div className="flex flex-col w-full lg:hidden" style={{ gap: 0 }}>
+        {spreadBlock && <>{spreadBlock}<div style={{ height: 1, background: "rgba(255,255,255,0.07)" }} /></>}
+        {totalBlock  && <>{totalBlock} <div style={{ height: 1, background: "rgba(255,255,255,0.07)" }} /></>}
+        {mlBlock}
+      </div>
 
-      {/* Divider */}
-      {hasSpreadSplits && (hasTotalSplits || hasMlSplits) && (
-        <div style={{ width: 1, background: "rgba(255,255,255,0.07)", flexShrink: 0, alignSelf: "stretch", margin: "8px 0" }} />
-      )}
-
-      {/* TOTAL */}
-      {hasTotalSplits && (
-        <MarketColumn
-          title="Total"
-          awayLabel=""
-          homeLabel=""
-          totalValue={isNaN(bookTotal) ? undefined : bookTotal}
-          ticketsPct={game.totalOverBetsPct}
-          handlePct={game.totalOverMoneyPct}
-          awayColor={awayColor}
-          homeColor={homeColor}
-        />
-      )}
-
-      {/* Divider */}
-      {hasTotalSplits && hasMlSplits && (
-        <div style={{ width: 1, background: "rgba(255,255,255,0.07)", flexShrink: 0, alignSelf: "stretch", margin: "8px 0" }} />
-      )}
-
-      {/* MONEYLINE */}
-      {hasMlSplits && (
-        <MarketColumn
-          title="Moneyline"
-          awayLabel={awayMlLabel}
-          homeLabel={homeMlLabel}
-          ticketsPct={game.mlAwayBetsPct}
-          handlePct={game.mlAwayMoneyPct}
-          awayColor={awayColor}
-          homeColor={homeColor}
-        />
-      )}
-    </div>
+      {/* ── Desktop (≥ lg): horizontal 3-column layout ── */}
+      <div className="hidden lg:flex items-stretch w-full">
+        {spreadBlock && (
+          <>
+            <div className="flex-1 min-w-0">{spreadBlock}</div>
+            {(hasTotalSplits || hasMlSplits) && (
+              <div style={{ width: 1, background: "rgba(255,255,255,0.07)", flexShrink: 0, alignSelf: "stretch", margin: "8px 0" }} />
+            )}
+          </>
+        )}
+        {totalBlock && (
+          <>
+            <div className="flex-1 min-w-0">{totalBlock}</div>
+            {hasMlSplits && (
+              <div style={{ width: 1, background: "rgba(255,255,255,0.07)", flexShrink: 0, alignSelf: "stretch", margin: "8px 0" }} />
+            )}
+          </>
+        )}
+        {mlBlock && <div className="flex-1 min-w-0">{mlBlock}</div>}
+      </div>
+    </>
   );
 }

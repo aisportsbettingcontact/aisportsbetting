@@ -503,6 +503,57 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
   };
 
   // ── Score Panel ─────────────────────────────────────────────────────────────
+  // Compact score panel for splits mode — logo + abbrev only, score below
+  const CompactScorePanel = () => (
+    <div className="flex flex-col justify-center h-full px-2 py-3 gap-2" style={{ minWidth: 0 }}>
+      {/* Status */}
+      <div className="flex items-center gap-1 mb-1">
+        {isLive ? (
+          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide" style={{ background: "rgba(239,68,68,0.18)", color: "#ef4444" }}>
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: "#ef4444" }} />
+            LIVE
+          </span>
+        ) : isFinal ? (
+          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide" style={{ background: "rgba(255,255,255,0.07)", color: "hsl(var(--muted-foreground))" }}>FINAL</span>
+        ) : (
+          <span className="text-[10px] font-bold" style={{ color: "hsl(var(--muted-foreground))" }}>{time}</span>
+        )}
+        {isLive && game.gameClock && (
+          <span className="text-[9px] tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>{game.gameClock}</span>
+        )}
+      </div>
+      {/* Away row */}
+      <div className="flex items-center justify-between gap-1 w-full">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={22} />
+          <span className="font-bold truncate" style={{ fontSize: 11, color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))", fontWeight: awayWins ? 800 : 600 }}>
+            {awayNickname || awayName}
+          </span>
+        </div>
+        {(isLive || isFinal) && hasScores && (
+          <span className="tabular-nums font-black flex-shrink-0" style={{ fontSize: 20, lineHeight: 1, color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))" }}>
+            {game.awayScore}
+          </span>
+        )}
+      </div>
+      <div style={{ height: 1, background: "hsl(var(--border) / 0.4)" }} />
+      {/* Home row */}
+      <div className="flex items-center justify-between gap-1 w-full">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={22} />
+          <span className="font-bold truncate" style={{ fontSize: 11, color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))", fontWeight: homeWins ? 800 : 600 }}>
+            {homeNickname || homeName}
+          </span>
+        </div>
+        {(isLive || isFinal) && hasScores && (
+          <span className="tabular-nums font-black flex-shrink-0" style={{ fontSize: 20, lineHeight: 1, color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))" }}>
+            {game.homeScore}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+
   // Shows: game clock/status at top, then two team rows (logo + name + score)
   // Score sits immediately after the team name, not pushed to the far right.
   // For upcoming games: shows start time instead of scores.
@@ -888,13 +939,15 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
             </div>
           )}
 
-          {/* Splits mode: Score (left) + Splits (right) side-by-side */}
+          {/* Splits mode: CompactScore (fixed narrow left) + Splits (flex-1 right) */}
           {mode === "splits" && (
-            <div className="flex items-stretch w-full" style={{ overflowX: "auto" }}>
-              <div className="flex-1" style={{ minWidth: 160, borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
-                <ScorePanel />
+            <div className="flex items-stretch w-full">
+              {/* Compact score: fixed 130px so splits get the majority of space */}
+              <div style={{ width: 130, minWidth: 130, flexShrink: 0, borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
+                <CompactScorePanel />
               </div>
-              <div className="flex-1" style={{ minWidth: 160 }}>
+              {/* Splits: takes all remaining width */}
+              <div className="flex-1 min-w-0">
                 <BettingSplitsPanel
                   game={game}
                   awayLabel={awayName}
