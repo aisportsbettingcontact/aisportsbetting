@@ -122,13 +122,14 @@ function TeamLogo({ slug, name, logoUrl, size = 36 }: { slug: string; name: stri
 }
 
 // ── VerdictSide ───────────────────────────────────────────────────────────────
-function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName }: {
+function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName, compact = false }: {
   diff: number | null;
   label: string | null;
   isStrong: boolean;
   logoUrl?: string;
   teamSlug?: string;
   teamName?: string;
+  compact?: boolean;
 }) {
   const normalized = normalizeEdgeLabel(label);
   const isPass = normalized === "PASS" || (diff ?? 0) <= 0;
@@ -139,6 +140,25 @@ function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName }: {
       <div className="flex flex-col items-center gap-0.5 py-0.5">
         <span className="text-[11px] font-medium tracking-wide" style={{ color: "hsl(var(--muted-foreground) / 0.35)" }}>
           PASS
+        </span>
+      </div>
+    );
+  }
+
+  if (compact) {
+    // Compact inline version: logo + name + edge pts all on one line
+    const showArrow = (diff ?? 0) >= 3;
+    return (
+      <div className="flex items-center gap-1 px-2 py-1">
+        {(logoUrl || teamSlug) && (
+          <TeamLogo slug={teamSlug ?? ""} name={teamName ?? ""} logoUrl={logoUrl} size={16} />
+        )}
+        <span className="font-bold leading-none whitespace-nowrap uppercase tracking-wide text-[11px]" style={{ color: "hsl(var(--foreground))" }}>
+          {showArrow && <span className="mr-0.5 text-[9px]" style={{ color }}>▲</span>}
+          {normalized}
+        </span>
+        <span className="text-[10px] leading-none" style={{ color: "hsl(var(--muted-foreground))", fontWeight: 500 }}>
+          <span style={{ color, fontWeight: 800 }}>{diff}{diff === 1 ? "PT" : "PTS"}</span>
         </span>
       </div>
     );
@@ -170,12 +190,14 @@ function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName }: {
 function EdgeVerdict({
   spreadDiff, spreadEdge, totalDiff, totalEdge,
   awayLogoUrl, homeLogoUrl, awaySlug, homeSlug, awayDisplayName, homeDisplayName,
+  compact = false,
 }: {
   spreadDiff: number | null; spreadEdge: string | null;
   totalDiff: number | null; totalEdge: string | null;
   awayLogoUrl?: string; homeLogoUrl?: string;
   awaySlug?: string; homeSlug?: string;
   awayDisplayName?: string; homeDisplayName?: string;
+  compact?: boolean;
 }) {
   const spreadPass = normalizeEdgeLabel(spreadEdge) === "PASS" || (spreadDiff ?? 0) <= 0;
   const totalPass  = normalizeEdgeLabel(totalEdge)  === "PASS" || (totalDiff ?? 0)  <= 0;
@@ -200,6 +222,31 @@ function EdgeVerdict({
   const spreadLogoUrl = spreadEdgeIsAway ? awayLogoUrl : homeLogoUrl;
   const spreadSlug = spreadEdgeIsAway ? awaySlug : homeSlug;
   const spreadTeamName = spreadEdgeIsAway ? awayDisplayName : homeDisplayName;
+
+  if (compact) {
+    // Compact horizontal layout: spread edge | divider | total edge, all on one row
+    return (
+      <div className="flex items-center justify-center gap-0 w-full">
+        {!spreadPass && (
+          <VerdictSide
+            diff={spreadDiff}
+            label={spreadEdge}
+            isStrong={spreadIsStronger && !spreadPass}
+            logoUrl={spreadLogoUrl}
+            teamSlug={spreadSlug}
+            teamName={spreadTeamName}
+            compact
+          />
+        )}
+        {!spreadPass && !totalPass && (
+          <div style={{ width: 1, height: 24, background: "hsl(var(--border) / 0.5)", flexShrink: 0 }} />
+        )}
+        {!totalPass && (
+          <VerdictSide diff={totalDiff} label={totalEdge} isStrong={!spreadIsStronger && !totalPass} compact />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mt-2 pt-2 flex flex-col gap-2" style={{ borderTop: "1px solid hsl(var(--border))" }}>
@@ -812,11 +859,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   />
                 </div>
               </div>
-              {/* Row 2: EdgeVerdict — full width below the table, only when model is on */}
+              {/* Row 2: EdgeVerdict — compact horizontal row below the table */}
               {showModel && (
                 <div
-                  className="flex items-center justify-center w-full px-3 py-2"
-                  style={{ borderTop: "1px solid hsl(var(--border) / 0.5)" }}
+                  className="flex items-center justify-center w-full px-2 py-1"
+                  style={{ borderTop: "1px solid hsl(var(--border) / 0.5)", minHeight: 32 }}
                 >
                   <EdgeVerdict
                     spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
@@ -829,6 +876,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     homeSlug={game.homeTeam}
                     awayDisplayName={awayDisplayName}
                     homeDisplayName={homeDisplayName}
+                    compact
                   />
                 </div>
               )}
