@@ -438,4 +438,8 @@
 
 ## GameCard FINAL Header Score Format (2026-03-08)
 - [x] Update FINAL game header to use AwayLogo AwayScore-HomeScore HomeLogo (same as LIVE)
+- [x] Save checkpoint and deliver
+
+## Fix HTTP 414 Request-URI Too Large (2026-03-08)
+- [x] Switch tRPC httpBatchLink to use POST method override to prevent 414 on large batches
 - [ ] Save checkpoint and deliver
