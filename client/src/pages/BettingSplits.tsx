@@ -448,6 +448,19 @@ export default function BettingSplitsPage() {
             </div>
           )}
         </div>
+
+        {/* Row 4: Date header — shown when games are loaded */}
+        {!gamesLoading && sortedDates.length > 0 && (
+          <div className="flex items-center px-4 py-1 border-b border-border bg-background/95">
+            <div className="flex-1" />
+            <div className="flex items-center gap-2 whitespace-nowrap">
+              <span className="font-bold text-foreground tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)" }}>{formatDateHeader(selectedDate)}</span>
+              <span className="text-muted-foreground/40" style={{ fontSize: "10px" }}>·</span>
+              <span className="font-semibold hidden sm:inline" style={{ color: "#a3a3a3", letterSpacing: "0.06em", fontSize: "clamp(10px, 1.8vw, 12px)" }}>{selectedSport === "NCAAM" ? "Men's College Basketball" : "NBA"}</span>
+            </div>
+            <div className="flex-1" />
+          </div>
+        )}
       </header>
 
       {/* ── Main Feed ── */}
@@ -470,15 +483,6 @@ export default function BettingSplitsPage() {
         ) : (
           sortedDates.map((date) => (
             <div key={date}>
-              <div className="flex items-center px-4 py-1 border-b border-border sticky bg-background/95 backdrop-blur-sm z-10" style={{ top: headerHeight }}>
-                <div className="flex-1" />
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <span className="font-bold text-foreground tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)" }}>{formatDateHeader(date)}</span>
-                  <span className="text-muted-foreground/40" style={{ fontSize: "10px" }}>·</span>
-                  <span className="font-semibold hidden sm:inline" style={{ color: "#a3a3a3", letterSpacing: "0.06em", fontSize: "clamp(10px, 1.8vw, 12px)" }}>{selectedSport === "NCAAM" ? "Men's College Basketball" : "NBA"}</span>
-                </div>
-                <div className="flex-1" />
-              </div>
               <div className="bg-card mx-0">
                 {gamesByDate[date]!.map((game) => (
                   <div key={game!.id} id={`game-card-${game!.id}`}>
