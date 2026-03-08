@@ -474,4 +474,13 @@
 - [x] Update refreshAllScoresNow() to record scoresRefreshedAt timestamp
 - [x] Expose scoresRefreshedAt via lastRefresh tRPC procedure
 - [x] Redesign stats bar: X/Y Games with Odds | X/Y Games Modeled | Odds Last Updated HH:MM:SS AM/PM EST | Scores Last Updated HH:MM:SS AM/PM EST
+- [x] Save checkpoint and deliver
+
+## Publish Projections: Stats Scoping + Submit + Refresh Now (2026-03-08)
+- [x] Fix stats bar: withOddsCount, withModelCount, totalCount scoped to selected league+date (not all games)
+- [x] Fix withOddsCount to require BOTH spread AND total (not just either)
+- [x] Fix withModelCount to require BOTH spread AND total entered
+- [x] Added league+date context label to stats bar header
+- [x] Refresh Now now triggers full VSiN odds + all scores (NCAAM + NBA) refresh
+- [x] Rename "Submit" for first-time save; after submit, dirty changes show "Save"
 - [ ] Save checkpoint and deliver

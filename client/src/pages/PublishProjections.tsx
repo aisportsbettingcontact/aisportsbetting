@@ -390,6 +390,11 @@ function EditableGameCard({ game, onSaved }: { game: GameRow; onSaved: () => voi
   const [modelTotal, setModelTotal] = useState(game.modelTotal ?? "");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  // Track whether this game has ever been submitted in this session
+  // (or was already submitted before — i.e. has model data from the server)
+  const [hasBeenSubmitted, setHasBeenSubmitted] = useState(
+    !!(game.awayModelSpread || game.modelTotal)
+  );
   const awaySpreadRef = useRef<HTMLInputElement | null>(null);
 
   const updateMutation = trpc.games.updateProjections.useMutation();
@@ -477,6 +482,7 @@ function EditableGameCard({ game, onSaved }: { game: GameRow; onSaved: () => voi
 
   const handleSave = async () => {
     setSaving(true);
+    const isFirstSubmit = !hasBeenSubmitted;
     try {
       const edges = computeEdges();
       await updateMutation.mutateAsync({
@@ -487,10 +493,11 @@ function EditableGameCard({ game, onSaved }: { game: GameRow; onSaved: () => voi
         ...edges,
       });
       setDirty(false);
-      toast.success("Projections saved");
+      setHasBeenSubmitted(true);
+      toast.success(isFirstSubmit ? "Projections submitted ✓" : "Projections saved");
       onSaved();
     } catch {
-      toast.error("Failed to save projections");
+      toast.error(isFirstSubmit ? "Failed to submit projections" : "Failed to save projections");
     } finally {
       setSaving(false);
     }
@@ -685,7 +692,12 @@ function EditableGameCard({ game, onSaved }: { game: GameRow; onSaved: () => voi
                 }
               >
                 {saving && <Loader2 size={10} className="animate-spin" />}
-                {saving ? "Saving…" : dirty ? "Save" : "Saved"}
+                {saving
+                  ? (hasBeenSubmitted ? "Saving…" : "Submitting…")
+                  : dirty
+                    ? (hasBeenSubmitted ? "Save" : "Submit")
+                    : (hasBeenSubmitted ? "Saved" : "Submit")
+                }
               </Button>
             </div>
             {hasAnyModel && (
@@ -790,9 +802,13 @@ export default function PublishProjections() {
     onMutate: () => setIsRefreshing(true),
     onSuccess: (result) => {
       setIsRefreshing(false);
-      toast.success(`Refreshed — ${result.updated} updated, ${result.inserted} inserted`);
+      const oddsMsg = result.updated + result.nbaUpdated > 0
+        ? `${result.updated + result.nbaUpdated} odds updated`
+        : "odds refreshed";
+      toast.success(`Full refresh complete — ${oddsMsg}, scores updated`);
       // Invalidate all staging queries so all dates refresh
       utils.games.listStaging.invalidate();
+      utils.games.lastRefresh.invalidate();
       refetch();
     },
     onError: () => {
@@ -828,10 +844,13 @@ export default function PublishProjections() {
     return typeOk && statusOk;
   });
 
-  const publishedCount  = (games ?? []).filter((g) => g.publishedToFeed).length;
-  const totalCount      = games?.length ?? 0;
-  const withModelCount  = (games ?? []).filter((g) => g.awayModelSpread || g.modelTotal).length;
-  const withOddsCount   = (games ?? []).filter((g) => g.awayBookSpread !== null || g.bookTotal !== null).length;
+  // Stats scoped to the current league+date (games is already filtered by listStaging with {gameDate, sport})
+  const publishedCount   = (games ?? []).filter((g) => g.publishedToFeed).length;
+  const totalCount       = games?.length ?? 0;
+  // "Modeled" = has both away spread AND total entered
+  const withModelCount   = (games ?? []).filter((g) => g.awayModelSpread && g.modelTotal).length;
+  // "All Odds" = has both spread AND total from VSiN/books
+  const withOddsCount    = (games ?? []).filter((g) => g.awayBookSpread !== null && g.bookTotal !== null).length;
   const missingOddsCount = totalCount - withOddsCount;
 
   // Show loading spinner while auth resolves
@@ -1049,6 +1068,22 @@ export default function PublishProjections() {
               gridTemplateColumns: "repeat(2, 1fr)",
             }}
           >
+            {/* Context label spanning both columns */}
+            <div className="col-span-2 flex items-center gap-1.5 pb-1" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: selectedSport === "NBA" ? "#C8102E" : "#39FF14" }}>
+                {selectedSport}
+              </span>
+              <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>·</span>
+              <span className="text-[10px] font-semibold" style={{ color: "rgba(255,255,255,0.5)" }}>
+                {formatDateNav(gameDate)}
+              </span>
+              {totalCount > 0 && (
+                <>
+                  <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>·</span>
+                  <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.35)" }}>{totalCount} games</span>
+                </>
+              )}
+            </div>
             {/* Row 1: Odds count | Modeled count */}
             <div className="flex items-baseline gap-1.5">
               <span

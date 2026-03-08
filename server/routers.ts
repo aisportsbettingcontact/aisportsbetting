@@ -23,7 +23,7 @@ import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure } from "./routers/appUsers";
 import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors } from "./db";
-import { getLastRefreshResult, runVsinRefresh } from "./vsinAutoRefresh";
+import { getLastRefreshResult, runVsinRefresh, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { VALID_DB_SLUGS } from "@shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS } from "@shared/nbaTeams";
 
@@ -260,9 +260,13 @@ export const appRouter = router({
      * Owner-only.
      */
     triggerRefresh: ownerProcedure.mutation(async () => {
-      const result = await runVsinRefresh();
+      // Run VSiN odds/lines refresh first, then immediately refresh all scores
+      const [result] = await Promise.allSettled([runVsinRefresh()]);
+      // Always refresh scores regardless of whether VSiN succeeded
+      await refreshAllScoresNow();
       const now = new Date().toISOString();
-      return result ?? { refreshedAt: now, scoresRefreshedAt: now, updated: 0, inserted: 0, ncaaInserted: 0, nbaUpdated: 0, nbaInserted: 0, nbaScheduleInserted: 0, total: 0, nbaTotal: 0, gameDate: "" };
+      const oddsResult = result.status === 'fulfilled' ? result.value : null;
+      return oddsResult ?? { refreshedAt: now, scoresRefreshedAt: now, updated: 0, inserted: 0, ncaaInserted: 0, nbaUpdated: 0, nbaInserted: 0, nbaScheduleInserted: 0, total: 0, nbaTotal: 0, gameDate: "" };
     }),
   }),
 
