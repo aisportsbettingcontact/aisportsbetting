@@ -512,7 +512,7 @@ export default function ModelProjections() {
                   }}
                 />
               </button>
-              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: showModel ? '#39FF14' : 'rgba(255,255,255,0.4)' }}>Model</span>
+              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>Model</span>
             </div>
           </div>
         )}

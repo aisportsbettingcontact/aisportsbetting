@@ -328,9 +328,9 @@ function OddsLinesPanel({
 
       {/* Top-level column group headers: SPREAD | TOTAL | MONEYLINE */}
       <div className={`grid ${GRID} pb-0.5`}>
-        <span className="col-span-2 text-left pl-1 text-[11px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Spread</span>
-        <span className="col-span-2 text-left pl-1 text-[11px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Total</span>
-        <span className="col-span-2 text-left pl-1 text-[11px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Moneyline</span>
+        <span className="col-span-2 text-center text-[11px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Spread</span>
+        <span className="col-span-2 text-center text-[11px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Total</span>
+        <span className="col-span-2 text-center text-[11px] font-extrabold uppercase tracking-widest" style={{ color: '#E8E8E8' }}>Moneyline</span>
       </div>
 
       {/* Sub-headers: BOOK | MODEL per group */}
@@ -578,8 +578,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
       </div>
 
-      {/* Spacer matching OddsLinesPanel group-headers + sub-headers height (~28px) */}
-      <div style={{ height: 28 }} />
+      {/* Spacer — keeps team rows close to start time while maintaining rough alignment */}
+      <div style={{ height: 6 }} />
 
       {/* Away team row — py-3 mirrors OddsLinesPanel away row height */}
       <div className="flex items-center justify-between gap-2 py-3 w-full">
