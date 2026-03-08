@@ -781,29 +781,27 @@ export function GameCard({ game }: GameCardProps) {
           </div>
         </div>
 
-        {/* MOBILE: 2-row layout */}
+        {/* MOBILE: 3-row stacked layout — Score | Model Table | Betting Splits */}
         <div className="lg:hidden">
-          {/* Row 1: Score panel + Betting splits side by side */}
-          <div className="flex items-stretch" style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}>
-            {/* Score panel */}
-            <div className="flex-shrink-0" style={{ width: "45%", borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
-              <ScorePanel />
-            </div>
-            {/* Betting splits */}
-            <div className="flex-1 px-2 py-3">
-              <BettingSplitsPanel
-                game={game}
-                awayLabel={awayName}
-                homeLabel={homeName}
-                awayNickname={awayNickname}
-                homeNickname={homeNickname}
-              />
-            </div>
+          {/* Row 1: Score panel full width */}
+          <div style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}>
+            <ScorePanel />
           </div>
 
           {/* Row 2: Model table full width */}
-          <div>
+          <div style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}>
             <ModelTablePanel />
+          </div>
+
+          {/* Row 3: Betting splits full width */}
+          <div className="px-2 py-3">
+            <BettingSplitsPanel
+              game={game}
+              awayLabel={awayName}
+              homeLabel={homeName}
+              awayNickname={awayNickname}
+              homeNickname={homeNickname}
+            />
           </div>
         </div>
       </motion.div>

@@ -616,3 +616,9 @@
 - [x] Mobile layout unchanged (score+splits row 1, model table row 2)
 - [x] All 20 tests passing, no TypeScript errors
 - [x] Save checkpoint and deliver
+
+## GameCard Mobile Layout Fix (2026-03-08)
+- [x] Restructure mobile layout: Score (row 1) → Model Table (row 2) → Betting Splits (row 3)
+- [x] Desktop layout confirmed correct: Score | Model Table | Betting Splits (3 columns)
+- [x] All 20 tests passing, no TypeScript errors
+- [x] Save checkpoint and deliver
