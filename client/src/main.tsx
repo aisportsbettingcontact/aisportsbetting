@@ -46,9 +46,10 @@ const trpcClient = trpc.createClient({
     httpBatchLink({
       url: "/api/trpc",
       transformer: superjson,
-      // Use POST for all batched requests to avoid HTTP 414 (Request-URI Too Large)
-      // when many queries are batched together (e.g. 68+ team color queries on Dashboard)
-      methodOverride: "POST",
+      // Cap GET URL length at 2048 bytes; tRPC will automatically switch to POST
+      // for batches that exceed this limit (e.g. 68+ team color queries on Dashboard)
+      // preventing HTTP 414 Request-URI Too Large from nginx
+      maxURLLength: 2048,
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),

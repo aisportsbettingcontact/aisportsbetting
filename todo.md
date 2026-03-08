@@ -441,5 +441,5 @@
 - [x] Save checkpoint and deliver
 
 ## Fix HTTP 414 Request-URI Too Large (2026-03-08)
-- [x] Switch tRPC httpBatchLink to use POST method override to prevent 414 on large batches
+- [x] Switch tRPC httpBatchLink to use maxURLLength: 2048 to auto-POST large batches (fixes 414 without breaking single-query GET)
 - [ ] Save checkpoint and deliver
