@@ -317,39 +317,13 @@ function OddsLinesPanel({
 
   return (
     <div className="flex flex-col h-full px-3 py-2 min-w-0">
-      {/* Header: ODDS/LINES title + sliding Model toggle */}
+      {/* Header: ODDS/LINES title */}
       <div className="flex items-center gap-2 mb-1.5">
         <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
         <span className="text-[11px] font-black uppercase tracking-widest" style={{ color: '#d3d3d3', opacity: 0.7 }}>
           Odds/Lines
         </span>
         <div className="flex-1" style={{ height: 1, background: 'rgba(255,255,255,0.07)' }} />
-        {/* Sliding pill toggle */}
-        <button
-          onClick={onToggleModel}
-          aria-pressed={showModel}
-          className="relative flex-shrink-0 flex items-center rounded-full transition-colors duration-200"
-          style={{
-            width: 40, height: 22,
-            background: showModel ? 'rgba(57,255,20,0.35)' : 'rgba(255,255,255,0.12)',
-            border: `1px solid ${showModel ? 'rgba(57,255,20,0.6)' : 'rgba(255,255,255,0.2)'}`,
-            padding: 2,
-          }}
-        >
-          <motion.span
-            layout
-            transition={{ type: 'spring', stiffness: 500, damping: 35 }}
-            className="block rounded-full"
-            style={{
-              width: 16, height: 16,
-              background: showModel ? '#39FF14' : 'rgba(255,255,255,0.6)',
-              marginLeft: showModel ? 'auto' : 0,
-            }}
-          />
-        </button>
-        <span className="text-[9px] font-bold uppercase tracking-widest flex-shrink-0" style={{ color: '#ffffff' }}>
-          Model
-        </span>
       </div>
 
       {/* Top-level column group headers: SPREAD | TOTAL | MONEYLINE */}
@@ -408,9 +382,12 @@ interface GameCardProps {
   game: GameRow;
   /** 'full' = all 3 panels (default), 'projections' = score+odds only, 'splits' = score+splits only */
   mode?: "full" | "projections" | "splits";
+  /** When provided by a parent page, overrides internal model toggle state */
+  showModel?: boolean;
+  onToggleModel?: () => void;
 }
 
-export function GameCard({ game, mode = "full" }: GameCardProps) {
+export function GameCard({ game, mode = "full", showModel: showModelProp, onToggleModel: onToggleModelProp }: GameCardProps) {
   const awayBookSpread = toNum(game.awayBookSpread);
   const homeBookSpread = toNum(game.homeBookSpread);
   const awayModelSpread = toNum(game.awayModelSpread);
@@ -458,8 +435,9 @@ export function GameCard({ game, mode = "full" }: GameCardProps) {
   const homeWins = isFinal && hasScores && (game.homeScore! > game.awayScore!);
 
   // Model toggle state (lifted from OddsLinesPanel)
-  const [showModel, setShowModel] = useState(true);
-  const toggleModel = () => setShowModel((v) => !v);
+  const [showModelInternal, setShowModelInternal] = useState(true);
+  const showModel = showModelProp !== undefined ? showModelProp : showModelInternal;
+  const toggleModel = onToggleModelProp ?? (() => setShowModelInternal((v) => !v));
 
   // Score flash animation
   const prevScoreRef = useRef<string | null>(null);

@@ -192,6 +192,8 @@ export default function ModelProjections() {
   const inputRef = useRef<HTMLInputElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const [headerHeight, setHeaderHeight] = useState(88);
+  const [showModel, setShowModel] = useState(true);
+  const toggleModel = () => setShowModel((v) => !v);
 
   useEffect(() => {
     if (!headerRef.current) return;
@@ -480,7 +482,7 @@ export default function ModelProjections() {
 
         {/* Row 4: Date header — shown when games are loaded */}
         {!gamesLoading && sortedDates.length > 0 && (
-          <div className="flex items-center px-4 py-1 border-b border-border bg-background/95">
+          <div className="flex items-center px-4 py-1 border-b border-border bg-background/95 gap-2">
             <div className="flex-1" />
             <div className="flex items-center gap-2 whitespace-nowrap">
               <span className="font-bold text-foreground tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)" }}>{formatDateHeader(selectedDate)}</span>
@@ -488,6 +490,30 @@ export default function ModelProjections() {
               <span className="font-semibold hidden sm:inline" style={{ color: "#a3a3a3", letterSpacing: "0.06em", fontSize: "clamp(10px, 1.8vw, 12px)" }}>{selectedSport === "NCAAM" ? "Men's College Basketball" : "NBA"}</span>
             </div>
             <div className="flex-1" />
+            {/* Page-level Model toggle */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={toggleModel}
+                aria-pressed={showModel}
+                className="relative flex-shrink-0 flex items-center rounded-full transition-colors duration-200"
+                style={{
+                  width: 36, height: 20,
+                  background: showModel ? 'rgba(57,255,20,0.35)' : 'rgba(255,255,255,0.12)',
+                  border: `1px solid ${showModel ? 'rgba(57,255,20,0.6)' : 'rgba(255,255,255,0.2)'}`,
+                  padding: 2,
+                }}
+              >
+                <span
+                  className="block rounded-full transition-all duration-200"
+                  style={{
+                    width: 14, height: 14,
+                    background: showModel ? '#39FF14' : 'rgba(255,255,255,0.6)',
+                    marginLeft: showModel ? 'auto' : 0,
+                  }}
+                />
+              </button>
+              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: showModel ? '#39FF14' : 'rgba(255,255,255,0.4)' }}>Model</span>
+            </div>
           </div>
         )}
       </header>
@@ -515,7 +541,7 @@ export default function ModelProjections() {
               <div className="bg-card mx-0">
                 {gamesByDate[date]!.map((game) => (
                   <div key={game!.id} id={`game-card-${game!.id}`}>
-                    <GameCard game={game!} mode="projections" />
+                    <GameCard game={game!} mode="projections" showModel={showModel} onToggleModel={toggleModel} />
                   </div>
                 ))}
               </div>
