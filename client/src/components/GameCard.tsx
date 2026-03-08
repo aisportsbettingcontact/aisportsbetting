@@ -310,7 +310,7 @@ function OddsLinesPanel({
 
   // Helper: cell value with style
   const Cell = ({ val, style }: { val: string; style: React.CSSProperties }) => (
-    <div className="flex items-center justify-start pl-1">
+    <div className="flex items-center justify-center">
       <span className="font-bold tabular-nums" style={style}>{val}</span>
     </div>
   );
@@ -341,7 +341,7 @@ function OddsLinesPanel({
         {['Book', 'Model', 'Book', 'Model', 'Book', 'Model'].map((lbl, i) => (
           <span
             key={i}
-            className="text-left pl-1 text-[9px] font-bold uppercase tracking-widest"
+            className="text-center text-[9px] font-bold uppercase tracking-widest"
             style={{ color: lbl === 'Model' ? (showModel ? '#39FF14' : 'rgba(57,255,20,0.22)') : 'rgba(255,255,255,0.5)' }}
           >
             {lbl}
