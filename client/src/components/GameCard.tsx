@@ -573,12 +573,28 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   // Mobile tab state — controls which section is active on mobile full mode
   // Tabs: 'book' | 'model' | 'splits' | 'edge' | 'dual' (BOOK+MODEL both selected)
   // DEFAULT: 'dual' — BOOK + MODEL both active on every card mount and sport switch
+  // Persisted in localStorage so the user's preference survives page reloads and sport switches.
   // Rules:
   //   1. At least one tab must always be active (cannot deselect last active tab)
   //   2. SPLITS and EDGE are exclusive single-select (cannot combine with BOOK/MODEL)
   //   3. BOOK + MODEL can be active simultaneously (dual mode)
   type MobileTab = 'book' | 'model' | 'splits' | 'edge' | 'dual';
-  const [mobileTab, setMobileTab] = useState<MobileTab>('dual');
+  const MOBILE_TAB_KEY = 'prez_bets_mobile_tab';
+  const getPersistedTab = (): MobileTab => {
+    try {
+      const stored = localStorage.getItem(MOBILE_TAB_KEY);
+      if (stored === 'book' || stored === 'model' || stored === 'splits' || stored === 'edge' || stored === 'dual') {
+        return stored;
+      }
+    } catch { /* localStorage unavailable (private browsing, etc.) */ }
+    return 'dual'; // fallback default for new users
+  };
+  const [mobileTab, setMobileTab] = useState<MobileTab>(getPersistedTab);
+
+  // Persist tab preference whenever it changes
+  useEffect(() => {
+    try { localStorage.setItem(MOBILE_TAB_KEY, mobileTab); } catch { /* ignore */ }
+  }, [mobileTab]);
 
   // Per-team score flash — only the team whose score increased flashes neon green
   const prevAwayScoreRef = useRef<number | null>(null);
@@ -1229,11 +1245,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const mdlHomeSpreadStr = !isNaN(homeModelSpread) ? spreadSign(homeModelSpread) : '—';
             const mdlTotalStr      = !isNaN(modelTotal) ? String(modelTotal) : '—';
             // ML values — always show + prefix for positive (underdog) values
+            // +100 displays as 'EV' (even money; -100 does not exist as a valid ML)
             // LOG: [GameCard:ML] logs raw→formatted for every game in dev
             const formatMl = (raw: string | number | null | undefined): string => {
               if (raw == null || raw === '' || raw === '—') return '—';
               const n = typeof raw === 'number' ? raw : Number(String(raw).replace(/[^\d.-]/g, ''));
               if (isNaN(n)) return String(raw);
+              if (n === 100) return 'EV';   // +100 = even money
               if (n > 0) return `+${n}`;
               return String(n);
             };
@@ -1249,7 +1267,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               );
             }
 
-            // ── Edge direction helpers ────────────────────────────────────────
+               // ── Edge direction helpers ────────────────────────────────────
             const spreadEdgeIsAway = (() => {
               if (isNaN(spreadDiff) || spreadDiff <= 0) return null;
               if (!isNaN(awayModelSpread) && !isNaN(awayBookSpread)) return awayModelSpread < awayBookSpread;
@@ -1260,6 +1278,39 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (!isNaN(modelTotal) && !isNaN(bookTotal)) return modelTotal > bookTotal;
               return null;
             })();
+
+            // ── ML edge detection via implied probability ───────────────────────────
+            // Implied probability: p = 100 / (|ML| + 100) for positive ML (underdog)
+            //                      p = |ML| / (|ML| + 100) for negative ML (favorite)
+            // +100 (EV) → implied prob = 0.50 exactly
+            // Edge exists when model implied prob > book implied prob for the same team
+            // (i.e., model thinks team is more likely to win than book does)
+            const mlImpliedProb = (ml: string | number | null | undefined): number => {
+              if (ml == null || ml === '' || ml === '—') return NaN;
+              const n = typeof ml === 'number' ? ml : Number(String(ml).replace(/[^\d.-]/g, ''));
+              if (isNaN(n)) return NaN;
+              if (n === 100) return 0.5;                    // EV: exactly 50%
+              if (n > 0) return 100 / (n + 100);            // underdog
+              return Math.abs(n) / (Math.abs(n) + 100);     // favorite
+            };
+            const bkAwayMlProb  = mlImpliedProb(game.awayML);
+            const mdlAwayMlProb = mlImpliedProb(game.modelAwayML);
+            const bkHomeMlProb  = mlImpliedProb(game.homeML);
+            const mdlHomeMlProb = mlImpliedProb(game.modelHomeML);
+            // ML edge: model implies higher win probability than book (threshold: 2% difference)
+            const ML_EDGE_THRESHOLD = 0.02;
+            const awayMlEdgeDetected = !isNaN(bkAwayMlProb) && !isNaN(mdlAwayMlProb)
+              ? (mdlAwayMlProb - bkAwayMlProb) >= ML_EDGE_THRESHOLD
+              : false;
+            const homeMlEdgeDetected = !isNaN(bkHomeMlProb) && !isNaN(mdlHomeMlProb)
+              ? (mdlHomeMlProb - bkHomeMlProb) >= ML_EDGE_THRESHOLD
+              : false;
+            if (process.env.NODE_ENV === 'development') {
+              console.log(
+                `%c[GameCard:MLEdge] game=${game.id} away: bkProb=${bkAwayMlProb?.toFixed(3)} mdlProb=${mdlAwayMlProb?.toFixed(3)} edge=${awayMlEdgeDetected} | home: bkProb=${bkHomeMlProb?.toFixed(3)} mdlProb=${mdlHomeMlProb?.toFixed(3)} edge=${homeMlEdgeDetected}`,
+                'color:#39FF14;font-size:9px'
+              );
+            };
 
             // ── Tab state ─────────────────────────────────────────────────────
             // isDualTab: BOOK + MODEL both active simultaneously
@@ -1397,8 +1448,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const homeSpreadIsEdge  = spreadEdgeIsAway === false;
             const overTotalIsEdge   = totalEdgeIsOver  === true;
             const underTotalIsEdge  = totalEdgeIsOver  === false;
-            const awayMlIsEdge      = spreadEdgeIsAway === true;
-            const homeMlIsEdge      = spreadEdgeIsAway === false;
+            // ML edge uses independent implied-probability detection (not spread-derived)
+            const awayMlIsEdge      = awayMlEdgeDetected;
+            const homeMlIsEdge      = homeMlEdgeDetected;
 
             // ── Tab bar config ────────────────────────────────────────────────
             const TABS: { id: MobileTab; label: string }[] = [

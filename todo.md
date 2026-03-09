@@ -817,3 +817,5 @@
 - [x] Cannot deselect last active tab (at least one must always be active)
 - [x] SPLITS and EDGE are exclusive single-select (cannot combine with BOOK/MODEL or each other)
 - [x] OddsTable hidden when SPLITS or EDGE is active (only relevant section data shown)
+- [x] Persist tab preference in localStorage (survives page reload and sport switch, 'dual' as default for new users)
+- [x] ML edge detection using implied probability; +100 displays as EV (no -100 exists)
