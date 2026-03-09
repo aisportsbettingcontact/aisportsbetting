@@ -1005,12 +1005,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   style={{
                     position: "sticky",
                     left: 0,
-                    zIndex: 10,
+                    zIndex: 20,
                     flexShrink: 0,
                     width: 130,
                     minWidth: 130,
                     borderRight: "1px solid hsl(var(--border) / 0.5)",
                     background: "hsl(var(--card))",
+                    isolation: "isolate",
+                    willChange: "transform",
+                    transform: "translateZ(0)",
                   }}
                 >
                   <ScorePanel />
@@ -1078,12 +1081,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 style={{
                   position: "sticky",
                   left: 0,
-                  zIndex: 10,
+                  zIndex: 20,
                   flexShrink: 0,
                   width: 120,
                   minWidth: 120,
                   borderRight: "1px solid hsl(var(--border) / 0.5)",
                   background: "hsl(var(--card))",
+                  isolation: "isolate",
+                  willChange: "transform",
+                  transform: "translateZ(0)",
                 }}
               >
                 <CompactScorePanel />
@@ -1112,12 +1118,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 style={{
                   position: "sticky",
                   left: 0,
-                  zIndex: 10,
+                  zIndex: 20,
                   flexShrink: 0,
                   width: 130,
                   minWidth: 130,
                   borderRight: "1px solid hsl(var(--border) / 0.5)",
                   background: "hsl(var(--card))",
+                  isolation: "isolate",
+                  willChange: "transform",
+                  transform: "translateZ(0)",
                 }}
               >
                 <ScorePanel />
