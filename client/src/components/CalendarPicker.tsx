@@ -14,9 +14,20 @@ import { ChevronLeft, ChevronRight, CalendarDays } from "lucide-react";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Returns today's date as a YYYY-MM-DD string in UTC */
+/**
+ * Returns the "effective" game date as a YYYY-MM-DD string.
+ * Games are considered to belong to the previous calendar day until 11:00 UTC
+ * (equivalent to 3:00 AM PST / 6:00 AM EST), so the default date stays on
+ * the previous day until the morning slate is well underway.
+ */
 export function todayUTC(): string {
-  const d = new Date();
+  const now = new Date();
+  // If before 11:00 UTC, treat it as the previous calendar day
+  const CUTOFF_HOUR_UTC = 11;
+  const effectiveMs = now.getUTCHours() < CUTOFF_HOUR_UTC
+    ? now.getTime() - 24 * 60 * 60 * 1000  // subtract one day
+    : now.getTime();
+  const d = new Date(effectiveMs);
   const y = d.getUTCFullYear();
   const m = String(d.getUTCMonth() + 1).padStart(2, "0");
   const day = String(d.getUTCDate()).padStart(2, "0");
