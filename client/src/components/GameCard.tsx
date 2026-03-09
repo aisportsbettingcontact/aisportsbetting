@@ -575,18 +575,36 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   type MobileTab = 'book' | 'model' | 'splits' | 'edge';
   const [mobileTab, setMobileTab] = useState<MobileTab>('book');
 
-  // Score flash animation
-  const prevScoreRef = useRef<string | null>(null);
-  const [scoreFlash, setScoreFlash] = useState(false);
-  const scoreKey = hasScores ? `${game.awayScore}-${game.homeScore}` : null;
+  // Per-team score flash — only the team whose score increased flashes neon green
+  const prevAwayScoreRef = useRef<number | null>(null);
+  const prevHomeScoreRef = useRef<number | null>(null);
+  const [awayScoreFlash, setAwayScoreFlash] = useState(false);
+  const [homeScoreFlash, setHomeScoreFlash] = useState(false);
   useEffect(() => {
-    if (scoreKey && prevScoreRef.current !== null && prevScoreRef.current !== scoreKey) {
-      setScoreFlash(true);
-      const t = setTimeout(() => setScoreFlash(false), 800);
+    const curAway = game.awayScore ?? null;
+    const curHome = game.homeScore ?? null;
+    if (curAway !== null && prevAwayScoreRef.current !== null && curAway > prevAwayScoreRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`%c[GameCard:scoreFlash] game=${game.id} AWAY ${prevAwayScoreRef.current}→${curAway}`, 'color:#39FF14;font-size:10px');
+      }
+      setAwayScoreFlash(true);
+      const t = setTimeout(() => setAwayScoreFlash(false), 800);
+      prevAwayScoreRef.current = curAway;
       return () => clearTimeout(t);
     }
-    prevScoreRef.current = scoreKey;
-  }, [scoreKey]);
+    if (curHome !== null && prevHomeScoreRef.current !== null && curHome > prevHomeScoreRef.current) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`%c[GameCard:scoreFlash] game=${game.id} HOME ${prevHomeScoreRef.current}→${curHome}`, 'color:#39FF14;font-size:10px');
+      }
+      setHomeScoreFlash(true);
+      const t = setTimeout(() => setHomeScoreFlash(false), 800);
+      prevHomeScoreRef.current = curHome;
+      return () => clearTimeout(t);
+    }
+    // Initialize refs on first render
+    if (curAway !== null) prevAwayScoreRef.current = curAway;
+    if (curHome !== null) prevHomeScoreRef.current = curHome;
+  }, [game.awayScore, game.homeScore, game.id]);
 
   const maxDiff = Math.max(isNaN(spreadDiff) ? 0 : spreadDiff, isNaN(totalDiff) ? 0 : totalDiff);
   const borderColor = getEdgeColor(maxDiff);
@@ -821,14 +839,14 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               /* NBA scores are 3 digits (100-130) — use smaller clamp to prevent overflow in 160px panel */
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
-              color: scoreFlash
+              color: awayScoreFlash
                 ? "#39FF14"
                 : awayWins
                 ? "hsl(var(--foreground))"
                 : isFinal
                 ? "hsl(var(--muted-foreground))"
                 : "hsl(var(--foreground))",
-              textShadow: scoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
+              textShadow: awayScoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
             }}
           >
             {game.awayScore}
@@ -871,14 +889,14 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             style={{
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
-              color: scoreFlash
+              color: homeScoreFlash
                 ? "#39FF14"
                 : homeWins
                 ? "hsl(var(--foreground))"
                 : isFinal
                 ? "hsl(var(--muted-foreground))"
                 : "hsl(var(--foreground))",
-              textShadow: scoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
+              textShadow: homeScoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
             }}
           >
             {game.homeScore}
@@ -1204,7 +1222,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             // MODEL LINES tab active → book = light gray 20% opacity; model = #39FF14 bold full opacity
             // Neither tab (SPLITS/EDGE) → both at 20% opacity (background context)
             const bookStyle  = (_isEdge?: boolean): React.CSSProperties => ({
-              fontSize: 'clamp(13px, 3.5vw, 17px)',
+              fontSize: 'clamp(11px, 3vw, 15px)',  // -2pt from previous 13px base
               fontWeight: isBookTab ? 700 : 400,
               color: isBookTab
                 ? 'rgba(232,232,232,1)'         // active: white bold
@@ -1212,12 +1230,12 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               letterSpacing: '0.02em',
               fontVariantNumeric: 'tabular-nums',
             });
-            const modelStyle = (_isEdge?: boolean): React.CSSProperties => ({
-              fontSize: 'clamp(13px, 3.5vw, 17px)',
+            const modelStyle = (isEdge?: boolean): React.CSSProperties => ({
+              fontSize: 'clamp(11px, 3vw, 15px)',  // -2pt from previous 13px base
               fontWeight: isModelTab ? 700 : 400,
               color: isModelTab
-                ? '#39FF14'                      // active: neon green bold full opacity
-                : 'rgba(232,232,232,0.20)',      // inactive: light gray 20% opacity
+                ? (isEdge ? '#39FF14' : 'rgba(255,255,255,0.10)')  // edge=neon green; non-edge=white 10% opacity
+                : 'rgba(232,232,232,0.20)',           // inactive tab: light gray 20% opacity
               letterSpacing: '0.02em',
               fontVariantNumeric: 'tabular-nums',
             });
@@ -1343,9 +1361,22 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <span className="text-[9px] font-bold" style={{ color: 'hsl(var(--foreground))' }}>{time}</span>
                     )}
                   </div>
+                  {/* Game clock + period — shown only when live */}
+                  {isLive && game.gameClock && (
+                    <div className="flex items-center gap-1" style={{ marginTop: '-2px', marginBottom: '2px' }}>
+                      <span style={{
+                        fontSize: 'clamp(7px, 1.8vw, 9px)',
+                        fontWeight: 700,
+                        color: '#39FF14',
+                        letterSpacing: '0.05em',
+                        fontVariantNumeric: 'tabular-nums',
+                        lineHeight: 1,
+                      }}>{game.gameClock}</span>
+                    </div>
+                  )}
 
-                  {/* Away row: logo + two-line name + score */}
-                  <div className="flex items-center justify-between gap-1 w-full">
+                  {/* Away row: logo + two-line name + score — items-center ensures score aligns with team row */}
+                  <div className="flex items-center justify-between gap-1 w-full" style={{ alignItems: 'center' }}>
                     {/* Logo + name block */}
                     <div className="flex items-center gap-1 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
                       <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={18} />
@@ -1379,8 +1410,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <span className="tabular-nums font-black flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
                         minWidth: '28px', textAlign: 'right',
-                        color: scoreFlash ? '#39FF14' : awayWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
-                        textShadow: scoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
+                        color: awayScoreFlash ? '#39FF14' : awayWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
+                        textShadow: awayScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.awayScore}</span>
                     )}
                   </div>
@@ -1388,8 +1419,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   {/* Divider */}
                   <div style={{ height: 1, background: 'hsl(var(--border) / 0.4)' }} />
 
-                  {/* Home row: logo + two-line name + score */}
-                  <div className="flex items-center justify-between gap-1 w-full">
+                  {/* Home row: logo + two-line name + score — items-center ensures score aligns with team row */}
+                  <div className="flex items-center justify-between gap-1 w-full" style={{ alignItems: 'center' }}>
                     {/* Logo + name block */}
                     <div className="flex items-center gap-1 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
                       <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={18} />
@@ -1423,8 +1454,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <span className="tabular-nums font-black flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
                         minWidth: '28px', textAlign: 'right',
-                        color: scoreFlash ? '#39FF14' : homeWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
-                        textShadow: scoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
+                        color: homeScoreFlash ? '#39FF14' : homeWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
+                        textShadow: homeScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.homeScore}</span>
                     )}
                   </div>

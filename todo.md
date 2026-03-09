@@ -793,3 +793,8 @@
 - [x] Mobile GameCard OddsTable: BK→BOOK, MDL→MODEL sub-headers; active=white bold, inactive=light gray unbolded
 - [x] Mobile GameCard OddsTable: inactive values use light gray 20% opacity (not neon green); active model values use #39FF14 bold full opacity; active book values use white bold
 - [x] Mobile GameCard frozen left panel: two-line school+nickname layout (140px panel), ellipsis fallback for long names, score fixed-width 28px column
+- [x] Mobile OddsTable: reduce away/home row font by 2pt (clamp down from 13px base)
+- [x] Mobile OddsTable: MODEL edge values = #39FF14; non-edge active model = white bold 10% opacity
+- [x] Mobile frozen panel: show game clock + period/half/quarter when live (gameClock field, neon green)
+- [x] Mobile frozen panel: score flash (#39FF14) only on the team whose score increased (awayScoreFlash/homeScoreFlash)
+- [x] Mobile frozen panel: scores precisely vertically centered with their team row (alignItems: center explicit)
