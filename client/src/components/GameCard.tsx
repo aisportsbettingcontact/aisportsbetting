@@ -818,27 +818,42 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             </div>
           )}
 
-          {/* Col 3: Edge Verdict (projections) or Betting Splits (full/splits) */}
-          {mode === "projections" && showModel && (
-            <div
-              className="flex-1 flex items-center justify-center px-2 py-0"
-              style={{ minWidth: 150, borderLeft: "none" }}
-            >
-              <EdgeVerdict
-                spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
-                spreadEdge={computedSpreadEdge}
-                totalDiff={isNaN(totalDiff) ? null : totalDiff}
-                totalEdge={computedTotalEdge}
-                awayLogoUrl={awayLogoUrl}
-                homeLogoUrl={homeLogoUrl}
-                awaySlug={game.awayTeam}
-                homeSlug={game.homeTeam}
-                awayDisplayName={awayDisplayName}
-                homeDisplayName={homeDisplayName}
-              />
+          {/* Col 3: Betting Splits (always shown when not splits-only mode) */}
+          {mode !== "splits" && (
+            <div className="flex-1 flex flex-col" style={{ minWidth: 220, borderLeft: "1px solid hsl(var(--border) / 0.5)" }}>
+              {/* Edge verdict row — only in projections mode when model is on */}
+              {mode === "projections" && showModel && (
+                <div
+                  className="flex items-center justify-center px-2 py-1"
+                  style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
+                >
+                  <EdgeVerdict
+                    spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
+                    spreadEdge={computedSpreadEdge}
+                    totalDiff={isNaN(totalDiff) ? null : totalDiff}
+                    totalEdge={computedTotalEdge}
+                    awayLogoUrl={awayLogoUrl}
+                    homeLogoUrl={homeLogoUrl}
+                    awaySlug={game.awayTeam}
+                    homeSlug={game.homeTeam}
+                    awayDisplayName={awayDisplayName}
+                    homeDisplayName={homeDisplayName}
+                  />
+                </div>
+              )}
+              {/* Betting splits panel */}
+              <div className="flex-1 px-3 py-2">
+                <BettingSplitsPanel
+                  game={game}
+                  awayLabel={awayName}
+                  homeLabel={homeName}
+                  awayNickname={awayNickname}
+                  homeNickname={homeNickname}
+                />
+              </div>
             </div>
           )}
-          {mode !== "projections" && (
+          {mode === "splits" && (
             <div className="flex-1 px-3 py-3" style={{ minWidth: 220 }}>
               <BettingSplitsPanel
                 game={game}
@@ -935,41 +950,39 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             </div>
           )}
 
-          {/* Full mode: Score+Odds on top, Splits below */}
+          {/* Full mode: Score (left) | Odds+Splits (right) */}
           {mode === "full" && (
-            <>
-              <div className="flex items-stretch w-full" style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)", overflowX: "auto" }}>
-                <div className="flex-1" style={{ minWidth: 160, borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
-                  <ScorePanel />
-                </div>
-                <div className="flex-1" style={{ minWidth: 160 }}>
-                  <OddsLinesPanel
-                awayBookSpread={awayBookSpread}
-                homeBookSpread={homeBookSpread}
-                bookTotal={bookTotal}
-                awayML={game.awayML ?? '—'}
-                homeML={game.homeML ?? '—'}
-                awayModelSpread={awayModelSpread}
-                homeModelSpread={homeModelSpread}
-                modelTotal={modelTotal}
-                modelAwayML={game.modelAwayML}
-                modelHomeML={game.modelHomeML}
-                spreadDiff={spreadDiff}
-                totalDiff={totalDiff}
-                computedSpreadEdge={computedSpreadEdge}
-                computedTotalEdge={computedTotalEdge}
-                awayLogoUrl={awayLogoUrl}
-                homeLogoUrl={homeLogoUrl}
-                awaySlug={game.awayTeam}
-                homeSlug={game.homeTeam}
-                awayDisplayName={awayDisplayName}
-                homeDisplayName={homeDisplayName}
-                showModel={showModel}
-                onToggleModel={toggleModel}
-              />
-                </div>
+            <div className="flex items-stretch w-full" style={{ overflowX: "auto" }}>
+              <div style={{ width: 140, minWidth: 140, flexShrink: 0, borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
+                <ScorePanel />
               </div>
-              <div className="w-full px-3 py-3">
+              <div style={{ minWidth: 160, flex: "1 1 0%", borderRight: "1px solid hsl(var(--border) / 0.5)" }}>
+                <OddsLinesPanel
+                  awayBookSpread={awayBookSpread}
+                  homeBookSpread={homeBookSpread}
+                  bookTotal={bookTotal}
+                  awayML={game.awayML ?? '—'}
+                  homeML={game.homeML ?? '—'}
+                  awayModelSpread={awayModelSpread}
+                  homeModelSpread={homeModelSpread}
+                  modelTotal={modelTotal}
+                  modelAwayML={game.modelAwayML}
+                  modelHomeML={game.modelHomeML}
+                  spreadDiff={spreadDiff}
+                  totalDiff={totalDiff}
+                  computedSpreadEdge={computedSpreadEdge}
+                  computedTotalEdge={computedTotalEdge}
+                  awayLogoUrl={awayLogoUrl}
+                  homeLogoUrl={homeLogoUrl}
+                  awaySlug={game.awayTeam}
+                  homeSlug={game.homeTeam}
+                  awayDisplayName={awayDisplayName}
+                  homeDisplayName={homeDisplayName}
+                  showModel={showModel}
+                  onToggleModel={toggleModel}
+                />
+              </div>
+              <div style={{ minWidth: 180, flex: "1 1 0%" }} className="px-3 py-2">
                 <BettingSplitsPanel
                   game={game}
                   awayLabel={awayName}
@@ -978,7 +991,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   homeNickname={homeNickname}
                 />
               </div>
-            </>
+            </div>
           )}
         </div>
       </motion.div>
