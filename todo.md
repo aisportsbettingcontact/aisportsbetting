@@ -777,3 +777,6 @@
 - [x] AI MODEL PROJECTIONS and BETTING SPLITS tabs switch inline on /feed (no page navigation)
 - [x] Redirect /projections, /splits, /dashboard to /feed
 - [x] Update Home.tsx to redirect to /feed on login
+- [x] Remove AI MODEL PROJECTIONS / BETTING SPLITS tab toggle from feed header
+- [x] Display both odds/lines table AND betting splits panel on every game card (no tab switching needed)
+- [x] Remove activeMainTab state and all tab-switching logic from ModelProjections
