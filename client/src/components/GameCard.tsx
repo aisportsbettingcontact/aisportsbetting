@@ -1564,23 +1564,23 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <button
                         onClick={handleStarClick}
                         aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 3px #FFD700)' : 'none', transition: 'color 0.15s' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 3px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
                       >
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                         </svg>
                       </button>
                     )}
                     {isLive ? (
-                      <span className="flex items-center gap-1 text-[8px] font-black tracking-widest uppercase" style={{ color: '#39FF14' }}>
-                        <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: '#39FF14' }} />
+                      <span className="flex items-center gap-1 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(11px, 2.8vw, 14px)' }}>
+                        <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: '#39FF14' }} />
                         LIVE
                         {/* Clock inline right of LIVE — white font, formatted */}
                         {formattedClock && (
                           <span style={{
                             color: 'rgba(255,255,255,0.90)',
                             fontWeight: 700,
-                            fontSize: 'clamp(7px, 1.9vw, 9px)',
+                            fontSize: 'clamp(11px, 2.8vw, 14px)',
                             letterSpacing: '0.04em',
                             fontVariantNumeric: 'tabular-nums',
                             marginLeft: '2px',
@@ -1588,9 +1588,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         )}
                       </span>
                     ) : isFinal ? (
-                      <span className="text-[8px] font-bold tracking-wide px-1 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.07)', color: 'hsl(var(--muted-foreground))' }}>FINAL</span>
+                      <span className="font-bold tracking-wide px-1.5 py-0.5 rounded" style={{ fontSize: 'clamp(11px, 2.8vw, 14px)', background: 'rgba(255,255,255,0.07)', color: 'hsl(var(--muted-foreground))' }}>FINAL</span>
                     ) : (
-                      <span className="text-[9px] font-bold" style={{ color: 'hsl(var(--foreground))' }}>{time}</span>
+                      <span className="font-bold" style={{ fontSize: 'clamp(12px, 3vw, 15px)', color: 'hsl(var(--foreground))' }}>{time}</span>
                     )}
                   </div>
 
@@ -1601,7 +1601,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={18} />
                       <div className="flex flex-col min-w-0" style={{ lineHeight: 1.15 }}>
                         <span style={{
-                          fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was 8px base */
+                          fontSize: 'clamp(14px, 3.6vw, 16px)',  /* +4pt: was clamp(10px,2.6vw,12px) */
                           fontWeight: awayWins ? 800 : 600,
                           color: awayWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
                           letterSpacing: '0.02em',
@@ -1612,7 +1612,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         }}>{awayName}</span>
                         {awayNickname && (
                           <span style={{
-                            fontSize: 'clamp(8px, 2.1vw, 10px)',  /* +1pt: was 7px base */
+                            fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was clamp(8px,2.1vw,10px) */
                             fontWeight: 400,
                             color: awayWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.50)',
                             letterSpacing: '0.02em',
@@ -1645,7 +1645,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={18} />
                       <div className="flex flex-col min-w-0" style={{ lineHeight: 1.15 }}>
                         <span style={{
-                          fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was 8px base */
+                          fontSize: 'clamp(14px, 3.6vw, 16px)',  /* +4pt: was clamp(10px,2.6vw,12px) */
                           fontWeight: homeWins ? 800 : 600,
                           color: homeWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
                           letterSpacing: '0.02em',
@@ -1656,7 +1656,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         }}>{homeName}</span>
                         {homeNickname && (
                           <span style={{
-                            fontSize: 'clamp(8px, 2.1vw, 10px)',  /* +1pt: was 7px base */
+                            fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was clamp(8px,2.1vw,10px) */
                             fontWeight: 400,
                             color: homeWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.50)',
                             letterSpacing: '0.02em',

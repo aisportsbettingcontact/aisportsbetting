@@ -819,3 +819,6 @@
 - [x] OddsTable hidden when SPLITS or EDGE is active (only relevant section data shown)
 - [x] Persist tab preference in localStorage (survives page reload and sport switch, 'dual' as default for new users)
 - [x] ML edge detection using implied probability; +100 displays as EV (no -100 exists)
+- [x] Mobile frozen panel: school/team name font +4pt, nickname +2pt
+- [x] Mobile frozen panel: LIVE indicator +6pt, game start time +6pt, clock +6pt, FINAL badge +6pt
+- [x] Mobile frozen panel: favorite star icon larger
