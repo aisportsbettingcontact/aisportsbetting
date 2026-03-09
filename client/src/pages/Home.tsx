@@ -40,7 +40,7 @@ export default function Home() {
   // Redirect authenticated users straight to the projections feed
   useEffect(() => {
     if (!authLoading && appUser) {
-      setLocation("/projections");
+      setLocation("/feed");
     }
   }, [appUser, authLoading, setLocation]);
 
@@ -60,7 +60,7 @@ export default function Home() {
     onSuccess: () => {
       refetch();
       toast.success("Welcome back!");
-      setLocation("/projections");
+      setLocation("/feed");
     },
     onError: (e) => {
       toast.error(e.message);

@@ -9,18 +9,18 @@ import Home from "./pages/Home";
 import UserManagement from "./pages/UserManagement";
 import PublishProjections from "./pages/PublishProjections";
 import ModelProjections from "./pages/ModelProjections";
-import BettingSplitsPage from "./pages/BettingSplits";
 
 function Router() {
   return (
     <Switch>
       {/* Public paywall landing — default entry point */}
       <Route path="/" component={Home} />
-      {/* Legacy dashboard — redirect to projections */}
-      <Route path="/dashboard">{() => <Redirect to="/projections" />}</Route>
-      {/* Dedicated pages */}
-      <Route path="/projections" component={ModelProjections} />
-      <Route path="/splits" component={BettingSplitsPage} />
+      {/* Legacy redirects — /projections and /splits both go to /feed */}
+      <Route path="/dashboard">{() => <Redirect to="/feed" />}</Route>
+      <Route path="/projections">{() => <Redirect to="/feed" />}</Route>
+      <Route path="/splits">{() => <Redirect to="/feed" />}</Route>
+      {/* Unified feed page */}
+      <Route path="/feed" component={ModelProjections} />
       {/* Legacy /login redirect to home */}
       <Route path="/login">{() => <Redirect to="/" />}</Route>
       <Route path="/admin/users" component={UserManagement} />

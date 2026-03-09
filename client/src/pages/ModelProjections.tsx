@@ -268,6 +268,9 @@ export default function ModelProjections() {
   const [showModel, setShowModel] = useState(true);
   const toggleModel = () => setShowModel((v) => !v);
 
+  // ── Main page tab: projections | splits ───────────────────────────────────
+  const [activeMainTab, setActiveMainTab] = useState<"projections" | "splits">("projections");
+
   // ── Favorites tab ──────────────────────────────────────────────────────────
   const [showFavoritesTab, setShowFavoritesTab] = useState(false);
 
@@ -615,28 +618,30 @@ export default function ModelProjections() {
           </div>
         </div>
 
-        {/* Row 2: Page tab bar */}
+        {/* Row 2: Page tab bar — inline tab switching (no page navigation) */}
         <div className="flex w-full" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
-          <Link href="/projections" className="flex-1">
-            <button
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
-              style={{ color: "#ffffff" }}
-            >
-              <img src={CDN_TEST_TUBE} alt="Test tube" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)" }} />
-              <span>AI MODEL PROJECTIONS</span>
-              {/* active underline */}
+          <button
+            onClick={() => { setActiveMainTab("projections"); setShowFavoritesTab(false); }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
+            style={{ color: activeMainTab === "projections" ? "#ffffff" : "rgba(255,255,255,0.35)" }}
+          >
+            <img src={CDN_TEST_TUBE} alt="Test tube" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)", opacity: activeMainTab === "projections" ? 1 : 0.35 }} />
+            <span>AI MODEL PROJECTIONS</span>
+            {activeMainTab === "projections" && (
               <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full" style={{ background: "#39FF14" }} />
-            </button>
-          </Link>
-          <Link href="/splits" className="flex-1">
-            <button
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
-              style={{ color: "rgba(255,255,255,0.35)" }}
-            >
-              <img src={CDN_MONEY_BAG} alt="Money bag" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)", opacity: 0.35 }} />
-              <span>BETTING SPLITS</span>
-            </button>
-          </Link>
+            )}
+          </button>
+          <button
+            onClick={() => { setActiveMainTab("splits"); setShowFavoritesTab(false); }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
+            style={{ color: activeMainTab === "splits" ? "#ffffff" : "rgba(255,255,255,0.35)" }}
+          >
+            <img src={CDN_MONEY_BAG} alt="Money bag" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)", opacity: activeMainTab === "splits" ? 1 : 0.35 }} />
+            <span>BETTING SPLITS</span>
+            {activeMainTab === "splits" && (
+              <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full" style={{ background: "#39FF14" }} />
+            )}
+          </button>
         </div>
 
         {/* Row 3: Unified filter bar — FAVORITES | DATE | NCAAM | NBA | Search */}
@@ -785,46 +790,17 @@ export default function ModelProjections() {
 
       {/* ── Main Feed ── */}
       <main className="w-full pb-8">
-        {/* FAVORITES TAB FEED */}
-        {showFavoritesTab ? (
-          favoritesTabGames.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
-              <Star className="w-10 h-10" style={{ color: "rgba(255,215,0,0.3)" }} />
-              <div>
-                <p className="text-sm font-semibold text-foreground mb-1">No favorited games</p>
-                <p className="text-xs text-muted-foreground">
-                  Tap the ⭐ star on any game card to add it to your favorites.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-card mx-0">
-              {favoritesTabGames.map((game) => (
-                <div key={game!.id} id={`game-card-${game!.id}`}>
-                  <GameCard
-                    game={game!}
-                    mode="projections"
-                    showModel={showModel}
-                    onToggleModel={toggleModel}
-                    favoriteGameIds={favIds}
-                    onToggleFavorite={handleToggleFavorite}
-                    onFavoriteNotify={handleFavoriteNotify}
-                    isAppAuthed={Boolean(appUser)}
-                  />
-                </div>
-              ))}
-            </div>
-          )
-        ) : (
-          /* NORMAL FEED */
+
+        {/* ── BETTING SPLITS TAB ── */}
+        {activeMainTab === "splits" && (
           gamesLoading ? (
             <div className="flex flex-col items-center justify-center py-24 gap-3">
               <Loader2 className="w-8 h-8 text-primary animate-spin" />
-              <p className="text-sm text-muted-foreground">Loading projections…</p>
+              <p className="text-sm text-muted-foreground">Loading betting splits…</p>
             </div>
           ) : sortedDates.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
-              <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
+              <img src={CDN_MONEY_BAG} alt="Money bag" width={40} height={40} style={{ objectFit: "contain", filter: "invert(1)", opacity: 0.4 }} />
               <div>
                 <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
                 <p className="text-xs text-muted-foreground">
@@ -840,9 +816,7 @@ export default function ModelProjections() {
                     <div key={game!.id} id={`game-card-${game!.id}`}>
                       <GameCard
                         game={game!}
-                        mode="projections"
-                        showModel={showModel}
-                        onToggleModel={toggleModel}
+                        mode="splits"
                         favoriteGameIds={favIds}
                         onToggleFavorite={handleToggleFavorite}
                         onFavoriteNotify={handleFavoriteNotify}
@@ -854,6 +828,82 @@ export default function ModelProjections() {
               </div>
             ))
           )
+        )}
+
+        {/* ── PROJECTIONS TAB (default) ── */}
+        {activeMainTab === "projections" && (
+          <>
+            {/* FAVORITES TAB FEED */}
+            {showFavoritesTab ? (
+              favoritesTabGames.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
+                  <Star className="w-10 h-10" style={{ color: "rgba(255,215,0,0.3)" }} />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground mb-1">No favorited games</p>
+                    <p className="text-xs text-muted-foreground">
+                      Tap the ⭐ star on any game card to add it to your favorites.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-card mx-0">
+                  {favoritesTabGames.map((game) => (
+                    <div key={game!.id} id={`game-card-${game!.id}`}>
+                      <GameCard
+                        game={game!}
+                        mode="projections"
+                        showModel={showModel}
+                        onToggleModel={toggleModel}
+                        favoriteGameIds={favIds}
+                        onToggleFavorite={handleToggleFavorite}
+                        onFavoriteNotify={handleFavoriteNotify}
+                        isAppAuthed={Boolean(appUser)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )
+            ) : (
+              /* NORMAL PROJECTIONS FEED */
+              gamesLoading ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-3">
+                  <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                  <p className="text-sm text-muted-foreground">Loading projections…</p>
+                </div>
+              ) : sortedDates.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
+                  <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
+                  <div>
+                    <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedStatuses.size > 0 ? `No ${Array.from(selectedStatuses).join(" or ")} ${selectedSport} games right now.` : `No ${selectedSport} games found.`}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                sortedDates.map((date) => (
+                  <div key={date}>
+                    <div className="bg-card mx-0">
+                      {gamesByDate[date]!.map((game) => (
+                        <div key={game!.id} id={`game-card-${game!.id}`}>
+                          <GameCard
+                            game={game!}
+                            mode="projections"
+                            showModel={showModel}
+                            onToggleModel={toggleModel}
+                            favoriteGameIds={favIds}
+                            onToggleFavorite={handleToggleFavorite}
+                            onFavoriteNotify={handleFavoriteNotify}
+                            isAppAuthed={Boolean(appUser)}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              )
+            )}
+          </>
         )}
       </main>
     </div>

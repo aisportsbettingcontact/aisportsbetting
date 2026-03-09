@@ -773,3 +773,7 @@
 - [x] Remove '⭐ MY FAVORITES' header from Favorites tab feed
 - [x] Keep NCAAM/NBA sport buttons and search bar visible when Favorites tab is active (calendar also always visible)
 - [x] Auto-dismiss Favorites tab and return user to main feed when activeFavCount drops to 0
+- [x] Merge /projections and /splits into unified /feed route
+- [x] AI MODEL PROJECTIONS and BETTING SPLITS tabs switch inline on /feed (no page navigation)
+- [x] Redirect /projections, /splits, /dashboard to /feed
+- [x] Update Home.tsx to redirect to /feed on login
