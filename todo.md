@@ -805,3 +805,4 @@
 - [x] Mobile frozen panel: justifyContent center + alignSelf stretch for full-height vertical centering
 - [x] Rebuild mobile OddsTable: always-visible combined table, BOOK gray unbolded, MODEL neon green header, edge=#39FF14, non-edge model=white bold, book=gray 50%, ML underdog + prefix via formatMl()
 - [x] OddsTable color/weight fix: BOOK tab=book white bold + model white unbolded 70% (edge=#39FF14 bold); MODEL tab=book white unbolded 70% + model light gray bold 90% (edge=#39FF14 bold); BOOK sub-header white 75% unbolded always
+- [x] OddsTable sub-header tab-responsive: BOOK tab=BOOK white bold + MODEL white unbolded; MODEL tab=BOOK white unbolded + MODEL neon green bold

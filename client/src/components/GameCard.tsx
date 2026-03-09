@@ -1360,22 +1360,36 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       style={{ fontSize: 'clamp(9px, 2.2vw, 11px)', color: '#E8E8E8' }}>{h}</span>
                   ))}
                 </div>
-                {/* Sub-headers: BOOK always gray unbolded | MODEL always neon green bold (reference image) */}
+                {/* Sub-headers: BOOK and MODEL are tab-responsive
+                     BOOK tab active:  BOOK = white BOLD,    MODEL = white unbolded
+                     MODEL tab active: BOOK = white unbolded, MODEL = neon green BOLD
+                     Other tabs:       BOOK = gray 50%,      MODEL = gray 50%
+                */}
                 <div className="grid grid-cols-3 pb-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
                   {[0,1,2].map(i => (
                     <div key={i} className="grid grid-cols-2">
                       <span className="text-center uppercase tracking-widest"
                         style={{
                           fontSize: 'clamp(7px, 1.9vw, 10px)',
-                          fontWeight: 400,                         // always unbolded (ref image)
-                          color: 'rgba(255,255,255,0.75)',         // white unbolded (ref image)
+                          // BOOK tab: white bold (primary) | MODEL tab: white unbolded | other: gray
+                          fontWeight: isBookTab ? 700 : 400,
+                          color: isBookTab
+                            ? 'rgba(255,255,255,1)'          // BOOK active: white bold
+                            : isModelTab
+                              ? 'rgba(255,255,255,0.75)'     // MODEL active: white unbolded
+                              : 'rgba(255,255,255,0.40)',     // SPLITS/EDGE: gray
                           letterSpacing: '0.05em',
                         }}>BOOK</span>
                       <span className="text-center uppercase tracking-widest"
                         style={{
                           fontSize: 'clamp(7px, 1.9vw, 10px)',
-                          fontWeight: 700,                         // always bold
-                          color: '#39FF14',                        // always neon green
+                          // MODEL tab: neon green bold (primary) | BOOK tab: white unbolded | other: gray
+                          fontWeight: isModelTab ? 700 : 400,
+                          color: isModelTab
+                            ? '#39FF14'                      // MODEL active: neon green bold
+                            : isBookTab
+                              ? 'rgba(255,255,255,0.75)'     // BOOK active: white unbolded
+                              : 'rgba(255,255,255,0.40)',     // SPLITS/EDGE: gray
                           letterSpacing: '0.05em',
                         }}>MODEL</span>
                     </div>
