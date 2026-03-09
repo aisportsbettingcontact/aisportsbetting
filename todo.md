@@ -780,3 +780,4 @@
 - [x] Remove AI MODEL PROJECTIONS / BETTING SPLITS tab toggle from feed header
 - [x] Display both odds/lines table AND betting splits panel on every game card (no tab switching needed)
 - [x] Remove activeMainTab state and all tab-switching logic from ModelProjections
+- [x] Sticky/frozen score panel on mobile: score column stays fixed left while odds/splits scroll horizontally underneath

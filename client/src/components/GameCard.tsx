@@ -868,12 +868,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full overflow-hidden relative"
+        className="w-full relative"
         style={{
           background: "hsl(var(--card))",
           borderTop: "1px solid hsl(var(--border))",
           borderBottom: "1px solid hsl(var(--border))",
           borderLeft: `3px solid ${borderColor}`,
+          overflowX: "clip",
         }}
       >
 
@@ -1009,7 +1010,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     width: 130,
                     minWidth: 130,
                     borderRight: "1px solid hsl(var(--border) / 0.5)",
-                    background: "hsl(var(--background))",
+                    background: "hsl(var(--card))",
                   }}
                 >
                   <ScorePanel />
@@ -1082,7 +1083,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   width: 120,
                   minWidth: 120,
                   borderRight: "1px solid hsl(var(--border) / 0.5)",
-                  background: "hsl(var(--background))",
+                  background: "hsl(var(--card))",
                 }}
               >
                 <CompactScorePanel />
@@ -1113,7 +1114,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   width: 130,
                   minWidth: 130,
                   borderRight: "1px solid hsl(var(--border) / 0.5)",
-                  background: "hsl(var(--background))",
+                  background: "hsl(var(--card))",
                 }}
               >
                 <ScorePanel />
