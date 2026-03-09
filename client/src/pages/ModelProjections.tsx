@@ -363,15 +363,18 @@ export default function ModelProjections() {
 
   const { data: lastRefresh } = trpc.games.lastRefresh.useQuery(undefined, { refetchInterval: 60_000 });
 
-  // ── Favorites ────────────────────────────────────────────────────────────────
+    // ── Favorites ──────────────────────────────────────────────────────────────
+  // NOTE: enabled must use Boolean(appUser) — NOT isAuthenticated (Manus OAuth).
+  // Custom-auth users always have isAuthenticated=false, so the query would never fire.
+  const isAppAuthedForFav = Boolean(appUser);
   const { data: favData } = trpc.favorites.getMyFavorites.useQuery(undefined, {
-    enabled: isAuthenticated,
+    enabled: isAppAuthedForFav,
     refetchOnWindowFocus: false,
   });
 
   // Favorites with game dates — for the Favorites tab and 11:00 UTC expiry
   const { data: favWithDatesData } = trpc.favorites.getMyFavoritesWithDates.useQuery(undefined, {
-    enabled: isAuthenticated,
+    enabled: isAppAuthedForFav,
     refetchOnWindowFocus: false,
   });
 
@@ -794,6 +797,7 @@ export default function ModelProjections() {
                     favoriteGameIds={favIds}
                     onToggleFavorite={handleToggleFavorite}
                     onFavoriteNotify={handleFavoriteNotify}
+                    isAppAuthed={Boolean(appUser)}
                   />
                 </div>
               ))}
@@ -830,6 +834,7 @@ export default function ModelProjections() {
                         favoriteGameIds={favIds}
                         onToggleFavorite={handleToggleFavorite}
                         onFavoriteNotify={handleFavoriteNotify}
+                        isAppAuthed={Boolean(appUser)}
                       />
                     </div>
                   ))}

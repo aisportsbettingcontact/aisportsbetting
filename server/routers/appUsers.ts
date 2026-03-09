@@ -60,8 +60,8 @@ export const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
   return next({ ctx: { ...ctx, appUser: user } });
 });
 
-// Authenticated app user middleware
-const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
+// Authenticated app user middleware — exported so other routers can use custom app auth
+export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
   if (!token) throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
   const payload = await verifyAppUserToken(token);

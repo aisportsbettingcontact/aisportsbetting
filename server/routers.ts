@@ -21,7 +21,7 @@ import {
 import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
-import { appUsersRouter, ownerProcedure } from "./routers/appUsers";
+import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
 import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame } from "./db";
 import { getLastRefreshResult, runVsinRefresh, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
@@ -301,22 +301,25 @@ export const appRouter = router({
   }),
 
   // ─── Favorites ──────────────────────────────────────────────────────────────
+  // NOTE: Uses appUserProcedure (custom app_session cookie auth), NOT protectedProcedure
+  // (Manus OAuth). Custom-auth users have ctx.user = null, so protectedProcedure would
+  // always throw UNAUTHORIZED for them.
   favorites: router({
     /** Get all favorited game IDs for the current user. */
-    getMyFavorites: protectedProcedure.query(async ({ ctx }) => {
-      const ids = await getFavoriteGameIds(ctx.user.id);
+    getMyFavorites: appUserProcedure.query(async ({ ctx }) => {
+      const ids = await getFavoriteGameIds(ctx.appUser.id);
       return { favoriteGameIds: ids };
     }),
     /** Get favorited game IDs with their game dates (for 11:00 UTC expiry). */
-    getMyFavoritesWithDates: protectedProcedure.query(async ({ ctx }) => {
-      const rows = await getFavoriteGamesWithDates(ctx.user.id);
+    getMyFavoritesWithDates: appUserProcedure.query(async ({ ctx }) => {
+      const rows = await getFavoriteGamesWithDates(ctx.appUser.id);
       return { favorites: rows };
     }),
     /** Toggle a game as favorited/unfavorited for the current user. */
-    toggle: protectedProcedure
+    toggle: appUserProcedure
       .input(z.object({ gameId: z.number().int().positive() }))
       .mutation(async ({ ctx, input }) => {
-        return toggleFavoriteGame(ctx.user.id, input.gameId);
+        return toggleFavoriteGame(ctx.appUser.id, input.gameId);
       }),
   }),
 

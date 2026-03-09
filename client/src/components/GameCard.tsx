@@ -29,6 +29,7 @@ import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import { BettingSplitsPanel } from "./BettingSplitsPanel";
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
@@ -476,10 +477,20 @@ interface GameCardProps {
   onToggleFavorite?: (gameId: number) => void;
   /** Called when user favorites a game (not when unfavoriting) — used for in-page notification */
   onFavoriteNotify?: (gameId: number) => void;
+  /**
+   * Pass the parent's auth state down so GameCard doesn't need its own useAppAuth() query.
+   * This avoids 33+ redundant tRPC calls and ensures the star renders immediately when
+   * the parent already knows the user is authenticated.
+   */
+  isAppAuthed?: boolean;
 }
 
-export function GameCard({ game, mode = "full", showModel: showModelProp, onToggleModel: onToggleModelProp, favoriteGameIds, onToggleFavorite, onFavoriteNotify }: GameCardProps) {
-  const { isAuthenticated } = useAuth();
+export function GameCard({ game, mode = "full", showModel: showModelProp, onToggleModel: onToggleModelProp, favoriteGameIds, onToggleFavorite, onFavoriteNotify, isAppAuthed: isAppAuthedProp }: GameCardProps) {
+  // Use custom app auth (app_session cookie) — NOT Manus OAuth — to gate the star button.
+  // Prefer the prop passed from the parent (avoids 33+ redundant tRPC queries per page load).
+  // Fall back to calling useAppAuth() only when no prop is provided (e.g., standalone usage).
+  const { appUser: appUserFallback } = useAppAuth();
+  const isAppAuthed = isAppAuthedProp !== undefined ? isAppAuthedProp : Boolean(appUserFallback);
   const utils = trpc.useUtils();
   const toggleFavMutation = trpc.favorites.toggle.useMutation({
     onSuccess: () => {
@@ -490,7 +501,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const isFavorited = favoriteGameIds?.has(game.id) ?? false;
   const handleStarClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isAuthenticated) return;
+    if (!isAppAuthed) return;
     const willBeFavorited = !isFavorited;
     if (onToggleFavorite) {
       onToggleFavorite(game.id);
@@ -500,7 +511,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
     if (willBeFavorited && onFavoriteNotify) {
       onFavoriteNotify(game.id);
     }
-  }, [isAuthenticated, onToggleFavorite, game.id, toggleFavMutation, isFavorited, onFavoriteNotify]);
+  }, [isAppAuthed, onToggleFavorite, game.id, toggleFavMutation, isFavorited, onFavoriteNotify]);
   const awayBookSpread = toNum(game.awayBookSpread);
   const homeBookSpread = toNum(game.homeBookSpread);
   const awayModelSpread = toNum(game.awayModelSpread);
@@ -609,13 +620,28 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
     <div className="flex flex-col justify-center h-full px-2 py-3 gap-2" style={{ minWidth: 0 }}>
       {/* Status: [star] [clock] [LIVE] */}
       <div className="flex items-center gap-1 mb-1">
-        {isAuthenticated && (
+        {isAppAuthed && (
           <button
             onClick={handleStarClick}
             aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
-            style={{ background: "none", border: "none", cursor: "pointer", padding: 1, lineHeight: 1, flexShrink: 0, color: isFavorited ? "#FFD700" : "hsl(var(--muted-foreground))", opacity: isFavorited ? 1 : 0.4, transition: "opacity 0.15s" }}
+            title={isFavorited ? "Remove from favorites" : "Add to favorites"}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: "2px 3px", lineHeight: 1, flexShrink: 0,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: isFavorited ? "#FFD700" : "rgba(255,255,255,0.65)",
+              opacity: 1,
+              transition: "color 0.15s, transform 0.15s, filter 0.15s",
+              filter: isFavorited ? "drop-shadow(0 0 3px #FFD700)" : "none",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.25)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
           >
-            <svg width="12" height="12" viewBox="0 0 24 24" fill={isFavorited ? "#FFD700" : "none"} stroke={isFavorited ? "#FFD700" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="14" height="14" viewBox="0 0 24 24"
+              fill={isFavorited ? "#FFD700" : "none"}
+              stroke={isFavorited ? "#FFD700" : "rgba(255,255,255,0.85)"}
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            >
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
             </svg>
           </button>
@@ -676,27 +702,32 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       {/* Status row: [star] [clock/status] [LIVE badge] */}
       <div className="flex items-center gap-1.5 mb-0.5">
         {/* Star / Favorite button — always left of status */}
-        {isAuthenticated && (
+        {isAppAuthed && (
           <button
             onClick={handleStarClick}
             aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
+            title={isFavorited ? "Remove from favorites" : "Add to favorites"}
             style={{
               background: "none",
               border: "none",
               cursor: "pointer",
-              padding: 2,
+              padding: "3px 4px",
               lineHeight: 1,
               flexShrink: 0,
-              color: isFavorited ? "#FFD700" : "hsl(var(--muted-foreground))",
-              opacity: isFavorited ? 1 : 0.4,
-              transition: "opacity 0.15s, color 0.15s, transform 0.15s",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: isFavorited ? "#FFD700" : "rgba(255,255,255,0.65)",
+              opacity: 1,
+              transition: "color 0.15s, transform 0.15s, filter 0.15s",
+              filter: isFavorited ? "drop-shadow(0 0 4px #FFD700)" : "none",
             }}
-            onMouseEnter={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "scale(1.2)"; }}
-            onMouseLeave={e => { e.currentTarget.style.opacity = isFavorited ? "1" : "0.4"; e.currentTarget.style.transform = "scale(1)"; }}
+            onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.25)"; if (!isFavorited) e.currentTarget.style.color = "rgba(255,255,255,0.95)"; }}
+            onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; if (!isFavorited) e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24"
+            <svg width="16" height="16" viewBox="0 0 24 24"
               fill={isFavorited ? "#FFD700" : "none"}
-              stroke={isFavorited ? "#FFD700" : "currentColor"}
+              stroke={isFavorited ? "#FFD700" : "rgba(255,255,255,0.85)"}
               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
             >
               <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
