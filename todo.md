@@ -798,3 +798,8 @@
 - [x] Mobile frozen panel: show game clock + period/half/quarter when live (gameClock field, neon green)
 - [x] Mobile frozen panel: score flash (#39FF14) only on the team whose score increased (awayScoreFlash/homeScoreFlash)
 - [x] Mobile frozen panel: scores precisely vertically centered with their team row (alignItems: center explicit)
+- [x] Mobile frozen panel: game clock white font, inline right of LIVE badge; NCAAM 1st→1H format; NBA MM:SS + Q1/Q2/Q3/Q4/HALFTIME
+- [x] Mobile frozen panel: team/school name +2pt font size (clamp 10px base), nickname +1pt (clamp 8px base)
+- [x] Mobile OddsTable: non-edge active model values white 55% opacity (was 10%)
+- [x] Mobile tab bar: active tab = white bold + neon green underline; inactive = gray 45%
+- [x] Mobile frozen panel: justifyContent center + alignSelf stretch for full-height vertical centering

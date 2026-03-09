@@ -1187,6 +1187,35 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               console.groupEnd();
             }
 
+            // ── Game clock formatter ──────────────────────────────────────
+            // NCAAM: "1st" → "1H", "2nd" → "2H"; NBA: "Q1"–"Q4", "HALFTIME", "MM:SS"
+            const formatGameClock = (raw: string | null | undefined): string => {
+              if (!raw) return '';
+              const s = raw.trim();
+              // NCAAM half labels
+              if (/^1st$/i.test(s)) return '1H';
+              if (/^2nd$/i.test(s)) return '2H';
+              if (/^1st\s+half$/i.test(s)) return '1H';
+              if (/^2nd\s+half$/i.test(s)) return '2H';
+              if (/^half(time)?$/i.test(s)) return isNba ? 'HALFTIME' : 'HT';
+              // NBA quarter labels
+              if (/^q?1(st)?$/i.test(s)) return 'Q1';
+              if (/^q?2(nd)?$/i.test(s)) return 'Q2';
+              if (/^q?3(rd)?$/i.test(s)) return 'Q3';
+              if (/^q?4(th)?$/i.test(s)) return 'Q4';
+              if (/^ot$/i.test(s)) return 'OT';
+              // MM:SS clock — pass through as-is
+              if (/^\d{1,2}:\d{2}$/.test(s)) return s;
+              // Compound: "Q3 4:15" or "2nd 7:42" — normalize quarter label then keep clock
+              const compound = s.match(/^(q?\d|\d+(?:st|nd|rd|th)?|half(?:time)?)\s+(\d{1,2}:\d{2})$/i);
+              if (compound) {
+                const period = formatGameClock(compound[1]);
+                return `${period} ${compound[2]}`;
+              }
+              return s;
+            };
+            const formattedClock = formatGameClock(game.gameClock);
+
             // ── Derived values for mobile odds table ─────────────────────────
             const bkAwaySpreadStr  = !isNaN(awayBookSpread) ? spreadSign(awayBookSpread) : '—';
             const bkHomeSpreadStr  = !isNaN(homeBookSpread) ? spreadSign(homeBookSpread) : '—';
@@ -1234,7 +1263,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               fontSize: 'clamp(11px, 3vw, 15px)',  // -2pt from previous 13px base
               fontWeight: isModelTab ? 700 : 400,
               color: isModelTab
-                ? (isEdge ? '#39FF14' : 'rgba(255,255,255,0.10)')  // edge=neon green; non-edge=white 10% opacity
+                ? (isEdge ? '#39FF14' : 'rgba(255,255,255,0.55)')  // edge=neon green; non-edge=white 55% opacity (more visible)
                 : 'rgba(232,232,232,0.20)',           // inactive tab: light gray 20% opacity
               letterSpacing: '0.02em',
               fontVariantNumeric: 'tabular-nums',
@@ -1333,9 +1362,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   zIndex: 2,
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'center',
+                  justifyContent: 'center',  /* vertically center all team rows + status */
+                  alignItems: 'stretch',
                   padding: '8px 6px',
                   gap: 4,
+                  alignSelf: 'stretch',  /* fill full card height so centering works */
                 }}>
                   {/* Status row: star + time/status */}
                   <div className="flex items-center gap-1 mb-0.5">
@@ -1351,9 +1382,20 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       </button>
                     )}
                     {isLive ? (
-                      <span className="flex items-center gap-0.5 text-[8px] font-black tracking-widest uppercase" style={{ color: '#39FF14' }}>
+                      <span className="flex items-center gap-1 text-[8px] font-black tracking-widest uppercase" style={{ color: '#39FF14' }}>
                         <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: '#39FF14' }} />
                         LIVE
+                        {/* Clock inline right of LIVE — white font, formatted */}
+                        {formattedClock && (
+                          <span style={{
+                            color: 'rgba(255,255,255,0.90)',
+                            fontWeight: 700,
+                            fontSize: 'clamp(7px, 1.9vw, 9px)',
+                            letterSpacing: '0.04em',
+                            fontVariantNumeric: 'tabular-nums',
+                            marginLeft: '2px',
+                          }}>{formattedClock}</span>
+                        )}
                       </span>
                     ) : isFinal ? (
                       <span className="text-[8px] font-bold tracking-wide px-1 py-0.5 rounded" style={{ background: 'rgba(255,255,255,0.07)', color: 'hsl(var(--muted-foreground))' }}>FINAL</span>
@@ -1361,19 +1403,6 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <span className="text-[9px] font-bold" style={{ color: 'hsl(var(--foreground))' }}>{time}</span>
                     )}
                   </div>
-                  {/* Game clock + period — shown only when live */}
-                  {isLive && game.gameClock && (
-                    <div className="flex items-center gap-1" style={{ marginTop: '-2px', marginBottom: '2px' }}>
-                      <span style={{
-                        fontSize: 'clamp(7px, 1.8vw, 9px)',
-                        fontWeight: 700,
-                        color: '#39FF14',
-                        letterSpacing: '0.05em',
-                        fontVariantNumeric: 'tabular-nums',
-                        lineHeight: 1,
-                      }}>{game.gameClock}</span>
-                    </div>
-                  )}
 
                   {/* Away row: logo + two-line name + score — items-center ensures score aligns with team row */}
                   <div className="flex items-center justify-between gap-1 w-full" style={{ alignItems: 'center' }}>
@@ -1382,25 +1411,25 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={18} />
                       <div className="flex flex-col min-w-0" style={{ lineHeight: 1.15 }}>
                         <span style={{
-                          fontSize: 'clamp(8px, 2.2vw, 10px)',
+                          fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was 8px base */
                           fontWeight: awayWins ? 800 : 600,
                           color: awayWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
                           letterSpacing: '0.02em',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          maxWidth: '72px',
+                          maxWidth: '76px',
                         }}>{awayName}</span>
                         {awayNickname && (
                           <span style={{
-                            fontSize: 'clamp(7px, 1.9vw, 9px)',
+                            fontSize: 'clamp(8px, 2.1vw, 10px)',  /* +1pt: was 7px base */
                             fontWeight: 400,
-                            color: awayWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.45)',
+                            color: awayWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.50)',
                             letterSpacing: '0.02em',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            maxWidth: '72px',
+                            maxWidth: '76px',
                           }}>{awayNickname}</span>
                         )}
                       </div>
@@ -1426,25 +1455,25 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={18} />
                       <div className="flex flex-col min-w-0" style={{ lineHeight: 1.15 }}>
                         <span style={{
-                          fontSize: 'clamp(8px, 2.2vw, 10px)',
+                          fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was 8px base */
                           fontWeight: homeWins ? 800 : 600,
                           color: homeWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
                           letterSpacing: '0.02em',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          maxWidth: '72px',
+                          maxWidth: '76px',
                         }}>{homeName}</span>
                         {homeNickname && (
                           <span style={{
-                            fontSize: 'clamp(7px, 1.9vw, 9px)',
+                            fontSize: 'clamp(8px, 2.1vw, 10px)',  /* +1pt: was 7px base */
                             fontWeight: 400,
-                            color: homeWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.45)',
+                            color: homeWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.50)',
                             letterSpacing: '0.02em',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            maxWidth: '72px',
+                            maxWidth: '76px',
                           }}>{homeNickname}</span>
                         )}
                       </div>
@@ -1491,7 +1520,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                             fontSize: 'clamp(7px, 1.9vw, 9px)',
                             fontWeight: isActive ? 800 : 500,
                             letterSpacing: '0.06em',
-                            color: isActive ? '#39FF14' : 'rgba(255,255,255,0.45)',
+                            /* Active: white text + neon green underline; inactive: gray */
+                            color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',
                             background: 'transparent',
                             border: 'none',
                             borderBottom: isActive ? '2px solid #39FF14' : '2px solid transparent',
