@@ -986,64 +986,67 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         </div>
 
         {/* ── Mobile layout ── */}
-        <div className="flex lg:hidden flex-col w-full">
-          {/*
-            All mobile modes use the same sticky-left-panel pattern:
-            - The outer div is the scroll container (overflowX: auto)
-            - The score panel is sticky left (position: sticky; left: 0; z-index: 10)
-              so it stays frozen while the user scrolls Odds/Lines + Splits to the right
-            - The scrollable content (Odds/Lines, Splits) slides under the frozen panel
-          */}
+        {/*
+          KEY DESIGN: The score panel is NOT inside the scroll container.
+          Instead, the card uses a CSS Grid with two columns:
+            - Left column: fixed-width score panel (never scrolls)
+            - Right column: overflow-x:auto scroll container (Odds/Lines + Splits)
+          This completely eliminates the z-index bleed issue because the score
+          panel and the scroll container are siblings, not parent/child.
+        */}
+        <div className="lg:hidden w-full">
 
           {/* Projections mode */}
           {mode === "projections" && (
             <div className="flex flex-col w-full">
-              {/* Horizontal scroll row: frozen Score | scrollable Odds/Lines */}
-              <div className="flex items-stretch w-full" style={{ overflowX: "auto", position: "relative" }}>
-                {/* Frozen score panel */}
+              {/* Grid row: fixed score column | scrollable odds column */}
+              <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", width: "100%" }}>
+                {/* Fixed score panel — NOT inside scroll container */}
                 <div
                   style={{
-                    position: "sticky",
-                    left: 0,
-                    zIndex: 20,
-                    flexShrink: 0,
-                    width: 130,
-                    minWidth: 130,
+                    gridColumn: "1",
                     borderRight: "1px solid hsl(var(--border) / 0.5)",
                     background: "hsl(var(--card))",
-                    isolation: "isolate",
-                    willChange: "transform",
-                    transform: "translateZ(0)",
+                    zIndex: 1,
                   }}
                 >
                   <ScorePanel />
                 </div>
-                {/* Scrollable: Odds/Lines */}
-                <div style={{ minWidth: 220, flex: "1 1 0%" }} className="flex flex-col justify-center">
-                  <OddsLinesPanel
-                    awayBookSpread={awayBookSpread}
-                    homeBookSpread={homeBookSpread}
-                    bookTotal={bookTotal}
-                    awayML={game.awayML ?? '—'}
-                    homeML={game.homeML ?? '—'}
-                    awayModelSpread={awayModelSpread}
-                    homeModelSpread={homeModelSpread}
-                    modelTotal={modelTotal}
-                    modelAwayML={game.modelAwayML}
-                    modelHomeML={game.modelHomeML}
-                    spreadDiff={spreadDiff}
-                    totalDiff={totalDiff}
-                    computedSpreadEdge={computedSpreadEdge}
-                    computedTotalEdge={computedTotalEdge}
-                    awayLogoUrl={awayLogoUrl}
-                    homeLogoUrl={homeLogoUrl}
-                    awaySlug={game.awayTeam}
-                    homeSlug={game.homeTeam}
-                    awayDisplayName={awayDisplayName}
-                    homeDisplayName={homeDisplayName}
-                    showModel={showModel}
-                    onToggleModel={toggleModel}
-                  />
+                {/* Scroll container — only the right column scrolls */}
+                <div
+                  style={{
+                    gridColumn: "2",
+                    overflowX: "auto",
+                    overflowY: "hidden",
+                  }}
+                  className="flex flex-col justify-center"
+                >
+                  <div style={{ minWidth: 220 }} className="flex flex-col justify-center">
+                    <OddsLinesPanel
+                      awayBookSpread={awayBookSpread}
+                      homeBookSpread={homeBookSpread}
+                      bookTotal={bookTotal}
+                      awayML={game.awayML ?? '—'}
+                      homeML={game.homeML ?? '—'}
+                      awayModelSpread={awayModelSpread}
+                      homeModelSpread={homeModelSpread}
+                      modelTotal={modelTotal}
+                      modelAwayML={game.modelAwayML}
+                      modelHomeML={game.modelHomeML}
+                      spreadDiff={spreadDiff}
+                      totalDiff={totalDiff}
+                      computedSpreadEdge={computedSpreadEdge}
+                      computedTotalEdge={computedTotalEdge}
+                      awayLogoUrl={awayLogoUrl}
+                      homeLogoUrl={homeLogoUrl}
+                      awaySlug={game.awayTeam}
+                      homeSlug={game.homeTeam}
+                      awayDisplayName={awayDisplayName}
+                      homeDisplayName={homeDisplayName}
+                      showModel={showModel}
+                      onToggleModel={toggleModel}
+                    />
+                  </div>
                 </div>
               </div>
               {/* Row 2: EdgeVerdict — compact horizontal row flush below the table */}
@@ -1073,107 +1076,109 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             </div>
           )}
 
-          {/* Splits mode: frozen CompactScore + scrollable Splits */}
+          {/* Splits mode: fixed CompactScore column | scrollable Splits column */}
           {mode === "splits" && (
-            <div className="flex items-stretch w-full" style={{ overflowX: "auto", position: "relative" }}>
-              {/* Frozen compact score */}
+            <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", width: "100%" }}>
+              {/* Fixed compact score — NOT inside scroll container */}
               <div
                 style={{
-                  position: "sticky",
-                  left: 0,
-                  zIndex: 20,
-                  flexShrink: 0,
-                  width: 120,
-                  minWidth: 120,
+                  gridColumn: "1",
                   borderRight: "1px solid hsl(var(--border) / 0.5)",
                   background: "hsl(var(--card))",
-                  isolation: "isolate",
-                  willChange: "transform",
-                  transform: "translateZ(0)",
+                  zIndex: 1,
                 }}
               >
                 <CompactScorePanel />
               </div>
-              {/* Scrollable splits */}
-              <div style={{ minWidth: 260, flex: "1 1 0%" }}>
-                <BettingSplitsPanel
-                  game={game}
-                  awayLabel={awayName}
-                  homeLabel={homeName}
-                  awayNickname={awayNickname}
-                  homeNickname={homeNickname}
-                />
+              {/* Scroll container for splits */}
+              <div
+                style={{
+                  gridColumn: "2",
+                  overflowX: "auto",
+                  overflowY: "hidden",
+                }}
+              >
+                <div style={{ minWidth: 260 }}>
+                  <BettingSplitsPanel
+                    game={game}
+                    awayLabel={awayName}
+                    homeLabel={homeName}
+                    awayNickname={awayNickname}
+                    homeNickname={homeNickname}
+                  />
+                </div>
               </div>
             </div>
           )}
 
-          {/* Full mode: frozen Score | scrollable Odds/Lines + Betting Splits side by side */}
+          {/* Full mode: fixed Score column | scrollable Odds/Lines + Betting Splits side by side */}
           {mode === "full" && (
-            <div
-              className="flex items-stretch w-full"
-              style={{ overflowX: "auto", position: "relative" }}
-            >
-              {/* Frozen score panel */}
+            <div style={{ display: "grid", gridTemplateColumns: "130px 1fr", width: "100%" }}>
+              {/* Fixed score panel — NOT inside scroll container */}
               <div
                 style={{
-                  position: "sticky",
-                  left: 0,
-                  zIndex: 20,
-                  flexShrink: 0,
-                  width: 130,
-                  minWidth: 130,
+                  gridColumn: "1",
                   borderRight: "1px solid hsl(var(--border) / 0.5)",
                   background: "hsl(var(--card))",
-                  isolation: "isolate",
-                  willChange: "transform",
-                  transform: "translateZ(0)",
+                  zIndex: 1,
                 }}
               >
                 <ScorePanel />
               </div>
-              {/* Scrollable: Odds/Lines */}
+              {/* Scroll container — Odds/Lines + Betting Splits side by side */}
               <div
                 style={{
-                  minWidth: 220,
-                  flex: "0 0 auto",
-                  borderRight: "1px solid hsl(var(--border) / 0.5)",
+                  gridColumn: "2",
+                  overflowX: "auto",
+                  overflowY: "hidden",
+                  display: "flex",
+                  alignItems: "stretch",
                 }}
-                className="flex flex-col justify-center"
               >
-                <OddsLinesPanel
-                  awayBookSpread={awayBookSpread}
-                  homeBookSpread={homeBookSpread}
-                  bookTotal={bookTotal}
-                  awayML={game.awayML ?? '—'}
-                  homeML={game.homeML ?? '—'}
-                  awayModelSpread={awayModelSpread}
-                  homeModelSpread={homeModelSpread}
-                  modelTotal={modelTotal}
-                  modelAwayML={game.modelAwayML}
-                  modelHomeML={game.modelHomeML}
-                  spreadDiff={spreadDiff}
-                  totalDiff={totalDiff}
-                  computedSpreadEdge={computedSpreadEdge}
-                  computedTotalEdge={computedTotalEdge}
-                  awayLogoUrl={awayLogoUrl}
-                  homeLogoUrl={homeLogoUrl}
-                  awaySlug={game.awayTeam}
-                  homeSlug={game.homeTeam}
-                  awayDisplayName={awayDisplayName}
-                  homeDisplayName={homeDisplayName}
-                  showModel={showModel}
-                  onToggleModel={toggleModel}
-                />
-              </div>
-              {/* Scrollable: Betting Splits — immediately to the right of Odds/Lines */}
-              <div style={{ minWidth: 260, flex: "0 0 auto" }}>
-                <BettingSplitsPanel
-                  game={game}
-                  awayLabel={awayName}
-                  homeLabel={homeName}
-                  awayNickname={awayNickname}
-                  homeNickname={homeNickname}
-                />
+                {/* Odds/Lines */}
+                <div
+                  style={{
+                    minWidth: 220,
+                    flex: "0 0 auto",
+                    borderRight: "1px solid hsl(var(--border) / 0.5)",
+                  }}
+                  className="flex flex-col justify-center"
+                >
+                  <OddsLinesPanel
+                    awayBookSpread={awayBookSpread}
+                    homeBookSpread={homeBookSpread}
+                    bookTotal={bookTotal}
+                    awayML={game.awayML ?? '—'}
+                    homeML={game.homeML ?? '—'}
+                    awayModelSpread={awayModelSpread}
+                    homeModelSpread={homeModelSpread}
+                    modelTotal={modelTotal}
+                    modelAwayML={game.modelAwayML}
+                    modelHomeML={game.modelHomeML}
+                    spreadDiff={spreadDiff}
+                    totalDiff={totalDiff}
+                    computedSpreadEdge={computedSpreadEdge}
+                    computedTotalEdge={computedTotalEdge}
+                    awayLogoUrl={awayLogoUrl}
+                    homeLogoUrl={homeLogoUrl}
+                    awaySlug={game.awayTeam}
+                    homeSlug={game.homeTeam}
+                    awayDisplayName={awayDisplayName}
+                    homeDisplayName={homeDisplayName}
+                    showModel={showModel}
+                    onToggleModel={toggleModel}
+                  />
+                </div>
+                {/* Betting Splits — immediately to the right of Odds/Lines */}
+                <div style={{ minWidth: 260, flex: "0 0 auto" }}>
+                  <BettingSplitsPanel
+                    game={game}
+                    awayLabel={awayName}
+                    homeLabel={homeName}
+                    awayNickname={awayNickname}
+                    homeNickname={homeNickname}
+                  />
+                </div>
               </div>
             </div>
           )}

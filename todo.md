@@ -783,3 +783,4 @@
 - [x] Sticky/frozen score panel on mobile: score column stays fixed left while odds/splits scroll horizontally underneath
 - [x] Fix sticky score panel: ensure it fully occludes scrolling odds/splits content (no merged display when scrolling)
 - [x] Fix sticky score panel clipping: scrolled content must not bleed through/over the frozen score panel
+- [ ] Definitive fix: scrolled content must be fully hidden/clipped behind sticky score panel (no overlap/bleed-through on mobile)
