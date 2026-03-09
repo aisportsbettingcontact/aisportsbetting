@@ -572,9 +572,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
 
   // Mobile tab state — controls which section is active on mobile full mode
   // Tabs: 'book' | 'model' | 'splits' | 'edge' | 'dual' (BOOK+MODEL both selected)
-  // Dual mode: clicking BOOK when MODEL active (or vice versa) activates dual
+  // DEFAULT: 'dual' — BOOK + MODEL both active on every card mount and sport switch
+  // Rules:
+  //   1. At least one tab must always be active (cannot deselect last active tab)
+  //   2. SPLITS and EDGE are exclusive single-select (cannot combine with BOOK/MODEL)
+  //   3. BOOK + MODEL can be active simultaneously (dual mode)
   type MobileTab = 'book' | 'model' | 'splits' | 'edge' | 'dual';
-  const [mobileTab, setMobileTab] = useState<MobileTab>('book');
+  const [mobileTab, setMobileTab] = useState<MobileTab>('dual');
 
   // Per-team score flash — only the team whose score increased flashes neon green
   const prevAwayScoreRef = useRef<number | null>(null);
@@ -1639,33 +1643,39 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     flexShrink: 0,
                   }}>
                     {TABS.map(tab => {
-                      // Dual-select: BOOK and MODEL can both be active simultaneously
-                      // Clicking BOOK when MODEL is active (or vice versa) → dual mode
-                      // Clicking BOOK/MODEL when already dual → deselect that tab (go to the other)
-                      // Clicking SPLITS/EDGE always sets that single tab (clears dual)
+                      // Tab rules:
+                      //   • BOOK + MODEL can be dual-active (default state)
+                      //   • SPLITS and EDGE are exclusive single-select
+                      //   • At least one tab must always be active (cannot deselect last)
                       const isActive = mobileTab === tab.id ||
                         (isDualTab && (tab.id === 'book' || tab.id === 'model'));
                       const handleTabClick = () => {
-                        if (process.env.NODE_ENV === 'development') {
-                          console.log(`%c[GameCard:tab] ${game.id} ${awayAbbr}@${homeAbbr} current=${mobileTab} clicked=${tab.id} → ${(
-                            tab.id === 'book' && mobileTab === 'model' ? 'dual' :
-                            tab.id === 'model' && mobileTab === 'book' ? 'dual' :
-                            tab.id === 'book' && isDualTab ? 'model' :
-                            tab.id === 'model' && isDualTab ? 'book' :
-                            tab.id
-                          )}`, 'color:#39FF14;font-size:10px');
-                        }
+                        // ── Tab click rules ──────────────────────────────────────────
+                        // 1. At least one tab must always be active (ignore deselect-last)
+                        // 2. BOOK + MODEL can be dual-active; SPLITS/EDGE are exclusive
+                        // 3. Clicking SPLITS/EDGE always switches to that single tab
+                        // 4. Clicking BOOK when MODEL active → dual
+                        //    Clicking MODEL when BOOK active → dual
+                        //    Clicking BOOK/MODEL when dual → go to the other (cannot go to none)
+                        //    Clicking BOOK when BOOK-only → no-op (already active, cannot deselect)
+                        //    Clicking MODEL when MODEL-only → no-op (already active, cannot deselect)
+                        let next: MobileTab = mobileTab;
                         if (tab.id === 'book') {
-                          if (mobileTab === 'model') setMobileTab('dual');       // BOOK + MODEL → dual
-                          else if (isDualTab) setMobileTab('model');              // deselect BOOK from dual
-                          else setMobileTab('book');                              // normal select
+                          if (mobileTab === 'model') next = 'dual';              // MODEL active → add BOOK → dual
+                          else if (isDualTab) next = 'model';                    // dual → remove BOOK → MODEL only
+                          else next = 'book';                                     // already book or coming from splits/edge
                         } else if (tab.id === 'model') {
-                          if (mobileTab === 'book') setMobileTab('dual');        // MODEL + BOOK → dual
-                          else if (isDualTab) setMobileTab('book');               // deselect MODEL from dual
-                          else setMobileTab('model');                             // normal select
+                          if (mobileTab === 'book') next = 'dual';               // BOOK active → add MODEL → dual
+                          else if (isDualTab) next = 'book';                     // dual → remove MODEL → BOOK only
+                          else next = 'model';                                    // already model or coming from splits/edge
                         } else {
-                          setMobileTab(tab.id);                                   // SPLITS/EDGE: always single
+                          // SPLITS or EDGE: exclusive single-select, always switch
+                          next = tab.id;
                         }
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log(`%c[GameCard:tab] ${game.id} ${awayAbbr}@${homeAbbr} current=${mobileTab} clicked=${tab.id} → ${next}`, 'color:#39FF14;font-size:10px');
+                        }
+                        setMobileTab(next);
                       };
                       return (
                         <button
@@ -1690,10 +1700,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         </button>
                       );
                     })}
-                  </div>                  {/* ── OddsTable: ALWAYS visible ────────────────────────────────────── */}
-                  {/* Tab controls which column is primary (bold/highlighted)     */}
-                  {/* SPLITS/EDGE tabs show OddsTable dimmed above their content   */}
-                  <OddsTable />
+                  </div>                  {/* ── OddsTable: visible only when BOOK, MODEL, or DUAL tab is active ── */}
+                  {/* Hidden entirely when SPLITS or EDGE tab is active               */}
+                  {(mobileTab === 'book' || mobileTab === 'model' || mobileTab === 'dual') && (
+                    <OddsTable />
+                  )}
 
                   {/* ── SPLITS tab (additional content below OddsTable) ──────── */}
                   {mobileTab === 'splits' && (

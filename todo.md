@@ -813,3 +813,7 @@
 - [x] Revert incorrect hardcoded color on away spread model span (restored modelStyle factory call)
 - [x] Sync frozen panel team rows and OddsTable rows to identical height: both use height: 44px, frozen panel padding: '0 6px', status row paddingTop: 8px paddingBottom: 4px to match OddsTable header height
 - [x] Mobile tab bar dual-select: BOOK LINES + MODEL LINES can both be active simultaneously; dual mode = book light gray unbolded + model white bold (non-edge) / neon green bold (edge); sub-headers: BOOK white bold + MODEL neon green bold in dual
+- [x] Default tab state = 'dual' (BOOK+MODEL both active) on every card mount and sport switch
+- [x] Cannot deselect last active tab (at least one must always be active)
+- [x] SPLITS and EDGE are exclusive single-select (cannot combine with BOOK/MODEL or each other)
+- [x] OddsTable hidden when SPLITS or EDGE is active (only relevant section data shown)
