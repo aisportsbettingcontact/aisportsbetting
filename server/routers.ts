@@ -22,7 +22,7 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure } from "./routers/appUsers";
-import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, toggleFavoriteGame } from "./db";
+import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame } from "./db";
 import { getLastRefreshResult, runVsinRefresh, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
 import { VALID_DB_SLUGS } from "@shared/ncaamTeams";
@@ -306,6 +306,11 @@ export const appRouter = router({
     getMyFavorites: protectedProcedure.query(async ({ ctx }) => {
       const ids = await getFavoriteGameIds(ctx.user.id);
       return { favoriteGameIds: ids };
+    }),
+    /** Get favorited game IDs with their game dates (for 11:00 UTC expiry). */
+    getMyFavoritesWithDates: protectedProcedure.query(async ({ ctx }) => {
+      const rows = await getFavoriteGamesWithDates(ctx.user.id);
+      return { favorites: rows };
     }),
     /** Toggle a game as favorited/unfavorited for the current user. */
     toggle: protectedProcedure

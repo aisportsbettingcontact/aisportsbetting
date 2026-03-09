@@ -570,6 +570,18 @@ export async function getGameTeamColors(
 
 // ─── User Favorite Games ─────────────────────────────────────────────────────
 
+/** Returns favorite game IDs + their game dates (for 11:00 UTC expiry logic on the client). */
+export async function getFavoriteGamesWithDates(appUserId: number): Promise<{ gameId: number; gameDate: string }[]> {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db
+    .select({ gameId: userFavoriteGames.gameId, gameDate: games.gameDate })
+    .from(userFavoriteGames)
+    .innerJoin(games, eq(games.id, userFavoriteGames.gameId))
+    .where(eq(userFavoriteGames.appUserId, appUserId));
+  return rows.map((r) => ({ gameId: r.gameId, gameDate: r.gameDate ?? '' }));
+}
+
 export async function getFavoriteGameIds(appUserId: number): Promise<number[]> {
   const db = await getDb();
   if (!db) return [];

@@ -474,26 +474,33 @@ interface GameCardProps {
   /** Set of favorited game IDs from the parent — avoids per-card fetches */
   favoriteGameIds?: Set<number>;
   onToggleFavorite?: (gameId: number) => void;
+  /** Called when user favorites a game (not when unfavoriting) — used for in-page notification */
+  onFavoriteNotify?: (gameId: number) => void;
 }
 
-export function GameCard({ game, mode = "full", showModel: showModelProp, onToggleModel: onToggleModelProp, favoriteGameIds, onToggleFavorite }: GameCardProps) {
+export function GameCard({ game, mode = "full", showModel: showModelProp, onToggleModel: onToggleModelProp, favoriteGameIds, onToggleFavorite, onFavoriteNotify }: GameCardProps) {
   const { isAuthenticated } = useAuth();
   const utils = trpc.useUtils();
   const toggleFavMutation = trpc.favorites.toggle.useMutation({
     onSuccess: () => {
       utils.favorites.getMyFavorites.invalidate();
+      utils.favorites.getMyFavoritesWithDates.invalidate();
     },
   });
   const isFavorited = favoriteGameIds?.has(game.id) ?? false;
   const handleStarClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     if (!isAuthenticated) return;
+    const willBeFavorited = !isFavorited;
     if (onToggleFavorite) {
       onToggleFavorite(game.id);
     } else {
       toggleFavMutation.mutate({ gameId: game.id });
     }
-  }, [isAuthenticated, onToggleFavorite, game.id, toggleFavMutation]);
+    if (willBeFavorited && onFavoriteNotify) {
+      onFavoriteNotify(game.id);
+    }
+  }, [isAuthenticated, onToggleFavorite, game.id, toggleFavMutation, isFavorited, onFavoriteNotify]);
   const awayBookSpread = toNum(game.awayBookSpread);
   const homeBookSpread = toNum(game.homeBookSpread);
   const awayModelSpread = toNum(game.awayModelSpread);
@@ -600,20 +607,33 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
 
   const CompactScorePanel = () => (
     <div className="flex flex-col justify-center h-full px-2 py-3 gap-2" style={{ minWidth: 0 }}>
-      {/* Status */}
+      {/* Status: [star] [clock] [LIVE] */}
       <div className="flex items-center gap-1 mb-1">
+        {isAuthenticated && (
+          <button
+            onClick={handleStarClick}
+            aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 1, lineHeight: 1, flexShrink: 0, color: isFavorited ? "#FFD700" : "hsl(var(--muted-foreground))", opacity: isFavorited ? 1 : 0.4, transition: "opacity 0.15s" }}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill={isFavorited ? "#FFD700" : "none"} stroke={isFavorited ? "#FFD700" : "currentColor"} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+        )}
         {isLive ? (
-          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide" style={{ background: "rgba(239,68,68,0.18)", color: "#ef4444" }}>
-            <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: "#ef4444" }} />
-            LIVE
-          </span>
+          <>
+            {game.gameClock && (
+              <span className="text-[9px] tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>{game.gameClock}</span>
+            )}
+            <span className="flex items-center gap-0.5 text-[8px] font-black tracking-widest uppercase flex-shrink-0" style={{ color: "#39FF14" }}>
+              <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: "#39FF14" }} />
+              LIVE
+            </span>
+          </>
         ) : isFinal ? (
           <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wide" style={{ background: "rgba(255,255,255,0.07)", color: "hsl(var(--muted-foreground))" }}>FINAL</span>
         ) : (
           <span className="text-[10px] font-bold" style={{ color: "hsl(var(--muted-foreground))" }}>{time}</span>
-        )}
-        {isLive && game.gameClock && (
-          <span className="text-[9px] tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>{game.gameClock}</span>
         )}
       </div>
       {/* Away row */}
@@ -653,22 +673,52 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   // For upcoming games: shows start time instead of scores.
   const ScorePanel = () => (
     <div className="flex flex-col pl-2 pr-1 pt-0 pb-0 min-w-0" style={{ minWidth: 0 }}>
-      {/* Status row: clock / LIVE badge / FINAL / start time — mirrors OddsLinesPanel header height */}
+      {/* Status row: [star] [clock/status] [LIVE badge] */}
       <div className="flex items-center gap-1.5 mb-0.5">
+        {/* Star / Favorite button — always left of status */}
+        {isAuthenticated && (
+          <button
+            onClick={handleStarClick}
+            aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              padding: 2,
+              lineHeight: 1,
+              flexShrink: 0,
+              color: isFavorited ? "#FFD700" : "hsl(var(--muted-foreground))",
+              opacity: isFavorited ? 1 : 0.4,
+              transition: "opacity 0.15s, color 0.15s, transform 0.15s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.opacity = "1"; e.currentTarget.style.transform = "scale(1.2)"; }}
+            onMouseLeave={e => { e.currentTarget.style.opacity = isFavorited ? "1" : "0.4"; e.currentTarget.style.transform = "scale(1)"; }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24"
+              fill={isFavorited ? "#FFD700" : "none"}
+              stroke={isFavorited ? "#FFD700" : "currentColor"}
+              strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            >
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+            </svg>
+          </button>
+        )}
+        {/* Game status: time / FINAL / clock */}
         {isLive ? (
           <>
-            <span
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide flex-shrink-0"
-              style={{ background: "rgba(239,68,68,0.18)", color: "#ef4444" }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: "#ef4444" }} />
-              LIVE
-            </span>
             {game.gameClock && (
               <span className="text-[11px] font-semibold tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>
                 {game.gameClock}
               </span>
             )}
+            {/* LIVE indicator — neon green, right of period/clock */}
+            <span
+              className="flex items-center gap-0.5 text-[9px] font-black tracking-widest uppercase flex-shrink-0"
+              style={{ color: "#39FF14", letterSpacing: "0.1em" }}
+            >
+              <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: "#39FF14" }} />
+              LIVE
+            </span>
           </>
         ) : isFinal ? (
           <span
@@ -795,42 +845,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
           borderLeft: `3px solid ${borderColor}`,
         }}
       >
-        {/* ── Star / Favorite button ── */}
-        {isAuthenticated && (
-          <button
-            onClick={handleStarClick}
-            aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
-            style={{
-              position: "absolute",
-              top: 6,
-              right: 8,
-              zIndex: 20,
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 2,
-              lineHeight: 1,
-              opacity: isFavorited ? 1 : 0.35,
-              transition: "opacity 0.15s, transform 0.15s",
-              color: isFavorited ? "#FFD700" : "hsl(var(--muted-foreground))",
-            }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
-            onMouseLeave={e => (e.currentTarget.style.opacity = isFavorited ? "1" : "0.35")}
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill={isFavorited ? "#FFD700" : "none"}
-              stroke={isFavorited ? "#FFD700" : "currentColor"}
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-            </svg>
-          </button>
-        )}
+
         {/*
           DESKTOP (≥ lg): single horizontal 3-column row
             Score panel | Odds/Lines | Betting Splits

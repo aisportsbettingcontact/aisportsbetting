@@ -758,3 +758,15 @@
 - [ ] Backend: extend updateProjections to accept modelAwayML/modelHomeML
 - [ ] EdgeVerdict (GameCard): add EV Grade A+–F scale below edge pts display
 - [ ] EdgeVerdictLive (PublishProjections): add EV Grade A+–F scale below edge pts display
+- [x] Move star/favorite button to left of game clock/start time in ScorePanel status row
+- [x] Add neon green (#39FF14) LIVE indicator to the right of the period/clock (only when live, hidden when final/upcoming)
+- [x] Add onFavoriteNotify prop to GameCard for in-page notification callback
+- [x] Add in-page square notification (FavNotificationBanner) that appears top-right when user favorites a game, auto-dismisses after 4s
+- [x] Add Favorites tab button (star icon) to the left of the calendar dropdown in filter bar
+- [x] Favorites tab shows active favorite count badge
+- [x] Favorites tab feed shows only favorited games (all sports, all dates)
+- [x] isFavoriteStillActive() function: favorites expire at 11:00 UTC the day after the game date
+- [x] getFavoriteGamesWithDates server helper: returns gameId + gameDate for expiry logic
+- [x] getMyFavoritesWithDates tRPC procedure added to favorites router
+- [x] Favorites tab hides calendar/sport/search filters and shows "MY FAVORITES" label instead
+- [x] Model toggle available in both normal and favorites tab modes

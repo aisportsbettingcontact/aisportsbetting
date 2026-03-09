@@ -5,10 +5,11 @@
  * Betting Splits are intentionally hidden — use the Betting Splits page for those.
  */
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock } from "lucide-react";
+import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, Star } from "lucide-react";
 import { CalendarPicker, todayUTC } from "@/components/CalendarPicker";
+import { AnimatePresence, motion } from "framer-motion";
 
 // CDN icon URLs
 const CDN_TEST_TUBE = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-test-tube_0cb720ac.png";
@@ -76,6 +77,20 @@ function formatDateShort(dateStr: string): string {
   } catch { return dateStr; }
 }
 
+/**
+ * Returns true if a favorited game with the given gameDate has NOT yet expired.
+ * A favorited game expires at 11:00 UTC on the calendar day AFTER the game date.
+ * e.g. game on 2026-03-08 → expires at 2026-03-09T11:00:00Z
+ */
+function isFavoriteStillActive(gameDate: string): boolean {
+  if (!gameDate) return false;
+  // Parse game date as YYYY-MM-DD, advance by 1 day, set to 11:00 UTC
+  const [year, month, day] = gameDate.split("-").map(Number);
+  if (!year || !month || !day) return false;
+  const expiryUtc = Date.UTC(year, month - 1, day + 1, 11, 0, 0, 0);
+  return Date.now() < expiryUtc;
+}
+
 // ─── Team Logo Badge ──────────────────────────────────────────────────────────
 function TeamBadge({ slug, size = 22 }: { slug: string; size?: number }) {
   const ncaa = getTeamByDbSlug(slug);
@@ -141,6 +156,64 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   );
 }
 
+// ─── In-page Favorite Notification ───────────────────────────────────────────
+interface FavNotification {
+  id: number;
+  gameId: number;
+  awayTeam: string;
+  homeTeam: string;
+}
+
+function FavNotificationBanner({ notif, onDismiss }: { notif: FavNotification; onDismiss: (id: number) => void }) {
+  const awayNcaa = getTeamByDbSlug(notif.awayTeam);
+  const homeNcaa = getTeamByDbSlug(notif.homeTeam);
+  const awayNba = !awayNcaa ? getNbaTeamByDbSlug(notif.awayTeam) : null;
+  const homeNba = !homeNcaa ? getNbaTeamByDbSlug(notif.homeTeam) : null;
+  const awayName = awayNcaa?.ncaaName ?? awayNba?.city ?? notif.awayTeam.replace(/_/g, " ");
+  const homeName = homeNcaa?.ncaaName ?? homeNba?.city ?? notif.homeTeam.replace(/_/g, " ");
+
+  useEffect(() => {
+    const t = setTimeout(() => onDismiss(notif.id), 4000);
+    return () => clearTimeout(t);
+  }, [notif.id, onDismiss]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -12, scale: 0.96 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      exit={{ opacity: 0, y: -8, scale: 0.96 }}
+      transition={{ duration: 0.2 }}
+      style={{
+        background: "rgba(10,10,10,0.97)",
+        border: "1px solid rgba(255,215,0,0.5)",
+        borderRadius: 8,
+        boxShadow: "0 4px 24px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,215,0,0.15)",
+        padding: "10px 14px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        minWidth: 220,
+        maxWidth: 320,
+        pointerEvents: "auto",
+      }}
+    >
+      <Star className="flex-shrink-0" style={{ width: 14, height: 14, color: "#FFD700", fill: "#FFD700" }} />
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: "#FFD700", margin: 0, lineHeight: 1.3 }}>Added to Favorites</p>
+        <p style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", margin: "2px 0 0", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {awayName} @ {homeName}
+        </p>
+      </div>
+      <button
+        onClick={() => onDismiss(notif.id)}
+        style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}
+      >
+        <X style={{ width: 12, height: 12 }} />
+      </button>
+    </motion.div>
+  );
+}
+
 // ─── Stable sort helpers (defined outside component to avoid infinite useMemo loops) ───
 const parseLiveSortKey = (gameClock: string | null): [number, number] => {
   if (!gameClock) return [-1, 9999];
@@ -195,6 +268,16 @@ export default function ModelProjections() {
   const [showModel, setShowModel] = useState(true);
   const toggleModel = () => setShowModel((v) => !v);
 
+  // ── Favorites tab ──────────────────────────────────────────────────────────
+  const [showFavoritesTab, setShowFavoritesTab] = useState(false);
+
+  // ── In-page favorite notifications ────────────────────────────────────────
+  const [favNotifications, setFavNotifications] = useState<FavNotification[]>([]);
+  const notifCounterRef = useRef(0);
+  const dismissNotif = useCallback((id: number) => {
+    setFavNotifications(prev => prev.filter(n => n.id !== id));
+  }, []);
+
   useEffect(() => {
     if (!headerRef.current) return;
     const obs = new ResizeObserver(() => {
@@ -210,7 +293,7 @@ export default function ModelProjections() {
 
   useEffect(() => {
     if (!appAuthLoading && !appUser) setLocation("/");
-  }, [appUser, appAuthLoading, setLocation]);
+  }, [appUser, appAuthLoading]);
 
   useEffect(() => {
     if (!appAuthLoading && appUser && !appUser.termsAccepted) setShowAgeModal(true);
@@ -285,6 +368,13 @@ export default function ModelProjections() {
     enabled: isAuthenticated,
     refetchOnWindowFocus: false,
   });
+
+  // Favorites with game dates — for the Favorites tab and 11:00 UTC expiry
+  const { data: favWithDatesData } = trpc.favorites.getMyFavoritesWithDates.useQuery(undefined, {
+    enabled: isAuthenticated,
+    refetchOnWindowFocus: false,
+  });
+
   const [optimisticFavIds, setOptimisticFavIds] = useState<Set<number>>(new Set());
   const favIds = useMemo(() => {
     const base = new Set(favData?.favoriteGameIds ?? []);
@@ -293,15 +383,57 @@ export default function ModelProjections() {
     });
     return base;
   }, [favData, optimisticFavIds]);
+
   const utils = trpc.useUtils();
   const toggleFavMutation = trpc.favorites.toggle.useMutation({
-    onSuccess: () => { utils.favorites.getMyFavorites.invalidate(); setOptimisticFavIds(new Set()); },
+    onSuccess: () => {
+      utils.favorites.getMyFavorites.invalidate();
+      utils.favorites.getMyFavoritesWithDates.invalidate();
+      setOptimisticFavIds(new Set());
+    },
     onError: () => { setOptimisticFavIds(new Set()); },
   });
+
   const handleToggleFavorite = (gameId: number) => {
     setOptimisticFavIds(prev => { const next = new Set(prev); if (next.has(gameId)) next.delete(gameId); else next.add(gameId); return next; });
     toggleFavMutation.mutate({ gameId });
   };
+
+  // Called by GameCard when user favorites (not unfavorites) a game
+  const handleFavoriteNotify = useCallback((gameId: number) => {
+    const game = allGames?.find(g => g?.id === gameId);
+    if (!game) return;
+    notifCounterRef.current += 1;
+    const notifId = notifCounterRef.current;
+    setFavNotifications(prev => [...prev, {
+      id: notifId,
+      gameId,
+      awayTeam: game.awayTeam,
+      homeTeam: game.homeTeam,
+    }]);
+  }, [allGames]);
+
+  // Active favorites for the Favorites tab: filter by 11:00 UTC expiry
+  const activeFavGameIds = useMemo(() => {
+    if (!favWithDatesData?.favorites) return new Set<number>();
+    const active = new Set<number>();
+    for (const fav of favWithDatesData.favorites) {
+      if (isFavoriteStillActive(fav.gameDate)) {
+        active.add(fav.gameId);
+      }
+    }
+    return active;
+  }, [favWithDatesData]);
+
+  // Games to show in the Favorites tab (all sports, all dates, filtered by active favs)
+  const favoritesTabGames = useMemo(() => {
+    if (!allGames || activeFavGameIds.size === 0) return [];
+    return allGames.filter(g => g && activeFavGameIds.has(g.id)).sort(compareGames);
+  }, [allGames, activeFavGameIds]);
+
+  // Count of active favorites for the badge
+  const activeFavCount = activeFavGameIds.size;
+
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t); }, []);
   const splitsAgoLabel = useMemo(() => {
@@ -365,6 +497,26 @@ export default function ModelProjections() {
   return (
     <div className="min-h-screen bg-background">
       {showAgeModal && <AgeModal onAccept={() => acceptTermsMutation.mutate()} onClose={appLogout} />}
+
+      {/* ── In-page favorite notifications (top-right corner) ── */}
+      <div
+        style={{
+          position: "fixed",
+          top: 60,
+          right: 12,
+          zIndex: 9999,
+          display: "flex",
+          flexDirection: "column",
+          gap: 8,
+          pointerEvents: "none",
+        }}
+      >
+        <AnimatePresence>
+          {favNotifications.map(notif => (
+            <FavNotificationBanner key={notif.id} notif={notif} onDismiss={dismissNotif} />
+          ))}
+        </AnimatePresence>
+      </div>
 
       {/* ── Sticky Header ── */}
       <header ref={headerRef} className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm">
@@ -451,40 +603,80 @@ export default function ModelProjections() {
           </Link>
         </div>
 
-        {/* Row 3: Unified filter bar — DATE | NCAAM | NBA | Search */}
+        {/* Row 3: Unified filter bar — FAVORITES | DATE | NCAAM | NBA | Search */}
         <div ref={searchRef} className="relative px-3 pt-1 pb-0 flex items-center gap-2">
 
+          {/* FAVORITES tab — only shown when authenticated */}
+          {isAuthenticated && (
+            <button
+              onClick={() => setShowFavoritesTab(v => !v)}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+              style={showFavoritesTab
+                ? { background: "rgba(255,215,0,0.15)", color: "#FFD700", border: "1px solid rgba(255,215,0,0.5)" }
+                : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }
+              }
+              title="Favorites"
+            >
+              <Star style={{ width: 12, height: 12, fill: showFavoritesTab ? "#FFD700" : "none", color: showFavoritesTab ? "#FFD700" : "rgba(255,255,255,0.45)" }} />
+              {activeFavCount > 0 && (
+                <span
+                  className="ml-0.5 text-[10px] font-black"
+                  style={{ color: showFavoritesTab ? "#FFD700" : "rgba(255,255,255,0.6)" }}
+                >
+                  {activeFavCount}
+                </span>
+              )}
+            </button>
+          )}
+
           {/* DATE picker — calendar dropdown */}
-          <CalendarPicker
-            selectedDate={selectedDate}
-            onSelect={setSelectedDate}
-            availableDates={new Set(allDates)}
-            isAdmin={isOwner || user?.role === "admin"}
-          />
+          {!showFavoritesTab && (
+            <CalendarPicker
+              selectedDate={selectedDate}
+              onSelect={setSelectedDate}
+              availableDates={new Set(allDates)}
+              isAdmin={isOwner || user?.role === "admin"}
+            />
+          )}
 
-          {/* NCAAM pill */}
-          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
-            style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={14} height={10} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
-            NCAAM
-          </button>
+          {/* NCAAM pill — hidden in favorites tab */}
+          {!showFavoritesTab && (
+            <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+              style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+              <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={14} height={10} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
+              NCAAM
+            </button>
+          )}
 
-          {/* NBA pill */}
-          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
-            style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <img src={CDN_NBA} alt="NBA" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
-            NBA
-          </button>
+          {/* NBA pill — hidden in favorites tab */}
+          {!showFavoritesTab && (
+            <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+              style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+              <img src={CDN_NBA} alt="NBA" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
+              NBA
+            </button>
+          )}
 
-          {/* Search bar — takes remaining space */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full border transition-all duration-150"
-              style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
-              <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-              <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none" />
-              {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>}
+          {/* Search bar — takes remaining space, hidden in favorites tab */}
+          {!showFavoritesTab && (
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full border transition-all duration-150"
+                style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
+                <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none" />
+                {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Favorites tab label — shown instead of search when favorites is active */}
+          {showFavoritesTab && (
+            <div className="flex-1 min-w-0 flex items-center">
+              <span className="text-[11px] font-bold tracking-widest uppercase" style={{ color: "#FFD700" }}>
+                ⭐ MY FAVORITES
+              </span>
+            </div>
+          )}
 
           {/* Search dropdown */}
           {showDropdown && (
@@ -503,8 +695,8 @@ export default function ModelProjections() {
           )}
         </div>
 
-        {/* Row 4: Date header — shown when games are loaded */}
-        {!gamesLoading && sortedDates.length > 0 && (
+        {/* Row 4: Date header — shown when games are loaded and NOT in favorites tab */}
+        {!showFavoritesTab && !gamesLoading && sortedDates.length > 0 && (
           <div className="flex items-center px-4 py-1 border-b border-border bg-background/95 gap-2">
             <div className="flex-1" />
             <div className="flex items-center gap-2 whitespace-nowrap">
@@ -539,37 +731,112 @@ export default function ModelProjections() {
             </div>
           </div>
         )}
+
+        {/* Row 4 (favorites mode): Favorites header */}
+        {showFavoritesTab && (
+          <div className="flex items-center px-4 py-1 border-b border-border bg-background/95 gap-2">
+            <div className="flex-1" />
+            <span className="font-bold tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)", color: "#FFD700" }}>
+              FAVORITED GAMES
+            </span>
+            <div className="flex-1" />
+            {/* Model toggle also available in favorites tab */}
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                onClick={toggleModel}
+                aria-pressed={showModel}
+                className="relative flex-shrink-0 flex items-center rounded-full transition-colors duration-200"
+                style={{
+                  width: 36, height: 20,
+                  background: showModel ? 'rgba(57,255,20,0.35)' : 'rgba(255,255,255,0.12)',
+                  border: `1px solid ${showModel ? 'rgba(57,255,20,0.6)' : 'rgba(255,255,255,0.2)'}`,
+                  padding: 2,
+                }}
+              >
+                <span
+                  className="block rounded-full transition-all duration-200"
+                  style={{
+                    width: 14, height: 14,
+                    background: showModel ? '#39FF14' : 'rgba(255,255,255,0.6)',
+                    marginLeft: showModel ? 'auto' : 0,
+                  }}
+                />
+              </button>
+              <span className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#ffffff' }}>Model</span>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* ── Main Feed ── */}
       <main className="w-full pb-8">
-        {gamesLoading ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-3">
-            <Loader2 className="w-8 h-8 text-primary animate-spin" />
-            <p className="text-sm text-muted-foreground">Loading projections…</p>
-          </div>
-        ) : sortedDates.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
-            <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
-            <div>
-              <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
-              <p className="text-xs text-muted-foreground">
-                {selectedStatuses.size > 0 ? `No ${Array.from(selectedStatuses).join(" or ")} ${selectedSport} games right now.` : `No ${selectedSport} games found.`}
-              </p>
-            </div>
-          </div>
-        ) : (
-          sortedDates.map((date) => (
-            <div key={date}>
-              <div className="bg-card mx-0">
-                {gamesByDate[date]!.map((game) => (
-                  <div key={game!.id} id={`game-card-${game!.id}`}>
-                    <GameCard game={game!} mode="projections" showModel={showModel} onToggleModel={toggleModel} favoriteGameIds={favIds} onToggleFavorite={handleToggleFavorite} />
-                  </div>
-                ))}
+        {/* FAVORITES TAB FEED */}
+        {showFavoritesTab ? (
+          favoritesTabGames.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
+              <Star className="w-10 h-10" style={{ color: "rgba(255,215,0,0.3)" }} />
+              <div>
+                <p className="text-sm font-semibold text-foreground mb-1">No favorited games</p>
+                <p className="text-xs text-muted-foreground">
+                  Tap the ⭐ star on any game card to add it to your favorites.
+                </p>
               </div>
             </div>
-          ))
+          ) : (
+            <div className="bg-card mx-0">
+              {favoritesTabGames.map((game) => (
+                <div key={game!.id} id={`game-card-${game!.id}`}>
+                  <GameCard
+                    game={game!}
+                    mode="projections"
+                    showModel={showModel}
+                    onToggleModel={toggleModel}
+                    favoriteGameIds={favIds}
+                    onToggleFavorite={handleToggleFavorite}
+                    onFavoriteNotify={handleFavoriteNotify}
+                  />
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          /* NORMAL FEED */
+          gamesLoading ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-3">
+              <Loader2 className="w-8 h-8 text-primary animate-spin" />
+              <p className="text-sm text-muted-foreground">Loading projections…</p>
+            </div>
+          ) : sortedDates.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
+              <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
+              <div>
+                <p className="text-sm font-semibold text-foreground mb-1">No games found</p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedStatuses.size > 0 ? `No ${Array.from(selectedStatuses).join(" or ")} ${selectedSport} games right now.` : `No ${selectedSport} games found.`}
+                </p>
+              </div>
+            </div>
+          ) : (
+            sortedDates.map((date) => (
+              <div key={date}>
+                <div className="bg-card mx-0">
+                  {gamesByDate[date]!.map((game) => (
+                    <div key={game!.id} id={`game-card-${game!.id}`}>
+                      <GameCard
+                        game={game!}
+                        mode="projections"
+                        showModel={showModel}
+                        onToggleModel={toggleModel}
+                        favoriteGameIds={favIds}
+                        onToggleFavorite={handleToggleFavorite}
+                        onFavoriteNotify={handleFavoriteNotify}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )
         )}
       </main>
     </div>
