@@ -45,7 +45,7 @@ function formatMilitaryTime(time: string): string {
   if (isNaN(hours)) return "TBD";
   const ampm = hours >= 12 ? "PM" : "AM";
   hours = hours % 12 || 12;
-  return `${hours}:${minutes} ${ampm} ET`;
+  return `${hours}:${minutes} ${ampm} EST`;
 }
 
 // ── Date formatting ───────────────────────────────────────────────────────────
@@ -1209,7 +1209,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             }
 
             // ── Game clock formatter ──────────────────────────────────────
-            // NCAAM: "1st" → "1H", "2nd" → "2H"; NBA: "Q1"–"Q4", "HALFTIME", "MM:SS"
+            // Period notation: 1Q/2Q/3Q/4Q, 1H/2H, 1P/2P/3P (never 1st/2nd/3rd/4th)
             const formatGameClock = (raw: string | null | undefined): string => {
               if (!raw) return '';
               const s = raw.trim();
@@ -1218,17 +1218,21 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (/^2nd$/i.test(s)) return '2H';
               if (/^1st\s+half$/i.test(s)) return '1H';
               if (/^2nd\s+half$/i.test(s)) return '2H';
-              if (/^half(time)?$/i.test(s)) return 'HALFTIME';  // always HALFTIME for all sports
-              // NBA quarter labels
-              if (/^q?1(st)?$/i.test(s)) return 'Q1';
-              if (/^q?2(nd)?$/i.test(s)) return 'Q2';
-              if (/^q?3(rd)?$/i.test(s)) return 'Q3';
-              if (/^q?4(th)?$/i.test(s)) return 'Q4';
+              if (/^half(time)?$/i.test(s)) return 'HALFTIME';
+              // Quarter labels → 1Q/2Q/3Q/4Q
+              if (/^q?1(st)?$/i.test(s)) return '1Q';
+              if (/^q?2(nd)?$/i.test(s)) return '2Q';
+              if (/^q?3(rd)?$/i.test(s)) return '3Q';
+              if (/^q?4(th)?$/i.test(s)) return '4Q';
+              // Period labels (hockey) → 1P/2P/3P
+              if (/^1(st)?\s+period$/i.test(s)) return '1P';
+              if (/^2(nd)?\s+period$/i.test(s)) return '2P';
+              if (/^3(rd)?\s+period$/i.test(s)) return '3P';
               if (/^ot$/i.test(s)) return 'OT';
               // MM:SS clock — pass through as-is
               if (/^\d{1,2}:\d{2}$/.test(s)) return s;
-              // Compound: "Q3 4:15" or "2nd 7:42" — normalize quarter label then keep clock
-              const compound = s.match(/^(q?\d|\d+(?:st|nd|rd|th)?|half(?:time)?)\s+(\d{1,2}:\d{2})$/i);
+              // Compound: "Q3 4:15" or "2nd 7:42" — normalize period label then keep clock
+              const compound = s.match(/^(q?\d|\d+(?:st|nd|rd|th)?(?:\s+(?:period|half))?|half(?:time)?)\s+(\d{1,2}:\d{2})$/i);
               if (compound) {
                 const period = formatGameClock(compound[1]);
                 return `${period} ${compound[2]}`;
@@ -1575,11 +1579,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <span className="flex items-center gap-1 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(11px, 2.8vw, 14px)' }}>
                         <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: '#39FF14' }} />
                         LIVE
-                        {/* Clock inline right of LIVE — white font, formatted */}
+                        {/* Clock inline right of LIVE — white font, NOT bold */}
                         {formattedClock && (
                           <span style={{
                             color: 'rgba(255,255,255,0.90)',
-                            fontWeight: 700,
+                            fontWeight: 400,
                             fontSize: 'clamp(11px, 2.8vw, 14px)',
                             letterSpacing: '0.04em',
                             fontVariantNumeric: 'tabular-nums',
@@ -1590,36 +1594,43 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     ) : isFinal ? (
                       <span className="font-bold tracking-wide px-1.5 py-0.5 rounded" style={{ fontSize: 'clamp(11px, 2.8vw, 14px)', background: 'rgba(255,255,255,0.07)', color: 'hsl(var(--muted-foreground))' }}>FINAL</span>
                     ) : (
-                      <span className="font-bold" style={{ fontSize: 'clamp(12px, 3vw, 15px)', color: 'hsl(var(--foreground))' }}>{time}</span>
+                      <span style={{ fontSize: 'clamp(12px, 3vw, 15px)', fontWeight: 400, color: 'hsl(var(--foreground))' }}>{time}</span>
                     )}
                   </div>
 
                   {/* Away row: height: 44px — matches OddsTable away row exactly */}
                   <div className="flex items-center justify-between gap-1 w-full" style={{ alignItems: 'center', height: '44px' }}>
                     {/* Logo + name block */}
-                    <div className="flex items-center gap-1 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
-                      <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={18} />
-                      <div className="flex flex-col min-w-0" style={{ lineHeight: 1.15 }}>
+                    <div className="flex items-center gap-2 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
+                      {/* Logo centered between school+nickname lines */}
+                      <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 22, height: 44 }}>
+                        <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={22} />
+                      </div>
+                      <div className="flex flex-col min-w-0" style={{ lineHeight: 1.2 }}>
+                        {/* School name: all-caps, semi-bold (600), white, State spelled out; fallback to abbr on mobile if truncated */}
                         <span style={{
-                          fontSize: 'clamp(14px, 3.6vw, 16px)',  /* +4pt: was clamp(10px,2.6vw,12px) */
-                          fontWeight: awayWins ? 800 : 600,
-                          color: awayWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
-                          letterSpacing: '0.02em',
+                          fontSize: 'clamp(14px, 3.6vw, 16px)',
+                          fontWeight: 600,
+                          color: '#ffffff',
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          maxWidth: '76px',
-                        }}>{awayName}</span>
+                          maxWidth: '72px',
+                        }} title={awayName.replace(/\bSt\.?\b/g, 'State')}>
+                          {awayName.replace(/\bSt\.?\b/g, 'State')}
+                        </span>
                         {awayNickname && (
                           <span style={{
-                            fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was clamp(8px,2.1vw,10px) */
+                            fontSize: 'clamp(11px, 2.8vw, 13px)',  /* +1pt from previous 10px base */
                             fontWeight: 400,
-                            color: awayWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.50)',
+                            color: '#ffffff',
                             letterSpacing: '0.02em',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            maxWidth: '76px',
+                            maxWidth: '72px',
                           }}>{awayNickname}</span>
                         )}
                       </div>
@@ -1641,29 +1652,36 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   {/* Home row: height: 44px — matches OddsTable home row exactly */}
                   <div className="flex items-center justify-between gap-1 w-full" style={{ alignItems: 'center', height: '44px' }}>
                     {/* Logo + name block */}
-                    <div className="flex items-center gap-1 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
-                      <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={18} />
-                      <div className="flex flex-col min-w-0" style={{ lineHeight: 1.15 }}>
+                    <div className="flex items-center gap-2 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
+                      {/* Logo centered between school+nickname lines */}
+                      <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 22, height: 44 }}>
+                        <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={22} />
+                      </div>
+                      <div className="flex flex-col min-w-0" style={{ lineHeight: 1.2 }}>
+                        {/* School name: all-caps, semi-bold (600), white, State spelled out; fallback to abbr on mobile if truncated */}
                         <span style={{
-                          fontSize: 'clamp(14px, 3.6vw, 16px)',  /* +4pt: was clamp(10px,2.6vw,12px) */
-                          fontWeight: homeWins ? 800 : 600,
-                          color: homeWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
-                          letterSpacing: '0.02em',
+                          fontSize: 'clamp(14px, 3.6vw, 16px)',
+                          fontWeight: 600,
+                          color: '#ffffff',
+                          letterSpacing: '0.04em',
+                          textTransform: 'uppercase',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
-                          maxWidth: '76px',
-                        }}>{homeName}</span>
+                          maxWidth: '72px',
+                        }} title={homeName.replace(/\bSt\.?\b/g, 'State')}>
+                          {homeName.replace(/\bSt\.?\b/g, 'State')}
+                        </span>
                         {homeNickname && (
                           <span style={{
-                            fontSize: 'clamp(10px, 2.6vw, 12px)',  /* +2pt: was clamp(8px,2.1vw,10px) */
+                            fontSize: 'clamp(11px, 2.8vw, 13px)',  /* +1pt from previous 10px base */
                             fontWeight: 400,
-                            color: homeWins ? 'rgba(232,232,232,0.75)' : 'rgba(232,232,232,0.50)',
+                            color: '#ffffff',
                             letterSpacing: '0.02em',
                             whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
-                            maxWidth: '76px',
+                            maxWidth: '72px',
                           }}>{homeNickname}</span>
                         )}
                       </div>
@@ -1735,7 +1753,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                           onClick={handleTabClick}
                           style={{
                             padding: '6px 2px',
-                            fontSize: 'clamp(7px, 1.9vw, 9px)',
+                            fontSize: 'clamp(8px, 2.1vw, 10px)',  /* +1pt from clamp(7px,1.9vw,9px) */
                             fontWeight: isActive ? 800 : 500,
                             letterSpacing: '0.06em',
                             color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',

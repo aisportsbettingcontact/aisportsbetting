@@ -822,3 +822,11 @@
 - [x] Mobile frozen panel: school/team name font +4pt, nickname +2pt
 - [x] Mobile frozen panel: LIVE indicator +6pt, game start time +6pt, clock +6pt, FINAL badge +6pt
 - [x] Mobile frozen panel: favorite star icon larger
+- [x] School name: truncation fallback to abbreviation on mobile only; desktop/tablet always full name
+- [x] Unbold game start time and clock time; keep FINAL bolded
+- [x] Period notation: use 1Q/2Q/3Q/4Q, 1H/2H, 1P/2P/3P instead of 1st/2nd/3rd/4th
+- [x] Nickname: +1pt bigger, white (#ffffff), not bolded
+- [x] School name: semi-bold, white (#ffffff), all-caps; spell out State not St. (fallback to St. if truncated)
+- [x] Start time: display EST instead of ET
+- [x] Tab bar button text: +1pt font size
+- [x] Team logo: add gap/padding between logo and name, center logo vertically between school+nickname, slightly bigger
