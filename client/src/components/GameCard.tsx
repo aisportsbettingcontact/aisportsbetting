@@ -1584,7 +1584,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             }
 
             const bookStyle = (_isEdge?: boolean): React.CSSProperties => ({
-              fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
+              // unbolded book values: 10px; bolded book values: 9.75px (bold appears optically larger)
+              fontSize: isDualTab ? '10px' : isBookTab ? '9.75px' : '10px',
               // DUAL mode: book = light gray unbolded (secondary to model primary)
               // BOOK-only: book = white bold (primary)
               // MODEL-only: book = white unbolded 70% (secondary, visible for reference)
@@ -1624,7 +1625,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isDualTab) {
                 // DUAL mode: model is primary — edge = neon green bold, non-edge = white bold
                 return {
-                  fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
+                  fontSize: '9.75px',  // bolded model values: 9.75px
                   fontWeight: 700,
                   color: isEdge ? '#39FF14' : 'rgba(255,255,255,1)',
                   letterSpacing: '0.02em',
@@ -1634,7 +1635,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isBookTab) {
                 // BOOK-only tab: model is always secondary — white unbolded, no edge highlight
                 return {
-                  fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
+                  fontSize: '10px',  // unbolded model values: 10px
                   fontWeight: 400,
                   color: 'rgba(255,255,255,0.70)',
                   letterSpacing: '0.02em',
@@ -1644,7 +1645,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isModelTab) {
                 // MODEL-only tab: edge = neon green bold; non-edge = white bold
                 return {
-                  fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
+                  fontSize: '9.75px',  // bolded model values: 9.75px
                   fontWeight: 700,
                   color: isEdge ? '#39FF14' : 'rgba(255,255,255,1)',
                   letterSpacing: '0.02em',
@@ -1653,7 +1654,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               }
               // SPLITS/EDGE tabs: dimmed
               return {
-                fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
+                fontSize: '10px',  // unbolded dimmed values: 10px
                 fontWeight: 400,
                 color: 'rgba(255,255,255,0.30)',
                 letterSpacing: '0.02em',
