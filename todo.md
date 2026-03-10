@@ -878,3 +878,6 @@
 - [x] GameCard mobile: move status row (star/LIVE/FINAL/time) to above the away team row (above away, not between away and home)
 - [x] GameCard mobile: style FINAL badge as a light grey pill with neon green (#39FF14) text
 - [x] GameCard: never abbreviate "LOS ANGELES" to "LA" in team name display (DB updated + defensive normalization in code)
+- [x] BUG FIXED: Oregon vs Maryland duplicate — deleted stale NCAA-only stub (id=1620073); added reverse-order team match in VSiN and NCAA-only insertion paths in vsinAutoRefresh.ts to prevent future duplicates
+- [x] BUG FIXED: UMass-Lowell vs UMBC missing — fixed UMBC vsinSlug from 'umbc' to 'md-balt-co' in ncaamTeams.ts; next auto-refresh will populate odds and splits
+- [x] AUDIT: 24 games on March 10 NCAAM slate, all confirmed present; no other duplicates or missing games found

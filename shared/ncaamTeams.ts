@@ -265,7 +265,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
     ncaaNickname: "Retrievers",
     vsinName: "UMBC",
     ncaaSlug: "umbc",
-    vsinSlug: "umbc",
+    vsinSlug: "md-balt-co",
     dbSlug: "umbc",
     logoUrl: "https://www.ncaa.com/sites/default/files/images/logos/schools/bgl/umbc.svg",
     primaryColor: "#FFC20E",

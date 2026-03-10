@@ -185,6 +185,9 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         e => e.awayTeam === awaySlug && e.homeTeam === homeSlug
       ) ?? existing.find(
         e => slugsMatch(e.awayTeam, awaySlug) && slugsMatch(e.homeTeam, homeSlug)
+      ) ?? existing.find(
+        // VSiN sometimes lists teams in reversed order vs NCAA.com — treat as same game
+        e => slugsMatch(e.awayTeam, homeSlug) && slugsMatch(e.homeTeam, awaySlug)
       );
 
       const startTimeKey = `${awaySlug}@${homeSlug}`;
@@ -301,6 +304,9 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
       const existingForEffectiveDate = existing;
       const bySlug = existingForEffectiveDate.find(
         e => slugsMatch(e.awayTeam, awaySeoname) && slugsMatch(e.homeTeam, homeSeoname)
+      ) ?? existingForEffectiveDate.find(
+        // Also check reversed order — VSiN may have inserted the game with swapped teams
+        e => slugsMatch(e.awayTeam, homeSeoname) && slugsMatch(e.homeTeam, awaySeoname)
       );
       if (bySlug) {
         // Always update gameStatus, scores, and clock; also patch ncaaContestId if missing
