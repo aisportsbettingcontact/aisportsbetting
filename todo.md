@@ -841,3 +841,4 @@
 - [x] Mobile frozen panel: deep diagnostic — measure all team names, find correct font size that fits every name without truncation
 - [x] Mobile frozen panel: apply useAutoFontSize hook (same as desktop), remove maxWidth constraints, widen panel
 - [x] Update audit script to detect overflow:hidden truncation via Canvas measureText on mobile
+- [x] Sticky date/league header: always show full DATE · LEAGUE string on all screen sizes; responsive font sizing (mobile < tablet < desktop)

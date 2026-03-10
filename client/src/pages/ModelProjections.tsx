@@ -690,12 +690,39 @@ export default function ModelProjections() {
 
         {/* Row 4: Date header — shown when games are loaded and NOT in favorites tab */}
         {!showFavoritesTab && !gamesLoading && sortedDates.length > 0 && (
-          <div className="flex items-center px-4 py-1 border-b border-border bg-background/95 gap-2">
+          <div className="flex items-center px-2 py-1 border-b border-border bg-background/95 gap-1 sm:gap-2 sm:px-4">
             <div className="flex-1" />
-            <div className="flex items-center gap-2 whitespace-nowrap">
-              <span className="font-bold tracking-widest uppercase" style={{ fontSize: "clamp(17px, 3.2vw, 19px)", color: '#ffffff' }}>{formatDateHeader(selectedDate)}</span>
-              <span style={{ fontSize: '22px', color: '#ffffff', fontWeight: 800, lineHeight: 1 }}>·</span>
-              <span className="font-semibold hidden sm:inline" style={{ color: "#a3a3a3", letterSpacing: "0.06em", fontSize: '15px', textTransform: 'uppercase' }}>{selectedSport === "NCAAM" ? "Men's College Basketball" : "NBA Basketball"}</span>
+            {/* DATE · LEAGUE — always visible, three-tier responsive font sizes:
+                mobile  (<640px):  date 11-13px, dot 14px, league 9-11px
+                tablet  (640-1024px): date 14-16px, dot 18px, league 12-14px
+                desktop (>1024px): date 17-19px, dot 22px, league 15-17px
+            */}
+            <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-center">
+              <span
+                className="font-bold tracking-widest uppercase"
+                style={{
+                  fontSize: 'clamp(11px, 3.5vw, 19px)',
+                  color: '#ffffff',
+                  whiteSpace: 'nowrap',
+                }}
+              >{formatDateHeader(selectedDate)}</span>
+              <span style={{
+                fontSize: 'clamp(14px, 3.5vw, 22px)',
+                color: '#ffffff',
+                fontWeight: 800,
+                lineHeight: 1,
+                flexShrink: 0,
+              }}>·</span>
+              <span
+                className="font-semibold"
+                style={{
+                  color: '#a3a3a3',
+                  letterSpacing: '0.06em',
+                  fontSize: 'clamp(9px, 2.8vw, 17px)',
+                  textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                }}
+              >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : 'NBA BASKETBALL'}</span>
             </div>
             <div className="flex-1" />
           </div>

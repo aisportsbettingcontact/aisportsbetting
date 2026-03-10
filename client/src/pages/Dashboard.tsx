@@ -681,14 +681,16 @@ export default function Dashboard() {
               {/* Date section header */}
               <div className="flex items-center px-4 py-2 border-b border-border sticky bg-background/95 backdrop-blur-sm z-10" style={{ top: headerHeight }}>
                 <div className="flex-1" />
-                <div className="flex items-center gap-2 whitespace-nowrap">
-                  <span className="font-bold text-foreground tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)" }}>
-                    {formatDateHeader(date)}
-                  </span>
-                  <span style={{ fontSize: '22px', color: '#ffffff', fontWeight: 800, lineHeight: 1 }}>·</span>
-                  <span className="font-semibold hidden sm:inline" style={{ color: "#a3a3a3", letterSpacing: "0.06em", fontSize: '15px', textTransform: 'uppercase' }}>
-                    {selectedSport === "NCAAM" ? "Men's College Basketball" : "NBA Basketball"}
-                  </span>
+                <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-center">
+                  <span
+                    className="font-bold tracking-widest uppercase"
+                    style={{ fontSize: 'clamp(11px, 3.5vw, 19px)', color: '#ffffff', whiteSpace: 'nowrap' }}
+                  >{formatDateHeader(date)}</span>
+                  <span style={{ fontSize: 'clamp(14px, 3.5vw, 22px)', color: '#ffffff', fontWeight: 800, lineHeight: 1, flexShrink: 0 }}>·</span>
+                  <span
+                    className="font-semibold"
+                    style={{ color: '#a3a3a3', letterSpacing: '0.06em', fontSize: 'clamp(9px, 2.8vw, 17px)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
+                  >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : 'NBA BASKETBALL'}</span>
                 </div>
                 <div className="flex-1" />
               </div>
