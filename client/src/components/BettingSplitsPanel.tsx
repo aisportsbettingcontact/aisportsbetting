@@ -126,14 +126,46 @@ interface LabeledBarProps {
 // We use a CSS min-width in px so even 1% segments expand to fit their label.
 const MOBILE_SEGMENT_MIN_PX = 28; // px — enough for "1%" at font-size 10 with 4px padding each side
 
-const INSIDE_LABEL_STYLE: React.CSSProperties = {
+// Black stroke textShadow for all % labels — applied to every label path, no exceptions
+const LABEL_STROKE = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)';
+
+// Away label: flush LEFT inside the segment
+const MOBILE_AWAY_LABEL_STYLE: React.CSSProperties = {
   fontSize: 10,
   color: '#ffffff',
   fontWeight: 800,
   letterSpacing: '0.04em',
   lineHeight: 1,
   whiteSpace: 'nowrap',
-  textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)',
+  display: 'block',
+  textAlign: 'left',
+  textShadow: LABEL_STROKE,
+};
+
+// Home label: flush RIGHT inside the segment
+const MOBILE_HOME_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 10,
+  color: '#ffffff',
+  fontWeight: 800,
+  letterSpacing: '0.04em',
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  display: 'block',
+  textAlign: 'right',
+  textShadow: LABEL_STROKE,
+};
+
+// 100% full-bar label: centered
+const MOBILE_FULL_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 10,
+  color: '#ffffff',
+  fontWeight: 800,
+  letterSpacing: '0.04em',
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  display: 'block',
+  textAlign: 'center',
+  textShadow: LABEL_STROKE,
 };
 
 function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, homeLineLabel, rowLabel }: LabeledBarProps) {
@@ -205,31 +237,31 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
           boxSizing: 'border-box',
         }}
       >
-        {/* Away segment */}
+        {/* Away segment — label flush LEFT */}
         {away > 0 && !isHomeFull && (
           <div style={awaySegStyle} className="transition-all duration-700">
-            <span style={INSIDE_LABEL_STYLE}>{away}%</span>
+            <span style={MOBILE_AWAY_LABEL_STYLE}>{away}%</span>
           </div>
         )}
         {/* Divider */}
         {showDivider && (
           <div style={{ width: 1, background: 'rgba(255,255,255,0.25)', flexShrink: 0, alignSelf: 'stretch' }} />
         )}
-        {/* Home segment */}
+        {/* Home segment — label flush RIGHT */}
         {home > 0 && !isAwayFull && (
           <div style={homeSegStyle} className="transition-all duration-700">
-            <span style={INSIDE_LABEL_STYLE}>{home}%</span>
+            <span style={MOBILE_HOME_LABEL_STYLE}>{home}%</span>
           </div>
         )}
-        {/* 100% full-bar cases */}
+        {/* 100% full-bar cases — label centered */}
         {isAwayFull && (
           <div style={{ flex: 1, background: awayColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }} className="transition-all duration-700">
-            <span style={INSIDE_LABEL_STYLE}>100%</span>
+            <span style={MOBILE_FULL_LABEL_STYLE}>100%</span>
           </div>
         )}
         {isHomeFull && (
           <div style={{ flex: 1, background: homeColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 4 }} className="transition-all duration-700">
-            <span style={INSIDE_LABEL_STYLE}>100%</span>
+            <span style={MOBILE_FULL_LABEL_STYLE}>100%</span>
           </div>
         )}
       </div>
@@ -290,15 +322,44 @@ interface SplitBarProps {
   homeColor: string;
 }
 
-// Desktop SplitBar label style — same rules as mobile, just larger
-const DESKTOP_INSIDE_LABEL_STYLE: React.CSSProperties = {
+// Desktop SplitBar label styles — directional, same black stroke as mobile
+// Away label: flush LEFT
+const DESKTOP_AWAY_LABEL_STYLE: React.CSSProperties = {
   fontSize: 'clamp(11px, 1vw, 16px)',
   color: '#ffffff',
   fontWeight: 800,
   letterSpacing: '0.04em',
   lineHeight: 1,
   whiteSpace: 'nowrap',
-  textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)',
+  display: 'block',
+  textAlign: 'left',
+  textShadow: LABEL_STROKE,
+};
+
+// Home label: flush RIGHT
+const DESKTOP_HOME_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 'clamp(11px, 1vw, 16px)',
+  color: '#ffffff',
+  fontWeight: 800,
+  letterSpacing: '0.04em',
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  display: 'block',
+  textAlign: 'right',
+  textShadow: LABEL_STROKE,
+};
+
+// 100% full-bar label: centered
+const DESKTOP_FULL_LABEL_STYLE: React.CSSProperties = {
+  fontSize: 'clamp(11px, 1vw, 16px)',
+  color: '#ffffff',
+  fontWeight: 800,
+  letterSpacing: '0.04em',
+  lineHeight: 1,
+  whiteSpace: 'nowrap',
+  display: 'block',
+  textAlign: 'center',
+  textShadow: LABEL_STROKE,
 };
 
 // Minimum pixel width for a desktop segment so the label always fits inside
@@ -350,31 +411,31 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
               width: '100%',
             }}
           >
-            {/* Away segment (hidden when home is 100%) */}
+            {/* Away segment — label flush LEFT */}
             {away > 0 && !isHomeFull && (
               <div style={awaySegStyle} className="transition-all duration-700">
-                <span style={DESKTOP_INSIDE_LABEL_STYLE}>{away}%</span>
+                <span style={DESKTOP_AWAY_LABEL_STYLE}>{away}%</span>
               </div>
             )}
             {/* Divider */}
             {showDivider && (
               <div style={{ width: 1.5, background: 'rgba(255,255,255,0.3)', flexShrink: 0, alignSelf: 'stretch' }} />
             )}
-            {/* Home segment (hidden when away is 100%) */}
+            {/* Home segment — label flush RIGHT */}
             {home > 0 && !isAwayFull && (
               <div style={homeSegStyle} className="transition-all duration-700">
-                <span style={DESKTOP_INSIDE_LABEL_STYLE}>{home}%</span>
+                <span style={DESKTOP_HOME_LABEL_STYLE}>{home}%</span>
               </div>
             )}
-            {/* 100% full-bar cases */}
+            {/* 100% full-bar cases — label centered */}
             {isAwayFull && (
               <div style={{ flex: 1, background: awayColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '9999px' }} className="transition-all duration-700">
-                <span style={DESKTOP_INSIDE_LABEL_STYLE}>100%</span>
+                <span style={DESKTOP_FULL_LABEL_STYLE}>100%</span>
               </div>
             )}
             {isHomeFull && (
               <div style={{ flex: 1, background: homeColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '9999px' }} className="transition-all duration-700">
-                <span style={DESKTOP_INSIDE_LABEL_STYLE}>100%</span>
+                <span style={DESKTOP_FULL_LABEL_STYLE}>100%</span>
               </div>
             )}
           </div>

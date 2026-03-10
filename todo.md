@@ -885,3 +885,4 @@
 - [x] BettingSplitsPanel: fix rowLabel (TICKETS/MONEY) span — removed opacity:0 and duplicate fontSize; now white, bold, fully visible
 - [x] BettingSplitsPanel: added letterSpacing 0.04em to all 4 inside percentage label spans to prevent clamping
 - [x] BettingSplitsPanel: advanced splits bar logic — 100%/0% full bar single label, ≥1% always inside pill with min-width guarantee, labels never outside pill; unit tests for 100/0, 1/99, 4/96, 50/50 cases
+- [x] BettingSplitsPanel: away segment label flush-left, home segment label flush-right; black stroke textShadow on every % label in all bars (mobile + desktop)
