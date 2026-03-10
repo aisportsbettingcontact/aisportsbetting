@@ -196,22 +196,22 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
   const isAwayFull = away >= 100;
   const isHomeFull = home >= 100;
 
-  // For non-100% splits: each segment that is >0 gets a minWidth so the label always fits inside
-  // We use a flex layout where the flex-basis is the percentage but minWidth prevents collapse
+  // Use flexGrow proportional sizing so segments always fill the container
+  // without exceeding it. overflow:hidden is on each segment (not the container).
   const awaySegStyle: React.CSSProperties = isAwayFull
-    ? { width: '100%', background: awayColor, borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', flexShrink: 0 }
+    ? { flex: 1, background: awayColor, borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 4px', overflow: 'hidden' }
     : isHomeFull
     ? { display: 'none' }
     : away > 0
-    ? { flexBasis: `${away}%`, minWidth: MOBILE_SEGMENT_MIN_PX, background: awayColor, borderRadius: '4px 0 0 4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 4px', flexShrink: 0, overflow: 'hidden' }
+    ? { flexGrow: away, flexShrink: 1, flexBasis: 0, minWidth: MOBILE_SEGMENT_MIN_PX, background: awayColor, borderRadius: '4px 0 0 4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 4px', overflow: 'hidden' }
     : { display: 'none' };
 
   const homeSegStyle: React.CSSProperties = isHomeFull
-    ? { width: '100%', background: homeColor, borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', flexShrink: 0 }
+    ? { flex: 1, background: homeColor, borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px', overflow: 'hidden' }
     : isAwayFull
     ? { display: 'none' }
     : home > 0
-    ? { flexBasis: `${home}%`, minWidth: MOBILE_SEGMENT_MIN_PX, background: homeColor, borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px', flexShrink: 0, overflow: 'hidden' }
+    ? { flexGrow: home, flexShrink: 1, flexBasis: 0, minWidth: MOBILE_SEGMENT_MIN_PX, background: homeColor, borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px', overflow: 'hidden' }
     : { display: 'none' };
 
   const showDivider = !isAwayFull && !isHomeFull && away > 0 && home > 0;
@@ -224,7 +224,8 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.85)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.10em" }}>{rowLabel}</span>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.7)", fontWeight: 700, letterSpacing: "0.03em" }}>{homeLineLabel}</span>
       </div>
-      {/* Bar — flex row, no overflow:hidden on outer container so minWidth can expand segments */}
+      {/* Bar — flex row, NO overflow:hidden on outer container (that clips home label) */}
+      {/* Each segment has its own overflow:hidden to clip text within its bounds */}
       <div
         style={{
           height: 20,
@@ -232,7 +233,6 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
           display: 'flex',
           flexDirection: 'row',
           borderRadius: 4,
-          overflow: 'hidden',
           border: '1px solid rgba(255,255,255,0.12)',
           boxSizing: 'border-box',
         }}
@@ -386,16 +386,19 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
         const isHomeFull = home >= 100;
         const showDivider = !isAwayFull && !isHomeFull && away > 0 && home > 0;
 
+        // Use flex-grow proportional sizing so segments always fill the container
+        // without exceeding it. minWidth ensures even 1% segments show their label.
+        // overflow:hidden is on each segment (not the container) to preserve pill shape.
         const awaySegStyle: React.CSSProperties = isAwayFull
-          ? { flex: 1, background: awayColor, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px' }
+          ? { flex: 1, background: awayColor, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 10px', overflow: 'hidden' }
           : away > 0
-          ? { flexBasis: `${away}%`, minWidth: DESKTOP_SEGMENT_MIN_PX, background: awayColor, borderRadius: '9999px 0 0 9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 8px', flexShrink: 0, overflow: 'hidden' }
+          ? { flexGrow: away, flexShrink: 1, flexBasis: 0, minWidth: DESKTOP_SEGMENT_MIN_PX, background: awayColor, borderRadius: '9999px 0 0 9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 10px', overflow: 'hidden' }
           : { display: 'none' };
 
         const homeSegStyle: React.CSSProperties = isHomeFull
-          ? { flex: 1, background: homeColor, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 8px' }
+          ? { flex: 1, background: homeColor, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', overflow: 'hidden' }
           : home > 0
-          ? { flexBasis: `${home}%`, minWidth: DESKTOP_SEGMENT_MIN_PX, background: homeColor, borderRadius: '0 9999px 9999px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 8px', flexShrink: 0, overflow: 'hidden' }
+          ? { flexGrow: home, flexShrink: 1, flexBasis: 0, minWidth: DESKTOP_SEGMENT_MIN_PX, background: homeColor, borderRadius: '0 9999px 9999px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', overflow: 'hidden' }
           : { display: 'none' };
 
         return (
@@ -405,7 +408,8 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
               display: 'flex',
               flexDirection: 'row',
               borderRadius: '9999px',
-              overflow: 'hidden',
+              // NO overflow:hidden here — that clips the home segment label.
+              // Each segment has its own overflow:hidden to clip text within its bounds.
               border: '1.5px solid rgba(255,255,255,0.15)',
               boxSizing: 'border-box',
               width: '100%',

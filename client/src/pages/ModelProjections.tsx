@@ -773,8 +773,7 @@ export default function ModelProjections() {
         {/* Row 5: Feed-wide mobile tab filter — BOOK LINES | MODEL LINES | SPLITS | EDGE */}
         {/* Only shown on mobile (< lg). Hidden on desktop where the full 3-panel layout is used. */}
         {selectedSport !== 'NHL' && (
-          <div className="lg:hidden" style={{
-            display: 'grid',
+          <div className="grid lg:hidden" style={{
             gridTemplateColumns: 'repeat(4, 1fr)',
             borderBottom: '2px solid hsl(var(--border) / 0.5)',
             background: 'hsl(var(--card))',

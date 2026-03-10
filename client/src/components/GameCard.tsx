@@ -971,8 +971,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       homeName, homeFontWeight, 15, 8, `home:${game.homeTeam}`
     );
     return (
-    <div className="flex flex-col pl-2 pr-2 pt-0 pb-0 min-w-0" style={{ minWidth: 0 }}>
-      {/* Status row: [star] [clock/status] [LIVE badge] */}
+    <div className="flex flex-col pl-2 pr-2 pt-0 pb-0 min-w-0" style={{ minWidth: 0, height: '100%' }}>
+      {/* Status row: [star] [clock/status] [LIVE badge]
+          This row acts as the header spacer to align away/home rows with OddsTable.
+          The OddsLinesPanel header (SPREAD/TOTAL/MONEYLINE + BOOK/MODEL rows) takes
+          roughly the same height, so we use flex-grow on the team rows to fill space. */}
       <div className="flex items-center gap-1.5 mb-0.5">
         {/* Star / Favorite button — always left of status */}
         {isAppAuthed && (
@@ -1038,8 +1041,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
       </div>
 
-      {/* Away team row — py-2 mirrors OddsLinesPanel away row height */}
-      <div className="flex items-center justify-between gap-2 py-2 w-full">
+      {/* Away team row — flex-1 so it fills equal space with home row, centering content vertically */}
+      <div className="flex flex-1 items-center justify-between gap-2 py-2 w-full">
         {/* Left: logo + name/nickname — always two lines for both NCAAM and NBA */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={36} />
@@ -1089,8 +1092,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       {/* Divider — mirrors OddsLinesPanel divider */}
       <div style={{ height: 1, background: "hsl(var(--border) / 0.4)" }} />
 
-      {/* Home team row — py-2 mirrors OddsLinesPanel home row height */}
-      <div className="flex items-center justify-between gap-2 py-2 w-full">
+      {/* Home team row — flex-1 so it fills equal space with away row */}
+      <div className="flex flex-1 items-center justify-between gap-2 py-2 w-full">
         {/* Left: logo + name/nickname — always two lines for both NCAAM and NBA */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={36} />
