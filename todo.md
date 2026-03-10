@@ -834,3 +834,4 @@
 - [x] CalendarPicker: show "TODAY" for the active feed date (user local time + 11:00 UTC gate), with timezone debug logging
 - [x] ModelProjections header: clean up duplicate fontSize properties, dot white 22px bold, league label 15px all-caps, apply across all feed pages
 - [x] Desktop GameCard left panel: widen to fit long names like Oklahoma City without truncation
+- [x] Desktop ScorePanel: ResizeObserver-based auto-scaling so team names never truncate at any viewport width

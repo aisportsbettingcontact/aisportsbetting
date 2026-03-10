@@ -129,6 +129,108 @@ function TeamLogo({ slug, name, logoUrl, size = 36 }: { slug: string; name: stri
   );
 }
 
+// ── useAutoFontSize ─────────────────────────────────────────────────────────
+/**
+ * Measures the actual rendered width of a text string at a given font size
+ * using an off-screen Canvas context (no DOM reflow, sub-millisecond).
+ * Returns the minimum font size (px) at which the text fits within maxWidth.
+ *
+ * Algorithm:
+ *   1. Start at maxFontSize and step down by 0.5px increments.
+ *   2. At each size, measure text width with Canvas measureText.
+ *   3. Return the first size where textWidth ≤ maxWidth.
+ *   4. If even minFontSize overflows, return minFontSize (text will wrap
+ *      gracefully via overflowWrap: anywhere).
+ *
+ * Debug logging (console group [AutoFontSize]) fires whenever the computed
+ * size changes, reporting: name, container width, text width at each tried
+ * size, and the final chosen size.
+ */
+const _autoFontCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
+const _autoFontCtx = _autoFontCanvas?.getContext("2d") ?? null;
+
+function measureTextWidth(text: string, fontPx: number, fontWeight: number): number {
+  if (!_autoFontCtx) return 0;
+  _autoFontCtx.font = `${fontWeight} ${fontPx}px Inter, system-ui, sans-serif`;
+  return _autoFontCtx.measureText(text).width;
+}
+
+function computeAutoFontSize(
+  text: string,
+  containerWidth: number,
+  fontWeight: number,
+  maxFontPx: number,
+  minFontPx: number,
+  debugLabel?: string
+): number {
+  if (containerWidth <= 0 || !text) return maxFontPx;
+  const STEP = 0.5;
+  let chosen = minFontPx;
+  const triedSizes: { size: number; textWidth: number }[] = [];
+  for (let size = maxFontPx; size >= minFontPx; size -= STEP) {
+    const tw = measureTextWidth(text, size, fontWeight);
+    triedSizes.push({ size: parseFloat(size.toFixed(1)), textWidth: parseFloat(tw.toFixed(1)) });
+    if (tw <= containerWidth) {
+      chosen = size;
+      break;
+    }
+  }
+  // Debug: only log when the chosen size is below maxFontPx (i.e. scaling kicked in)
+  if (chosen < maxFontPx - 0.5 && debugLabel) {
+    console.groupCollapsed(
+      `%c[AutoFontSize] "${text}" → ${chosen.toFixed(1)}px (container=${containerWidth}px)`,
+      "color:#39FF14;font-weight:700;font-size:10px"
+    );
+    console.log(`  label        : ${debugLabel}`);
+    console.log(`  containerW   : ${containerWidth}px`);
+    console.log(`  maxFont      : ${maxFontPx}px  minFont: ${minFontPx}px`);
+    console.log(`  chosen       : ${chosen.toFixed(1)}px`);
+    console.log(`  sizes tried  :`, triedSizes.slice(0, 20)); // cap at 20 entries
+    console.groupEnd();
+  }
+  return chosen;
+}
+
+/**
+ * React hook: returns a [ref, fontSize] pair.
+ * Attach `ref` to the container element whose width constrains the text.
+ * `fontSize` is the largest px value at which `text` fits in one line.
+ */
+function useAutoFontSize(
+  text: string,
+  fontWeight: number,
+  maxFontPx: number,
+  minFontPx: number,
+  debugLabel?: string
+): [React.RefObject<HTMLDivElement | null>, number] {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [fontSize, setFontSize] = useState(maxFontPx);
+
+  const recompute = useCallback((width: number) => {
+    const next = computeAutoFontSize(text, width, fontWeight, maxFontPx, minFontPx, debugLabel);
+    setFontSize(prev => {
+      if (Math.abs(prev - next) < 0.25) return prev; // avoid micro-updates
+      return next;
+    });
+  }, [text, fontWeight, maxFontPx, minFontPx, debugLabel]);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // Initial measure
+    recompute(el.getBoundingClientRect().width);
+    // Watch for container resize
+    const ro = new ResizeObserver(entries => {
+      const w = entries[0]?.contentRect.width ?? 0;
+      recompute(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [recompute]);
+
+  return [containerRef, fontSize];
+}
+
 // ── VerdictSide ───────────────────────────────────────────────────────────────
 function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName, compact = false }: {
   diff: number | null;
@@ -759,7 +861,18 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   // Shows: game clock/status at top, then two team rows (logo + name + score)
   // Score sits immediately after the team name, not pushed to the far right.
   // For upcoming games: shows start time instead of scores.
-  const ScorePanel = () => (
+  function ScorePanel() {
+    // Auto-scaling font hooks — measure container width, shrink font until name fits
+    // maxFont=15px, minFont=8px, step=0.5px; Canvas measureText (no DOM reflow)
+    const awayFontWeight = awayWins ? 700 : 600;
+    const homeFontWeight = homeWins ? 700 : 600;
+    const [awayNameRef, awayNameFontSize] = useAutoFontSize(
+      awayName, awayFontWeight, 15, 8, `away:${game.awayTeam}`
+    );
+    const [homeNameRef, homeNameFontSize] = useAutoFontSize(
+      homeName, homeFontWeight, 15, 8, `home:${game.homeTeam}`
+    );
+    return (
     <div className="flex flex-col pl-2 pr-2 pt-0 pb-0 min-w-0" style={{ minWidth: 0 }}>
       {/* Status row: [star] [clock/status] [LIVE badge] */}
       <div className="flex items-center gap-1.5 mb-0.5">
@@ -832,15 +945,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         {/* Left: logo + name/nickname — always two lines for both NCAAM and NBA */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={36} />
-          <div className="flex flex-col min-w-0">
+          {/* awayNameRef: ResizeObserver measures this div's width to auto-scale font */}
+          <div ref={awayNameRef} className="flex flex-col min-w-0" style={{ overflow: 'hidden' }}>
             <span
               className="font-semibold leading-tight"
               style={{
-                fontSize: "clamp(11px, 3vw, 15px)",
+                fontSize: awayNameFontSize,
                 color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
-                fontWeight: awayWins ? 700 : 600,
-                wordBreak: "break-word",
-                overflowWrap: "anywhere",
+                fontWeight: awayFontWeight,
+                whiteSpace: 'nowrap',
                 lineHeight: 1.15,
               }}
             >
@@ -883,15 +996,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         {/* Left: logo + name/nickname — always two lines for both NCAAM and NBA */}
           <div className="flex items-center gap-2 min-w-0 flex-1">
           <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={36} />
-          <div className="flex flex-col min-w-0">
+          {/* homeNameRef: ResizeObserver measures this div's width to auto-scale font */}
+          <div ref={homeNameRef} className="flex flex-col min-w-0" style={{ overflow: 'hidden' }}>
             <span
               className="font-semibold leading-tight"
               style={{
-                fontSize: "clamp(11px, 3vw, 15px)",
+                fontSize: homeNameFontSize,
                 color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))",
-                fontWeight: homeWins ? 700 : 600,
-                wordBreak: "break-word",
-                overflowWrap: "anywhere",
+                fontWeight: homeFontWeight,
+                whiteSpace: 'nowrap',
                 lineHeight: 1.15,
               }}
             >
@@ -925,7 +1038,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
       </div>
     </div>
-  );
+    );
+  }
 
   // OddsLinesPanel is now a top-level component (defined above GameCard)
   // to prevent infinite re-render loops from component identity changes.
