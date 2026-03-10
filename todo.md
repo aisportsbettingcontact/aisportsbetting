@@ -889,3 +889,4 @@
 - [x] Desktop splits pill: fix home label clipped by overflow — ensure flex sizing keeps all labels fully visible inside pill
 - [x] Desktop GameCard: vertically center left panel (team names/scores) with OddsTable rows
 - [x] Feed tab bar (BOOK/MODEL/SPLITS/EDGE): hide on desktop/tablet (lg+), show only on mobile
+- [x] BettingSplitsPanel: universal black stroke on ALL % labels every screen/code path; increase minWidth so single-digit values (1-9%) always have enough room inside pill on all screens

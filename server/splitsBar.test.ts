@@ -6,7 +6,8 @@
  * Design rules (non-negotiable):
  *   1. Labels ALWAYS appear INSIDE their pill segment — never outside.
  *   2. 100%/0% → single full-width segment, only the 100% label shown, 0% hidden entirely.
- *   3. Any value 1–99% → segment gets a minWidth guarantee so the label always fits.
+ *   3. Any value 1–99% → segment gets a dynamic minWidth guarantee so the label always fits.
+ *   4. Single-digit values (1-9%) get a LARGER minWidth than two-digit values (10-99%).
  *
  * These tests validate the pure logic layer (segment visibility, minWidth, label values)
  * that drives both LabeledBar (mobile) and SplitBar (desktop).
@@ -17,8 +18,15 @@ import { describe, it, expect } from "vitest";
 // ── Pure logic extracted from the component ──────────────────────────────────
 // This mirrors exactly what LabeledBar and SplitBar compute.
 
-const MOBILE_SEGMENT_MIN_PX = 28;
-const DESKTOP_SEGMENT_MIN_PX = 38;
+// Dynamic minWidth — matches mobileSegMinPx() in BettingSplitsPanel.tsx
+function mobileSegMinPx(pct: number): number {
+  return pct < 10 ? 40 : 30;
+}
+
+// Dynamic minWidth — matches desktopSegMinPx() in BettingSplitsPanel.tsx
+function desktopSegMinPx(pct: number): number {
+  return pct < 10 ? 58 : 50;
+}
 
 interface SegmentResult {
   awayVisible: boolean;
@@ -35,7 +43,7 @@ interface SegmentResult {
 function computeSegments(
   awayPct: number,
   homePct: number,
-  minPx: number
+  minPxFn: (pct: number) => number
 ): SegmentResult {
   const isAwayFull = awayPct >= 100;
   const isHomeFull = homePct >= 100;
@@ -58,8 +66,8 @@ function computeSegments(
     : null;
 
   // minWidth — applied to every non-full segment that is visible
-  const awayMinWidth = awayVisible && !isAwayFull ? minPx : null;
-  const homeMinWidth = homeVisible && !isHomeFull ? minPx : null;
+  const awayMinWidth = awayVisible && !isAwayFull ? minPxFn(awayPct) : null;
+  const homeMinWidth = homeVisible && !isHomeFull ? minPxFn(homePct) : null;
 
   // Divider only between two non-full segments
   const dividerVisible = !isAwayFull && !isHomeFull && awayPct > 0 && homePct > 0;
@@ -81,7 +89,7 @@ function computeSegments(
 
 describe("Splits bar segment logic — 100%/0% cases", () => {
   it("100/0: away is full-bar, home is hidden, no divider", () => {
-    const r = computeSegments(100, 0, MOBILE_SEGMENT_MIN_PX);
+    const r = computeSegments(100, 0, mobileSegMinPx);
     expect(r.awayIsFull).toBe(true);
     expect(r.homeIsFull).toBe(false);
     // awayVisible tracks the normal segment branch ({away > 0 && !isHomeFull});
@@ -94,7 +102,7 @@ describe("Splits bar segment logic — 100%/0% cases", () => {
   });
 
   it("0/100: home is full-bar, away is hidden, no divider", () => {
-    const r = computeSegments(0, 100, MOBILE_SEGMENT_MIN_PX);
+    const r = computeSegments(0, 100, mobileSegMinPx);
     expect(r.homeIsFull).toBe(true);
     expect(r.awayIsFull).toBe(false);
     expect(r.awayVisible).toBe(false); // away is 0, so hidden
@@ -107,55 +115,105 @@ describe("Splits bar segment logic — 100%/0% cases", () => {
   });
 });
 
-describe("Splits bar segment logic — single-digit percentages (1–9%)", () => {
-  it("1/99: both segments visible, both have minWidth guarantee, labels inside", () => {
-    const r = computeSegments(1, 99, MOBILE_SEGMENT_MIN_PX);
+describe("Splits bar segment logic — single-digit percentages (1–9%) — mobile", () => {
+  it("1/99: away gets larger minWidth (single-digit), home gets standard minWidth", () => {
+    const r = computeSegments(1, 99, mobileSegMinPx);
     expect(r.awayVisible).toBe(true);
     expect(r.homeVisible).toBe(true);
     expect(r.awayLabel).toBe("1%");
     expect(r.homeLabel).toBe("99%");
-    expect(r.awayMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
-    expect(r.homeMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
+    expect(r.awayMinWidth).toBe(40); // single-digit → 40px
+    expect(r.homeMinWidth).toBe(30); // two-digit → 30px
     expect(r.dividerVisible).toBe(true);
   });
 
-  it("4/96: both segments visible, both have minWidth guarantee", () => {
-    const r = computeSegments(4, 96, MOBILE_SEGMENT_MIN_PX);
+  it("4/96: away gets larger minWidth (single-digit), home gets standard minWidth", () => {
+    const r = computeSegments(4, 96, mobileSegMinPx);
     expect(r.awayVisible).toBe(true);
     expect(r.homeVisible).toBe(true);
     expect(r.awayLabel).toBe("4%");
     expect(r.homeLabel).toBe("96%");
-    expect(r.awayMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
-    expect(r.homeMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
+    expect(r.awayMinWidth).toBe(40); // single-digit → 40px
+    expect(r.homeMinWidth).toBe(30); // two-digit → 30px
     expect(r.dividerVisible).toBe(true);
   });
 
-  it("9/91: both segments visible, both have minWidth guarantee", () => {
-    const r = computeSegments(9, 91, MOBILE_SEGMENT_MIN_PX);
+  it("9/91: away gets larger minWidth (single-digit), home gets standard minWidth", () => {
+    const r = computeSegments(9, 91, mobileSegMinPx);
     expect(r.awayVisible).toBe(true);
     expect(r.homeVisible).toBe(true);
     expect(r.awayLabel).toBe("9%");
     expect(r.homeLabel).toBe("91%");
-    expect(r.awayMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
-    expect(r.homeMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
+    expect(r.awayMinWidth).toBe(40); // single-digit → 40px
+    expect(r.homeMinWidth).toBe(30); // two-digit → 30px
     expect(r.dividerVisible).toBe(true);
   });
 
-  it("99/1: both segments visible, both have minWidth guarantee", () => {
-    const r = computeSegments(99, 1, MOBILE_SEGMENT_MIN_PX);
+  it("99/1: home gets larger minWidth (single-digit), away gets standard minWidth", () => {
+    const r = computeSegments(99, 1, mobileSegMinPx);
     expect(r.awayVisible).toBe(true);
     expect(r.homeVisible).toBe(true);
     expect(r.awayLabel).toBe("99%");
     expect(r.homeLabel).toBe("1%");
-    expect(r.awayMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
-    expect(r.homeMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
+    expect(r.awayMinWidth).toBe(30); // two-digit → 30px
+    expect(r.homeMinWidth).toBe(40); // single-digit → 40px
     expect(r.dividerVisible).toBe(true);
+  });
+
+  it("6/94: away gets larger minWidth (single-digit)", () => {
+    const r = computeSegments(6, 94, mobileSegMinPx);
+    expect(r.awayLabel).toBe("6%");
+    expect(r.homeLabel).toBe("94%");
+    expect(r.awayMinWidth).toBe(40);
+    expect(r.homeMinWidth).toBe(30);
+  });
+
+  it("94/6: home gets larger minWidth (single-digit)", () => {
+    const r = computeSegments(94, 6, mobileSegMinPx);
+    expect(r.awayLabel).toBe("94%");
+    expect(r.homeLabel).toBe("6%");
+    expect(r.awayMinWidth).toBe(30);
+    expect(r.homeMinWidth).toBe(40);
+  });
+});
+
+describe("Splits bar segment logic — single-digit percentages (1–9%) — desktop", () => {
+  it("1/99 desktop: away gets 58px (single-digit), home gets 50px", () => {
+    const r = computeSegments(1, 99, desktopSegMinPx);
+    expect(r.awayMinWidth).toBe(58);
+    expect(r.homeMinWidth).toBe(50);
+  });
+
+  it("4/96 desktop: away gets 58px (single-digit), home gets 50px", () => {
+    const r = computeSegments(4, 96, desktopSegMinPx);
+    expect(r.awayMinWidth).toBe(58);
+    expect(r.homeMinWidth).toBe(50);
+  });
+
+  it("9/91 desktop: away gets 58px (single-digit), home gets 50px", () => {
+    const r = computeSegments(9, 91, desktopSegMinPx);
+    expect(r.awayMinWidth).toBe(58);
+    expect(r.homeMinWidth).toBe(50);
+  });
+
+  it("10/90 desktop: both get 50px (two-digit boundary)", () => {
+    const r = computeSegments(10, 90, desktopSegMinPx);
+    expect(r.awayMinWidth).toBe(50);
+    expect(r.homeMinWidth).toBe(50);
+  });
+
+  it("100/0 desktop: no minWidth needed (full-bar case)", () => {
+    const r = computeSegments(100, 0, desktopSegMinPx);
+    expect(r.awayMinWidth).toBeNull();
+    expect(r.homeMinWidth).toBeNull();
+    expect(r.awayLabel).toBe("100%");
+    expect(r.homeLabel).toBeNull();
   });
 });
 
 describe("Splits bar segment logic — normal splits", () => {
-  it("50/50: both segments visible with divider", () => {
-    const r = computeSegments(50, 50, MOBILE_SEGMENT_MIN_PX);
+  it("50/50: both segments visible with divider, both two-digit minWidth", () => {
+    const r = computeSegments(50, 50, mobileSegMinPx);
     expect(r.awayVisible).toBe(true);
     expect(r.homeVisible).toBe(true);
     expect(r.awayLabel).toBe("50%");
@@ -163,31 +221,35 @@ describe("Splits bar segment logic — normal splits", () => {
     expect(r.dividerVisible).toBe(true);
     expect(r.awayIsFull).toBe(false);
     expect(r.homeIsFull).toBe(false);
+    expect(r.awayMinWidth).toBe(30);
+    expect(r.homeMinWidth).toBe(30);
   });
 
   it("65/35: both segments visible with divider", () => {
-    const r = computeSegments(65, 35, MOBILE_SEGMENT_MIN_PX);
+    const r = computeSegments(65, 35, mobileSegMinPx);
     expect(r.awayVisible).toBe(true);
     expect(r.homeVisible).toBe(true);
     expect(r.awayLabel).toBe("65%");
     expect(r.homeLabel).toBe("35%");
     expect(r.dividerVisible).toBe(true);
+    expect(r.awayMinWidth).toBe(30);
+    expect(r.homeMinWidth).toBe(30);
   });
 
-  it("95/5: both segments visible, 5% side has minWidth guarantee", () => {
-    const r = computeSegments(95, 5, MOBILE_SEGMENT_MIN_PX);
+  it("95/5: 5% side gets single-digit minWidth", () => {
+    const r = computeSegments(95, 5, mobileSegMinPx);
     expect(r.awayVisible).toBe(true);
     expect(r.homeVisible).toBe(true);
     expect(r.awayLabel).toBe("95%");
     expect(r.homeLabel).toBe("5%");
-    expect(r.homeMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
+    expect(r.awayMinWidth).toBe(30); // two-digit
+    expect(r.homeMinWidth).toBe(40); // single-digit
     expect(r.dividerVisible).toBe(true);
   });
 });
 
-describe("Splits bar segment logic — no outside labels ever", () => {
+describe("Splits bar segment logic — no outside labels ever (full invariant sweep)", () => {
   // This test validates the core invariant: no label is ever placed outside the pill.
-  // In the old code, labels < 15% were placed outside. The new code never does this.
   // We verify this by checking that every visible segment has a minWidth guarantee
   // AND that the label is always set (not null) for visible segments.
 
@@ -203,8 +265,8 @@ describe("Splits bar segment logic — no outside labels ever", () => {
   ];
 
   for (const [away, home] of testCases) {
-    it(`${away}/${home}: both labels are inside (non-null) and minWidth is set`, () => {
-      const r = computeSegments(away, home, MOBILE_SEGMENT_MIN_PX);
+    it(`mobile ${away}/${home}: both labels inside, minWidth set correctly`, () => {
+      const r = computeSegments(away, home, mobileSegMinPx);
       // Both segments must be visible
       expect(r.awayVisible).toBe(true);
       expect(r.homeVisible).toBe(true);
@@ -212,24 +274,24 @@ describe("Splits bar segment logic — no outside labels ever", () => {
       expect(r.awayLabel).not.toBeNull();
       expect(r.homeLabel).not.toBeNull();
       // Both segments must have a minWidth guarantee
-      expect(r.awayMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
-      expect(r.homeMinWidth).toBe(MOBILE_SEGMENT_MIN_PX);
+      expect(r.awayMinWidth).not.toBeNull();
+      expect(r.homeMinWidth).not.toBeNull();
+      // Single-digit values get larger minWidth
+      expect(r.awayMinWidth).toBe(away < 10 ? 40 : 30);
+      expect(r.homeMinWidth).toBe(home < 10 ? 40 : 30);
+    });
+
+    it(`desktop ${away}/${home}: both labels inside, minWidth set correctly`, () => {
+      const r = computeSegments(away, home, desktopSegMinPx);
+      expect(r.awayVisible).toBe(true);
+      expect(r.homeVisible).toBe(true);
+      expect(r.awayLabel).not.toBeNull();
+      expect(r.homeLabel).not.toBeNull();
+      expect(r.awayMinWidth).not.toBeNull();
+      expect(r.homeMinWidth).not.toBeNull();
+      // Single-digit values get larger minWidth
+      expect(r.awayMinWidth).toBe(away < 10 ? 58 : 50);
+      expect(r.homeMinWidth).toBe(home < 10 ? 58 : 50);
     });
   }
-});
-
-describe("Splits bar segment logic — desktop minWidth", () => {
-  it("1/99 desktop: minWidth is DESKTOP_SEGMENT_MIN_PX", () => {
-    const r = computeSegments(1, 99, DESKTOP_SEGMENT_MIN_PX);
-    expect(r.awayMinWidth).toBe(DESKTOP_SEGMENT_MIN_PX);
-    expect(r.homeMinWidth).toBe(DESKTOP_SEGMENT_MIN_PX);
-  });
-
-  it("100/0 desktop: no minWidth needed (full-bar case)", () => {
-    const r = computeSegments(100, 0, DESKTOP_SEGMENT_MIN_PX);
-    expect(r.awayMinWidth).toBeNull();
-    expect(r.homeMinWidth).toBeNull();
-    expect(r.awayLabel).toBe("100%");
-    expect(r.homeLabel).toBeNull();
-  });
 });

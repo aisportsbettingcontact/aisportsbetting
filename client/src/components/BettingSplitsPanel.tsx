@@ -122,9 +122,16 @@ interface LabeledBarProps {
   rowLabel: string;       // e.g. "Tickets" or "Money"
 }
 
-// Minimum pixel width for a segment that must show a label (e.g. "1%" = ~18px at 10px font)
-// We use a CSS min-width in px so even 1% segments expand to fit their label.
-const MOBILE_SEGMENT_MIN_PX = 28; // px — enough for "1%" at font-size 10 with 4px padding each side
+// Minimum pixel width for a segment that must show a label.
+// Single-digit (1-9%): needs more room because rounded pill corners eat into visible area.
+// Two-digit (10-99%): standard room.
+// We compute dynamically based on digit count to give maximal precision.
+function mobileSegMinPx(pct: number): number {
+  // 1-9%: "X%" = 2 chars @ ~6px each + 2×6px padding + 4px for rounded corners = 40px
+  // 10-99%: "XX%" = 3 chars @ ~6px each + 2×6px padding = 30px
+  // 100%: handled by full-bar path, not used here
+  return pct < 10 ? 40 : 30;
+}
 
 // Black stroke textShadow for all % labels — applied to every label path, no exceptions
 const LABEL_STROKE = '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)';
@@ -203,15 +210,15 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
     : isHomeFull
     ? { display: 'none' }
     : away > 0
-    ? { flexGrow: away, flexShrink: 1, flexBasis: 0, minWidth: MOBILE_SEGMENT_MIN_PX, background: awayColor, borderRadius: '4px 0 0 4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 4px', overflow: 'hidden' }
+    ? { flexGrow: away, flexShrink: 1, flexBasis: 0, minWidth: mobileSegMinPx(away), background: awayColor, borderRadius: '4px 0 0 4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 5px', overflow: 'hidden' }
     : { display: 'none' };
 
   const homeSegStyle: React.CSSProperties = isHomeFull
-    ? { flex: 1, background: homeColor, borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px', overflow: 'hidden' }
+    ? { flex: 1, background: homeColor, borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 5px', overflow: 'hidden' }
     : isAwayFull
     ? { display: 'none' }
     : home > 0
-    ? { flexGrow: home, flexShrink: 1, flexBasis: 0, minWidth: MOBILE_SEGMENT_MIN_PX, background: homeColor, borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 4px', overflow: 'hidden' }
+    ? { flexGrow: home, flexShrink: 1, flexBasis: 0, minWidth: mobileSegMinPx(home), background: homeColor, borderRadius: '0 4px 4px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 5px', overflow: 'hidden' }
     : { display: 'none' };
 
   const showDivider = !isAwayFull && !isHomeFull && away > 0 && home > 0;
@@ -362,8 +369,14 @@ const DESKTOP_FULL_LABEL_STYLE: React.CSSProperties = {
   textShadow: LABEL_STROKE,
 };
 
-// Minimum pixel width for a desktop segment so the label always fits inside
-const DESKTOP_SEGMENT_MIN_PX = 38; // px — enough for "1%" at clamp(11px,1vw,16px) with 8px padding
+// Minimum pixel width for a desktop segment so the label always fits inside.
+// Dynamic: single-digit values need more room due to rounded pill corners.
+function desktopSegMinPx(pct: number): number {
+  // At clamp(11px,1vw,16px) font + 10px padding each side:
+  // 1-9%:  "X%"  = 2 chars @ ~10px each + 20px padding + 8px corners = 58px
+  // 10-99%: "XX%" = 3 chars @ ~10px each + 20px padding = 50px
+  return pct < 10 ? 58 : 50;
+}
 
 function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarProps) {
   const hasData = awayPct != null && homePct != null;
@@ -392,13 +405,13 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
         const awaySegStyle: React.CSSProperties = isAwayFull
           ? { flex: 1, background: awayColor, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 10px', overflow: 'hidden' }
           : away > 0
-          ? { flexGrow: away, flexShrink: 1, flexBasis: 0, minWidth: DESKTOP_SEGMENT_MIN_PX, background: awayColor, borderRadius: '9999px 0 0 9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 10px', overflow: 'hidden' }
+          ? { flexGrow: away, flexShrink: 1, flexBasis: 0, minWidth: desktopSegMinPx(away), background: awayColor, borderRadius: '9999px 0 0 9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-start', padding: '0 10px', overflow: 'hidden' }
           : { display: 'none' };
 
         const homeSegStyle: React.CSSProperties = isHomeFull
           ? { flex: 1, background: homeColor, borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', overflow: 'hidden' }
           : home > 0
-          ? { flexGrow: home, flexShrink: 1, flexBasis: 0, minWidth: DESKTOP_SEGMENT_MIN_PX, background: homeColor, borderRadius: '0 9999px 9999px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', overflow: 'hidden' }
+          ? { flexGrow: home, flexShrink: 1, flexBasis: 0, minWidth: desktopSegMinPx(home), background: homeColor, borderRadius: '0 9999px 9999px 0', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 10px', overflow: 'hidden' }
           : { display: 'none' };
 
         return (
