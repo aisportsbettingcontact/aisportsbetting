@@ -835,3 +835,6 @@
 - [x] ModelProjections header: clean up duplicate fontSize properties, dot white 22px bold, league label 15px all-caps, apply across all feed pages
 - [x] Desktop GameCard left panel: widen to fit long names like Oklahoma City without truncation
 - [x] Desktop ScorePanel: ResizeObserver-based auto-scaling so team names never truncate at any viewport width
+- [x] Responsive audit: automated overflow detection across 16 screen sizes (4 desktop, 4 tablet, 8 mobile)
+- [x] Apply universal clamp/auto-scale rules to eliminate all truncation at every breakpoint
+- [x] Re-run audit to confirm zero failures across all 16 screen sizes

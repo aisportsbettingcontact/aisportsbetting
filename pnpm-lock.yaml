@@ -175,9 +175,6 @@ importers:
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.1(react@19.2.1))(react@19.2.1)
-      puppeteer:
-        specifier: ^24.37.5
-        version: 24.37.5(typescript@5.9.3)
       react:
         specifier: ^19.2.1
         version: 19.2.1
@@ -275,6 +272,9 @@ importers:
       prettier:
         specifier: ^3.6.2
         version: 3.6.2
+      puppeteer:
+        specifier: ^24.37.5
+        version: 24.37.5(typescript@5.9.3)
       tailwindcss:
         specifier: ^4.1.14
         version: 4.1.14
