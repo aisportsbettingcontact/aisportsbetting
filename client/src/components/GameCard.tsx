@@ -1761,45 +1761,45 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             );
 
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', width: '100%', minHeight: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
 
-                {/* ── FROZEN LEFT PANEL: logo + abbr + score ─────────────────── */}
+                {/* ── FULL-WIDTH HEADER ROW: star + status + tab buttons ──────── */}
+                {/* This row spans the entire card width; its bottom border is the tab divider line */}
                 <div style={{
-                  gridColumn: '1',
-                  borderRight: '1px solid hsl(var(--border) / 0.5)',
-                  background: 'hsl(var(--card))',
-                  zIndex: 2,
                   display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'center',  /* vertically center all team rows + status */
-                  alignItems: 'stretch',
-                  padding: '0 6px',  /* no vertical padding — row heights are fixed */
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  width: '100%',
+                  borderBottom: '1px solid hsl(var(--border) / 0.5)',
+                  background: 'hsl(var(--card))',
+                  position: 'sticky',
+                  top: 0,
+                  zIndex: 3,
+                  paddingLeft: '6px',
                   gap: 0,
-                  alignSelf: 'stretch',  /* fill full card height so centering works */
                 }}>
-                  {/* Status row: flex-1 to absorb OddsTable header height (pt-2 + col headers + sub-headers + pb-1 ≈ auto) */}
-                  <div className="flex items-center gap-1" style={{ flex: '0 0 auto', paddingTop: '8px', paddingBottom: '4px' }}>
+                  {/* Left: star + LIVE/FINAL/time — flex-shrink-0 so tabs get remaining space */}
+                  <div className="flex items-center" style={{ flexShrink: 0, gap: '3px', paddingRight: '4px' }}>
                     {isAppAuthed && (
                       <button
                         onClick={handleStarClick}
                         aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 3px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 5px #FFD700)' : 'none', transition: 'color 0.15s' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
                       >
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                         </svg>
                       </button>
                     )}
                     {isLive ? (
-                      <span className="flex items-center gap-1 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(13px, 3.2vw, 16px)', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
-                        <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: '#39FF14' }} />
+                      <span className="flex items-center gap-0.5 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: '9px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
+                        <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: '#39FF14', flexShrink: 0 }} />
                         LIVE
-                        {/* Clock inline right of LIVE — white font, NOT bold */}
                         {formattedClock && (
                           <span style={{
                             color: 'rgba(255,255,255,0.90)',
                             fontWeight: 600,
-                            fontSize: 'clamp(10.5px, 2.6vw, 13.5px)',
+                            fontSize: '8.5px',
                             letterSpacing: '0.03em',
                             fontVariantNumeric: 'tabular-nums',
                             marginLeft: '2px',
@@ -1810,11 +1810,79 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         )}
                       </span>
                     ) : isFinal ? (
-                      <span className="font-bold tracking-wide px-1.5 py-0.5 rounded" style={{ fontSize: 'clamp(12.5px, 3.1vw, 15.5px)', background: 'rgba(255,255,255,0.07)', color: 'hsl(var(--muted-foreground))' }}>FINAL</span>
+                      <span className="font-bold tracking-wide" style={{ fontSize: '8.5px', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>FINAL</span>
                     ) : (
-                      <span style={{ fontSize: 'clamp(13.5px, 3.4vw, 16.5px)', fontWeight: 400, color: 'hsl(var(--foreground))' }}>{time}</span>
+                      <span style={{ fontSize: '8.5px', fontWeight: 400, color: 'hsl(var(--foreground))', whiteSpace: 'nowrap' }}>{time}</span>
                     )}
                   </div>
+
+                  {/* Right: tab buttons filling remaining width */}
+                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                    {TABS.map(tab => {
+                      const isActive = mobileTab === tab.id ||
+                        (isDualTab && (tab.id === 'book' || tab.id === 'model'));
+                      const handleTabClick = () => {
+                        let next: MobileTab = mobileTab;
+                        if (tab.id === 'book') {
+                          if (mobileTab === 'model') next = 'dual';
+                          else if (isDualTab) next = 'model';
+                          else next = 'book';
+                        } else if (tab.id === 'model') {
+                          if (mobileTab === 'book') next = 'dual';
+                          else if (isDualTab) next = 'book';
+                          else next = 'model';
+                        } else {
+                          next = tab.id;
+                        }
+                        if (process.env.NODE_ENV === 'development') {
+                          console.log(`%c[GameCard:tab] ${game.id} ${awayAbbr}@${homeAbbr} current=${mobileTab} clicked=${tab.id} → ${next}`, 'color:#39FF14;font-size:10px');
+                        }
+                        setMobileTab(next);
+                      };
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={handleTabClick}
+                          style={{
+                            padding: '6px 2px',
+                            fontSize: '8px',
+                            fontWeight: isActive ? 800 : 500,
+                            letterSpacing: '0.06em',
+                            color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',
+                            background: 'transparent',
+                            border: 'none',
+                            borderBottom: isActive ? '2px solid #39FF14' : '2px solid transparent',
+                            marginBottom: '-1px',  /* overlap the container border so active underline sits on the line */
+                            cursor: 'pointer',
+                            transition: 'color 0.15s, border-color 0.15s',
+                            textTransform: 'uppercase',
+                            lineHeight: 1.2,
+                          }}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ── TWO-COLUMN TEAM GRID: frozen left + scrollable right ─────── */}
+                <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', width: '100%', minHeight: 0 }}>
+
+                {/* ── FROZEN LEFT PANEL: logo + team rows only (no status row) ── */}
+                <div style={{
+                  gridColumn: '1',
+                  borderRight: '1px solid hsl(var(--border) / 0.5)',
+                  background: 'hsl(var(--card))',
+                  zIndex: 2,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  alignItems: 'stretch',
+                  padding: '0 6px',
+                  gap: 0,
+                  alignSelf: 'stretch',
+                }}>
 
                   {/* Away row: height: 44px — matches OddsTable away row exactly */}
                   <div className="flex items-center justify-between gap-1 w-full" style={{ alignItems: 'center', height: '44px' }}>
@@ -1872,79 +1940,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   </div>
                 </div>
 
-                {/* ── RIGHT PANEL: tab bar + active section ──────────────────── */}
+                {/* ── RIGHT PANEL: content only (tab bar moved to full-width header) ── */}
                 <div style={{ gridColumn: '2', display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
 
-                  {/* Sticky tab bar */}
-                  <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(4, 1fr)',
-                    borderBottom: '1px solid hsl(var(--border) / 0.5)',
-                    background: 'hsl(var(--card))',
-                    position: 'sticky',
-                    top: 0,
-                    zIndex: 3,
-                    flexShrink: 0,
-                  }}>
-                    {TABS.map(tab => {
-                      // Tab rules:
-                      //   • BOOK + MODEL can be dual-active (default state)
-                      //   • SPLITS and EDGE are exclusive single-select
-                      //   • At least one tab must always be active (cannot deselect last)
-                      const isActive = mobileTab === tab.id ||
-                        (isDualTab && (tab.id === 'book' || tab.id === 'model'));
-                      const handleTabClick = () => {
-                        // ── Tab click rules ──────────────────────────────────────────
-                        // 1. At least one tab must always be active (ignore deselect-last)
-                        // 2. BOOK + MODEL can be dual-active; SPLITS/EDGE are exclusive
-                        // 3. Clicking SPLITS/EDGE always switches to that single tab
-                        // 4. Clicking BOOK when MODEL active → dual
-                        //    Clicking MODEL when BOOK active → dual
-                        //    Clicking BOOK/MODEL when dual → go to the other (cannot go to none)
-                        //    Clicking BOOK when BOOK-only → no-op (already active, cannot deselect)
-                        //    Clicking MODEL when MODEL-only → no-op (already active, cannot deselect)
-                        let next: MobileTab = mobileTab;
-                        if (tab.id === 'book') {
-                          if (mobileTab === 'model') next = 'dual';              // MODEL active → add BOOK → dual
-                          else if (isDualTab) next = 'model';                    // dual → remove BOOK → MODEL only
-                          else next = 'book';                                     // already book or coming from splits/edge
-                        } else if (tab.id === 'model') {
-                          if (mobileTab === 'book') next = 'dual';               // BOOK active → add MODEL → dual
-                          else if (isDualTab) next = 'book';                     // dual → remove MODEL → BOOK only
-                          else next = 'model';                                    // already model or coming from splits/edge
-                        } else {
-                          // SPLITS or EDGE: exclusive single-select, always switch
-                          next = tab.id;
-                        }
-                        if (process.env.NODE_ENV === 'development') {
-                          console.log(`%c[GameCard:tab] ${game.id} ${awayAbbr}@${homeAbbr} current=${mobileTab} clicked=${tab.id} → ${next}`, 'color:#39FF14;font-size:10px');
-                        }
-                        setMobileTab(next);
-                      };
-                      return (
-                        <button
-                          key={tab.id}
-                          onClick={handleTabClick}
-                          style={{
-                            padding: '6px 2px',
-                            fontSize: '8px',
-                            fontWeight: isActive ? 800 : 500,
-                            letterSpacing: '0.06em',
-                            color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',
-                            background: 'transparent',
-                            border: 'none',
-                            borderBottom: isActive ? '2px solid #39FF14' : '2px solid transparent',
-                            cursor: 'pointer',
-                            transition: 'color 0.15s, border-color 0.15s',
-                            textTransform: 'uppercase',
-                            lineHeight: 1.2,
-                          }}
-                        >
-                          {tab.label}
-                        </button>
-                      );
-                    })}
-                  </div>                  {/* ── OddsTable: visible only when BOOK, MODEL, or DUAL tab is active ── */}
+                  {/* ── OddsTable: visible only when BOOK, MODEL, or DUAL tab is active ── */}
                   {/* Hidden entirely when SPLITS or EDGE tab is active               */}
                   {(mobileTab === 'book' || mobileTab === 'model' || mobileTab === 'dual') && (
                     <OddsTable />
@@ -1980,6 +1979,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       />
                     </div>
                   )}
+                </div>
                 </div>
               </div>
             );
