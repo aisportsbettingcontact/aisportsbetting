@@ -882,3 +882,5 @@
 - [x] BUG FIXED: UMass-Lowell vs UMBC missing — fixed UMBC vsinSlug from 'umbc' to 'md-balt-co' in ncaamTeams.ts; next auto-refresh will populate odds and splits
 - [x] AUDIT: 24 games on March 10 NCAAM slate, all confirmed present; no other duplicates or missing games found
 - [x] Publish all 24 March 10 NCAAM model lines (spread, ML, total) to DB — 24/24 updated, all publishedToFeed=1
+- [x] BettingSplitsPanel: fix rowLabel (TICKETS/MONEY) span — removed opacity:0 and duplicate fontSize; now white, bold, fully visible
+- [x] BettingSplitsPanel: added letterSpacing 0.04em to all 4 inside percentage label spans to prevent clamping

@@ -149,7 +149,7 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
       {/* Header row: AWAY_LABEL  [rowLabel]  HOME_LABEL */}
       <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.7)", fontWeight: 700, letterSpacing: "0.03em" }}>{awayLineLabel}</span>
-        <span style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{rowLabel}</span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.85)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.10em" }}>{rowLabel}</span>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.7)", fontWeight: 700, letterSpacing: "0.03em" }}>{homeLineLabel}</span>
       </div>
       {/* Bar — overflow:hidden on container, % labels inside or outside based on threshold */}
@@ -161,7 +161,7 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
             <div className="flex items-center justify-start px-1.5 transition-all duration-700 flex-shrink-0"
               style={{ width: `${awayPct}%`, background: awayColor, borderRadius: (awayPct ?? 0) >= 100 ? "4px" : "4px 0 0 4px" }}>
               {awayShowInside && (
-                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{awayPct}%</span>
+                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: '#ffffff', letterSpacing: '0.04em', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{awayPct}%</span>
               )}
             </div>
           )}
@@ -172,7 +172,7 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
             <div className="flex items-center justify-end px-1.5 transition-all duration-700 flex-shrink-0"
               style={{ width: `${homePct}%`, background: homeColor, borderRadius: (homePct ?? 0) >= 100 ? "4px" : "0 4px 4px 0" }}>
               {homeShowInside && (
-                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{homePct}%</span>
+                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: '#ffffff', letterSpacing: '0.04em', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{homePct}%</span>
               )}
             </div>
           )}
@@ -297,7 +297,7 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
                   borderRadius: (awayPct ?? 0) >= 100 ? "9999px" : "9999px 0 0 9999px",
                 }}>
                 {awayShowInside && (
-                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{awayPct}%</span>
+                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: '#ffffff', letterSpacing: '0.04em', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{awayPct}%</span>
                 )}
               </div>
             )}
@@ -312,7 +312,7 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
                   borderRadius: (homePct ?? 0) >= 100 ? "9999px" : "0 9999px 9999px 0",
                 }}>
                 {homeShowInside && (
-                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{homePct}%</span>
+                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: '#ffffff', letterSpacing: '0.04em', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{homePct}%</span>
                 )}
               </div>
             )}
