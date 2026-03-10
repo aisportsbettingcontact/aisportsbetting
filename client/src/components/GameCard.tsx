@@ -725,8 +725,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba  = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba  = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
-  const awayName = awayNcaa?.ncaaName ?? awayNba?.city ?? game.awayTeam.replace(/_/g, " ");
-  const homeName = homeNcaa?.ncaaName ?? homeNba?.city ?? game.homeTeam.replace(/_/g, " ");
+  // Normalize city abbreviations: "LA" → "Los Angeles" (defensive, DB should already have full name)
+  const normCity = (c: string | undefined) => c === 'LA' ? 'Los Angeles' : c;
+  const awayName = awayNcaa?.ncaaName ?? normCity(awayNba?.city) ?? game.awayTeam.replace(/_/g, " ");
+  const homeName = homeNcaa?.ncaaName ?? normCity(homeNba?.city) ?? game.homeTeam.replace(/_/g, " ");
   const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? "";
   const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? "";
   const awayLogoUrl = awayNcaa?.logoUrl ?? awayNba?.logoUrl;
@@ -1843,7 +1845,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         )}
                       </span>
                     ) : isFinal ? (
-                      <span className="font-bold tracking-wide" style={{ fontSize: 'clamp(10.25px, 2.5vw, 12.25px)', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>FINAL</span>
+                      <span className="font-bold tracking-wide" style={{ fontSize: 'clamp(10.25px, 2.5vw, 12.25px)', color: '#39FF14', background: 'rgba(255,255,255,0.12)', borderRadius: '999px', padding: '1px 7px', whiteSpace: 'nowrap', letterSpacing: '0.06em' }}>FINAL</span>
                     ) : (
                       <span style={{ fontSize: 'clamp(10.25px, 2.5vw, 12.25px)', fontWeight: 400, color: 'hsl(var(--foreground))', whiteSpace: 'nowrap' }}>{time}</span>
                     )}
