@@ -1584,7 +1584,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             }
 
             const bookStyle = (_isEdge?: boolean): React.CSSProperties => ({
-              fontSize: 'clamp(11px, 3vw, 15px)',
+              fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
               // DUAL mode: book = light gray unbolded (secondary to model primary)
               // BOOK-only: book = white bold (primary)
               // MODEL-only: book = white unbolded 70% (secondary, visible for reference)
@@ -1624,7 +1624,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isDualTab) {
                 // DUAL mode: model is primary — edge = neon green bold, non-edge = white bold
                 return {
-                  fontSize: 'clamp(11px, 3vw, 15px)',
+                  fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
                   fontWeight: 700,
                   color: isEdge ? '#39FF14' : 'rgba(255,255,255,1)',
                   letterSpacing: '0.02em',
@@ -1634,7 +1634,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isBookTab) {
                 // BOOK-only tab: model is always secondary — white unbolded, no edge highlight
                 return {
-                  fontSize: 'clamp(11px, 3vw, 15px)',
+                  fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
                   fontWeight: 400,
                   color: 'rgba(255,255,255,0.70)',
                   letterSpacing: '0.02em',
@@ -1644,7 +1644,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isModelTab) {
                 // MODEL-only tab: edge = neon green bold; non-edge = white bold
                 return {
-                  fontSize: 'clamp(11px, 3vw, 15px)',
+                  fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
                   fontWeight: 700,
                   color: isEdge ? '#39FF14' : 'rgba(255,255,255,1)',
                   letterSpacing: '0.02em',
@@ -1653,7 +1653,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               }
               // SPLITS/EDGE tabs: dimmed
               return {
-                fontSize: 'clamp(11px, 3vw, 15px)',
+                fontSize: 'clamp(11.25px, 3.05vw, 15.25px)',
                 fontWeight: 400,
                 color: 'rgba(255,255,255,0.30)',
                 letterSpacing: '0.02em',
@@ -1685,7 +1685,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 <div className="grid grid-cols-3 pb-1">
                   {['SPREAD', 'TOTAL', 'ML'].map(h => (
                     <span key={h} className="text-center font-extrabold uppercase tracking-widest"
-                      style={{ fontSize: 'clamp(9px, 2.2vw, 11px)', color: '#E8E8E8' }}>{h}</span>
+                      style={{ fontSize: 'clamp(9.25px, 2.3vw, 11.25px)', color: '#E8E8E8' }}>{h}</span>
                   ))}
                 </div>
                 {/* Sub-headers: BOOK and MODEL are tab-responsive
@@ -1699,7 +1699,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     <div key={i} className="grid grid-cols-2">
                       <span className="text-center uppercase tracking-widest"
                         style={{
-                          fontSize: 'clamp(7px, 1.9vw, 10px)',
+                          fontSize: 'clamp(7.25px, 2.0vw, 10.25px)',
                           // DUAL: white bold | BOOK-only: white bold | MODEL-only: white unbolded | other: gray
                           fontWeight: (isDualTab || isBookTab) ? 700 : 400,
                           color: (isDualTab || isBookTab)
@@ -1711,7 +1711,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         }}>BOOK</span>
                       <span className="text-center uppercase tracking-widest"
                         style={{
-                          fontSize: 'clamp(7px, 1.9vw, 10px)',
+                          fontSize: 'clamp(7.25px, 2.0vw, 10.25px)',
                           // DUAL: neon green bold | MODEL-only: neon green bold | BOOK-only: white unbolded | other: gray
                           fontWeight: (isDualTab || isModelTab) ? 700 : 400,
                           color: (isDualTab || isModelTab)
@@ -1782,15 +1782,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <button
                         onClick={handleStarClick}
                         aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 3px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '2px 3px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 5px #FFD700)' : 'none', transition: 'color 0.15s' }}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                         </svg>
                       </button>
                     )}
                     {isLive ? (
-                      <span className="flex items-center gap-1 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(11px, 2.8vw, 14px)', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
+                      <span className="flex items-center gap-1 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(13px, 3.2vw, 16px)', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
                         <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: '#39FF14' }} />
                         LIVE
                         {/* Clock inline right of LIVE — white font, NOT bold */}
@@ -1798,7 +1798,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                           <span style={{
                             color: 'rgba(255,255,255,0.90)',
                             fontWeight: 400,
-                            fontSize: 'clamp(9px, 2.2vw, 12px)',
+                            fontSize: 'clamp(10.5px, 2.6vw, 13.5px)',
                             letterSpacing: '0.03em',
                             fontVariantNumeric: 'tabular-nums',
                             marginLeft: '2px',
@@ -1809,9 +1809,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         )}
                       </span>
                     ) : isFinal ? (
-                      <span className="font-bold tracking-wide px-1.5 py-0.5 rounded" style={{ fontSize: 'clamp(11px, 2.8vw, 14px)', background: 'rgba(255,255,255,0.07)', color: 'hsl(var(--muted-foreground))' }}>FINAL</span>
+                      <span className="font-bold tracking-wide px-1.5 py-0.5 rounded" style={{ fontSize: 'clamp(12.5px, 3.1vw, 15.5px)', background: 'rgba(255,255,255,0.07)', color: 'hsl(var(--muted-foreground))' }}>FINAL</span>
                     ) : (
-                      <span style={{ fontSize: 'clamp(12px, 3vw, 15px)', fontWeight: 400, color: 'hsl(var(--foreground))' }}>{time}</span>
+                      <span style={{ fontSize: 'clamp(13.5px, 3.4vw, 16.5px)', fontWeight: 400, color: 'hsl(var(--foreground))' }}>{time}</span>
                     )}
                   </div>
 
@@ -1820,8 +1820,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     {/* Logo + name block */}
                     <div className="flex items-center gap-2 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
                       {/* Logo centered between school+nickname lines */}
-                      <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 22, height: 44 }}>
-                        <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={22} />
+                      <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 33, height: 44 }}>
+                        <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={33} />
                       </div>
                       <MobileTeamNameBlock
                         schoolName={awayName}
@@ -1834,7 +1834,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     {(isLive || isFinal) && hasScores && (
                       <span className="tabular-nums font-black flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
-                        minWidth: '28px', textAlign: 'right',
+                        minWidth: '28px', textAlign: 'left',
                         color: awayScoreFlash ? '#39FF14' : awayWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
                         textShadow: awayScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.awayScore}</span>
@@ -1849,8 +1849,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     {/* Logo + name block */}
                     <div className="flex items-center gap-2 min-w-0" style={{ flex: '1 1 0', overflow: 'hidden' }}>
                       {/* Logo centered between school+nickname lines */}
-                      <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 22, height: 44 }}>
-                        <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={22} />
+                      <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 33, height: 44 }}>
+                        <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={33} />
                       </div>
                       <MobileTeamNameBlock
                         schoolName={homeName}
@@ -1863,7 +1863,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     {(isLive || isFinal) && hasScores && (
                       <span className="tabular-nums font-black flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
-                        minWidth: '28px', textAlign: 'right',
+                        minWidth: '28px', textAlign: 'left',
                         color: homeScoreFlash ? '#39FF14' : homeWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
                         textShadow: homeScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.homeScore}</span>
@@ -1926,7 +1926,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                           onClick={handleTabClick}
                           style={{
                             padding: '6px 2px',
-                            fontSize: 'clamp(8px, 2.1vw, 10px)',  /* +1pt from clamp(7px,1.9vw,9px) */
+                            fontSize: 'clamp(9px, 2.3vw, 11px)',  /* +1pt from clamp(8px,2.1vw,10px) */
                             fontWeight: isActive ? 800 : 500,
                             letterSpacing: '0.06em',
                             color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',

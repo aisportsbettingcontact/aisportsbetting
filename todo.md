@@ -861,3 +861,12 @@
 - [x] Mobile game card nickname: +1pt (clamp 9→11px), lowercase, semi-bold (600)
 - [x] Mobile game card school name: +3pt more (clamp 14→16px), ALL CAPS bold
 - [x] Mobile game card nickname: +1.5pt more (clamp 10.5→12.5px), lowercase semi-bold
+- [x] GameCard tab buttons: +1pt font size
+- [x] GameCard BOOK/MODEL sub-headers (column headers): +0.5pt font size
+- [x] GameCard SPREAD/TOTAL/ML section headers: +1pt font size
+- [x] GameCard OddsTable values: +0.25pt font size, +0.2px cell spacing
+- [x] GameCard clock/time/FINAL: +1.5pt font size
+- [x] GameCard LIVE indicator: +2pt font size
+- [x] GameCard favorite star icon: larger (proportional to LIVE/clock)
+- [x] GameCard score: left-align (duplicate CSS removed, clean single textAlign: left)
+- [x] GameCard team logos: 1.5x larger (22px → 33px)
