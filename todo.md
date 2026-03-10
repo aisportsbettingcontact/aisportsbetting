@@ -843,3 +843,8 @@
 - [x] Update audit script to detect overflow:hidden truncation via Canvas measureText on mobile
 - [x] Sticky date/league header: always show full DATE · LEAGUE string on all screen sizes; responsive font sizing (mobile < tablet < desktop)
 - [x] NCAAM clock: 1st→1ST HALF, 2nd→2ND HALF; 00:00 1st/2nd→END 1ST/2ND HALF; HALFTIME stays HALFTIME; FINAL stays FINAL
+- [x] ModelProjections league label: fix duplicate fontSize property, set to 12px responsive clamp
+- [x] Game clock span: enforce single-line display (no wrapping), font size capped so text never overflows to second line
+- [x] MobileTeamNameBlock: school name font always >= nickname font (enforce in useAutoFontSize logic)
+- [x] Add NHL button to sport filter (all feed pages); clicking shows NHL Coming Soon page with NHL logo + bold header + subheader
+- [x] Sport filter buttons: reduce size so more leagues fit in the row

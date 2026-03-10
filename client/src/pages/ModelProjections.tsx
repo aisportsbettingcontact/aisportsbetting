@@ -256,7 +256,7 @@ export default function ModelProjections() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA">("NCAAM");
+  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NCAAM");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>(() => todayUTC());
   const [searchQuery, setSearchQuery] = useState("");
@@ -646,17 +646,24 @@ export default function ModelProjections() {
           />
 
           {/* NCAAM pill — always visible, even in favorites tab */}
-          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
             <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={14} height={10} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
             NCAAM
           </button>
 
           {/* NBA pill — always visible, even in favorites tab */}
-          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <img src={CDN_NBA} alt="NBA" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
+            <img src={CDN_NBA} alt="NBA" width={11} height={11} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
             NBA
+          </button>
+
+          {/* NHL pill — always visible */}
+          <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold tracking-wide transition-all flex-shrink-0"
+            style={selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" width={11} height={11} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
+            NHL
           </button>
 
           {/* Search bar — always visible, shrinks when Favorites button is present */}
@@ -718,7 +725,7 @@ export default function ModelProjections() {
                 style={{
                   color: '#a3a3a3',
                   letterSpacing: '0.06em',
-                  fontSize: 'clamp(9px, 2.8vw, 17px)',
+                  fontSize: 'clamp(10px, 2.8vw, 12px)',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                 }}
@@ -743,8 +750,22 @@ export default function ModelProjections() {
       {/* ── Main Feed ── */}
       <main className="w-full pb-1">
 
+        {/* ── NHL COMING SOON ── */}
+        {selectedSport === 'NHL' && (
+          <div className="flex flex-col items-center justify-center py-20 gap-6 text-center px-6">
+            <img
+              src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph"
+              alt="NHL"
+              style={{ width: 120, height: 'auto', objectFit: 'contain' }}
+            />
+            <div style={{ fontWeight: 700, fontSize: 48, color: '#ffffff', letterSpacing: '0.04em', lineHeight: 1.1 }}>NHL MODEL</div>
+            <div style={{ fontWeight: 400, fontSize: 36, color: '#a3a3a3', letterSpacing: '0.06em', lineHeight: 1.2 }}>COMING SOON...</div>
+          </div>
+        )}
+
         {/* ── UNIFIED FEED (projections + splits always shown) ── */}
-        <>
+        {selectedSport !== 'NHL' && (
+          <>
             {/* FAVORITES TAB FEED */}
             {showFavoritesTab ? (
               favoritesTabGames.length === 0 ? (
@@ -815,7 +836,8 @@ export default function ModelProjections() {
                 ))
               )
             )}
-        </>
+          </>
+        )}
       </main>
     </div>
   );

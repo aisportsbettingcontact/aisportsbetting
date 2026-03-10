@@ -259,14 +259,17 @@ function MobileTeamNameBlock({
   isFinalGame: boolean;
 }) {
   const displayName = schoolName.replace(/\bSt\.?\b/g, 'State');
-  const [nameRef, nameFontSize] = useAutoFontSize(
+  const [nameRef, nameFontSizeRaw] = useAutoFontSize(
     displayName, 600, 14, 7,
     `mobile-school:${displayName}`
   );
-  const [nickRef, nickFontSize] = useAutoFontSize(
+  const [nickRef, nickFontSizeRaw] = useAutoFontSize(
     nickname ?? '', 400, 12, 7,
     `mobile-nick:${nickname}`
   );
+  // School name must always be >= nickname font size
+  const nameFontSize = nameFontSizeRaw;
+  const nickFontSize = Math.min(nickFontSizeRaw, nameFontSize);
 
   return (
     <div
@@ -1785,7 +1788,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       </button>
                     )}
                     {isLive ? (
-                      <span className="flex items-center gap-1 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(11px, 2.8vw, 14px)' }}>
+                      <span className="flex items-center gap-1 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(11px, 2.8vw, 14px)', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
                         <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: '#39FF14' }} />
                         LIVE
                         {/* Clock inline right of LIVE — white font, NOT bold */}
@@ -1793,10 +1796,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                           <span style={{
                             color: 'rgba(255,255,255,0.90)',
                             fontWeight: 400,
-                            fontSize: 'clamp(11px, 2.8vw, 14px)',
-                            letterSpacing: '0.04em',
+                            fontSize: 'clamp(9px, 2.2vw, 12px)',
+                            letterSpacing: '0.03em',
                             fontVariantNumeric: 'tabular-nums',
                             marginLeft: '2px',
+                            whiteSpace: 'nowrap',
+                            display: 'inline',
+                            lineHeight: 1,
                           }}>{formattedClock}</span>
                         )}
                       </span>
