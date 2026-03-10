@@ -670,9 +670,16 @@ interface GameCardProps {
    * the parent already knows the user is authenticated.
    */
   isAppAuthed?: boolean;
+  /**
+   * Feed-level mobile tab override. When provided, the per-card tab state is ignored
+   * and this value is used instead. The card will call onMobileTabChange when the user
+   * interacts with the tab bar (but the tab bar is now rendered at the feed level).
+   */
+  mobileTab?: 'book' | 'model' | 'splits' | 'edge' | 'dual';
+  onMobileTabChange?: (tab: 'book' | 'model' | 'splits' | 'edge' | 'dual') => void;
 }
 
-export function GameCard({ game, mode = "full", showModel: showModelProp, onToggleModel: onToggleModelProp, favoriteGameIds, onToggleFavorite, onFavoriteNotify, isAppAuthed: isAppAuthedProp }: GameCardProps) {
+export function GameCard({ game, mode = "full", showModel: showModelProp, onToggleModel: onToggleModelProp, favoriteGameIds, onToggleFavorite, onFavoriteNotify, isAppAuthed: isAppAuthedProp, mobileTab: mobileTabProp, onMobileTabChange }: GameCardProps) {
   // Use custom app auth (app_session cookie) — NOT Manus OAuth — to gate the star button.
   // Prefer the prop passed from the parent (avoids 33+ redundant tRPC queries per page load).
   // Fall back to calling useAppAuth() only when no prop is provided (e.g., standalone usage).
@@ -769,12 +776,23 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
     } catch { /* localStorage unavailable (private browsing, etc.) */ }
     return 'dual'; // fallback default for new users
   };
-  const [mobileTab, setMobileTab] = useState<MobileTab>(getPersistedTab);
+  const [mobileTabInternal, setMobileTabInternal] = useState<MobileTab>(getPersistedTab);
+  // When a feed-level prop is provided, use it; otherwise fall back to internal state
+  const mobileTab: MobileTab = mobileTabProp ?? mobileTabInternal;
+  const setMobileTab = (next: MobileTab) => {
+    if (onMobileTabChange) {
+      onMobileTabChange(next); // bubble up to feed
+    } else {
+      setMobileTabInternal(next); // standalone mode
+    }
+  };
 
-  // Persist tab preference whenever it changes
+  // Persist tab preference whenever it changes (only in standalone mode)
   useEffect(() => {
-    try { localStorage.setItem(MOBILE_TAB_KEY, mobileTab); } catch { /* ignore */ }
-  }, [mobileTab]);
+    if (!mobileTabProp) {
+      try { localStorage.setItem(MOBILE_TAB_KEY, mobileTabInternal); } catch { /* ignore */ }
+    }
+  }, [mobileTabInternal, mobileTabProp]);
 
   // Per-team score flash — only the team whose score increased flashes neon green
   const prevAwayScoreRef = useRef<number | null>(null);
@@ -1763,8 +1781,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             return (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
 
-                {/* ── FULL-WIDTH HEADER ROW: star + status + tab buttons ──────── */}
-                {/* This row spans the entire card width; its bottom border is the tab divider line */}
+                {/* ── PER-CARD STATUS ROW: star + LIVE/FINAL/time only ──────── */}
+                {/* Tab buttons have been moved to the feed-level filter bar above all cards */}
                 <div style={{
                   display: 'flex',
                   flexDirection: 'row',
@@ -1772,98 +1790,45 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   width: '100%',
                   borderBottom: '1px solid hsl(var(--border) / 0.5)',
                   background: 'hsl(var(--card))',
-                  position: 'sticky',
-                  top: 0,
-                  zIndex: 3,
                   paddingLeft: '6px',
-                  gap: 0,
+                  paddingTop: '3px',
+                  paddingBottom: '3px',
+                  gap: '4px',
                 }}>
-                  {/* Left: star + LIVE/FINAL/time — flex-shrink-0 so tabs get remaining space */}
-                  <div className="flex items-center" style={{ flexShrink: 0, gap: '3px', paddingRight: '4px' }}>
-                    {isAppAuthed && (
-                      <button
-                        onClick={handleStarClick}
-                        aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
-                      >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                        </svg>
-                      </button>
-                    )}
-                    {isLive ? (
-                      <span className="flex items-center gap-0.5 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: '9px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
-                        <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: '#39FF14', flexShrink: 0 }} />
-                        LIVE
-                        {formattedClock && (
-                          <span style={{
-                            color: 'rgba(255,255,255,0.90)',
-                            fontWeight: 600,
-                            fontSize: '8.5px',
-                            letterSpacing: '0.03em',
-                            fontVariantNumeric: 'tabular-nums',
-                            marginLeft: '2px',
-                            whiteSpace: 'nowrap',
-                            display: 'inline',
-                            lineHeight: 1,
-                          }}>{formattedClock}</span>
-                        )}
-                      </span>
-                    ) : isFinal ? (
-                      <span className="font-bold tracking-wide" style={{ fontSize: '8.5px', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>FINAL</span>
-                    ) : (
-                      <span style={{ fontSize: '8.5px', fontWeight: 400, color: 'hsl(var(--foreground))', whiteSpace: 'nowrap' }}>{time}</span>
-                    )}
-                  </div>
-
-                  {/* Right: tab buttons filling remaining width */}
-                  <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)' }}>
-                    {TABS.map(tab => {
-                      const isActive = mobileTab === tab.id ||
-                        (isDualTab && (tab.id === 'book' || tab.id === 'model'));
-                      const handleTabClick = () => {
-                        let next: MobileTab = mobileTab;
-                        if (tab.id === 'book') {
-                          if (mobileTab === 'model') next = 'dual';
-                          else if (isDualTab) next = 'model';
-                          else next = 'book';
-                        } else if (tab.id === 'model') {
-                          if (mobileTab === 'book') next = 'dual';
-                          else if (isDualTab) next = 'book';
-                          else next = 'model';
-                        } else {
-                          next = tab.id;
-                        }
-                        if (process.env.NODE_ENV === 'development') {
-                          console.log(`%c[GameCard:tab] ${game.id} ${awayAbbr}@${homeAbbr} current=${mobileTab} clicked=${tab.id} → ${next}`, 'color:#39FF14;font-size:10px');
-                        }
-                        setMobileTab(next);
-                      };
-                      return (
-                        <button
-                          key={tab.id}
-                          onClick={handleTabClick}
-                          style={{
-                            padding: '6px 2px',
-                            fontSize: '8px',
-                            fontWeight: isActive ? 800 : 500,
-                            letterSpacing: '0.06em',
-                            color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',
-                            background: 'transparent',
-                            border: 'none',
-                            borderBottom: isActive ? '2px solid #39FF14' : '2px solid transparent',
-                            marginBottom: '-1px',  /* overlap the container border so active underline sits on the line */
-                            cursor: 'pointer',
-                            transition: 'color 0.15s, border-color 0.15s',
-                            textTransform: 'uppercase',
-                            lineHeight: 1.2,
-                          }}
-                        >
-                          {tab.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {isAppAuthed && (
+                    <button
+                      onClick={handleStarClick}
+                      aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                      </svg>
+                    </button>
+                  )}
+                  {isLive ? (
+                    <span className="flex items-center gap-0.5 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: '9px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
+                      <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: '#39FF14', flexShrink: 0 }} />
+                      LIVE
+                      {formattedClock && (
+                        <span style={{
+                          color: 'rgba(255,255,255,0.90)',
+                          fontWeight: 600,
+                          fontSize: '8.5px',
+                          letterSpacing: '0.03em',
+                          fontVariantNumeric: 'tabular-nums',
+                          marginLeft: '2px',
+                          whiteSpace: 'nowrap',
+                          display: 'inline',
+                          lineHeight: 1,
+                        }}>{formattedClock}</span>
+                      )}
+                    </span>
+                  ) : isFinal ? (
+                    <span className="font-bold tracking-wide" style={{ fontSize: '8.5px', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>FINAL</span>
+                  ) : (
+                    <span style={{ fontSize: '8.5px', fontWeight: 400, color: 'hsl(var(--foreground))', whiteSpace: 'nowrap' }}>{time}</span>
+                  )}
                 </div>
 
                 {/* ── TWO-COLUMN TEAM GRID: frozen left + scrollable right ─────── */}

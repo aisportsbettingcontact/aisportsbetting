@@ -871,3 +871,4 @@
 - [x] GameCard score: left-align (duplicate CSS removed, clean single textAlign: left)
 - [x] GameCard team logos: 1.5x larger (22px → 33px)
 - [x] GameCard mobile: extend tab bar divider line full card width; move star+LIVE/FINAL/time above it in a single proportionally-scaled header row (star 13px, LIVE 9px, clock 8.5px, FINAL/time 8.5px, tabs 8px)
+- [x] Move 4-tab filter (BOOK LINES/MODEL LINES/SPLITS/EDGE) from individual GameCards to a single feed-wide filter bar below date/sport header; applies to all cards at once; default dual-active BOOK+MODEL; present on NCAAM, NBA, NHL, Favorites feeds

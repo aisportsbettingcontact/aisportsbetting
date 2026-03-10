@@ -270,6 +270,30 @@ export default function ModelProjections() {
 
   // ── Main page tab: projections | splits ───────────────────────────────────
 
+  // ── Feed-wide mobile tab filter ───────────────────────────────────────────
+  // Shared across all game cards on this page. Default: 'dual' (BOOK + MODEL both active).
+  type FeedMobileTab = 'book' | 'model' | 'splits' | 'edge' | 'dual';
+  const FEED_TAB_KEY = 'prez_bets_mobile_tab';
+  const getPersistedFeedTab = (): FeedMobileTab => {
+    try {
+      const stored = localStorage.getItem(FEED_TAB_KEY);
+      if (stored === 'book' || stored === 'model' || stored === 'splits' || stored === 'edge' || stored === 'dual') return stored;
+    } catch { /* ignore */ }
+    return 'dual';
+  };
+  const [feedMobileTab, setFeedMobileTab] = useState<FeedMobileTab>(getPersistedFeedTab);
+  const handleFeedTabChange = (next: FeedMobileTab) => {
+    setFeedMobileTab(next);
+    try { localStorage.setItem(FEED_TAB_KEY, next); } catch { /* ignore */ }
+  };
+  const feedIsDual  = feedMobileTab === 'dual';
+  const FEED_TABS: { id: FeedMobileTab; label: string }[] = [
+    { id: 'book',   label: 'BOOK LINES' },
+    { id: 'model',  label: 'MODEL LINES' },
+    { id: 'splits', label: 'SPLITS' },
+    { id: 'edge',   label: 'EDGE' },
+  ];
+
   // ── Favorites tab ──────────────────────────────────────────────────────────
   const [showFavoritesTab, setShowFavoritesTab] = useState(false);
 
@@ -745,6 +769,60 @@ export default function ModelProjections() {
             <div className="flex-1" />
           </div>
         )}
+
+        {/* Row 5: Feed-wide mobile tab filter — BOOK LINES | MODEL LINES | SPLITS | EDGE */}
+        {/* Only shown on mobile (< lg). Hidden on desktop where the full 3-panel layout is used. */}
+        {selectedSport !== 'NHL' && (
+          <div className="lg:hidden" style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            borderBottom: '2px solid hsl(var(--border) / 0.5)',
+            background: 'hsl(var(--card))',
+          }}>
+            {FEED_TABS.map(tab => {
+              const isActive = feedMobileTab === tab.id ||
+                (feedIsDual && (tab.id === 'book' || tab.id === 'model'));
+              const handleClick = () => {
+                let next: FeedMobileTab = feedMobileTab;
+                if (tab.id === 'book') {
+                  if (feedMobileTab === 'model') next = 'dual';
+                  else if (feedIsDual) next = 'model';
+                  else next = 'book';
+                } else if (tab.id === 'model') {
+                  if (feedMobileTab === 'book') next = 'dual';
+                  else if (feedIsDual) next = 'book';
+                  else next = 'model';
+                } else {
+                  next = tab.id as FeedMobileTab;
+                }
+                handleFeedTabChange(next);
+              };
+              return (
+                <button
+                  key={tab.id}
+                  onClick={handleClick}
+                  style={{
+                    padding: '7px 2px',
+                    fontSize: '8px',
+                    fontWeight: isActive ? 800 : 500,
+                    letterSpacing: '0.06em',
+                    color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',
+                    background: 'transparent',
+                    border: 'none',
+                    borderBottom: isActive ? '2px solid #39FF14' : '2px solid transparent',
+                    marginBottom: '-2px',
+                    cursor: 'pointer',
+                    transition: 'color 0.15s, border-color 0.15s',
+                    textTransform: 'uppercase',
+                    lineHeight: 1.2,
+                  }}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
       </header>
 
       {/* ── Main Feed ── */}
@@ -791,6 +869,8 @@ export default function ModelProjections() {
                         onToggleFavorite={handleToggleFavorite}
                         onFavoriteNotify={handleFavoriteNotify}
                         isAppAuthed={Boolean(appUser)}
+                        mobileTab={feedMobileTab}
+                        onMobileTabChange={handleFeedTabChange}
                       />
                     </div>
                   ))}
@@ -828,6 +908,8 @@ export default function ModelProjections() {
                             onToggleFavorite={handleToggleFavorite}
                             onFavoriteNotify={handleFavoriteNotify}
                             isAppAuthed={Boolean(appUser)}
+                            mobileTab={feedMobileTab}
+                            onMobileTabChange={handleFeedTabChange}
                           />
                         </div>
                       ))}
