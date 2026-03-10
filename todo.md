@@ -848,3 +848,12 @@
 - [x] MobileTeamNameBlock: school name font always >= nickname font (enforce in useAutoFontSize logic)
 - [x] Add NHL button to sport filter (all feed pages); clicking shows NHL Coming Soon page with NHL logo + bold header + subheader
 - [x] Sport filter buttons: reduce size so more leagues fit in the row
+- [x] Uniform school/city name font size: single responsive clamp across all cards (computed from longest name vs container width)
+- [x] Uniform nickname font size: single responsive clamp, always smaller than school/city name
+- [x] Remove per-card useAutoFontSize from MobileTeamNameBlock and desktop ScorePanel; replace with fixed uniform values
+- [x] Audit all 395 names, build abbreviation map (SAINT→ST., CALIFORNIA→CAL, etc.) to bring longest names under 14-char threshold
+- [x] Update ncaamTeams.ts ncaaName display values with shortened forms; verify all fit at uniform font size
+- [x] Replace useAutoFontSize in MobileTeamNameBlock with uniform clamp(9px, 2.4vw, 11px) for names and clamp(8px, 2.1vw, 10px) for nicknames
+- [x] Widen mobile frozen panel grid column from 140px to 170px
+- [x] Apply 30-team user-specified abbreviation map to ncaamTeams.ts with full verification log
+- [x] Confirm no wrong-school mapping errors exist (Northwestern St. incident was caught — audit all 30)

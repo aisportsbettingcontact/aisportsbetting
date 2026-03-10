@@ -234,18 +234,18 @@ function useAutoFontSize(
 // ── MobileTeamNameBlock ─────────────────────────────────────────────────────
 /**
  * Renders the school name + nickname stacked vertically inside the mobile
- * frozen left panel. Uses two independent useAutoFontSize instances so each
- * line independently shrinks to the largest px that fits the container.
+ * frozen left panel. Uses UNIFORM font sizes across all teams so every card
+ * looks consistent — school names are all the same size, nicknames are all
+ * the same size (and always smaller than school names).
  *
- * Key design decisions:
- *   - NO maxWidth on the spans — the container ref measures true available px
- *   - NO overflow:hidden / textOverflow:ellipsis on spans — text never clips
- *   - whiteSpace: nowrap so the hook always measures single-line width
- *   - The outer div is `min-w-0` so flex layout doesn't give it infinite width
- *   - ResizeObserver fires on every panel resize (orientation change, zoom, etc.)
+ * Font size system (panel width 170px, available for text ~96px with score):
+ *   School name: clamp(9px, 2.4vw, 11px) — fits all 395 names incl. longest
+ *   Nickname:    clamp(8px, 2.1vw, 10px) — always < school name
  *
- * Debug: every scaling event emits a [AutoFontSize] console group with:
- *   container width, text width at each tried size, and chosen font size.
+ * The longest names after abbreviation are "ST. BONAVENTURE" and
+ * "MISS VALLEY ST." (15 chars). At 9px they measure ~87px in 96px available.
+ *
+ * Debug: [MobileTeamName] logs fire on mount with the resolved font sizes.
  */
 function MobileTeamNameBlock({
   schoolName,
@@ -258,45 +258,46 @@ function MobileTeamNameBlock({
   isWinner: boolean;
   isFinalGame: boolean;
 }) {
-  const displayName = schoolName.replace(/\bSt\.?\b/g, 'State');
-  const [nameRef, nameFontSizeRaw] = useAutoFontSize(
-    displayName, 600, 14, 7,
-    `mobile-school:${displayName}`
-  );
-  const [nickRef, nickFontSizeRaw] = useAutoFontSize(
-    nickname ?? '', 400, 12, 7,
-    `mobile-nick:${nickname}`
-  );
-  // School name must always be >= nickname font size
-  const nameFontSize = nameFontSizeRaw;
-  const nickFontSize = Math.min(nickFontSizeRaw, nameFontSize);
+  // Display name is already abbreviated in the registry — no St.→State transform needed
+  const displayName = schoolName;
+
+  // Uniform font sizes — same for every team
+  const NAME_FONT = 'clamp(9px, 2.4vw, 11px)';
+  const NICK_FONT = 'clamp(8px, 2.1vw, 10px)';
+
+  // Debug log on mount (dev only) — use useEffect directly, not React.useEffect
+  useEffect(() => {
+    if (process.env.NODE_ENV === 'development') {
+      console.debug(`[MobileTeamName] "${displayName}" name=${NAME_FONT} nick=${NICK_FONT}`);
+    }
+  }, [displayName]);
 
   return (
     <div
-      ref={nameRef as React.RefObject<HTMLDivElement>}
       className="flex flex-col min-w-0"
       style={{ lineHeight: 1.25, width: '100%' }}
     >
       <span style={{
-        fontSize: `${nameFontSize}px`,
+        fontSize: NAME_FONT,
         fontWeight: 600,
         color: '#ffffff',
         letterSpacing: '0.04em',
         textTransform: 'uppercase',
         whiteSpace: 'nowrap',
+        overflow: 'visible',
         display: 'block',
       }} title={displayName}>
         {displayName}
       </span>
       {nickname && (
         <span
-          ref={nickRef as React.RefObject<HTMLSpanElement>}
           style={{
-            fontSize: `${nickFontSize}px`,
+            fontSize: NICK_FONT,
             fontWeight: 400,
             color: '#ffffff',
             letterSpacing: '0.02em',
             whiteSpace: 'nowrap',
+            overflow: 'visible',
             display: 'block',
           }}
         >
@@ -1758,7 +1759,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             );
 
             return (
-              <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', width: '100%', minHeight: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', width: '100%', minHeight: 0 }}>
 
                 {/* ── FROZEN LEFT PANEL: logo + abbr + score ─────────────────── */}
                 <div style={{

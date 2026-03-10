@@ -66,7 +66,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "ACC",
-    ncaaName: "North Carolina",
+    ncaaName: "UNC",
     ncaaNickname: "Tar Heels",
     vsinName: "North Carolina",
     ncaaSlug: "north-carolina",
@@ -781,7 +781,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Atlantic 10",
-    ncaaName: "George Washington",
+    ncaaName: "GEORGE WASH",
     ncaaNickname: "Revolutionaries",
     vsinName: "George Washington",
     ncaaSlug: "george-washington",
@@ -1613,7 +1613,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Big Ten",
-    ncaaName: "Southern California",
+    ncaaName: "USC",
     ncaaNickname: "Trojans",
     vsinName: "USC",
     ncaaSlug: "southern-california",
@@ -1769,7 +1769,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Big West",
-    ncaaName: "UC Santa Barbara",
+    ncaaName: "UCSB",
     ncaaNickname: "Gauchos",
     vsinName: "UC-Santa Barbara",
     ncaaSlug: "uc-santa-barbara",
@@ -1795,7 +1795,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Big West",
-    ncaaName: "Cal St. Fullerton",
+    ncaaName: "CSUF",
     ncaaNickname: "Titans",
     vsinName: "CSU-Fullerton",
     ncaaSlug: "cal-st-fullerton",
@@ -1847,7 +1847,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Big West",
-    ncaaName: "CSU Bakersfield",
+    ncaaName: "CSUB",
     ncaaNickname: "Roadrunners",
     vsinName: "CSU-Bakersfield",
     ncaaSlug: "bakersfield",
@@ -1873,7 +1873,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "CAA",
-    ncaaName: "Col. of Charleston",
+    ncaaName: "CHARLESTON",
     ncaaNickname: "Cougars",
     vsinName: "Charleston",
     ncaaSlug: "col-of-charleston",
@@ -2107,7 +2107,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "CUSA",
-    ncaaName: "Jacksonville St.",
+    ncaaName: "JAX STATE",
     ncaaNickname: "Gamecocks",
     vsinName: "Jacksonville ST",
     ncaaSlug: "jacksonville-st",
@@ -2250,7 +2250,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Horizon",
-    ncaaName: "Purdue Fort Wayne",
+    ncaaName: "IPFW",
     ncaaNickname: "Mastodons",
     vsinName: "IPFW",
     ncaaSlug: "ipfw",
@@ -2822,7 +2822,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "MEAC",
-    ncaaName: "South Carolina St.",
+    ncaaName: "SC STATE",
     ncaaNickname: "Bulldogs",
     vsinName: "S Carolina ST",
     ncaaSlug: "south-carolina-st",
@@ -3186,7 +3186,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "NEC",
-    ncaaName: "Central Conn. St.",
+    ncaaName: "CEN CONN ST.",
     ncaaNickname: "Blue Devils",
     vsinName: "C Conn ST",
     ncaaSlug: "central-conn-st",
@@ -3329,7 +3329,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "OVC",
-    ncaaName: "Southeast Mo. St.",
+    ncaaName: "SEMO",
     ncaaNickname: "Redhawks",
     vsinName: "SE Missouri ST",
     ncaaSlug: "southeast-mo-st",
@@ -3511,7 +3511,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Patriot",
-    ncaaName: "Loyola Maryland",
+    ncaaName: "LOYOLA (MD)",
     ncaaNickname: "Greyhounds",
     vsinName: "Loyola-Maryland",
     ncaaSlug: "loyola-maryland",
@@ -3550,7 +3550,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Patriot",
-    ncaaName: "Army West Point",
+    ncaaName: "ARMY",
     ncaaNickname: "Black Knights",
     vsinName: "Army",
     ncaaSlug: "army",
@@ -3732,7 +3732,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "SEC",
-    ncaaName: "Mississippi St.",
+    ncaaName: "MISS STATE",
     ncaaNickname: "Bulldogs",
     vsinName: "Mississippi ST",
     ncaaSlug: "mississippi-st",
@@ -3953,7 +3953,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Southland",
-    ncaaName: "A&M-Corpus Christi",
+    ncaaName: "TEXAS A&M-CC",
     ncaaNickname: "Islanders",
     vsinName: "Texas A&M CC",
     ncaaSlug: "am-corpus-chris",
@@ -3992,7 +3992,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Southland",
-    ncaaName: "Houston Christian",
+    ncaaName: "HOU CHRISTIAN",
     ncaaNickname: "Huskies",
     vsinName: "Houston Christian",
     ncaaSlug: "houston-christian",
@@ -4005,7 +4005,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Southland",
-    ncaaName: "Northwestern St.",
+    ncaaName: "NW STATE",
     ncaaNickname: "Demons",
     vsinName: "Northwestern ST",
     ncaaSlug: "northwestern-st",
@@ -4031,7 +4031,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Southland",
-    ncaaName: "Lamar University",
+    ncaaName: "LAMAR",
     ncaaNickname: "Cardinals",
     vsinName: "Lamar",
     ncaaSlug: "lamar",
@@ -4057,7 +4057,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Southland",
-    ncaaName: "Southeastern La.",
+    ncaaName: "SE LOUISIANA",
     ncaaNickname: "Lions",
     vsinName: "SE Louisiana",
     ncaaSlug: "southeastern-la",
@@ -4070,7 +4070,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Summit League",
-    ncaaName: "North Dakota St.",
+    ncaaName: "NO DAK STATE",
     ncaaNickname: "Bison",
     vsinName: "N Dakota ST",
     ncaaSlug: "north-dakota-st",
@@ -4083,7 +4083,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Summit League",
-    ncaaName: "St. Thomas (MN)",
+    ncaaName: "ST. THOMAS",
     ncaaNickname: "Tommies",
     vsinName: "ST Thomas-MN",
     ncaaSlug: "st-thomas-mn",
@@ -4148,7 +4148,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Summit League",
-    ncaaName: "South Dakota St.",
+    ncaaName: "SO DAK STATE",
     ncaaNickname: "Jackrabbits",
     vsinName: "S Dakota ST",
     ncaaSlug: "south-dakota-st",
@@ -4252,7 +4252,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "Sun Belt",
-    ncaaName: "Coastal Carolina",
+    ncaaName: "COASTAL CAR",
     ncaaNickname: "Chanticleers",
     vsinName: "Coastal Carolina",
     ncaaSlug: "coastal-caro",
@@ -4369,7 +4369,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "SWAC",
-    ncaaName: "Bethune-Cookman",
+    ncaaName: "BETH COOKMAN",
     ncaaNickname: "Wildcats",
     vsinName: "Bethune-Cookman",
     ncaaSlug: "bethune-cookman",
@@ -4434,7 +4434,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "SWAC",
-    ncaaName: "Ark.-Pine Bluff",
+    ncaaName: "ARK PINE BLUFF",
     ncaaNickname: "Golden Lions",
     vsinName: "Ark-Pine Bluff",
     ncaaSlug: "ark-pine-bluff",
@@ -4512,7 +4512,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "SWAC",
-    ncaaName: "Mississippi Val.",
+    ncaaName: "MISS VALLEY ST.",
     ncaaNickname: "Delta Devils",
     vsinName: "Miss Valley ST",
     ncaaSlug: "mississippi-val",
@@ -4538,7 +4538,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "WAC",
-    ncaaName: "California Baptist",
+    ncaaName: "CAL BAPTIST",
     ncaaNickname: "Lancers",
     vsinName: "California Baptist",
     ncaaSlug: "california-baptist",
@@ -4590,7 +4590,7 @@ export const NCAAM_TEAMS: NcaamTeam[] = [
   },
   {
     conference: "WAC",
-    ncaaName: "Abilene Christian",
+    ncaaName: "ABILENE CHR.",
     ncaaNickname: "Wildcats",
     vsinName: "Abilene CHR",
     ncaaSlug: "abilene-christian",
