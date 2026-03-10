@@ -803,7 +803,7 @@ export default function ModelProjections() {
                   onClick={handleClick}
                   style={{
                     padding: '7px 2px',
-                    fontSize: '8px',
+                    fontSize: '13px',
                     fontWeight: isActive ? 800 : 500,
                     letterSpacing: '0.06em',
                     color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',

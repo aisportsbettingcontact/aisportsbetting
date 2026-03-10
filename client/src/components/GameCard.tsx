@@ -1602,8 +1602,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             }
 
             const bookStyle = (_isEdge?: boolean): React.CSSProperties => ({
-              // unbolded book values: 10px; bolded book values: 9.75px (bold appears optically larger)
-              fontSize: isDualTab ? '10px' : isBookTab ? '9.75px' : '10px',
+              // unbolded book values: 10.5px; bolded book values: 10.25px (bold appears optically larger)
+              fontSize: isDualTab ? '10.5px' : isBookTab ? '10.25px' : '10.5px',
               // DUAL mode: book = light gray unbolded (secondary to model primary)
               // BOOK-only: book = white bold (primary)
               // MODEL-only: book = white unbolded 70% (secondary, visible for reference)
@@ -1643,7 +1643,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isDualTab) {
                 // DUAL mode: model is primary — edge = neon green bold, non-edge = white bold
                 return {
-                  fontSize: '9.75px',  // bolded model values: 9.75px
+                  fontSize: '10.25px',  // bolded model values: 10.25px
                   fontWeight: 700,
                   color: isEdge ? '#39FF14' : 'rgba(255,255,255,1)',
                   letterSpacing: '0.02em',
@@ -1653,7 +1653,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isBookTab) {
                 // BOOK-only tab: model is always secondary — white unbolded, no edge highlight
                 return {
-                  fontSize: '10px',  // unbolded model values: 10px
+                  fontSize: '10.5px',  // unbolded model values: 10.5px
                   fontWeight: 400,
                   color: 'rgba(255,255,255,0.70)',
                   letterSpacing: '0.02em',
@@ -1663,7 +1663,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (isModelTab) {
                 // MODEL-only tab: edge = neon green bold; non-edge = white bold
                 return {
-                  fontSize: '9.75px',  // bolded model values: 9.75px
+                  fontSize: '10.25px',  // bolded model values: 10.25px
                   fontWeight: 700,
                   color: isEdge ? '#39FF14' : 'rgba(255,255,255,1)',
                   letterSpacing: '0.02em',
@@ -1672,7 +1672,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               }
               // SPLITS/EDGE tabs: dimmed
               return {
-                fontSize: '10px',  // unbolded dimmed values: 10px
+                fontSize: '10.5px',  // unbolded dimmed values: 10.5px
                 fontWeight: 400,
                 color: 'rgba(255,255,255,0.30)',
                 letterSpacing: '0.02em',
@@ -1699,12 +1699,14 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
 
             // ── Shared odds table (used by both BOOK and MODEL tabs) ──────────
             const OddsTable = () => (
-              <div className="flex flex-col w-full px-2 pt-2 pb-1">
+              <div className="flex flex-col w-full px-2 pt-0 pb-1">
+                {/* Header block: 30px height to align with status row in frozen left panel */}
+                <div style={{ height: '30px', display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
                 {/* Column headers: SPREAD | TOTAL | MONEYLINE */}
-                <div className="grid grid-cols-3 pb-1">
+                <div className="grid grid-cols-3">
                   {['SPREAD', 'TOTAL', 'ML'].map(h => (
                     <span key={h} className="text-center font-extrabold uppercase tracking-widest"
-                      style={{ fontSize: 'clamp(9.25px, 2.3vw, 11.25px)', color: '#E8E8E8' }}>{h}</span>
+                      style={{ fontSize: 'clamp(10.25px, 2.5vw, 12.25px)', color: '#E8E8E8' }}>{h}</span>
                   ))}
                 </div>
                 {/* Sub-headers: BOOK and MODEL are tab-responsive
@@ -1713,12 +1715,12 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                      DUAL:       BOOK = white BOLD,    MODEL = neon green BOLD (both active)
                      Other tabs: BOOK = gray 50%,      MODEL = gray 50%
                 */}
-                <div className="grid grid-cols-3 pb-1" style={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+                <div className="grid grid-cols-3">
                   {[0,1,2].map(i => (
                     <div key={i} className="grid grid-cols-2">
                       <span className="text-center uppercase tracking-widest"
                         style={{
-                          fontSize: '7.5px',
+                          fontSize: '8.25px',
                           // DUAL: white bold | BOOK-only: white bold | MODEL-only: white unbolded | other: gray
                           fontWeight: (isDualTab || isBookTab) ? 700 : 400,
                           color: (isDualTab || isBookTab)
@@ -1730,7 +1732,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         }}>BOOK</span>
                       <span className="text-center uppercase tracking-widest"
                         style={{
-                          fontSize: '7.5px',
+                          fontSize: '8.25px',
                           // DUAL: neon green bold | MODEL-only: neon green bold | BOOK-only: white unbolded | other: gray
                           fontWeight: (isDualTab || isModelTab) ? 700 : 400,
                           color: (isDualTab || isModelTab)
@@ -1743,6 +1745,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     </div>
                   ))}
                 </div>
+                </div>{/* end 30px header block */}
                 {/* Away row — height: 44px shared with frozen panel away row */}
                 <div className="grid grid-cols-3" style={{ height: '44px', alignItems: 'center' }}>
                   <div className="grid grid-cols-2">
@@ -1781,57 +1784,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             return (
               <div style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
 
-                {/* ── PER-CARD STATUS ROW: star + LIVE/FINAL/time only ──────── */}
-                {/* Tab buttons have been moved to the feed-level filter bar above all cards */}
-                <div style={{
-                  display: 'flex',
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  width: '100%',
-                  borderBottom: '1px solid hsl(var(--border) / 0.5)',
-                  background: 'hsl(var(--card))',
-                  paddingLeft: '6px',
-                  paddingTop: '3px',
-                  paddingBottom: '3px',
-                  gap: '4px',
-                }}>
-                  {isAppAuthed && (
-                    <button
-                      onClick={handleStarClick}
-                      aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-                      </svg>
-                    </button>
-                  )}
-                  {isLive ? (
-                    <span className="flex items-center gap-0.5 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: '9px', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
-                      <span className="w-1 h-1 rounded-full animate-pulse inline-block" style={{ background: '#39FF14', flexShrink: 0 }} />
-                      LIVE
-                      {formattedClock && (
-                        <span style={{
-                          color: 'rgba(255,255,255,0.90)',
-                          fontWeight: 600,
-                          fontSize: '8.5px',
-                          letterSpacing: '0.03em',
-                          fontVariantNumeric: 'tabular-nums',
-                          marginLeft: '2px',
-                          whiteSpace: 'nowrap',
-                          display: 'inline',
-                          lineHeight: 1,
-                        }}>{formattedClock}</span>
-                      )}
-                    </span>
-                  ) : isFinal ? (
-                    <span className="font-bold tracking-wide" style={{ fontSize: '8.5px', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>FINAL</span>
-                  ) : (
-                    <span style={{ fontSize: '8.5px', fontWeight: 400, color: 'hsl(var(--foreground))', whiteSpace: 'nowrap' }}>{time}</span>
-                  )}
-                </div>
-
                 {/* ── TWO-COLUMN TEAM GRID: frozen left + scrollable right ─────── */}
+                {/* Status row (star/LIVE/FINAL/time) is now inside the frozen left panel, above the home team row */}
                 <div style={{ display: 'grid', gridTemplateColumns: '170px 1fr', width: '100%', minHeight: 0 }}>
 
                 {/* ── FROZEN LEFT PANEL: logo + team rows only (no status row) ── */}
@@ -1877,6 +1831,53 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
 
                   {/* Divider */}
                   <div style={{ height: 1, background: 'hsl(var(--border) / 0.4)' }} />
+
+                  {/* Status row: star + LIVE/FINAL/time — sits above home team row, aligned with OddsTable header rows */}
+                  {/* Height matches the two OddsTable header rows (SPREAD/TOTAL/ML + BOOK/MODEL sub-headers) */}
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    height: '30px',
+                    paddingLeft: '2px',
+                    gap: '4px',
+                    borderBottom: '1px solid rgba(255,255,255,0.12)',
+                  }}>
+                    {isAppAuthed && (
+                      <button
+                        onClick={handleStarClick}
+                        aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 2px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill={isFavorited ? '#FFD700' : 'none'} stroke={isFavorited ? '#FFD700' : 'rgba(255,255,255,0.85)'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                        </svg>
+                      </button>
+                    )}
+                    {isLive ? (
+                      <span className="flex items-center gap-0.5 font-black tracking-widest uppercase" style={{ color: '#39FF14', fontSize: 'clamp(10.25px, 2.5vw, 12.25px)', whiteSpace: 'nowrap', flexWrap: 'nowrap' }}>
+                        <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: '#39FF14', flexShrink: 0 }} />
+                        LIVE
+                        {formattedClock && (
+                          <span style={{
+                            color: 'rgba(255,255,255,0.90)',
+                            fontWeight: 600,
+                            fontSize: 'clamp(10.25px, 2.5vw, 12.25px)',
+                            letterSpacing: '0.03em',
+                            fontVariantNumeric: 'tabular-nums',
+                            marginLeft: '2px',
+                            whiteSpace: 'nowrap',
+                            display: 'inline',
+                            lineHeight: 1,
+                          }}>{formattedClock}</span>
+                        )}
+                      </span>
+                    ) : isFinal ? (
+                      <span className="font-bold tracking-wide" style={{ fontSize: 'clamp(10.25px, 2.5vw, 12.25px)', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>FINAL</span>
+                    ) : (
+                      <span style={{ fontSize: 'clamp(10.25px, 2.5vw, 12.25px)', fontWeight: 400, color: 'hsl(var(--foreground))', whiteSpace: 'nowrap' }}>{time}</span>
+                    )}
+                  </div>
 
                   {/* Home row: height: 44px — matches OddsTable home row exactly */}
                   <div className="flex items-center justify-between gap-1 w-full" style={{ alignItems: 'center', height: '44px' }}>

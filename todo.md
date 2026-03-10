@@ -872,3 +872,6 @@
 - [x] GameCard team logos: 1.5x larger (22px → 33px)
 - [x] GameCard mobile: extend tab bar divider line full card width; move star+LIVE/FINAL/time above it in a single proportionally-scaled header row (star 13px, LIVE 9px, clock 8.5px, FINAL/time 8.5px, tabs 8px)
 - [x] Move 4-tab filter (BOOK LINES/MODEL LINES/SPLITS/EDGE) from individual GameCards to a single feed-wide filter bar below date/sport header; applies to all cards at once; default dual-active BOOK+MODEL; present on NCAAM, NBA, NHL, Favorites feeds
+- [x] Feed tab bar buttons: fix duplicate fontSize, set to 13px (single clean declaration)
+- [x] OddsTable: SPREAD/TOTAL/ML headers +1pt (now clamp(10.25px,2.5vw,12.25px)), BOOK/MODEL sub-headers +0.75pt (now 8.25px), value cells +0.5pt (now 10.25-10.5px)
+- [x] GameCard mobile: move per-card status row (star/LIVE/FINAL/time) into frozen left panel above home team row; text matches SPREAD/TOTAL/ML size; 30px height aligns with OddsTable header block
