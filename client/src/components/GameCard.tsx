@@ -1927,7 +1927,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                           onClick={handleTabClick}
                           style={{
                             padding: '6px 2px',
-                            fontSize: '7.5px',
+                            fontSize: '8px',
                             fontWeight: isActive ? 800 : 500,
                             letterSpacing: '0.06em',
                             color: isActive ? 'rgba(255,255,255,1)' : 'rgba(255,255,255,0.45)',
