@@ -161,7 +161,7 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
             <div className="flex items-center justify-start px-1.5 transition-all duration-700 flex-shrink-0"
               style={{ width: `${awayPct}%`, background: awayColor, borderRadius: (awayPct ?? 0) >= 100 ? "4px" : "4px 0 0 4px" }}>
               {awayShowInside && (
-                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: awayTextColor, textShadow: '0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8), 1px 1px 2px rgba(0,0,0,1)' }}>{awayPct}%</span>
+                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{awayPct}%</span>
               )}
             </div>
           )}
@@ -172,7 +172,7 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
             <div className="flex items-center justify-end px-1.5 transition-all duration-700 flex-shrink-0"
               style={{ width: `${homePct}%`, background: homeColor, borderRadius: (homePct ?? 0) >= 100 ? "4px" : "0 4px 4px 0" }}>
               {homeShowInside && (
-                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: homeTextColor, textShadow: '0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8), 1px 1px 2px rgba(0,0,0,1)' }}>{homePct}%</span>
+                <span className="font-extrabold leading-none whitespace-nowrap" style={{ fontSize: 10, color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{homePct}%</span>
               )}
             </div>
           )}
@@ -297,7 +297,7 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
                   borderRadius: (awayPct ?? 0) >= 100 ? "9999px" : "9999px 0 0 9999px",
                 }}>
                 {awayShowInside && (
-                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: awayTextColor, textShadow: '0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8), 1px 1px 2px rgba(0,0,0,1)' }}>{awayPct}%</span>
+                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{awayPct}%</span>
                 )}
               </div>
             )}
@@ -312,7 +312,7 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
                   borderRadius: (homePct ?? 0) >= 100 ? "9999px" : "0 9999px 9999px 0",
                 }}>
                 {homeShowInside && (
-                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: homeTextColor, textShadow: '0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8), 1px 1px 2px rgba(0,0,0,1)' }}>{homePct}%</span>
+                  <span className="font-extrabold tabular-nums leading-none whitespace-nowrap" style={{ fontSize: 'clamp(11px, 1vw, 16px)', color: '#ffffff', textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000, 0 0 6px rgba(0,0,0,0.9), 0 0 10px rgba(0,0,0,0.8)' }}>{homePct}%</span>
                 )}
               </div>
             )}
