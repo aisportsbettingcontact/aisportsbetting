@@ -156,17 +156,43 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
     const awayScore: number | null = (away.score !== null && away.score !== undefined) ? Number(away.score) : null;
     const homeScore: number | null = (home.score !== null && home.score !== undefined) ? Number(home.score) : null;
 
-    // Build game clock string for live games: "MM:SS Period" e.g. "15:07 1st"
+    // Build game clock string for live games.
+    // Transformation rules (hardcoded per product spec):
+    //   NCAA raw period  →  display label
+    //   "1st"            →  "1ST HALF"
+    //   "2nd"            →  "2ND HALF"
+    //   "HALF"           →  "HALFTIME"
+    //   "00:00 1st"      →  "END 1ST HALF"  (until NCAA shows HALF)
+    //   "00:00 2nd"      →  "END 2ND HALF"  (until NCAA shows FINAL)
+    //   Any other period →  kept as-is (OT, etc.)
     let gameClock: string | null = null;
     if (gameStatus === 'live' && c.currentPeriod) {
-      const period = String(c.currentPeriod);
-      const clock = c.contestClock ? String(c.contestClock) : '';
-      if (period === 'HALF') {
-        gameClock = 'HALF';
+      const period = String(c.currentPeriod).trim();
+      const clock = c.contestClock ? String(c.contestClock).trim() : '';
+
+      // Map raw period label to display label
+      const PERIOD_LABEL: Record<string, string> = {
+        '1st': '1ST HALF',
+        '2nd': '2ND HALF',
+        'HALF': 'HALFTIME',
+        'half': 'HALFTIME',
+      };
+      const displayPeriod = PERIOD_LABEL[period] ?? period.toUpperCase();
+
+      if (period === 'HALF' || period === 'half') {
+        // Halftime — no clock needed
+        gameClock = 'HALFTIME';
       } else if (clock) {
-        gameClock = `${clock} ${period}`;
+        // Check for 00:00 / 0:00 clock (end of half)
+        const isZero = /^0?0:00$/.test(clock);
+        if (isZero && (period === '1st' || period === '2nd')) {
+          gameClock = `END ${displayPeriod}`;
+        } else {
+          gameClock = `${clock} ${displayPeriod}`;
+        }
       } else {
-        gameClock = period;
+        // No clock value — just show the period label
+        gameClock = displayPeriod;
       }
     }
 

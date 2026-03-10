@@ -1401,13 +1401,21 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const formatGameClock = (raw: string | null | undefined): string => {
               if (!raw) return '';
               const s = raw.trim();
-              // NCAAM half labels
-              if (/^1st$/i.test(s)) return '1H';
-              if (/^2nd$/i.test(s)) return '2H';
-              if (/^1st\s+half$/i.test(s)) return '1H';
-              if (/^2nd\s+half$/i.test(s)) return '2H';
+
+              // ── Server-emitted NCAAM clock strings (already transformed) ──────
+              // These come pre-formatted from ncaaScoreboard.ts; pass through directly.
+              if (/^END\s+1ST\s+HALF$/i.test(s)) return 'END 1ST HALF';
+              if (/^END\s+2ND\s+HALF$/i.test(s)) return 'END 2ND HALF';
+              if (/^1ST\s+HALF$/i.test(s)) return '1ST HALF';
+              if (/^2ND\s+HALF$/i.test(s)) return '2ND HALF';
+              if (/^HALFTIME$/i.test(s)) return 'HALFTIME';
+
+              // ── Legacy / NBA / raw NCAA labels (fallback normalization) ───────
+              // Raw half labels (in case old DB rows still have these)
+              if (/^1st$/i.test(s)) return '1ST HALF';
+              if (/^2nd$/i.test(s)) return '2ND HALF';
               if (/^half(time)?$/i.test(s)) return 'HALFTIME';
-              // Quarter labels → 1Q/2Q/3Q/4Q
+              // Quarter labels → 1Q/2Q/3Q/4Q (NBA)
               if (/^q?1(st)?$/i.test(s)) return '1Q';
               if (/^q?2(nd)?$/i.test(s)) return '2Q';
               if (/^q?3(rd)?$/i.test(s)) return '3Q';
@@ -1419,7 +1427,20 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (/^ot$/i.test(s)) return 'OT';
               // MM:SS clock — pass through as-is
               if (/^\d{1,2}:\d{2}$/.test(s)) return s;
-              // Compound: "Q3 4:15" or "2nd 7:42" — normalize period label then keep clock
+              // Compound: "09:36 1ST HALF" or "Q3 4:15" — normalize period label then keep clock
+              // Pattern: clock-first (server format) "MM:SS LABEL"
+              const clockFirst = s.match(/^(\d{1,2}:\d{2})\s+(.+)$/);
+              if (clockFirst) {
+                const [, mm, periodRaw] = clockFirst;
+                const periodLabel = formatGameClock(periodRaw);
+                // Check for zero clock
+                const isZero = /^0?0:00$/.test(mm);
+                if (isZero && /half/i.test(periodLabel)) {
+                  return `END ${periodLabel}`;
+                }
+                return `${mm} ${periodLabel}`;
+              }
+              // Pattern: period-first (legacy) "LABEL MM:SS"
               const compound = s.match(/^(q?\d|\d+(?:st|nd|rd|th)?(?:\s+(?:period|half))?|half(?:time)?)\s+(\d{1,2}:\d{2})$/i);
               if (compound) {
                 const period = formatGameClock(compound[1]);

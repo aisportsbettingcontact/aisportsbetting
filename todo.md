@@ -842,3 +842,4 @@
 - [x] Mobile frozen panel: apply useAutoFontSize hook (same as desktop), remove maxWidth constraints, widen panel
 - [x] Update audit script to detect overflow:hidden truncation via Canvas measureText on mobile
 - [x] Sticky date/league header: always show full DATE · LEAGUE string on all screen sizes; responsive font sizing (mobile < tablet < desktop)
+- [x] NCAAM clock: 1st→1ST HALF, 2nd→2ND HALF; 00:00 1st/2nd→END 1ST/2ND HALF; HALFTIME stays HALFTIME; FINAL stays FINAL
