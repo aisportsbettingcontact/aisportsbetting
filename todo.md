@@ -892,3 +892,12 @@
 - [x] BettingSplitsPanel: universal black stroke on ALL % labels every screen/code path; increase minWidth so single-digit values (1-9%) always have enough room inside pill on all screens
 - [x] SplitBar desktop: dynamic proportional font+segment scaling with clamp() so % values scale with bar height at all viewport widths; single-digit always fully visible; 100% rule intact
 - [x] GameCard desktop/tablet: consistent team name font sizes (school name + nickname) scaled with clamp() matching mobile hierarchy
+- [x] Phase 1: CSS --scale variable in :root (100vw/393, clamped 1–3.85) + device viewport database comment
+- [x] Phase 2: useViewportScale() hook — throttled resize, returns {width,height,scale,deviceType}
+- [x] Phase 3: Fluid typography — clamp(base, calc(base * var(--scale)), max) on all text elements
+- [x] Phase 4: Scale-adjusted spacing/dimensions — padding, margin, row-height, logo-size, card-radius
+- [x] Phase 5: Fluid minmax grid columns for game board
+- [x] Phase 6: useViewportScale hook integrated into app context
+- [x] Phase 7-9: Mobile/tablet/desktop layout verified with scale engine
+- [x] Phase 10: react-window virtualized game list rendering
+- [x] Phase 11: Validation vitest against 25-device viewport database

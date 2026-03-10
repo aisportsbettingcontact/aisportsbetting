@@ -235,6 +235,7 @@ function LabeledBar({ awayPct, homePct, awayColor, homeColor, awayLineLabel, hom
       {/* Each segment has its own overflow:hidden to clip text within its bounds */}
       <div
         style={{
+          // Mobile pill height: fixed 20px (mobile baseline, not scaled — mobile is already at scale=1)
           height: 20,
           minWidth: 0,
           display: 'flex',
@@ -424,7 +425,8 @@ function SplitBar({ label, awayPct, homePct, awayColor, homeColor }: SplitBarPro
         return (
           <div
             style={{
-              height: 'clamp(28px, 3vw, 44px)',
+              // Use --pill-height CSS token (driven by --scale) for fluid scaling
+              height: 'var(--pill-height, clamp(28px, 3vw, 44px))',
               display: 'flex',
               flexDirection: 'row',
               borderRadius: '9999px',
