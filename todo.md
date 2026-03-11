@@ -945,3 +945,9 @@
 - [ ] Desktop: move teams higher in score panel (reduce top padding/offset)
 - [ ] Desktop: scale favorite star, game clock/startTime, and LIVE/FINAL badge to 1.5× team name font size
 - [ ] Desktop+all screens: FINAL button neon green (#39FF14) matching mobile style
+
+## Style Changes (2026-03-11)
+- [x] SPREAD/TOTAL/MONEYLINE labels: increase font size by 1.5pt relative to BOOK/MODEL labels
+- [x] Losing team score: reduce font-weight by 200 (e.g. 700→500)
+- [x] LIVE badge: match FINAL pill style (neon green border, background, same font/padding)
+- [x] Betting split pill %% values: add letterSpacing +0.2em to all percentage text in pills

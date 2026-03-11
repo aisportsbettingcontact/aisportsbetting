@@ -506,6 +506,7 @@ function MergedSplitBar({
           whiteSpace: 'nowrap',
           textShadow: MERGED_LABEL_STROKE,
           lineHeight: 1,
+          letterSpacing: '0.2em',
         };
         return (
           <div style={{
@@ -1202,9 +1203,9 @@ function OddsLinesPanel({
         className={`grid ${GRID} pb-0.5`}
         style={{ transition: 'grid-template-columns 200ms ease' }}
       >
-        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(10px, 0.9vw, 14px)', color: '#E8E8E8' }}>Spread</span>
-        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(10px, 0.9vw, 14px)', color: '#E8E8E8' }}>Total</span>
-        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(10px, 0.9vw, 14px)', color: '#E8E8E8' }}>Moneyline</span>
+        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(11.5px, 1.05vw, 15.5px)', color: '#E8E8E8' }}>Spread</span>
+        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(11.5px, 1.05vw, 15.5px)', color: '#E8E8E8' }}>Total</span>
+        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(11.5px, 1.05vw, 15.5px)', color: '#E8E8E8' }}>Moneyline</span>
       </div>
 
       {/* Sub-headers: BOOK only when model off; BOOK | MODEL when model on */}
@@ -1584,8 +1585,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   function ScorePanel() {
     // Uniform font sizes — same for every team, scale with viewport width only
     // No per-name auto-scaling; no truncation allowed
-    const awayFontWeight = awayWins ? 700 : 600;
-    const homeFontWeight = homeWins ? 700 : 600;
+    // Winner: 700 bold; loser: 400 (reduced by 200 from previous 600)
+    const awayFontWeight = awayWins ? 700 : isFinal ? 400 : 600;
+    const homeFontWeight = homeWins ? 700 : isFinal ? 400 : 600;
     // School name: clamp(13px, 1.1vw, 18px) — 13px mobile, ~15.8px at 1440px, 18px max
     const NAME_FONT_SIZE = 'clamp(13px, 1.1vw, 18px)';
     // Nickname: clamp(11px, 0.9vw, 15px) — always smaller than school name
@@ -1651,17 +1653,23 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 {game.gameClock}
               </span>
             )}
-            {/* LIVE indicator — neon green, right of period/clock */}
+            {/* LIVE indicator — same pill format as FINAL badge */}
             {/* Desktop: clamp(14px,1.1vw,18px) — 1.5× mobile 9px */}
             <span
-              className="flex items-center gap-0.5 font-black tracking-widest uppercase flex-shrink-0"
-              style={{ fontSize: LIVE_FONT_SIZE, color: "#39FF14", letterSpacing: "0.1em" }}
+              className="px-1.5 py-0.5 rounded font-bold tracking-wide flex-shrink-0 flex items-center gap-1"
+              style={{
+                fontSize: LIVE_FONT_SIZE,
+                background: "rgba(57,255,20,0.12)",
+                color: "#39FF14",
+                border: "1px solid rgba(57,255,20,0.4)",
+                letterSpacing: "0.08em",
+              }}
             >
               <span
-                className="rounded-full animate-pulse inline-block"
+                className="rounded-full animate-pulse inline-block flex-shrink-0"
                 style={{
-                  width: isDesktop ? '10px' : '6px',
-                  height: isDesktop ? '10px' : '6px',
+                  width: isDesktop ? '8px' : '5px',
+                  height: isDesktop ? '8px' : '5px',
                   background: "#39FF14",
                 }}
               />
@@ -1719,11 +1727,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         {/* Right: score pushed to far right */}
         {(isLive || isFinal) && hasScores && (
           <span
-            className="tabular-nums font-black flex-shrink-0 transition-colors duration-300"
+            className="tabular-nums flex-shrink-0 transition-colors duration-300"
             style={{
               /* NBA scores are 3 digits (100-130) — use smaller clamp to prevent overflow in 160px panel */
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
+              /* Winner: 900 (font-black); loser: 500 (reduced by 200 from previous 700) */
+              fontWeight: awayScoreFlash ? 900 : awayWins ? 900 : isFinal ? 500 : 900,
               color: awayScoreFlash
                 ? "#39FF14"
                 : awayWins
@@ -1770,10 +1780,12 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         {/* Right: score pushed to far right */}
         {(isLive || isFinal) && hasScores && (
           <span
-            className="tabular-nums font-black flex-shrink-0 transition-colors duration-300"
+            className="tabular-nums flex-shrink-0 transition-colors duration-300"
             style={{
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
+              /* Winner: 900 (font-black); loser: 500 (reduced by 200 from previous 700) */
+              fontWeight: homeScoreFlash ? 900 : homeWins ? 900 : isFinal ? 500 : 900,
               color: homeScoreFlash
                 ? "#39FF14"
                 : homeWins
