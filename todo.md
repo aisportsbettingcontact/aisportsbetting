@@ -907,3 +907,4 @@
 - [x] Fix awayNameRef/homeNameRef containers in ScorePanel: added flex-1 so useAutoFontSize measures full available width (was 68.6px, now 124.6px) — "UMass Lowell" now renders at 19.5px instead of 10.5px
 - [x] Remove all truncation from team names/nicknames — no overflow:hidden, no textOverflow:ellipsis, no clipping; uniform clamp() font sizes scale with viewport, containers expand to fit full text
 - [x] Desktop: merge ODDS + SPLITS into single unified table (BOOK → splits bars → MODEL per section) with EdgeVerdict on far right; mobile/tablet unchanged
+- [x] Desktop DesktopMergedPanel refinement: per-column vertical stack = section header → BOOK row → TICKETS bar → HANDLE bar → MODEL row; EdgeVerdict pinned right; full screen width; desktop only
