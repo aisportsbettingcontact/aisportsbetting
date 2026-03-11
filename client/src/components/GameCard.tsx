@@ -1438,6 +1438,17 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
     if (curHome !== null) prevHomeScoreRef.current = curHome;
   }, [game.awayScore, game.homeScore, game.id]);
 
+  // Desktop detection — used to apply desktop-only styles in ScorePanel
+  // Tailwind lg breakpoint = 1024px
+  const [isDesktop, setIsDesktop] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
+  useEffect(() => {
+    const mql = window.matchMedia('(min-width: 1024px)');
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    mql.addEventListener('change', handler);
+    setIsDesktop(mql.matches);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+
   const maxDiff = Math.max(isNaN(spreadDiff) ? 0 : spreadDiff, isNaN(totalDiff) ? 0 : totalDiff);
   const borderColor = getEdgeColor(maxDiff);
 
@@ -1579,6 +1590,17 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
     const NAME_FONT_SIZE = 'clamp(13px, 1.1vw, 18px)';
     // Nickname: clamp(11px, 0.9vw, 15px) — always smaller than school name
     const NICK_FONT_SIZE = 'clamp(11px, 0.9vw, 15px)';
+    // Desktop-specific sizes: 1.5× the NAME_FONT_SIZE (clamp(13px,1.1vw,18px))
+    // → clamp(19.5px, 1.65vw, 27px) for star/clock/LIVE/FINAL/time
+    const HEADER_ICON_SIZE = isDesktop ? 24 : 16; // star SVG px
+    const CLOCK_FONT_SIZE = isDesktop ? 'clamp(16px, 1.35vw, 20px)' : '11px';
+    const LIVE_FONT_SIZE  = isDesktop ? 'clamp(14px, 1.1vw, 18px)'  : '9px';
+    const FINAL_FONT_SIZE = isDesktop ? 'clamp(16px, 1.35vw, 20px)' : '10px';
+    const TIME_FONT_SIZE  = isDesktop ? 'clamp(16px, 1.35vw, 20px)' : '13px';
+    // Desktop: teams pushed toward top (justify-start + small paddingTop)
+    // Mobile: teams vertically centered (justify-center)
+    const teamGroupJustify = isDesktop ? 'flex-start' : 'center';
+    const teamGroupPaddingTop = isDesktop ? '4px' : '0px';
     return (
     <div className="flex flex-col pl-2 pr-2 pt-0 pb-0" style={{ height: '100%' }}>
       {/* Status row: [star] [clock/status] [LIVE badge]
@@ -1596,7 +1618,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               background: "none",
               border: "none",
               cursor: "pointer",
-              padding: "3px 4px",
+              padding: isDesktop ? "3px 4px" : "3px 4px",
               lineHeight: 1,
               flexShrink: 0,
               display: "flex",
@@ -1610,7 +1632,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.25)"; if (!isFavorited) e.currentTarget.style.color = "rgba(255,255,255,0.95)"; }}
             onMouseLeave={e => { e.currentTarget.style.transform = "scale(1)"; if (!isFavorited) e.currentTarget.style.color = "rgba(255,255,255,0.65)"; }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24"
+            {/* Desktop: 24px star (1.5× mobile 16px) */}
+            <svg width={HEADER_ICON_SIZE} height={HEADER_ICON_SIZE} viewBox="0 0 24 24"
               fill={isFavorited ? "#FFD700" : "none"}
               stroke={isFavorited ? "#FFD700" : "rgba(255,255,255,0.85)"}
               strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
@@ -1623,35 +1646,51 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         {isLive ? (
           <>
             {game.gameClock && (
-              <span className="text-[11px] font-semibold tabular-nums" style={{ color: "hsl(var(--muted-foreground))" }}>
+              /* Desktop: clamp(16px,1.35vw,20px) — 1.5× mobile 11px */
+              <span className="font-semibold tabular-nums" style={{ fontSize: CLOCK_FONT_SIZE, color: "hsl(var(--muted-foreground))" }}>
                 {game.gameClock}
               </span>
             )}
             {/* LIVE indicator — neon green, right of period/clock */}
+            {/* Desktop: clamp(14px,1.1vw,18px) — 1.5× mobile 9px */}
             <span
-              className="flex items-center gap-0.5 text-[9px] font-black tracking-widest uppercase flex-shrink-0"
-              style={{ color: "#39FF14", letterSpacing: "0.1em" }}
+              className="flex items-center gap-0.5 font-black tracking-widest uppercase flex-shrink-0"
+              style={{ fontSize: LIVE_FONT_SIZE, color: "#39FF14", letterSpacing: "0.1em" }}
             >
-              <span className="w-1.5 h-1.5 rounded-full animate-pulse inline-block" style={{ background: "#39FF14" }} />
+              <span
+                className="rounded-full animate-pulse inline-block"
+                style={{
+                  width: isDesktop ? '10px' : '6px',
+                  height: isDesktop ? '10px' : '6px',
+                  background: "#39FF14",
+                }}
+              />
               LIVE
             </span>
           </>
         ) : isFinal ? (
+          /* Desktop: neon green FINAL badge — 1.5× mobile 10px */
           <span
-            className="px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide"
-            style={{ background: "rgba(255,255,255,0.07)", color: "hsl(var(--muted-foreground))" }}
+            className="px-1.5 py-0.5 rounded font-bold tracking-wide"
+            style={{
+              fontSize: FINAL_FONT_SIZE,
+              background: isDesktop ? "rgba(57,255,20,0.12)" : "rgba(255,255,255,0.07)",
+              color: isDesktop ? "#39FF14" : "hsl(var(--muted-foreground))",
+              border: isDesktop ? "1px solid rgba(57,255,20,0.4)" : "none",
+            }}
           >
             FINAL
           </span>
         ) : (
-          <span className="text-[13px] font-bold" style={{ color: "hsl(var(--foreground))" }}>
+          /* Desktop: clamp(16px,1.35vw,20px) — 1.5× mobile 13px */
+          <span className="font-bold" style={{ fontSize: TIME_FONT_SIZE, color: "hsl(var(--foreground))" }}>
             {time}
           </span>
         )}
       </div>
 
-      {/* Team group — vertically centered in remaining space, teams close together */}
-      <div className="flex flex-1 flex-col justify-center" style={{ gap: 0 }}>
+      {/* Team group — desktop: pushed toward top; mobile: vertically centered */}
+      <div className="flex flex-1 flex-col" style={{ gap: 0, justifyContent: teamGroupJustify, paddingTop: teamGroupPaddingTop }}>
       {/* Away team row */}
       <div className="flex items-center justify-between gap-2 py-1 w-full">
         {/* Left: logo + name/nickname — always two lines for both NCAAM and NBA */}

@@ -942,3 +942,6 @@
 - [x] Desktop: fix SPREAD splits bar labels — homeSpreadLabel bug fixed (was using awayAbbr, now uses homeAbbr)
 - [x] Desktop: TICKETS and MONEY row titles — change to white font
 - [x] Desktop: score/matchup panel — teams wrapped in flex-col justify-center group, py-2→py-1 on each row; pixel measurement: teams at top=48px and top=126px in 179px card, now grouped and centered
+- [ ] Desktop: move teams higher in score panel (reduce top padding/offset)
+- [ ] Desktop: scale favorite star, game clock/startTime, and LIVE/FINAL badge to 1.5× team name font size
+- [ ] Desktop+all screens: FINAL button neon green (#39FF14) matching mobile style
