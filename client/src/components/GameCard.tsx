@@ -1373,8 +1373,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const isUpcoming = !isLive && !isFinal;
   const hasScores = (game.awayScore !== null && game.awayScore !== undefined) &&
                     (game.homeScore !== null && game.homeScore !== undefined);
-  const awayWins = isFinal && hasScores && (game.awayScore! > game.homeScore!);
-  const homeWins = isFinal && hasScores && (game.homeScore! > game.awayScore!);
+  // Fix: include isLive so leading team in live games also gets winner styling (was isFinal-only)
+  const awayWins = (isFinal || isLive) && hasScores && (game.awayScore! > game.homeScore!);
+  const homeWins = (isFinal || isLive) && hasScores && (game.homeScore! > game.awayScore!);
 
   // Model toggle state (lifted from OddsLinesPanel)
   const [showModelInternal, setShowModelInternal] = useState(true);
@@ -1566,7 +1567,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
           </span>
         </div>
         {(isLive || isFinal) && hasScores && (
-          <span className="tabular-nums font-black flex-shrink-0" style={{ fontSize: 20, lineHeight: 1, color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))" }}>
+          // winner=750, loser=600; font-black removed
+          <span className="tabular-nums flex-shrink-0" style={{ fontSize: 20, lineHeight: 1,
+            fontWeight: awayWins ? 750 : (isFinal || isLive) ? 600 : 900,
+            color: awayWins ? "hsl(var(--foreground))" : (isFinal || isLive) ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))" }}>
             {game.awayScore}
           </span>
         )}
@@ -1581,7 +1585,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
           </span>
         </div>
         {(isLive || isFinal) && hasScores && (
-          <span className="tabular-nums font-black flex-shrink-0" style={{ fontSize: 20, lineHeight: 1, color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))" }}>
+          // winner=750, loser=600; font-black removed
+          <span className="tabular-nums flex-shrink-0" style={{ fontSize: 20, lineHeight: 1,
+            fontWeight: homeWins ? 750 : (isFinal || isLive) ? 600 : 900,
+            color: homeWins ? "hsl(var(--foreground))" : (isFinal || isLive) ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))" }}>
             {game.homeScore}
           </span>
         )}
@@ -1752,13 +1759,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               /* NBA scores are 3 digits (100-130) — use smaller clamp to prevent overflow in 160px panel */
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
-              /* Change 4: winner fontWeight 900→850 for FINAL and LIVE games only; pregame stays 900 */
-              fontWeight: awayScoreFlash ? 900 : awayWins ? (isFinal || isLive ? 850 : 900) : isFinal ? 600 : 900,
+              /* Winner=750, loser=600 for FINAL+LIVE; pregame stays 900 */
+              fontWeight: awayScoreFlash ? 900 : awayWins ? 750 : (isFinal || isLive) ? 600 : 900,
               color: awayScoreFlash
                 ? "#39FF14"
                 : awayWins
                 ? "hsl(var(--foreground))"
-                : isFinal
+                : (isFinal || isLive)
                 ? "hsl(var(--muted-foreground))"
                 : "hsl(var(--foreground))",
               textShadow: awayScoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
@@ -1804,13 +1811,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             style={{
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
-              /* Change 4: winner fontWeight 900→850 for FINAL and LIVE games only; pregame stays 900 */
-              fontWeight: homeScoreFlash ? 900 : homeWins ? (isFinal || isLive ? 850 : 900) : isFinal ? 600 : 900,
+              /* Winner=750, loser=600 for FINAL+LIVE; pregame stays 900 */
+              fontWeight: homeScoreFlash ? 900 : homeWins ? 750 : (isFinal || isLive) ? 600 : 900,
               color: homeScoreFlash
                 ? "#39FF14"
                 : homeWins
                 ? "hsl(var(--foreground))"
-                : isFinal
+                : (isFinal || isLive)
                 ? "hsl(var(--muted-foreground))"
                 : "hsl(var(--foreground))",
               textShadow: homeScoreFlash ? "0 0 12px rgba(57,255,20,0.7)" : "none",
@@ -2565,10 +2572,12 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     </div>
                     {/* Score — fixed width so it never squeezes the name */}
                     {(isLive || isFinal) && hasScores && (
-                      <span className="tabular-nums font-black flex-shrink-0 transition-colors duration-300" style={{
+                      // winner=750, loser=600 — font-black removed to allow explicit fontWeight
+                      <span className="tabular-nums flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
                         minWidth: '28px', textAlign: 'center',
-                        color: awayScoreFlash ? '#39FF14' : awayWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
+                        fontWeight: awayScoreFlash ? 900 : awayWins ? 750 : 600,
+                        color: awayScoreFlash ? '#39FF14' : awayWins ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
                         textShadow: awayScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.awayScore}</span>
                     )}
@@ -2594,10 +2603,12 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     </div>
                     {/* Score — fixed width so it never squeezes the name */}
                     {(isLive || isFinal) && hasScores && (
-                      <span className="tabular-nums font-black flex-shrink-0 transition-colors duration-300" style={{
+                      // winner=750, loser=600 — font-black removed to allow explicit fontWeight
+                      <span className="tabular-nums flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
                         minWidth: '28px', textAlign: 'center',
-                        color: homeScoreFlash ? '#39FF14' : homeWins ? 'hsl(var(--foreground))' : isFinal ? 'hsl(var(--muted-foreground))' : 'hsl(var(--foreground))',
+                        fontWeight: homeScoreFlash ? 900 : homeWins ? 750 : 600,
+                        color: homeScoreFlash ? '#39FF14' : homeWins ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
                         textShadow: homeScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.homeScore}</span>
                     )}

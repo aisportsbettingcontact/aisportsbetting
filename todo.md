@@ -962,3 +962,4 @@
 - [x] Winning score fontWeight: reduce by 50 (900→850) for FINAL and LIVE games
 - [x] SPREAD/TOTAL/MONEYLINE titles: reduce fontWeight by 50 (800→750)
 - [x] Star favorite glow: reduce shine/glow intensity when toggled
+- [x] Losing team score: visually distinct fontWeight from winner in both LIVE and FINAL games
