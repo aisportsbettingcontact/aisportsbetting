@@ -216,7 +216,16 @@ export async function fetchNcaaGames(dateYYYYMMDD: string): Promise<NcaaGame[]> 
 export function buildStartTimeMap(games: NcaaGame[]): Map<string, string> {
   const map = new Map<string, string>();
   for (const g of games) {
-    map.set(`${g.awaySeoname}@${g.homeSeoname}`, g.startTimeEst);
+    // Store both canonical and reversed key so VSiN games with swapped home/away
+    // (e.g. VSiN: cal_poly_slo@uc_san_diego vs NCAA: uc_san_diego@cal_poly_slo)
+    // still resolve the correct start time.
+    const canonicalKey = `${g.awaySeoname}@${g.homeSeoname}`;
+    const reversedKey  = `${g.homeSeoname}@${g.awaySeoname}`;
+    map.set(canonicalKey, g.startTimeEst);
+    // Only set reversed key if it doesn't already exist (canonical takes priority)
+    if (!map.has(reversedKey)) {
+      map.set(reversedKey, g.startTimeEst);
+    }
   }
   return map;
 }

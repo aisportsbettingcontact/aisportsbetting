@@ -966,3 +966,13 @@
 - [ ] Score fontWeight ratio: winner=700, loser=600
 - [ ] Exact vertical centering of gameClock/status, team names, and scores within card
 - [ ] Enhanced Edge Verdict section on desktop
+
+## Systemic Duplicate Game + Missing Odds Root Cause Fix (2026-03-11)
+- [ ] Deep audit: DB state for all current duplicates across all dates
+- [ ] Fix: team-pair reversal dedup (VSiN away/home != NCAA away/home)
+- [ ] Fix: schedule-odds merge logic (update existing row instead of inserting new)
+- [ ] Fix: add DB unique constraint on (gameDate, sorted awayTeam, sorted homeTeam)
+- [ ] Fix: vsinAutoRefresh canonical team-pair key (sort teams alphabetically before lookup)
+- [ ] Fix: ncaaScoreboard merge should update startTimeEst on existing VSiN row, not insert new
+- [ ] Clean up all current DB duplicates after pipeline fix
+- [ ] Add comprehensive pipeline logging for every insert/update/skip decision

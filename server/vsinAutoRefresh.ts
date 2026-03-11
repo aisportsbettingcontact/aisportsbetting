@@ -193,11 +193,36 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
       const startTimeKey = `${awaySlug}@${homeSlug}`;
       const startTimeEst = startTimeMap?.get(startTimeKey);
 
-      const ncaaGame = ncaaGamesByDate.get(dateStr)?.find(
+      // Look up NCAA game data — check both canonical and reversed team order
+      // because VSiN sometimes lists teams in opposite home/away order vs NCAA.com
+      const ncaaGamesForDate = ncaaGamesByDate.get(dateStr) ?? [];
+      const ncaaGame = ncaaGamesForDate.find(
         g => g.awaySeoname === awaySlug && g.homeSeoname === homeSlug
+      ) ?? ncaaGamesForDate.find(
+        // Reversed order: VSiN away=X home=Y but NCAA has away=Y home=X
+        g => g.awaySeoname === homeSlug && g.homeSeoname === awaySlug
+      ) ?? ncaaGamesForDate.find(
+        // Fuzzy slug match (handles minor slug format differences)
+        g => slugsMatch(g.awaySeoname, awaySlug) && slugsMatch(g.homeSeoname, homeSlug)
+      ) ?? ncaaGamesForDate.find(
+        // Fuzzy + reversed
+        g => slugsMatch(g.awaySeoname, homeSlug) && slugsMatch(g.homeSeoname, awaySlug)
       );
+
       const ncaaContestId = ncaaGame?.contestId ?? null;
       const ncaaGameStatus = ncaaGame?.gameStatus;
+
+      // Detailed merge decision logging
+      const matchType = !ncaaGame ? 'NO_NCAA_MATCH'
+        : (ncaaGame.awaySeoname === awaySlug ? 'EXACT' : 'REVERSED');
+      console.log(
+        `[VSiNAutoRefresh][MERGE] ${awaySlug}@${homeSlug} (${dateStr}) | ` +
+        `existingGame=${existingGame ? existingGame.id : 'NEW'} | ` +
+        `ncaaMatch=${matchType} | ` +
+        `startTime=${startTimeEst ?? 'TBD'} | ` +
+        `contestId=${ncaaContestId ?? 'null'} | ` +
+        `status=${ncaaGameStatus ?? 'null'}`
+      );
 
       if (existingGame) {
         await updateBookOdds(existingGame.id, {
@@ -299,16 +324,33 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
       const effectiveDateStr = dateStr;
 
       const byContestId = await getGameByNcaaContestId(contestId);
-      if (byContestId) continue;
+      if (byContestId) {
+        console.log(
+          `[VSiNAutoRefresh][NCAA-ONLY] SKIP by contestId=${contestId}: ` +
+          `${awaySeoname}@${homeSeoname} (${dateStr}) → DB id=${byContestId.id}`
+        );
+        continue;
+      }
 
       const existingForEffectiveDate = existing;
-      const bySlug = existingForEffectiveDate.find(
+      const bySlugCanonical = existingForEffectiveDate.find(
         e => slugsMatch(e.awayTeam, awaySeoname) && slugsMatch(e.homeTeam, homeSeoname)
-      ) ?? existingForEffectiveDate.find(
+      );
+      const bySlugReversed = !bySlugCanonical ? existingForEffectiveDate.find(
         // Also check reversed order — VSiN may have inserted the game with swapped teams
         e => slugsMatch(e.awayTeam, homeSeoname) && slugsMatch(e.homeTeam, awaySeoname)
-      );
+      ) : undefined;
+      const bySlug = bySlugCanonical ?? bySlugReversed;
+
       if (bySlug) {
+        const matchDir = bySlugReversed ? 'REVERSED' : 'CANONICAL';
+        console.log(
+          `[VSiNAutoRefresh][NCAA-ONLY] UPDATE ${matchDir} match: ` +
+          `${awaySeoname}@${homeSeoname} (${dateStr}) → DB id=${bySlug.id} ` +
+          `(DB: ${bySlug.awayTeam}@${bySlug.homeTeam}) | ` +
+          `startTime=${startTimeEst} | status=${gameStatus} | ` +
+          `score=${ncaaGame.awayScore}-${ncaaGame.homeScore}`
+        );
         // Always update gameStatus, scores, and clock; also patch ncaaContestId if missing
         await updateNcaaStartTime(bySlug.id, {
           startTimeEst: startTimeEst !== "TBD" ? startTimeEst : bySlug.startTimeEst,
@@ -320,6 +362,11 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         });
         continue;
       }
+
+      console.log(
+        `[VSiNAutoRefresh][NCAA-ONLY] INSERT new: ${awaySeoname}@${homeSeoname} (${dateStr}) | ` +
+        `contestId=${contestId} | startTime=${startTimeEst} | status=${gameStatus}`
+      );
 
       const row: InsertGame = {
         fileId: 0,
@@ -634,12 +681,29 @@ async function refreshNcaamScores(): Promise<void> {
 
     let updated = 0;
     for (const ncaaGame of ncaaGames) {
+      // Match priority: (1) ncaaContestId exact, (2) canonical slug, (3) reversed slug
+      // Reversed slug handles cases where VSiN inserted the game with swapped home/away
       const dbGame = existing.find(
         g => g.ncaaContestId === ncaaGame.contestId
       ) ?? existing.find(
         g => slugsMatch(g.awayTeam, ncaaGame.awaySeoname) && slugsMatch(g.homeTeam, ncaaGame.homeSeoname)
+      ) ?? existing.find(
+        g => slugsMatch(g.awayTeam, ncaaGame.homeSeoname) && slugsMatch(g.homeTeam, ncaaGame.awaySeoname)
       );
-      if (!dbGame) continue;
+      if (!dbGame) {
+        console.log(
+          `[ScoreRefresh][NCAAM] NO_MATCH: ${ncaaGame.awaySeoname}@${ncaaGame.homeSeoname} ` +
+          `contestId=${ncaaGame.contestId} — not in DB for ${todayStr}`
+        );
+        continue;
+      }
+      const matchType = dbGame.ncaaContestId === ncaaGame.contestId ? 'CONTEST_ID'
+        : (slugsMatch(dbGame.awayTeam, ncaaGame.awaySeoname) ? 'CANONICAL' : 'REVERSED');
+      console.log(
+        `[ScoreRefresh][NCAAM] ${matchType}: ${ncaaGame.awaySeoname}@${ncaaGame.homeSeoname} ` +
+        `→ DB id=${dbGame.id} (${dbGame.awayTeam}@${dbGame.homeTeam}) | ` +
+        `status=${ncaaGame.gameStatus} score=${ncaaGame.awayScore}-${ncaaGame.homeScore} clock=${ncaaGame.gameClock}`
+      );
 
       await updateNcaaStartTime(dbGame.id, {
         startTimeEst: dbGame.startTimeEst,
