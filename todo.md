@@ -908,3 +908,5 @@
 - [x] Remove all truncation from team names/nicknames — no overflow:hidden, no textOverflow:ellipsis, no clipping; uniform clamp() font sizes scale with viewport, containers expand to fit full text
 - [x] Desktop: merge ODDS + SPLITS into single unified table (BOOK → splits bars → MODEL per section) with EdgeVerdict on far right; mobile/tablet unchanged
 - [x] Desktop DesktopMergedPanel refinement: per-column vertical stack = section header → BOOK row → TICKETS bar → HANDLE bar → MODEL row; EdgeVerdict pinned right; full screen width; desktop only
+- [x] Desktop SectionCol: split bars show team labels flanking left/right of each bar (away label left, home label right), TICKETS/MONEY centered above bar — matching reference screenshots
+- [x] Desktop SectionCol restructure: top = team labels + BOOK/MODEL column headers + values in same row; bottom = TICKETS bar + MONEY bar completely below the odds table

@@ -457,25 +457,43 @@ function EdgeVerdict({
 const MERGED_LABEL_STROKE = '-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 0 6px rgba(0,0,0,0.9)';
 
 function MergedSplitBar({
-  awayPct, homePct, awayColor, homeColor, rowLabel
+  awayPct, homePct, awayColor, homeColor, rowLabel, awayLabel, homeLabel,
 }: {
   awayPct: number | null;
   homePct: number | null;
   awayColor: string;
   homeColor: string;
   rowLabel: string;
+  awayLabel?: string;
+  homeLabel?: string;
 }) {
   const hasData = awayPct != null && homePct != null;
-  const labelStyle: React.CSSProperties = {
-    fontSize: 'clamp(9px, 0.75vw, 11px)',
-    color: 'rgba(255,255,255,0.4)',
+  const headerLabelStyle: React.CSSProperties = {
+    fontSize: 'clamp(8px, 0.65vw, 10px)',
+    color: 'rgba(255,255,255,0.38)',
     fontWeight: 700,
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
+    whiteSpace: 'nowrap',
+  };
+  const teamLabelStyle: React.CSSProperties = {
+    fontSize: 'clamp(8px, 0.68vw, 11px)',
+    color: 'rgba(255,255,255,0.55)',
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    maxWidth: '38%',
   };
   return (
-    <div className="flex flex-col gap-0.5 w-full">
-      <span className="text-center" style={labelStyle}>{rowLabel}</span>
+    <div className="flex flex-col w-full" style={{ gap: 2 }}>
+      {/* Row label line: away label | TICKETS/MONEY | home label */}
+      <div className="flex items-center justify-between" style={{ gap: 4 }}>
+        <span style={teamLabelStyle}>{awayLabel ?? ''}</span>
+        <span style={headerLabelStyle}>{rowLabel}</span>
+        <span style={{ ...teamLabelStyle, textAlign: 'right' }}>{homeLabel ?? ''}</span>
+      </div>
+      {/* Bar */}
       {hasData ? (() => {
         const away = awayPct!;
         const home = homePct!;
@@ -739,8 +757,14 @@ function DesktopMergedPanel({
   const mlHandlePct      = game.mlAwayMoneyPct ?? null;
 
   // ── Section column renderer ───────────────────────────────────────────────
-  // ── Section column renderer ────────────────────────────────────────────────
-  // Each section: title → team labels → BOOK row → TICKETS bar → HANDLE bar → MODEL row
+  // Layout per section:
+  //   TOP:    section title
+  //           team labels (or OVER/total/UNDER for totals)
+  //           [BOOK col header]  [MODEL col header]   — same row, two sub-columns
+  //           [away book value]  [away model value]   — away row
+  //           [home book value]  [home model value]   — home row
+  //   BOTTOM: TICKETS split bar (with team labels flanking)
+  //           MONEY split bar   (with team labels flanking)
   const SectionCol = ({
     title,
     awayLabel, homeLabel,
@@ -765,6 +789,20 @@ function DesktopMergedPanel({
     const awayHandle  = handlePct  != null ? handlePct  : null;
     const homeHandle  = handlePct  != null ? 100 - handlePct  : null;
 
+    // For OVER/UNDER split bars: use OVER/UNDER as team labels
+    const barAwayLabel = totalLine ? 'OVER' : awayLabel;
+    const barHomeLabel = totalLine ? 'UNDER' : homeLabel;
+
+    // Shared sub-column style: each side (away/home) gets half the space
+    const halfCol: React.CSSProperties = { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center' };
+    const colHdr: React.CSSProperties = {
+      fontSize: 'clamp(7px,0.58vw,9px)', fontWeight: 700, letterSpacing: '0.12em',
+      textTransform: 'uppercase', marginBottom: 2, whiteSpace: 'nowrap',
+    };
+    const valFS: React.CSSProperties = {
+      fontSize: 'clamp(13px,1.1vw,18px)', fontWeight: 700, tabularNums: true as unknown as undefined,
+    } as React.CSSProperties;
+
     return (
       <div className="flex flex-col" style={{ flex: 1, minWidth: 0, padding: '8px 12px 10px' }}>
 
@@ -779,38 +817,71 @@ function DesktopMergedPanel({
 
         {/* ── Team labels / total line ── */}
         {totalLine ? (
-          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.5)', fontWeight: 600, letterSpacing: '0.06em' }}>OVER</span>
+          <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em' }}>OVER</span>
             <span style={{ fontSize: 'clamp(12px,1.0vw,16px)', color: '#fff', fontWeight: 700 }}>{totalLine}</span>
-            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.5)', fontWeight: 600, letterSpacing: '0.06em' }}>UNDER</span>
+            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.45)', fontWeight: 600, letterSpacing: '0.06em' }}>UNDER</span>
           </div>
         ) : (
-          <div className="flex items-center justify-between" style={{ marginBottom: 6 }}>
-            <span style={{ fontSize: 'clamp(9px,0.78vw,12px)', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{awayLabel}</span>
-            <span style={{ fontSize: 'clamp(9px,0.78vw,12px)', color: 'rgba(255,255,255,0.5)', fontWeight: 600 }}>{homeLabel}</span>
+          <div className="flex items-center justify-between" style={{ marginBottom: 4 }}>
+            <span style={{ fontSize: 'clamp(9px,0.78vw,12px)', color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>{awayLabel}</span>
+            <span style={{ fontSize: 'clamp(9px,0.78vw,12px)', color: 'rgba(255,255,255,0.45)', fontWeight: 600 }}>{homeLabel}</span>
           </div>
         )}
 
-        {/* ── BOOK label + values ── */}
-        <span className="text-center block" style={{ fontSize: 'clamp(8px,0.62vw,10px)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 3 }}>BOOK</span>
-        <div className="flex items-center justify-between" style={{ marginBottom: 9 }}>
-          <span className="tabular-nums" style={{ ...bookCell }}>{awayBook}</span>
-          <span className="tabular-nums" style={{ ...bookCell }}>{homeBook}</span>
+        {/* ── Odds table: BOOK + MODEL side by side ── */}
+        {/* Two sub-columns per side: [away BOOK | away MODEL] ... [home BOOK | home MODEL] */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 10 }}>
+
+          {/* Away side */}
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+            {/* Away BOOK */}
+            <div style={halfCol}>
+              <span style={{ ...colHdr, color: 'rgba(255,255,255,0.35)' }}>BOOK</span>
+              <span className="tabular-nums" style={{ ...bookCell, fontSize: 'clamp(13px,1.1vw,18px)' }}>{awayBook}</span>
+            </div>
+            {/* Away MODEL */}
+            <div style={halfCol}>
+              <span style={{ ...colHdr, color: '#39FF14' }}>MODEL</span>
+              <span className="tabular-nums" style={{ ...awayModelStyle, fontSize: 'clamp(13px,1.1vw,18px)' }}>{awayModel}</span>
+            </div>
+          </div>
+
+          {/* Home side */}
+          <div style={{ display: 'flex', gap: 6, justifyContent: 'center' }}>
+            {/* Home BOOK */}
+            <div style={halfCol}>
+              <span style={{ ...colHdr, color: 'rgba(255,255,255,0.35)' }}>BOOK</span>
+              <span className="tabular-nums" style={{ ...bookCell, fontSize: 'clamp(13px,1.1vw,18px)' }}>{homeBook}</span>
+            </div>
+            {/* Home MODEL */}
+            <div style={halfCol}>
+              <span style={{ ...colHdr, color: '#39FF14' }}>MODEL</span>
+              <span className="tabular-nums" style={{ ...homeModelStyle, fontSize: 'clamp(13px,1.1vw,18px)' }}>{homeModel}</span>
+            </div>
+          </div>
+
         </div>
 
-        {/* ── TICKETS split bar ── */}
-        <MergedSplitBar awayPct={awayTickets} homePct={homeTickets} awayColor={awayColor} homeColor={homeColor} rowLabel="Tickets" />
+        {/* ── Thin separator ── */}
+        <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', marginBottom: 8 }} />
 
-        {/* ── HANDLE split bar ── */}
+        {/* ── TICKETS split bar — completely below odds table ── */}
+        <MergedSplitBar
+          awayPct={awayTickets} homePct={homeTickets}
+          awayColor={awayColor} homeColor={homeColor}
+          rowLabel="TICKETS"
+          awayLabel={barAwayLabel} homeLabel={barHomeLabel}
+        />
+
+        {/* ── MONEY split bar — completely below odds table ── */}
         <div style={{ marginTop: 6 }}>
-          <MergedSplitBar awayPct={awayHandle} homePct={homeHandle} awayColor={awayColor} homeColor={homeColor} rowLabel="Handle" />
-        </div>
-
-        {/* ── MODEL label + values ── */}
-        <span className="text-center block" style={{ fontSize: 'clamp(8px,0.62vw,10px)', fontWeight: 700, color: '#39FF14', letterSpacing: '0.12em', textTransform: 'uppercase', marginTop: 9, marginBottom: 3 }}>MODEL</span>
-        <div className="flex items-center justify-between">
-          <span className="tabular-nums" style={{ ...awayModelStyle }}>{awayModel}</span>
-          <span className="tabular-nums" style={{ ...homeModelStyle }}>{homeModel}</span>
+          <MergedSplitBar
+            awayPct={awayHandle} homePct={homeHandle}
+            awayColor={awayColor} homeColor={homeColor}
+            rowLabel="MONEY"
+            awayLabel={barAwayLabel} homeLabel={barHomeLabel}
+          />
         </div>
 
       </div>
