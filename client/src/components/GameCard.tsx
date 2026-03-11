@@ -1043,31 +1043,58 @@ function DesktopMergedPanel({
       <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
       {/* EdgeVerdict column */}
       {showModel ? (
-        <div className="flex flex-col items-center justify-center" style={{ flex: '0 0 clamp(120px,10vw,160px)', width: 'clamp(120px,10vw,160px)', overflow: 'hidden', padding: '8px 10px' }}>
-          <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>Edge</span>
+        <div className="flex flex-col items-start justify-center" style={{ flex: '0 0 clamp(150px,11.5vw,190px)', width: 'clamp(150px,11.5vw,190px)', overflow: 'hidden', padding: '10px 12px', gap: 0 }}>
+          {/* EDGE header */}
+          <span style={{ fontSize: 'clamp(9px,0.7vw,11px)', fontWeight: 800, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8, alignSelf: 'center' }}>EDGE</span>
           {spreadPass && totalPass ? (
-            <span style={{ fontSize: 'clamp(10px,0.85vw,13px)', fontWeight: 600, color: 'hsl(var(--muted-foreground) / 0.4)', letterSpacing: '0.08em' }}>PASS</span>
+            <div style={{ alignSelf: 'center', padding: '4px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <span style={{ fontSize: 'clamp(10px,0.85vw,13px)', fontWeight: 600, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.1em' }}>PASS</span>
+            </div>
           ) : (
-            <div className="flex flex-col items-center gap-2 w-full">
-              {!spreadPass && (
-                <VerdictSide
-                  diff={isNaN(spreadDiff) ? null : spreadDiff}
-                  label={computedSpreadEdge}
-                  isStrong={spreadIsStronger}
-                  logoUrl={spreadLogoUrl}
-                  teamSlug={spreadVerdictSlug}
-                  teamName={spreadVerdictTeam}
-                  compact
-                />
-              )}
-              {!totalPass && (
-                <VerdictSide
-                  diff={isNaN(totalDiff) ? null : totalDiff}
-                  label={computedTotalEdge}
-                  isStrong={!spreadIsStronger}
-                  compact
-                />
-              )}
+            <div className="flex flex-col w-full" style={{ gap: 6 }}>
+              {!spreadPass && (() => {
+                const diff = isNaN(spreadDiff) ? null : spreadDiff;
+                const edgeColor = getEdgeColor(diff ?? 0);
+                const normalized = normalizeEdgeLabel(computedSpreadEdge);
+                const showArrow = (diff ?? 0) >= 3;
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '5px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: `1px solid ${edgeColor}33` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      {(spreadLogoUrl || spreadVerdictSlug) && (
+                        <TeamLogo slug={spreadVerdictSlug ?? ''} name={spreadVerdictTeam ?? ''} logoUrl={spreadLogoUrl} size={16} />
+                      )}
+                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 700, color: 'hsl(var(--foreground))', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {showArrow && <span style={{ color: edgeColor, marginRight: 2, fontSize: '0.8em' }}>▲</span>}
+                        {normalized}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Spread</span>
+                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 800, color: edgeColor, letterSpacing: '0.02em' }}>{diff}{diff === 1 ? 'PT' : 'PTS'}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              {!totalPass && (() => {
+                const diff = isNaN(totalDiff) ? null : totalDiff;
+                const edgeColor = getEdgeColor(diff ?? 0);
+                const normalized = normalizeEdgeLabel(computedTotalEdge);
+                const showArrow = (diff ?? 0) >= 3;
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '5px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: `1px solid ${edgeColor}33` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 700, color: 'hsl(var(--foreground))', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {showArrow && <span style={{ color: edgeColor, marginRight: 2, fontSize: '0.8em' }}>▲</span>}
+                        {normalized}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total</span>
+                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 800, color: edgeColor, letterSpacing: '0.02em' }}>{diff}{diff === 1 ? 'PT' : 'PTS'}</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>
@@ -1205,7 +1232,7 @@ function OddsLinesPanel({
   );
 
   return (
-    <div className="flex flex-col pl-2 pr-0 pt-0 pb-0 min-w-0">
+    <div className="flex flex-col pl-2 pr-0 pt-0 pb-0 min-w-0" style={{ justifyContent: 'center', height: '100%' }}>
       {/* Top-level column group headers: SPREAD | TOTAL | MONEYLINE */}
       <div
         className={`grid ${GRID} pb-0.5`}
@@ -1620,10 +1647,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const TIME_FONT_SIZE  = isDesktop ? 'clamp(12px, 1.01vw, 15px)' : '9.75px';  // was clamp(16,1.35vw,20)/13px
     // Desktop: teams pushed toward top (justify-start + small paddingTop)
     // Mobile: teams vertically centered (justify-center)
-    const teamGroupJustify = isDesktop ? 'flex-start' : 'center';
-    const teamGroupPaddingTop = isDesktop ? '4px' : '0px';
+    const teamGroupJustify = 'center';
+    const teamGroupPaddingTop = '0px';
     return (
-    <div className="flex flex-col pl-2 pr-2 pt-0 pb-0" style={{ height: '100%' }}>
+    <div className="flex flex-col pl-2 pr-2 pt-0 pb-0" style={{ height: '100%', justifyContent: 'center' }}>
       {/* Status row: [star] [clock/status] [LIVE badge]
           This row acts as the header spacer to align away/home rows with OddsTable.
           The OddsLinesPanel header (SPREAD/TOTAL/MONEYLINE + BOOK/MODEL rows) takes
@@ -1760,7 +1787,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
               /* Winner=750, loser=600 for FINAL+LIVE; pregame stays 900 */
-              fontWeight: awayScoreFlash ? 900 : awayWins ? 750 : (isFinal || isLive) ? 600 : 900,
+              fontWeight: awayScoreFlash ? 900 : awayWins ? 700 : (isFinal || isLive) ? 600 : 900,
               color: awayScoreFlash
                 ? "#39FF14"
                 : awayWins
@@ -1812,7 +1839,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
               /* Winner=750, loser=600 for FINAL+LIVE; pregame stays 900 */
-              fontWeight: homeScoreFlash ? 900 : homeWins ? 750 : (isFinal || isLive) ? 600 : 900,
+              fontWeight: homeScoreFlash ? 900 : homeWins ? 700 : (isFinal || isLive) ? 600 : 900,
               color: homeScoreFlash
                 ? "#39FF14"
                 : homeWins
@@ -2576,7 +2603,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <span className="tabular-nums flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
                         minWidth: '28px', textAlign: 'center',
-                        fontWeight: awayScoreFlash ? 900 : awayWins ? 750 : 600,
+                        fontWeight: awayScoreFlash ? 900 : awayWins ? 700 : 600,
                         color: awayScoreFlash ? '#39FF14' : awayWins ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
                         textShadow: awayScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.awayScore}</span>
@@ -2607,7 +2634,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       <span className="tabular-nums flex-shrink-0 transition-colors duration-300" style={{
                         fontSize: 'clamp(15px, 4vw, 20px)', lineHeight: 1,
                         minWidth: '28px', textAlign: 'center',
-                        fontWeight: homeScoreFlash ? 900 : homeWins ? 750 : 600,
+                        fontWeight: homeScoreFlash ? 900 : homeWins ? 700 : 600,
                         color: homeScoreFlash ? '#39FF14' : homeWins ? 'hsl(var(--foreground))' : 'hsl(var(--muted-foreground))',
                         textShadow: homeScoreFlash ? '0 0 10px rgba(57,255,20,0.7)' : 'none',
                       }}>{game.homeScore}</span>
