@@ -470,7 +470,7 @@ function MergedSplitBar({
   const hasData = awayPct != null && homePct != null;
   const headerLabelStyle: React.CSSProperties = {
     fontSize: 'clamp(8px, 0.65vw, 10px)',
-    color: 'rgba(255,255,255,0.38)',
+    color: '#FFFFFF',
     fontWeight: 700,
     letterSpacing: '0.1em',
     textTransform: 'uppercase',
@@ -757,7 +757,7 @@ function DesktopMergedPanel({
 
   // ── Splits data ───────────────────────────────────────────────────────────
   const awaySpreadLabel = !isNaN(awaySpread) ? `${awayAbbr} (${spreadSign(awaySpread)})` : awayAbbr;
-  const homeSpreadLabel = !isNaN(homeSpread) ? `${awayAbbr} (${spreadSign(homeSpread)})` : homeAbbr;
+  const homeSpreadLabel = !isNaN(homeSpread) ? `${homeAbbr} (${spreadSign(homeSpread)})` : homeAbbr;
   const awayMlLabel = game.awayML ? `${awayAbbr} (${game.awayML})` : awayAbbr;
   const homeMlLabel = game.homeML ? `${homeAbbr} (${game.homeML})` : homeAbbr;
 
@@ -872,7 +872,7 @@ function DesktopMergedPanel({
         */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 6px', marginBottom: 8, alignItems: 'center' }}>
           {/* Header row */}
-          <span className="text-center" style={colHdrStyle('rgba(255,255,255,0.35)')}>BOOK</span>
+          <span className="text-center" style={colHdrStyle('#FFFFFF')}>BOOK</span>
           <span className="text-center" style={colHdrStyle('#39FF14')}>MODEL</span>
 
           {/* Away / OVER — BOOK cell */}
@@ -1650,8 +1650,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
       </div>
 
-      {/* Away team row — flex-1 so it fills equal space with home row, centering content vertically */}
-      <div className="flex flex-1 items-center justify-between gap-2 py-2 w-full">
+      {/* Team group — vertically centered in remaining space, teams close together */}
+      <div className="flex flex-1 flex-col justify-center" style={{ gap: 0 }}>
+      {/* Away team row */}
+      <div className="flex items-center justify-between gap-2 py-1 w-full">
         {/* Left: logo + name/nickname — always two lines for both NCAAM and NBA */}
           <div className="flex items-center gap-2">
           <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={36} />
@@ -1701,8 +1703,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       {/* Divider — mirrors OddsLinesPanel divider */}
       <div style={{ height: 1, background: "hsl(var(--border) / 0.4)" }} />
 
-      {/* Home team row — flex-1 so it fills equal space with away row */}
-      <div className="flex flex-1 items-center justify-between gap-2 py-2 w-full">
+      {/* Home team row */}
+      <div className="flex items-center justify-between gap-2 py-1 w-full">
         {/* Left: logo + name/nickname — always two lines for both NCAAM and NBA */}
           <div className="flex items-center gap-2">
           <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={36} />
@@ -1747,6 +1749,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
           </span>
         )}
       </div>
+      </div>{/* end team group wrapper */}
     </div>
     );
   }

@@ -938,3 +938,7 @@
 - [x] Desktop: ALL MODEL non-edge values — white #FFFFFF, font-weight 600
 - [x] Desktop: ALL MODEL edge values — neon green #39FF14, font-weight 700
 - [x] Desktop: deep pixel-level audit and fix of game card panel uniform height/width — EDGE column fixed at clamp(120px,10vw,160px); pixel measurement confirms all 24 cards now have exactly 312|1|312|1|312|1|128px column widths (1 unique pattern, was 17 unique patterns)
+- [x] Desktop: BOOK column title in all 3 SPLITS sections — change to white font
+- [x] Desktop: fix SPREAD splits bar labels — homeSpreadLabel bug fixed (was using awayAbbr, now uses homeAbbr)
+- [x] Desktop: TICKETS and MONEY row titles — change to white font
+- [x] Desktop: score/matchup panel — teams wrapped in flex-col justify-center group, py-2→py-1 on each row; pixel measurement: teams at top=48px and top=126px in 179px card, now grouped and centered
