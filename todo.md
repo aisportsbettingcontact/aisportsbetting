@@ -951,3 +951,8 @@
 - [x] Losing team score: reduce font-weight by 200 (e.g. 700→500)
 - [x] LIVE badge: match FINAL pill style (neon green border, background, same font/padding)
 - [x] Betting split pill %% values: add letterSpacing +0.2em to all percentage text in pills
+- [x] SPREAD/TOTAL/MONEYLINE: increase font size by 1.5pt more than BOOK/MODEL (iteration 2)
+- [x] Losing team score: add 100 back to bold level (500→600)
+- [x] LIVE pill: increase border-radius to be more rounded (full pill shape)
+- [x] LIVE pill: move to LEFT of gameClock/gameStatus text
+- [x] Betting split pill %%: decrease letterSpacing by 0.2, then add 0.1 gap before % symbol via thin-space

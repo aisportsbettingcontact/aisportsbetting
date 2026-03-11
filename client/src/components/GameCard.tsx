@@ -499,6 +499,8 @@ function MergedSplitBar({
         const home = homePct!;
         const isAwayFull = away >= 100;
         const isHomeFull = home >= 100;
+        // letterSpacing: was 0.2em, decreased by 0.2 → 0em (no uniform spacing)
+        // The 0.1 gap before % is handled by inserting a thin-space (U+2009) before % in the rendered text
         const segLabel: React.CSSProperties = {
           fontSize: 'clamp(10px, 0.85vw, 13px)',
           color: '#fff',
@@ -506,7 +508,7 @@ function MergedSplitBar({
           whiteSpace: 'nowrap',
           textShadow: MERGED_LABEL_STROKE,
           lineHeight: 1,
-          letterSpacing: '0.2em',
+          letterSpacing: '0em',
         };
         return (
           <div style={{
@@ -531,7 +533,8 @@ function MergedSplitBar({
                 paddingRight: 'clamp(4px,0.4vw,8px)',
                 borderRadius: isAwayFull ? '9999px' : '9999px 0 0 9999px',
               }} className="transition-all duration-700">
-                <span style={{ ...segLabel, textAlign: 'left' }}>{away}%</span>
+                {/* thin-space U+2009 before % = 0.1em gap between digit and % symbol */}
+                <span style={{ ...segLabel, textAlign: 'left' }}>{away} %</span>
               </div>
             )}
             {!isAwayFull && !isHomeFull && away > 0 && home > 0 && (
@@ -551,17 +554,17 @@ function MergedSplitBar({
                 paddingRight: 'clamp(4px,0.4vw,8px)',
                 borderRadius: isHomeFull ? '9999px' : '0 9999px 9999px 0',
               }} className="transition-all duration-700">
-                <span style={{ ...segLabel, textAlign: 'right' }}>{home}%</span>
+                <span style={{ ...segLabel, textAlign: 'right' }}>{home} %</span>
               </div>
             )}
             {isAwayFull && (
               <div style={{ flex: 1, background: awayColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '9999px' }}>
-                <span style={{ ...segLabel, textAlign: 'center' }}>100%</span>
+                <span style={{ ...segLabel, textAlign: 'center' }}>100 %</span>
               </div>
             )}
             {isHomeFull && (
               <div style={{ flex: 1, background: homeColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '9999px' }}>
-                <span style={{ ...segLabel, textAlign: 'center' }}>100%</span>
+                <span style={{ ...segLabel, textAlign: 'center' }}>100 %</span>
               </div>
             )}
           </div>
@@ -740,7 +743,11 @@ function DesktopMergedPanel({
   const HDR_FS  = 'clamp(14px,1.15vw,18px)';  // BOOK / MODEL column header labels
   const VAL_FS  = 'clamp(10px,0.85vw,14px)';  // Value rows (spread, total, ML numbers) — 4pt below HDR
   const ABBR_FS = 'clamp(9px,0.78vw,13px)';   // Abbreviation / OVER / UNDER prefix — 1pt below VAL
-  const TITLE_FS = 'clamp(10px,0.85vw,13px)'; // Section title (SPREAD / TOTAL / MONEYLINE)
+  // TITLE_FS must be 1.5pt larger than HDR_FS at every breakpoint:
+  // At min (mobile): HDR_FS=14px → TITLE_FS=15.5px
+  // At mid (1366px): HDR_FS≈15.7px → TITLE_FS≈17.2px
+  // At max (1920px): HDR_FS=18px → TITLE_FS=19.5px
+  const TITLE_FS = 'clamp(15.5px,1.32vw,19.5px)'; // Section title (SPREAD / TOTAL / MONEYLINE) — 1.5pt above HDR_FS
   // Colors:
   //   Book values: #D3D3D3 (light gray), weight 500
   //   Model non-edge values: #FFFFFF (white), weight 600
@@ -1203,9 +1210,11 @@ function OddsLinesPanel({
         className={`grid ${GRID} pb-0.5`}
         style={{ transition: 'grid-template-columns 200ms ease' }}
       >
-        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(11.5px, 1.05vw, 15.5px)', color: '#E8E8E8' }}>Spread</span>
-        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(11.5px, 1.05vw, 15.5px)', color: '#E8E8E8' }}>Total</span>
-        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(11.5px, 1.05vw, 15.5px)', color: '#E8E8E8' }}>Moneyline</span>
+        {/* SPREAD/TOTAL/MONEYLINE: 1.5pt bigger than BOOK/MODEL sub-headers at clamp(8px,0.75vw,11px) */}
+        {/* At min: 8+1.5=9.5px → use 9.5px; at max: 11+1.5=12.5px → use 12.5px */}
+        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(9.5px, 0.88vw, 12.5px)', color: '#E8E8E8' }}>Spread</span>
+        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(9.5px, 0.88vw, 12.5px)', color: '#E8E8E8' }}>Total</span>
+        <span className={`${showModel ? 'col-span-2' : ''} text-center font-extrabold uppercase tracking-widest`} style={{ fontSize: 'clamp(9.5px, 0.88vw, 12.5px)', color: '#E8E8E8' }}>Moneyline</span>
       </div>
 
       {/* Sub-headers: BOOK only when model off; BOOK | MODEL when model on */}
@@ -1584,10 +1593,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   // For upcoming games: shows start time instead of scores.
   function ScorePanel() {
     // Uniform font sizes — same for every team, scale with viewport width only
-    // No per-name auto-scaling; no truncation allowed
-    // Winner: 700 bold; loser: 400 (reduced by 200 from previous 600)
-    const awayFontWeight = awayWins ? 700 : isFinal ? 400 : 600;
-    const homeFontWeight = homeWins ? 700 : isFinal ? 400 : 600;
+    // No per-name auto-scaling; no truncation     // Winner: 700 bold; loser: 600 (500+100 = back up by 100 from previous iteration)
+    const awayFontWeight = awayWins ? 700 : isFinal ? 600 : 600;
+    const homeFontWeight = homeWins ? 700 : isFinal ? 600 : 600;
     // School name: clamp(13px, 1.1vw, 18px) — 13px mobile, ~15.8px at 1440px, 18px max
     const NAME_FONT_SIZE = 'clamp(13px, 1.1vw, 18px)';
     // Nickname: clamp(11px, 0.9vw, 15px) — always smaller than school name
@@ -1646,23 +1654,18 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         )}
         {/* Game status: time / FINAL / clock */}
         {isLive ? (
-          <>
-            {game.gameClock && (
-              /* Desktop: clamp(16px,1.35vw,20px) — 1.5× mobile 11px */
-              <span className="font-semibold tabular-nums" style={{ fontSize: CLOCK_FONT_SIZE, color: "hsl(var(--muted-foreground))" }}>
-                {game.gameClock}
-              </span>
-            )}
-            {/* LIVE indicator — same pill format as FINAL badge */}
+          <>            {/* LIVE pill FIRST (left), then gameClock to the right */}
+            {/* LIVE indicator — same pill format as FINAL badge, fully rounded, LEFT of clock */}
             {/* Desktop: clamp(14px,1.1vw,18px) — 1.5× mobile 9px */}
             <span
-              className="px-1.5 py-0.5 rounded font-bold tracking-wide flex-shrink-0 flex items-center gap-1"
+              className="px-1.5 py-0.5 font-bold tracking-wide flex-shrink-0 flex items-center gap-1"
               style={{
                 fontSize: LIVE_FONT_SIZE,
                 background: "rgba(57,255,20,0.12)",
                 color: "#39FF14",
                 border: "1px solid rgba(57,255,20,0.4)",
                 letterSpacing: "0.08em",
+                borderRadius: '9999px',
               }}
             >
               <span
@@ -1675,6 +1678,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               />
               LIVE
             </span>
+            {/* gameClock to the RIGHT of LIVE pill */}
+            {game.gameClock && (
+              /* Desktop: clamp(16px,1.35vw,20px) — 1.5× mobile 11px */
+              <span className="font-semibold tabular-nums" style={{ fontSize: CLOCK_FONT_SIZE, color: "hsl(var(--muted-foreground))" }}>
+                {game.gameClock}
+              </span>
+            )}
           </>
         ) : isFinal ? (
           /* Desktop: neon green FINAL badge — 1.5× mobile 10px */
@@ -1732,8 +1742,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               /* NBA scores are 3 digits (100-130) — use smaller clamp to prevent overflow in 160px panel */
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
-              /* Winner: 900 (font-black); loser: 500 (reduced by 200 from previous 700) */
-              fontWeight: awayScoreFlash ? 900 : awayWins ? 900 : isFinal ? 500 : 900,
+              /* Winner: 900; loser: 600 (500+100 = back up by 100 from previous iteration) */
+              fontWeight: awayScoreFlash ? 900 : awayWins ? 900 : isFinal ? 600 : 900,
               color: awayScoreFlash
                 ? "#39FF14"
                 : awayWins
@@ -1784,8 +1794,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             style={{
               fontSize: isNba ? "clamp(18px, 2vw, 38px)" : "clamp(22px, 2.5vw, 44px)",
               lineHeight: 1,
-              /* Winner: 900 (font-black); loser: 500 (reduced by 200 from previous 700) */
-              fontWeight: homeScoreFlash ? 900 : homeWins ? 900 : isFinal ? 500 : 900,
+              /* Winner: 900; loser: 600 (500+100 = back up by 100 from previous iteration) */
+              fontWeight: homeScoreFlash ? 900 : homeWins ? 900 : isFinal ? 600 : 900,
               color: homeScoreFlash
                 ? "#39FF14"
                 : homeWins
