@@ -1033,8 +1033,8 @@ function DesktopMergedPanel({
       {/* Divider */}
       <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
       {/* EdgeVerdict column */}
-      {showModel && (
-        <div className="flex flex-col items-center justify-center" style={{ minWidth: 'clamp(90px,8vw,140px)', maxWidth: 160, padding: '8px 10px', flexShrink: 0 }}>
+      {showModel ? (
+        <div className="flex flex-col items-center justify-center" style={{ flex: '0 0 clamp(120px,10vw,160px)', width: 'clamp(120px,10vw,160px)', overflow: 'hidden', padding: '8px 10px' }}>
           <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>Edge</span>
           {spreadPass && totalPass ? (
             <span style={{ fontSize: 'clamp(10px,0.85vw,13px)', fontWeight: 600, color: 'hsl(var(--muted-foreground) / 0.4)', letterSpacing: '0.08em' }}>PASS</span>
@@ -1062,6 +1062,8 @@ function DesktopMergedPanel({
             </div>
           )}
         </div>
+      ) : (
+        <div style={{ flex: '0 0 clamp(120px,10vw,160px)', width: 'clamp(120px,10vw,160px)', flexShrink: 0 }} />
       )}
     </div>
   );

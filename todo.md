@@ -937,3 +937,4 @@
 - [x] Desktop: ALL BOOK values — light gray #D3D3D3, font-weight 500
 - [x] Desktop: ALL MODEL non-edge values — white #FFFFFF, font-weight 600
 - [x] Desktop: ALL MODEL edge values — neon green #39FF14, font-weight 700
+- [x] Desktop: deep pixel-level audit and fix of game card panel uniform height/width — EDGE column fixed at clamp(120px,10vw,160px); pixel measurement confirms all 24 cards now have exactly 312|1|312|1|312|1|128px column widths (1 unique pattern, was 17 unique patterns)
