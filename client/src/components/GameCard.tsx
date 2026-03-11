@@ -793,6 +793,10 @@ function DesktopMergedPanel({
     awayRowLabel?: string;
     /** Short label prefixed to each value in the home row (e.g. "NW" or "UNDER") */
     homeRowLabel?: string;
+    /** Team logo URL for the away row (shown left of values in SPREAD/ML) */
+    awayLogoUrl?: string;
+    /** Team logo URL for the home row (shown left of values in SPREAD/ML) */
+    homeLogoUrl?: string;
   }) => {
     const awayTickets = ticketsPct != null ? ticketsPct : null;
     const homeTickets = ticketsPct != null ? 100 - ticketsPct : null;
@@ -858,17 +862,21 @@ function DesktopMergedPanel({
           <span className="text-center" style={colHdrStyle('rgba(255,255,255,0.35)')}>BOOK</span>
           <span className="text-center" style={colHdrStyle('#39FF14')}>MODEL</span>
           {/* Away row */}
-          {awayRowLabel
-            ? <span style={rowLabelStyle}>{awayRowLabel}</span>
-            : <span />
-          }
+          <span className="flex items-center gap-1" style={{ ...rowLabelStyle, marginRight: 0 }}>
+            {awayLogoUrl && (
+              <img src={awayLogoUrl} alt="" style={{ width: 'clamp(12px,1vw,16px)', height: 'clamp(12px,1vw,16px)', objectFit: 'contain', flexShrink: 0 }} />
+            )}
+            {awayRowLabel && <span>{awayRowLabel}</span>}
+          </span>
           <span className="tabular-nums text-center" style={{ ...bookCell, fontSize: valFontSize }}>{awayBook}</span>
           <span className="tabular-nums text-center" style={{ ...awayModelStyle, fontSize: valFontSize }}>{awayModel}</span>
           {/* Home row */}
-          {homeRowLabel
-            ? <span style={rowLabelStyle}>{homeRowLabel}</span>
-            : <span />
-          }
+          <span className="flex items-center gap-1" style={{ ...rowLabelStyle, marginRight: 0 }}>
+            {homeLogoUrl && (
+              <img src={homeLogoUrl} alt="" style={{ width: 'clamp(12px,1vw,16px)', height: 'clamp(12px,1vw,16px)', objectFit: 'contain', flexShrink: 0 }} />
+            )}
+            {homeRowLabel && <span>{homeRowLabel}</span>}
+          </span>
           <span className="tabular-nums text-center" style={{ ...bookCell, fontSize: valFontSize }}>{homeBook}</span>
           <span className="tabular-nums text-center" style={{ ...homeModelStyle, fontSize: valFontSize }}>{homeModel}</span>
         </div>
@@ -920,6 +928,7 @@ function DesktopMergedPanel({
         awayModelStyle={awaySpreadModelStyle} homeModelStyle={homeSpreadModelStyle}
         ticketsPct={spreadTicketsPct} handlePct={spreadHandlePct}
         awayRowLabel={awayAbbr} homeRowLabel={homeAbbr}
+        awayLogoUrl={awayLogoUrl} homeLogoUrl={homeLogoUrl}
       />
       {/* Divider */}
       <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0, alignSelf: 'stretch', margin: '8px 0' }} />
@@ -932,6 +941,7 @@ function DesktopMergedPanel({
         awayModelStyle={overTotalModelStyle} homeModelStyle={underTotalModelStyle}
         ticketsPct={totalTicketsPct} handlePct={totalHandlePct}
         totalLine={!isNaN(bkTotal) ? String(bkTotal) : undefined}
+        awayRowLabel="OVER" homeRowLabel="UNDER"
       />
       {/* Divider */}
       <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0, alignSelf: 'stretch', margin: '8px 0' }} />
@@ -944,6 +954,7 @@ function DesktopMergedPanel({
         awayModelStyle={awayMlModelStyle} homeModelStyle={homeMlModelStyle}
         ticketsPct={mlTicketsPct} handlePct={mlHandlePct}
         awayRowLabel={awayAbbr} homeRowLabel={homeAbbr}
+        awayLogoUrl={awayLogoUrl} homeLogoUrl={homeLogoUrl}
       />
       {/* Divider */}
       <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
@@ -1691,7 +1702,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         */}
 
         {/* ── Desktop layout ── */}
-        <div className="hidden lg:flex items-stretch w-full">
+        <div className="hidden lg:flex items-stretch w-full" style={{ minHeight: 'clamp(160px,14vw,220px)' }}>
           {/* Col 1: Score panel — always shown */}
           <div
             style={{

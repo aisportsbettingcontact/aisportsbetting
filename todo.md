@@ -912,3 +912,6 @@
 - [x] Desktop SectionCol restructure: top = team labels + BOOK/MODEL column headers + values in same row; bottom = TICKETS bar + MONEY bar completely below the odds table
 - [x] Desktop SectionCol exact layout: section title → 2-col grid (BOOK header | MODEL header → away book | away model → home book | home model) → separator → TICKETS bar → MONEY bar
 - [x] Desktop SectionCol: add team abbreviation prefix to each value cell — SPREAD/ML show "ABBR value" (e.g. "PSU +4.5"), TOTAL keeps o/u prefix only (e.g. "o143.5"); desktop only
+- [x] Desktop: uniform game card height — all cards same fixed height, all section columns same dimensions
+- [x] Desktop SectionCol: team logos in SPREAD and MONEYLINE row labels (away logo left of away values, home logo left of home values)
+- [x] Desktop SectionCol TOTAL: spell out "OVER" and "UNDER" as row labels instead of blank/o/u prefix
