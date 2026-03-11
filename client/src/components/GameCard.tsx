@@ -442,6 +442,460 @@ function EdgeVerdict({
   );
 }
 
+// ── DesktopMergedPanel ───────────────────────────────────────────────────────
+// Desktop-only (≥ lg) unified panel: merges ODDS + SPLITS into a single table.
+// Layout per section (SPREAD | TOTAL | MONEYLINE):
+//   Section header
+//   BOOK row (away / home)
+//   Tickets split bar
+//   Handle split bar
+//   MODEL row (away / home, neon green for edge)
+// Plus EdgeVerdict column on the far right.
+// Mobile/tablet: this component is NEVER rendered (hidden lg:flex wraps it).
+
+// ── Inline split bar for DesktopMergedPanel ───────────────────────────────────
+const MERGED_LABEL_STROKE = '-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 0 6px rgba(0,0,0,0.9)';
+
+function MergedSplitBar({
+  awayPct, homePct, awayColor, homeColor, rowLabel
+}: {
+  awayPct: number | null;
+  homePct: number | null;
+  awayColor: string;
+  homeColor: string;
+  rowLabel: string;
+}) {
+  const hasData = awayPct != null && homePct != null;
+  const labelStyle: React.CSSProperties = {
+    fontSize: 'clamp(9px, 0.75vw, 11px)',
+    color: 'rgba(255,255,255,0.4)',
+    fontWeight: 700,
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+  };
+  return (
+    <div className="flex flex-col gap-0.5 w-full">
+      <span className="text-center" style={labelStyle}>{rowLabel}</span>
+      {hasData ? (() => {
+        const away = awayPct!;
+        const home = homePct!;
+        const isAwayFull = away >= 100;
+        const isHomeFull = home >= 100;
+        const segLabel: React.CSSProperties = {
+          fontSize: 'clamp(10px, 0.85vw, 13px)',
+          color: '#fff',
+          fontWeight: 800,
+          whiteSpace: 'nowrap',
+          textShadow: MERGED_LABEL_STROKE,
+          lineHeight: 1,
+        };
+        return (
+          <div style={{
+            height: 'clamp(22px, 2.2vw, 32px)',
+            display: 'flex',
+            borderRadius: '9999px',
+            border: '1px solid rgba(255,255,255,0.12)',
+            overflow: 'hidden',
+            width: '100%',
+          }}>
+            {away > 0 && !isHomeFull && (
+              <div style={{
+                flexGrow: isAwayFull ? 1 : away,
+                flexShrink: 1,
+                flexBasis: 0,
+                minWidth: away < 10 ? 36 : 30,
+                background: awayColor,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-start',
+                paddingLeft: 'clamp(4px,0.4vw,8px)',
+                paddingRight: 'clamp(4px,0.4vw,8px)',
+                borderRadius: isAwayFull ? '9999px' : '9999px 0 0 9999px',
+              }} className="transition-all duration-700">
+                <span style={{ ...segLabel, textAlign: 'left' }}>{away}%</span>
+              </div>
+            )}
+            {!isAwayFull && !isHomeFull && away > 0 && home > 0 && (
+              <div style={{ width: 1, background: 'rgba(255,255,255,0.25)', flexShrink: 0 }} />
+            )}
+            {home > 0 && !isAwayFull && (
+              <div style={{
+                flexGrow: isHomeFull ? 1 : home,
+                flexShrink: 1,
+                flexBasis: 0,
+                minWidth: home < 10 ? 36 : 30,
+                background: homeColor,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                paddingLeft: 'clamp(4px,0.4vw,8px)',
+                paddingRight: 'clamp(4px,0.4vw,8px)',
+                borderRadius: isHomeFull ? '9999px' : '0 9999px 9999px 0',
+              }} className="transition-all duration-700">
+                <span style={{ ...segLabel, textAlign: 'right' }}>{home}%</span>
+              </div>
+            )}
+            {isAwayFull && (
+              <div style={{ flex: 1, background: awayColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '9999px' }}>
+                <span style={{ ...segLabel, textAlign: 'center' }}>100%</span>
+              </div>
+            )}
+            {isHomeFull && (
+              <div style={{ flex: 1, background: homeColor, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: '9999px' }}>
+                <span style={{ ...segLabel, textAlign: 'center' }}>100%</span>
+              </div>
+            )}
+          </div>
+        );
+      })() : (
+        <div style={{ height: 'clamp(22px,2.2vw,32px)', background: 'rgba(255,255,255,0.05)', borderRadius: '9999px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: 9, color: 'hsl(var(--muted-foreground))', opacity: 0.35 }}>—</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface DesktopMergedPanelProps {
+  // Book values
+  awayBookSpread: number;
+  homeBookSpread: number;
+  bookTotal: number;
+  awayML: string;
+  homeML: string;
+  // Model values
+  awayModelSpread: number;
+  homeModelSpread: number;
+  modelTotal: number;
+  modelAwayML: string | null | undefined;
+  modelHomeML: string | null | undefined;
+  // Edge
+  spreadDiff: number;
+  totalDiff: number;
+  computedSpreadEdge: string | null;
+  computedTotalEdge: string | null;
+  // Team identity
+  awayLogoUrl?: string;
+  homeLogoUrl?: string;
+  awaySlug?: string;
+  homeSlug?: string;
+  awayDisplayName?: string;
+  homeDisplayName?: string;
+  // Model toggle
+  showModel: boolean;
+  onToggleModel: () => void;
+  // Splits data
+  game: {
+    sport: string | null;
+    awayTeam: string;
+    homeTeam: string;
+    awayBookSpread?: string | null;
+    homeBookSpread?: string | null;
+    bookTotal?: string | null;
+    spreadAwayBetsPct: number | null | undefined;
+    spreadAwayMoneyPct: number | null | undefined;
+    totalOverBetsPct: number | null | undefined;
+    totalOverMoneyPct: number | null | undefined;
+    mlAwayBetsPct: number | null | undefined;
+    mlAwayMoneyPct: number | null | undefined;
+    awayML: string | null | undefined;
+    homeML: string | null | undefined;
+  };
+}
+
+function DesktopMergedPanel({
+  awayBookSpread: awaySpread,
+  homeBookSpread: homeSpread,
+  bookTotal: bkTotal,
+  awayML: awayMl,
+  homeML: homeMl,
+  awayModelSpread: mdlAwaySpread,
+  homeModelSpread: mdlHomeSpread,
+  modelTotal: mdlTotal,
+  modelAwayML,
+  modelHomeML,
+  spreadDiff,
+  totalDiff,
+  computedSpreadEdge,
+  computedTotalEdge,
+  awayLogoUrl,
+  homeLogoUrl,
+  awaySlug,
+  homeSlug,
+  awayDisplayName,
+  homeDisplayName,
+  showModel,
+  onToggleModel,
+  game,
+}: DesktopMergedPanelProps) {
+  // ── Team colors for split bars ────────────────────────────────────────────
+  const sport = game.sport ?? 'NCAAM';
+  const { data: colors } = trpc.teamColors.getForGame.useQuery(
+    { awayTeam: game.awayTeam, homeTeam: game.homeTeam, sport },
+    { staleTime: 1000 * 60 * 60 }
+  );
+
+  const FALLBACK_AWAY = '#1a4a8a';
+  const FALLBACK_HOME = '#c84b0c';
+
+  const isUnusable = (hex: string | null | undefined): boolean => {
+    if (!hex) return false;
+    const clean = hex.replace(/^#/, '');
+    if (clean.length !== 6 && clean.length !== 3) return false;
+    const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+    const r = parseInt(full.slice(0, 2), 16) / 255;
+    const g = parseInt(full.slice(2, 4), 16) / 255;
+    const b = parseInt(full.slice(4, 6), 16) / 255;
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return lum < 0.04 || lum > 0.90;
+  };
+
+  const tooSimilar = (hexA: string, hexB: string): boolean => {
+    const toRgb = (h: string) => {
+      const c = h.replace(/^#/, '');
+      const f = c.length === 3 ? c.split('').map(x => x + x).join('') : c;
+      return [parseInt(f.slice(0,2),16), parseInt(f.slice(2,4),16), parseInt(f.slice(4,6),16)];
+    };
+    try {
+      const [r1,g1,b1] = toRgb(hexA);
+      const [r2,g2,b2] = toRgb(hexB);
+      return Math.sqrt((r1-r2)**2+(g1-g2)**2+(b1-b2)**2) < 60;
+    } catch { return false; }
+  };
+
+  const pickColor = (p: string|null|undefined, s: string|null|undefined, t: string|null|undefined, fb: string): string => {
+    for (const c of [p,s,t]) { if (c && !isUnusable(c)) return c; }
+    return fb;
+  };
+
+  const homeColor = pickColor(colors?.home?.primaryColor, colors?.home?.secondaryColor, colors?.home?.tertiaryColor, FALLBACK_HOME);
+  const awayColor = (() => {
+    for (const c of [colors?.away?.primaryColor, colors?.away?.secondaryColor, colors?.away?.tertiaryColor, FALLBACK_AWAY]) {
+      if (!c) continue;
+      if (isUnusable(c)) continue;
+      if (!tooSimilar(c, homeColor)) return c;
+    }
+    return FALLBACK_AWAY;
+  })();
+
+  const awayAbbr = colors?.away?.abbrev ?? (awayDisplayName ?? '');
+  const homeAbbr = colors?.home?.abbrev ?? (homeDisplayName ?? '');
+
+  // ── Book / Model value strings ────────────────────────────────────────────
+  const hasModelData = !isNaN(mdlAwaySpread) || !isNaN(mdlTotal) || (modelAwayML != null && modelAwayML !== '—');
+
+  const bkAwaySpread  = !isNaN(awaySpread) ? spreadSign(awaySpread) : '—';
+  const bkHomeSpread  = !isNaN(homeSpread) ? spreadSign(homeSpread) : '—';
+  const bkOver        = !isNaN(bkTotal) ? String(bkTotal) : '—';
+  const bkUnder       = !isNaN(bkTotal) ? String(bkTotal) : '—';
+
+  const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread) ? spreadSign(mdlAwaySpread) : '—';
+  const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread) ? spreadSign(mdlHomeSpread) : '—';
+  const mdlOver          = hasModelData && !isNaN(mdlTotal) ? String(mdlTotal) : '—';
+  const mdlUnder         = hasModelData && !isNaN(mdlTotal) ? String(mdlTotal) : '—';
+  const mdlAwayMlStr     = hasModelData ? (modelAwayML ?? '—') : '—';
+  const mdlHomeMlStr     = hasModelData ? (modelHomeML ?? '—') : '—';
+
+  // ── Edge detection ────────────────────────────────────────────────────────
+  const spreadEdgeIsAway = (() => {
+    if (isNaN(spreadDiff) || spreadDiff <= 0) return null;
+    if (!isNaN(mdlAwaySpread) && !isNaN(awaySpread)) return mdlAwaySpread < awaySpread;
+    return null;
+  })();
+  const totalEdgeIsOver = (() => {
+    if (isNaN(totalDiff) || totalDiff <= 0) return null;
+    if (!isNaN(mdlTotal) && !isNaN(bkTotal)) return mdlTotal > bkTotal;
+    return null;
+  })();
+  const hasSpreadEdge = !isNaN(spreadDiff) && spreadDiff > 0;
+  const hasTotalEdge  = !isNaN(totalDiff)  && totalDiff  > 0;
+
+  // ── Style helpers ─────────────────────────────────────────────────────────
+  const CELL_FS = 'clamp(12px, 1.05vw, 17px)';
+  const HDR_FS  = 'clamp(10px, 0.85vw, 13px)';
+  const bookCell: React.CSSProperties = { fontSize: CELL_FS, fontWeight: 700, color: '#E8E8E8', letterSpacing: '0.02em', tabularNums: true } as React.CSSProperties;
+  const modelGreen: React.CSSProperties = { fontSize: CELL_FS, fontWeight: 700, color: '#39FF14', letterSpacing: '0.02em' };
+  const modelWhite: React.CSSProperties = { fontSize: CELL_FS, fontWeight: 700, color: '#E8E8E8', letterSpacing: '0.02em' };
+  const dimCell:    React.CSSProperties = { fontSize: CELL_FS, fontWeight: 700, color: 'rgba(57,255,20,0.28)', letterSpacing: '0.02em' };
+
+  const awaySpreadModelStyle = showModel ? (hasSpreadEdge && spreadEdgeIsAway  ? modelGreen : modelWhite) : dimCell;
+  const homeSpreadModelStyle = showModel ? (hasSpreadEdge && !spreadEdgeIsAway ? modelGreen : modelWhite) : dimCell;
+  const overTotalModelStyle  = showModel ? (hasTotalEdge  && totalEdgeIsOver   ? modelGreen : modelWhite) : dimCell;
+  const underTotalModelStyle = showModel ? (hasTotalEdge  && !totalEdgeIsOver  ? modelGreen : modelWhite) : dimCell;
+  const awayMlModelStyle     = showModel ? (hasSpreadEdge && spreadEdgeIsAway  ? modelGreen : modelWhite) : dimCell;
+  const homeMlModelStyle     = showModel ? (hasSpreadEdge && !spreadEdgeIsAway ? modelGreen : modelWhite) : dimCell;
+
+  // ── Splits data ───────────────────────────────────────────────────────────
+  const awaySpreadLabel = !isNaN(awaySpread) ? `${awayAbbr} (${spreadSign(awaySpread)})` : awayAbbr;
+  const homeSpreadLabel = !isNaN(homeSpread) ? `${awayAbbr} (${spreadSign(homeSpread)})` : homeAbbr;
+  const awayMlLabel = game.awayML ? `${awayAbbr} (${game.awayML})` : awayAbbr;
+  const homeMlLabel = game.homeML ? `${homeAbbr} (${game.homeML})` : homeAbbr;
+
+  const spreadTicketsPct = game.spreadAwayBetsPct ?? null;
+  const spreadHandlePct  = game.spreadAwayMoneyPct ?? null;
+  const totalTicketsPct  = game.totalOverBetsPct ?? null;
+  const totalHandlePct   = game.totalOverMoneyPct ?? null;
+  const mlTicketsPct     = game.mlAwayBetsPct ?? null;
+  const mlHandlePct      = game.mlAwayMoneyPct ?? null;
+
+  // ── Section column renderer ───────────────────────────────────────────────
+  // Each section: header title, BOOK row, splits bars, MODEL row
+  const SectionCol = ({
+    title,
+    awayBook, homeBook,
+    awayModel, homeModel,
+    awayModelStyle, homeModelStyle,
+    ticketsPct, handlePct,
+    headerExtra,
+  }: {
+    title: string;
+    awayBook: string; homeBook: string;
+    awayModel: string; homeModel: string;
+    awayModelStyle: React.CSSProperties;
+    homeModelStyle: React.CSSProperties;
+    ticketsPct: number | null;
+    handlePct: number | null;
+    headerExtra?: React.ReactNode;
+  }) => {
+    const awayTickets = ticketsPct != null ? ticketsPct : null;
+    const homeTickets = ticketsPct != null ? 100 - ticketsPct : null;
+    const awayHandle  = handlePct  != null ? handlePct  : null;
+    const homeHandle  = handlePct  != null ? 100 - handlePct  : null;
+
+    return (
+      <div className="flex flex-col" style={{ flex: 1, minWidth: 0, padding: '6px 10px' }}>
+        {/* Section header */}
+        <div className="flex items-center gap-1.5 mb-1">
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.08)' }} />
+          <span style={{ fontSize: HDR_FS, fontWeight: 800, color: '#E8E8E8', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+            {title}
+          </span>
+          <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.08)' }} />
+        </div>
+        {headerExtra && <div className="mb-1">{headerExtra}</div>}
+        {/* BOOK sub-header */}
+        <span className="text-center block mb-0.5" style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 700, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Book</span>
+        {/* BOOK row: away / home */}
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="tabular-nums" style={{ ...bookCell }}>{awayBook}</span>
+          <span className="tabular-nums" style={{ ...bookCell }}>{homeBook}</span>
+        </div>
+        {/* Tickets split bar */}
+        <MergedSplitBar awayPct={awayTickets} homePct={homeTickets} awayColor={awayColor} homeColor={homeColor} rowLabel="Tickets" />
+        {/* Handle split bar */}
+        <div className="mt-1.5">
+          <MergedSplitBar awayPct={awayHandle} homePct={homeHandle} awayColor={awayColor} homeColor={homeColor} rowLabel="Handle" />
+        </div>
+        {/* MODEL sub-header */}
+        <span className="text-center block mt-1.5 mb-0.5" style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 700, color: '#39FF14', letterSpacing: '0.1em', textTransform: 'uppercase' }}>Model</span>
+        {/* MODEL row: away / home */}
+        <div className="flex items-center justify-between">
+          <span className="tabular-nums" style={{ ...awayModelStyle }}>{awayModel}</span>
+          <span className="tabular-nums" style={{ ...homeModelStyle }}>{homeModel}</span>
+        </div>
+      </div>
+    );
+  };
+
+  // ── EdgeVerdict column ────────────────────────────────────────────────────
+  const spreadPass = normalizeEdgeLabel(computedSpreadEdge) === 'PASS' || (spreadDiff ?? 0) <= 0;
+  const totalPass  = normalizeEdgeLabel(computedTotalEdge)  === 'PASS' || (totalDiff  ?? 0) <= 0;
+  const spreadIsStronger = (spreadDiff ?? 0) >= (totalDiff ?? 0);
+  const spreadEdgeIsAwayForVerdict = computedSpreadEdge && awayDisplayName
+    ? normalizeEdgeLabel(computedSpreadEdge).toLowerCase().startsWith(awayDisplayName.toLowerCase())
+    : false;
+  const spreadLogoUrl = spreadEdgeIsAwayForVerdict ? awayLogoUrl : homeLogoUrl;
+  const spreadVerdictSlug = spreadEdgeIsAwayForVerdict ? awaySlug : homeSlug;
+  const spreadVerdictTeam = spreadEdgeIsAwayForVerdict ? awayDisplayName : homeDisplayName;
+
+  return (
+    <div className="flex items-stretch w-full h-full">
+      {/* SPREAD section */}
+      <SectionCol
+        title="Spread"
+        awayBook={bkAwaySpread} homeBook={bkHomeSpread}
+        awayModel={mdlAwaySpreadStr} homeModel={mdlHomeSpreadStr}
+        awayModelStyle={awaySpreadModelStyle} homeModelStyle={homeSpreadModelStyle}
+        ticketsPct={spreadTicketsPct} handlePct={spreadHandlePct}
+        headerExtra={
+          <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
+            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{awaySpreadLabel}</span>
+            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{homeSpreadLabel}</span>
+          </div>
+        }
+      />
+      {/* Divider */}
+      <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0, alignSelf: 'stretch', margin: '8px 0' }} />
+      {/* TOTAL section */}
+      <SectionCol
+        title="Over/Under"
+        awayBook={`o${bkOver}`} homeBook={`u${bkUnder}`}
+        awayModel={`o${mdlOver}`} homeModel={`u${mdlUnder}`}
+        awayModelStyle={overTotalModelStyle} homeModelStyle={underTotalModelStyle}
+        ticketsPct={totalTicketsPct} handlePct={totalHandlePct}
+        headerExtra={
+          !isNaN(bkTotal) ? (
+            <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
+              <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>OVER</span>
+              <span style={{ fontSize: 'clamp(11px,0.95vw,15px)', color: '#fff', fontWeight: 700 }}>{bkTotal}</span>
+              <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>UNDER</span>
+            </div>
+          ) : null
+        }
+      />
+      {/* Divider */}
+      <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0, alignSelf: 'stretch', margin: '8px 0' }} />
+      {/* MONEYLINE section */}
+      <SectionCol
+        title="Moneyline"
+        awayBook={awayMl || '—'} homeBook={homeMl || '—'}
+        awayModel={mdlAwayMlStr} homeModel={mdlHomeMlStr}
+        awayModelStyle={awayMlModelStyle} homeModelStyle={homeMlModelStyle}
+        ticketsPct={mlTicketsPct} handlePct={mlHandlePct}
+        headerExtra={
+          <div className="flex items-center justify-between" style={{ paddingLeft: 2, paddingRight: 2 }}>
+            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{awayMlLabel}</span>
+            <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>{homeMlLabel}</span>
+          </div>
+        }
+      />
+      {/* Divider */}
+      <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
+      {/* EdgeVerdict column */}
+      {showModel && (
+        <div className="flex flex-col items-center justify-center" style={{ minWidth: 'clamp(90px,8vw,140px)', maxWidth: 160, padding: '8px 10px', flexShrink: 0 }}>
+          <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 700, color: 'rgba(255,255,255,0.35)', letterSpacing: '0.12em', textTransform: 'uppercase', marginBottom: 6 }}>Edge</span>
+          {spreadPass && totalPass ? (
+            <span style={{ fontSize: 'clamp(10px,0.85vw,13px)', fontWeight: 600, color: 'hsl(var(--muted-foreground) / 0.4)', letterSpacing: '0.08em' }}>PASS</span>
+          ) : (
+            <div className="flex flex-col items-center gap-2 w-full">
+              {!spreadPass && (
+                <VerdictSide
+                  diff={isNaN(spreadDiff) ? null : spreadDiff}
+                  label={computedSpreadEdge}
+                  isStrong={spreadIsStronger}
+                  logoUrl={spreadLogoUrl}
+                  teamSlug={spreadVerdictSlug}
+                  teamName={spreadVerdictTeam}
+                  compact
+                />
+              )}
+              {!totalPass && (
+                <VerdictSide
+                  diff={isNaN(totalDiff) ? null : totalDiff}
+                  label={computedTotalEdge}
+                  isStrong={!spreadIsStronger}
+                  compact
+                />
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── OddsLinesPanel ───────────────────────────────────────────────────────────
 // IMPORTANT: This MUST be defined at module level (not inside GameCard) to avoid
 // React treating it as a new component type on every render, which causes an
@@ -1162,15 +1616,46 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             <ScorePanel />
           </div>
 
-          {/* Col 2: Odds/Lines — hidden in splits mode */}
-          {mode !== "splits" && (
+          {/* Col 2+3: Merged panel (full + projections modes) — BOOK → splits → MODEL per section + EdgeVerdict */}
+          {(mode === "projections" || mode === "full") && (
+            <div className="flex-1 min-w-0" style={{ borderLeft: "1px solid hsl(var(--border) / 0.5)" }}>
+              <DesktopMergedPanel
+                awayBookSpread={awayBookSpread}
+                homeBookSpread={homeBookSpread}
+                bookTotal={bookTotal}
+                awayML={game.awayML ?? '—'}
+                homeML={game.homeML ?? '—'}
+                awayModelSpread={awayModelSpread}
+                homeModelSpread={homeModelSpread}
+                modelTotal={modelTotal}
+                modelAwayML={game.modelAwayML}
+                modelHomeML={game.modelHomeML}
+                spreadDiff={spreadDiff}
+                totalDiff={totalDiff}
+                computedSpreadEdge={computedSpreadEdge}
+                computedTotalEdge={computedTotalEdge}
+                awayLogoUrl={awayLogoUrl}
+                homeLogoUrl={homeLogoUrl}
+                awaySlug={game.awayTeam}
+                homeSlug={game.homeTeam}
+                awayDisplayName={awayDisplayName}
+                homeDisplayName={homeDisplayName}
+                showModel={showModel}
+                onToggleModel={toggleModel}
+                game={game}
+              />
+            </div>
+          )}
+
+          {/* Col 2: Odds/Lines — non-projections, non-full modes (splits mode uses its own layout below) */}
+          {mode !== "projections" && mode !== "full" && mode !== "splits" && (
             <div
               className="flex flex-col justify-center"
-            style={{
-              flex: mode === "projections" ? "2 1 38%" : "1.5 1 28%",
-              minWidth: 190,
-              borderRight: "1px solid hsl(var(--border) / 0.5)",
-            }}
+              style={{
+                flex: "1.5 1 28%",
+                minWidth: 190,
+                borderRight: "1px solid hsl(var(--border) / 0.5)",
+              }}
             >
               <OddsLinesPanel
                 awayBookSpread={awayBookSpread}
@@ -1199,30 +1684,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             </div>
           )}
 
-          {/* Col 3: Betting Splits (always shown when not splits-only mode) */}
-          {mode !== "splits" && (
+          {/* Col 3: Betting Splits — non-projections, non-full, non-splits modes */}
+          {mode !== "projections" && mode !== "full" && mode !== "splits" && (
             <div className="flex flex-col" style={{ flex: "2 1 40%", minWidth: 220, borderLeft: "1px solid hsl(var(--border) / 0.5)" }}>
-              {/* Edge verdict row — only in projections mode when model is on */}
-              {mode === "projections" && showModel && (
-                <div
-                  className="flex items-center justify-center px-2 py-1"
-                  style={{ borderBottom: "1px solid hsl(var(--border) / 0.5)" }}
-                >
-                  <EdgeVerdict
-                    spreadDiff={isNaN(spreadDiff) ? null : spreadDiff}
-                    spreadEdge={computedSpreadEdge}
-                    totalDiff={isNaN(totalDiff) ? null : totalDiff}
-                    totalEdge={computedTotalEdge}
-                    awayLogoUrl={awayLogoUrl}
-                    homeLogoUrl={homeLogoUrl}
-                    awaySlug={game.awayTeam}
-                    homeSlug={game.homeTeam}
-                    awayDisplayName={awayDisplayName}
-                    homeDisplayName={homeDisplayName}
-                  />
-                </div>
-              )}
-              {/* Betting splits panel */}
               <div className="flex-1 px-3 py-2">
                 <BettingSplitsPanel
                   game={game}
