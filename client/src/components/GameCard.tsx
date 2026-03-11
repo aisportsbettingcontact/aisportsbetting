@@ -1211,8 +1211,8 @@ function OddsLinesPanel({
       <div className={`grid ${GRID} py-2`} style={{ transition: 'grid-template-columns 200ms ease' }}>
         <Cell val={bkAwaySpread} style={bookCell} />
         {showModel && <Cell val={mdlAwaySpreadStr} style={awaySpreadModelStyle} />}
-        <Cell val={`o${bkOverTotal}`} style={bookCell} />
-        {showModel && <Cell val={`o${mdlOverTotal}`} style={overTotalModelStyle} />}
+        <Cell val={bkOverTotal} style={bookCell} />
+        {showModel && <Cell val={mdlOverTotal} style={overTotalModelStyle} />}
         <Cell val={awayMl || '—'} style={bookCell} />
         {showModel && <Cell val={mdlAwayMlStr} style={awayMlModelStyle} />}
       </div>
@@ -1224,8 +1224,8 @@ function OddsLinesPanel({
       <div className={`grid ${GRID} py-2`} style={{ transition: 'grid-template-columns 200ms ease' }}>
         <Cell val={bkHomeSpread} style={bookCell} />
         {showModel && <Cell val={mdlHomeSpreadStr} style={homeSpreadModelStyle} />}
-        <Cell val={`u${bkUnderTotal}`} style={bookCell} />
-        {showModel && <Cell val={`u${mdlUnderTotal}`} style={underTotalModelStyle} />}
+        <Cell val={bkUnderTotal} style={bookCell} />
+        {showModel && <Cell val={mdlUnderTotal} style={underTotalModelStyle} />}
         <Cell val={homeMl || '—'} style={bookCell} />
         {showModel && <Cell val={mdlHomeMlStr} style={homeMlModelStyle} />}
       </div>

@@ -924,3 +924,4 @@
 - [x] Desktop: TOTAL section — show plain "OVER" / "UNDER" text only, no o{total}/u{total} prefix notation
 - [ ] Desktop: uniform splits bar height and width across all 3 sections (TICKETS and MONEY bars identical size)
 - [ ] Desktop: OVER/UNDER rows show "OVER {bookTotal}" and "UNDER {bookTotal}" in BOOK cell, "OVER {modelTotal}" and "UNDER {modelTotal}" in MODEL cell
+- [ ] Desktop: strip ALL o/u prefix from OVER/UNDER total values — format must be exactly "OVER {number}" / "UNDER {number}" with no o or u characters anywhere
