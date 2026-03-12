@@ -311,7 +311,7 @@ export function CalendarPicker({ selectedDate, onSelect, availableDates, isAdmin
       {/* Trigger button */}
       <button
         onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+        className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
         style={{
           background: "hsl(var(--card))",
           color: "#ffffff",

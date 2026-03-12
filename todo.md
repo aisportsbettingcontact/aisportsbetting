@@ -1069,3 +1069,9 @@
 - [x] Add games.bulkApproveModels tRPC procedure (owner-only)
 - [x] Add "Approve All Models" button to Publish Projections header (neon green ghost style, shows pending count badge, hidden when count=0)
 - [x] Add 5 vitest tests for pendingApprovalCount logic (168/169 total passing)
+
+## Mobile Layout Fixes (2026-03-12)
+- [x] Fix filter bar (Favorites/Today/Sport tabs/Search) to fit within screen width — no horizontal scroll, all items visible
+- [x] Fix date+league subtitle to always be single-line, fully centered, never clipped on any screen width
+- [x] Ensure tab bar scales proportionally to screen width (font size, padding, icon size all responsive)
+- [x] Verify no horizontal overflow anywhere on Dashboard on mobile (375px width)

@@ -642,21 +642,23 @@ export default function ModelProjections() {
         </div>
 
         {/* Row 3: Unified filter bar — FAVORITES | DATE | NCAAM | NBA | Search */}
-        <div ref={searchRef} className="relative px-3 pt-1 pb-0 flex items-center gap-2">
+        {/* Mobile: gap-1 px-2 to keep all pills + search on one row within 375-430px screens */}
+        {/* sm+: gap-2 px-3 (unchanged from original) */}
+        <div ref={searchRef} className="relative px-2 sm:px-3 pt-1 pb-0 flex items-center gap-1 sm:gap-2">
 
           {/* FAVORITES tab — shown when user is authenticated AND has ≥1 active favorite */}
           {/* NOTE: must use isAppAuthedForFav (Boolean(appUser)) — NOT isAuthenticated (Manus OAuth always null) */}
           {isAppAuthedForFav && activeFavCount >= 1 && (
             <button
               onClick={() => setShowFavoritesTab(v => !v)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+              className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
               style={showFavoritesTab
                 ? { background: "rgba(255,215,0,0.18)", color: "#FFD700", border: "1px solid rgba(255,215,0,0.55)", boxShadow: "0 0 8px rgba(255,215,0,0.15)" }
                 : { background: "hsl(var(--card))", color: "rgba(255,215,0,0.75)", border: "1px solid rgba(255,215,0,0.35)" }
               }
               title={`Favorites (${activeFavCount})`}
             >
-              <Star style={{ width: 12, height: 12, fill: showFavoritesTab ? "#FFD700" : "rgba(255,215,0,0.75)", color: showFavoritesTab ? "#FFD700" : "rgba(255,215,0,0.75)", flexShrink: 0 }} />
+              <Star style={{ width: 11, height: 11, fill: showFavoritesTab ? "#FFD700" : "rgba(255,215,0,0.75)", color: showFavoritesTab ? "#FFD700" : "rgba(255,215,0,0.75)", flexShrink: 0 }} />
               <span>Favorites</span>
             </button>
           )}
@@ -670,29 +672,31 @@ export default function ModelProjections() {
           />
 
           {/* NCAAM pill — always visible, even in favorites tab */}
-          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-            style={{ fontSize: 'var(--fs-nav, 11px)', ...(selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={14} height={10} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
+          {/* Mobile: px-1.5 py-1 text-[10px] icon-11px | sm+: px-2 py-1 var(--fs-nav) icon-14px */}
+          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={11} height={8} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
             NCAAM
           </button>
 
           {/* NBA pill — always visible, even in favorites tab */}
-          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-            style={{ fontSize: 'var(--fs-nav, 11px)', ...(selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-            <img src={CDN_NBA} alt="NBA" width={11} height={11} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
+          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+            <img src={CDN_NBA} alt="NBA" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
             NBA
           </button>
 
           {/* NHL pill — always visible */}
-          <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-1 px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-            style={{ fontSize: 'var(--fs-nav, 11px)', ...(selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-            <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" width={11} height={11} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
+          <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+            <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
             NHL
           </button>
 
           {/* Search bar — always visible, shrinks when Favorites button is present */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-full border transition-all duration-150"
+          {/* Mobile: min-w-[28px] so it always shows at least the icon; flex-1 fills remaining space */}
+          <div className="flex-1 min-w-0" style={{ minWidth: 28 }}>
+            <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full border transition-all duration-150"
               style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
               <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
               <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none" />
@@ -720,25 +724,38 @@ export default function ModelProjections() {
         </div>
 
         {/* Row 4: Date header — shown when games are loaded and NOT in favorites tab */}
+        {/* Mobile fix: single non-wrapping line, fully centered, font sizes tuned so the longest
+            string ("THURSDAY, MARCH 12, 2026 · MEN'S COLLEGE BASKETBALL") fits within 375px.
+            At 375px: date ≈ 11px × ~26 chars = ~286px, dot = 5px, league ≈ 9px × ~24 chars = ~216px
+            Total ≈ 507px — too wide at fixed sizes, so we use a single-line flex container that
+            shrinks proportionally via font-size: clamp(9px, 2.4vw, ...) for the league label.
+            sm+ breakpoints are unchanged from the original design. */}
         {!showFavoritesTab && !gamesLoading && sortedDates.length > 0 && (
-          <div className="flex items-center px-2 py-1 border-b border-border bg-background/95 gap-1 sm:gap-2 sm:px-4">
-            <div className="flex-1" />
-            {/* DATE · LEAGUE — always visible, three-tier responsive font sizes:
-                mobile  (<640px):  date 11-13px, dot 14px, league 9-11px
-                tablet  (640-1024px): date 14-16px, dot 18px, league 12-14px
-                desktop (>1024px): date 17-19px, dot 22px, league 15-17px
-            */}
-            <div className="flex items-center gap-1 sm:gap-2 flex-wrap justify-center">
+          <div className="w-full flex items-center justify-center px-2 py-1 border-b border-border bg-background/95 sm:px-4" style={{ overflow: 'hidden' }}>
+            {/* Single-line pill: all three spans in one nowrap flex row, centered in full width */}
+            <div
+              className="flex items-center justify-center"
+              style={{
+                gap: 'clamp(3px, 1vw, 8px)',
+                maxWidth: '100%',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+              }}
+            >
               <span
                 className="font-bold tracking-widest uppercase"
                 style={{
-                  fontSize: 'clamp(11px, 3.5vw, 19px)',
+                  /* Mobile: shrinks from 11px at 375px up to 19px at 640px+ */
+                  fontSize: 'clamp(9px, 2.9vw, 19px)',
                   color: '#ffffff',
                   whiteSpace: 'nowrap',
+                  flexShrink: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}
               >{formatDateHeader(selectedDate)}</span>
               <span style={{
-                fontSize: 'clamp(14px, 3.5vw, 22px)',
+                fontSize: 'clamp(11px, 3vw, 22px)',
                 color: '#ffffff',
                 fontWeight: 800,
                 lineHeight: 1,
@@ -748,14 +765,15 @@ export default function ModelProjections() {
                 className="font-semibold"
                 style={{
                   color: '#a3a3a3',
-                  letterSpacing: '0.06em',
-                  fontSize: 'clamp(10px, 2.8vw, 12px)',
+                  letterSpacing: '0.04em',
+                  /* Mobile: 8px at 375px keeps "MEN'S COLLEGE BASKETBALL" fully visible */
+                  fontSize: 'clamp(8px, 2.1vw, 12px)',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
+                  flexShrink: 0,
                 }}
-              >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : 'NBA BASKETBALL'}</span>
+              >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : selectedSport === 'NBA' ? 'NBA BASKETBALL' : 'NHL HOCKEY'}</span>
             </div>
-            <div className="flex-1" />
           </div>
         )}
 
