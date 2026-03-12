@@ -108,6 +108,8 @@ export const games = mysqlTable("games", {
   conference: varchar("conference", { length: 128 }),
   /** Whether this game has been published to the member feed by the owner */
   publishedToFeed: boolean("publishedToFeed").notNull().default(false),
+  /** Whether the model projections for this game have been approved by the owner for public display */
+  publishedModel: boolean("publishedModel").notNull().default(false),
   // ─── VSiN Betting Splits (integer 0-100, null = not yet scraped) ───────────
   /** % of spread bets placed on the away team */
   spreadAwayBetsPct: tinyint("spreadAwayBetsPct"),

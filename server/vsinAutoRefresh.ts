@@ -23,7 +23,6 @@ import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "
 import { VALID_DB_SLUGS, BY_DB_SLUG } from "../shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS } from "../shared/nbaTeams";
 import type { InsertGame } from "../drizzle/schema";
-import { syncModelForDate } from "./ncaamModelSync";
 
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -693,14 +692,6 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
       `NCAAM: ${ncaamResult.updated} updated, ${ncaamResult.inserted} inserted, ${ncaamResult.ncaaInserted} NCAA-only | ` +
       `NBA: ${nbaResult.updated} updated, ${nbaResult.inserted} inserted, ${nbaResult.scheduleInserted} schedule-only`
     );
-    // Auto-trigger model v9 for today's NCAAM games after odds are refreshed.
-    // Runs in the background (fire-and-forget) — only skips games that already
-    // have model projections to avoid re-running expensive KenPom fetches.
-    if (ncaamResult.updated > 0 || ncaamResult.inserted > 0) {
-      void syncModelForDate(todayStr, { skipExisting: true, concurrency: 3 }).catch((err) => {
-        console.warn("[VSiNAutoRefresh] Model auto-trigger failed (non-fatal):", err);
-      });
-    }
     return result;
   } catch (err) {
     console.error("[VSiNAutoRefresh] Refresh failed:", err);

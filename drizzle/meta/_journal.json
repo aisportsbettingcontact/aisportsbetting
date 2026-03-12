@@ -176,6 +176,13 @@
       "when": 1773308056813,
       "tag": "0024_giant_joystick",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "5",
+      "when": 1773314254627,
+      "tag": "0025_ancient_sue_storm",
+      "breakpoints": true
     }
   ]
 }

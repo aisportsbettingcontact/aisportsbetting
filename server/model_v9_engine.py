@@ -560,8 +560,10 @@ def run_engine(inp: dict) -> dict:
     mkt_to       = float(inp['mkt_to'])
     mkt_ml_a     = inp.get('mkt_ml_a')
     mkt_ml_h     = inp.get('mkt_ml_h')
-    kenpom_email = inp['kenpom_email']
-    kenpom_pass  = inp['kenpom_pass']
+    # Use JSON input credentials; fall back to KENPOM_EMAIL/KENPOM_PASSWORD env vars
+    import os as _os
+    kenpom_email = inp.get('kenpom_email') or _os.environ.get('KENPOM_EMAIL', '')
+    kenpom_pass  = inp.get('kenpom_pass')  or _os.environ.get('KENPOM_PASSWORD', '')
 
     import kenpompy.team as kpt
     from kenpompy.utils import login

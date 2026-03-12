@@ -1363,10 +1363,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const modelTotal = toNum(game.modelTotal);
 
   const spreadDiff = (!isNaN(awayModelSpread) && !isNaN(awayBookSpread))
-    ? Math.abs(awayModelSpread - awayBookSpread)
+    ? Math.round(Math.abs(awayModelSpread - awayBookSpread) * 10) / 10
     : toNum(game.spreadDiff);
   const totalDiff = (!isNaN(modelTotal) && !isNaN(bookTotal))
-    ? Math.abs(modelTotal - bookTotal)
+    ? Math.round(Math.abs(modelTotal - bookTotal) * 10) / 10
     : toNum(game.totalDiff);
 
   // Resolve team info from NCAA or NBA registry

@@ -16,6 +16,7 @@ import {
   listStagingGamesRange,
   updateGameProjections,
   setGamePublished,
+  setGameModelPublished,
   publishAllStagingGames,
 } from "./db";
 import { storagePut } from "./storage";
@@ -25,7 +26,7 @@ import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appU
 import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame } from "./db";
 import { getLastRefreshResult, runVsinRefresh, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
-import { syncModelForDate, type ModelSyncResult } from "./ncaamModelSync";
+import { triggerModelWatcherForDate } from "./ncaamModelWatcher";
 import { VALID_DB_SLUGS } from "@shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS } from "@shared/nbaTeams";
 
@@ -233,6 +234,17 @@ export const appRouter = router({
       }),
 
     /**
+     * Approve or retract model projections for a single NCAAM game.
+     * Owner-only. When approved (published=true), model fields become visible on the public feed.
+     */
+    setModelPublished: ownerProcedure
+      .input(z.object({ id: z.number().int().positive(), published: z.boolean() }))
+      .mutation(async ({ input }) => {
+        await setGameModelPublished(input.id, input.published);
+        return { success: true };
+      }),
+
+    /**
      * Publish all staging games for a date at once.
      * Owner-only.
      */
@@ -340,28 +352,29 @@ export const appRouter = router({
         return getGameTeamColors(input.awayTeam, input.homeTeam, input.sport);
       }),
   }),
-  // ─── NCAAM Model v9 ─────────────────────────────────────────────────────────
+
+  // ─── NCAAM Model v9 ───────────────────────────────────────────────────────────────────────────────────────
   model: router({
     /**
      * Manually trigger model v9 for a specific date.
-     * Owner-only — runs KenPom fetches + 50k Monte Carlo for all games on the date.
-     * Concurrency: 3 games in parallel (respects KenPom rate limits).
+     * Owner-only — dispatches via the dedicated ModelWatcher.
+     * skipExisting=false forces a full re-run even for already-projected games.
      */
     runForDate: ownerProcedure
       .input(
         z.object({
           date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD"),
-          skipExisting: z.boolean().optional().default(false),
-          concurrency: z.number().int().min(1).max(5).optional().default(3),
+          forceRerun: z.boolean().optional().default(false),
         })
       )
-      .mutation(async ({ input }): Promise<ModelSyncResult> => {
-        return syncModelForDate(input.date, {
-          skipExisting: input.skipExisting,
-          concurrency: input.concurrency,
+      .mutation(async ({ input }) => {
+        const result = await triggerModelWatcherForDate(input.date, {
+          forceRerun: input.forceRerun,
         });
+        return result;
       }),
   }),
 });
 
 export type AppRouter = typeof appRouter;
+

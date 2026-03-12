@@ -10,6 +10,7 @@ import { serveStatic, setupVite } from "./vite";
 import { startDailyPurgeSchedule } from "../dailyPurge";
 import { startVsinAutoRefresh } from "../vsinAutoRefresh";
 import { startNbaModelSyncScheduler } from "../nbaModelSync";
+import { startModelWatcher } from "../ncaamModelWatcher";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -68,6 +69,8 @@ async function startServer() {
     startVsinAutoRefresh();
     // Auto-sync NBA model projections from Google Sheet every 3 hours (9AM–midnight PST)
     startNbaModelSyncScheduler();
+    // NCAAM model v9 watcher — polls every 60s, fires v9 on any game with lines but no projections
+    startModelWatcher();
   });
 }
 

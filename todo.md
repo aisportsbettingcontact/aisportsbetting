@@ -994,3 +994,53 @@
 - [x] Auto-trigger model sync after VSiN refresh completes in vsinAutoRefresh.ts
 - [x] Write vitest test for ncaamModelEngine (12 tests passing)
 - [x] Save checkpoint after integration
+
+## V9 Origination Engine Decoupling & Automation
+- [ ] Remove v9 auto-trigger hook from vsinAutoRefresh.ts (keep slate/odds pipelines fully separate)
+- [ ] Build dedicated ncaamModelWatcher.ts — polls DB for new unoriginated NCAAM games, fires v9 per game immediately on detection
+- [ ] Wire ncaamModelWatcher into server startup (runs independently of VSiN refresh and slate population)
+- [ ] Add tRPC procedure model.runFullSlate (owner-only) — manual full re-run of all today's games
+- [ ] Populate modelAwayScore, modelHomeScore, modelAwaySpread, modelHomeSpread, modelTotal, modelAwayML, modelHomeML into game cards as pre-review placeholders
+- [ ] Add deep structured logging to model watcher (game detected, v9 dispatched, result written, errors)
+- [ ] Write integration test: simulate new game insertion → verify v9 fires and DB fields populate
+- [ ] Verify slate population, odds refresh, and v9 origination are fully independent execution paths
+- [ ] Save checkpoint after full integration test passes
+
+## V9 Hardcoded Team Data (Eliminate Live KenPom Fetches)
+- [ ] Bulk-fetch all 365 teams' KenPom conference-only scouting data (OE, DE, Tempo, APLO, secondary stats)
+- [ ] Bulk-fetch all 365 teams' conference schedule PPG (scored and allowed, OT-adjusted)
+- [ ] Build TEAM_DATA lookup dict in model_v9_engine.py — keyed by kenpomSlug
+- [ ] Remove all live kenpompy fetches from model_v9_engine.py
+- [ ] Update ncaamModelEngine.ts to remove kenpom_email/kenpom_pass from input JSON
+- [ ] Update ncaamModelWatcher.ts to remove credential passing
+- [ ] Test end-to-end pipeline with hardcoded data on all 4 test games
+- [ ] Verify game card population for all test games
+- [ ] Save checkpoint
+
+## Model Projection Gating + Spread Rounding (2026-03-12)
+- [ ] Round model spreads to nearest 0.5 in model_v9_engine.py output (e.g. -7.96 → -8.0, +3.43 → +3.5)
+- [ ] Round model totals to nearest 0.5 in model_v9_engine.py output
+- [ ] Add publishedModel boolean column to games DB schema (default false)
+- [ ] Run db:push migration for publishedModel column
+- [ ] Gate model fields (awayModelSpread, homeModelSpread, modelTotal, modelAwayML, modelHomeML) behind publishedModel=true in games.list public API — return null for unpublished model data
+- [ ] Update Publish Projections page to show model projections (spread, total, ML, scores, over/under rates, win %) for review
+- [ ] Add "Approve Model" toggle/button per game on Publish Projections page
+- [ ] Add "Approve All" bulk action on Publish Projections page
+- [ ] Wire publishedModel toggle to new tRPC procedure games.setModelPublished (owner-only)
+- [ ] Verify public feed shows dashes for model columns until @prez approves each game
+- [ ] Update vitest tests for new gating logic
+- [ ] Re-run watcher to re-populate model data with rounded spreads/totals
+
+## Spread Sign Fix + 0.5 Rounding (2026-03-12)
+- [x] Fix spread sign logic: projected favorite (lower score) must get negative spread, underdog gets positive
+- [x] Round awayModelSpread, homeModelSpread to nearest 0.5 before writing to DB
+- [x] Round modelTotal to nearest 0.5 before writing to DB
+- [x] Clear all existing model data from DB and re-run watcher to repopulate with correct values
+- [x] Round model moneylines to whole integers (no decimal points) in watcher formatML
+- [x] URGENT: Gate all model fields in listGames API — only return model data when publishedModel = true
+- [x] URGENT: Clear all model data from DB until gating is in place
+- [x] Add publishedModel boolean column to games table schema and run migration
+- [x] Add setGameModelPublished helper in db.ts
+- [x] Add setModelPublished tRPC procedure (ownerProcedure) in routers.ts
+- [x] Add Approve Model / Model Live button to EditableGameCard in PublishProjections (NCAAM only, only when model data exists)
+- [x] Scope publishedModel gate to NCAAM games only in listGames

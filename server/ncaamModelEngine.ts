@@ -5,7 +5,7 @@
  *
  * Execution flow:
  *   1. Receives a ModelGameInput with all required game parameters
- *   2. Spawns `python3 server/model_v9_engine.py` as a child process
+ *   2. Spawns `python3.11 server/model_v9_engine.py` as a child process
  *   3. Writes the input as JSON to the process's stdin
  *   4. Reads the result JSON from stdout
  *   5. Returns a typed ModelGameResult
@@ -108,8 +108,31 @@ export async function runModelForGame(
   return new Promise((resolve) => {
     const inputJson = JSON.stringify(input);
 
-    const proc = spawn("python3", [ENGINE_PATH], {
-      env: { ...process.env },
+    // Use a minimal, clean environment for the Python 3.11 subprocess.
+    // The webdev server process injects PYTHONHOME/PYTHONPATH/VIRTUAL_ENV pointing
+    // at uv-managed Python 3.13 packages, causing "Python path configuration" errors
+    // when /usr/bin/python3.11 tries to run. Solution: pass only the essential env vars
+    // needed by the engine (KenPom credentials, HOME, TMPDIR) and nothing Python-related.
+    const cleanEnv: NodeJS.ProcessEnv = {
+      // System essentials
+      HOME:    process.env.HOME    ?? "/home/ubuntu",
+      USER:    process.env.USER    ?? "ubuntu",
+      TMPDIR:  process.env.TMPDIR  ?? "/tmp",
+      TMP:     process.env.TMP     ?? "/tmp",
+      TEMP:    process.env.TEMP    ?? "/tmp",
+      LANG:    process.env.LANG    ?? "en_US.UTF-8",
+      LC_ALL:  process.env.LC_ALL  ?? "en_US.UTF-8",
+      // Minimal PATH — only system bins, no uv, no nvm, no pnpm
+      PATH:    "/usr/local/bin:/usr/bin:/bin",
+      // Python 3.11 site-packages only — no uv packages
+      PYTHONPATH: "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages",
+      // KenPom credentials from server env
+      KENPOM_EMAIL:    process.env.KENPOM_EMAIL    ?? "",
+      KENPOM_PASSWORD: process.env.KENPOM_PASSWORD ?? "",
+    };
+
+    const proc = spawn("/usr/bin/python3.11", [ENGINE_PATH], {
+      env: cleanEnv,
       stdio: ["pipe", "pipe", "pipe"],
     });
 

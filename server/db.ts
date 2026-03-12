@@ -202,8 +202,28 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }) {
     .from(games)
     .where(and(...conditions))
     .orderBy(games.gameDate, games.sortOrder);
+
+  // Gate model projections (NCAAM only): only expose model fields when the owner has approved them.
+  // NBA games bypass this gate — their model data (if any) is always returned as-is.
+  // If publishedModel = false on an NCAAM game, null out all model-related fields.
+  const MODEL_FIELDS = [
+    'awayModelSpread', 'homeModelSpread', 'modelTotal',
+    'modelAwayML', 'modelHomeML', 'modelAwayScore', 'modelHomeScore',
+    'modelOverRate', 'modelUnderRate', 'modelAwayWinPct', 'modelHomeWinPct',
+    'modelSpreadClamped', 'modelTotalClamped', 'modelCoverDirection', 'modelRunAt',
+    'spreadEdge', 'spreadDiff', 'totalEdge', 'totalDiff',
+  ] as const;
+  const gated = rows.map((row) => {
+    // Only gate NCAAM games
+    if (row.sport !== 'NCAAM') return row;
+    if (row.publishedModel) return row;
+    const copy = { ...row } as Record<string, unknown>;
+    for (const field of MODEL_FIELDS) copy[field] = null;
+    return copy as typeof row;
+  });
+
   // Sort by start time in Node.js: treat '00:00' as midnight (sort last within each date)
-  return sortGamesByStartTime(rows);
+  return sortGamesByStartTime(gated);
 }
 
 export async function deleteGamesByFileId(fileId: number) {
@@ -405,6 +425,13 @@ export async function updateBookOdds(
   if (data.awayML !== undefined) updateData.awayML = data.awayML;
   if (data.homeML !== undefined) updateData.homeML = data.homeML;
   await db.update(games).set(updateData).where(eq(games.id, id));
+}
+
+/** Toggle publishedModel for a single game — owner approves/retracts model projections */
+export async function setGameModelPublished(id: number, published: boolean): Promise<void> {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(games).set({ publishedModel: published }).where(eq(games.id, id));
 }
 
 export async function setGamePublished(id: number, published: boolean) {

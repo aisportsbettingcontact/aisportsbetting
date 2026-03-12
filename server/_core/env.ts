@@ -9,4 +9,6 @@ export const ENV = {
   forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
   vsinEmail: process.env.VSIN_EMAIL ?? "",
   vsinPassword: process.env.VSIN_PASSWORD ?? "",
+  kenpomEmail: process.env.KENPOM_EMAIL ?? "",
+  kenpomPassword: process.env.KENPOM_PASSWORD ?? "",
 };

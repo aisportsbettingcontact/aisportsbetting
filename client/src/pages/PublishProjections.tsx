@@ -407,6 +407,7 @@ type GameRow = {
   totalEdge: string | null;
   totalDiff: string | null;
   publishedToFeed: boolean;
+  publishedModel: boolean;
   startTimeEst: string;
   gameDate: string;
   gameType: "regular_season" | "conference_tournament";
@@ -445,6 +446,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
   const utils = trpc.useUtils();
   const updateMutation = trpc.games.updateProjections.useMutation();
   const publishMutation = trpc.games.setPublished.useMutation();
+  const approveModelMutation = trpc.games.setModelPublished.useMutation();
   const deleteMutation = trpc.games.deleteGame.useMutation({
     onSuccess: () => {
       toast.success("Game permanently deleted from database");
@@ -628,6 +630,16 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
     }
   };
 
+  const handleToggleModelApproval = async () => {
+    try {
+      await approveModelMutation.mutateAsync({ id: game.id, published: !game.publishedModel });
+      toast.success(game.publishedModel ? "Model projections retracted" : "Model projections approved ✓");
+      onSaved();
+    } catch {
+      toast.error("Failed to update model approval status");
+    }
+  };
+
   // ── Derived display values ──────────────────────────────────────────────────
   const awayBookSpread = toNum(game.awayBookSpread);
   const homeBookSpread = toNum(game.homeBookSpread);
@@ -753,6 +765,27 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
               </AlertDialogFooter>
             </AlertDialogContent>
           </AlertDialog>
+        )}
+
+        {/* Approve Model toggle — NCAAM only, only shown when model data exists */}
+        {game.sport === "NCAAM" && hasAnyModel && (
+          <button
+            onClick={handleToggleModelApproval}
+            disabled={approveModelMutation.isPending}
+            className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all"
+            style={game.publishedModel
+              ? { background: "rgba(57,255,20,0.15)", color: "#39FF14", border: "1px solid rgba(57,255,20,0.35)" }
+              : { background: "rgba(255,184,0,0.1)", color: "#FFB800", border: "1px solid rgba(255,184,0,0.3)" }
+            }
+            title={game.publishedModel ? "Retract model projections from feed" : "Approve model projections for public feed"}
+          >
+            {approveModelMutation.isPending
+              ? <Loader2 size={9} className="animate-spin" />
+              : game.publishedModel
+                ? <><Eye size={9} /> Model Live</>
+                : <><EyeOff size={9} /> Approve Model</>
+            }
+          </button>
         )}
 
         {/* Publish toggle */}
