@@ -25,8 +25,8 @@ import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
 import { Link } from "wouter";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+import { useMobileDebug, logMobileEvent } from "@/hooks/useMobileDebug";
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMilitaryTime(time: string | null | undefined): string {
   if (!time) return "TBD";
@@ -315,8 +315,20 @@ export default function ModelProjections() {
     });
     obs.observe(headerRef.current);
     setHeaderHeight(Math.ceil(headerRef.current.getBoundingClientRect().height));
-    return () => obs.disconnect();
+     return () => obs.disconnect();
   }, []);
+
+  // ── Mobile debug logging ──────────────────────────────────────────────────────
+  // Logs viewport, scale, safe-area insets, header height, and feed budget
+  // on every mount and resize. No-op in production. Filter by [MobileDebug:ModelProjections]
+  useMobileDebug({
+    label: 'ModelProjections',
+    headerHeight,
+    extra: {
+      selectedSport,
+      showFavoritesTab,
+    },
+  });
 
   const { user, isAuthenticated } = useAuth();
   const { appUser, isOwner, loading: appAuthLoading, refetch: refetchAppUser } = useAppAuth();
@@ -581,7 +593,7 @@ export default function ModelProjections() {
       </div>
 
       {/* ── Sticky Header ── */}
-      <header ref={headerRef} className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm">
+      <header ref={headerRef} className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm sticky-header-safe">
 
         {/* Row 1: brand + user icon */}
         <div className="relative flex items-center px-4 pt-2 pb-1">
@@ -843,7 +855,10 @@ export default function ModelProjections() {
       </header>
 
       {/* ── Main Feed ── */}
-      <main className="w-full pb-1">
+      {/* touch-action: pan-y — allows vertical scrolling while blocking horizontal
+           interference from the frozen panel scroll containers inside GameCard.
+           -webkit-overflow-scrolling: touch — enables iOS momentum scrolling. */}
+      <main className="w-full feed-pb-safe" style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
 
         {/* ── NHL COMING SOON ── */}
         {selectedSport === 'NHL' && (

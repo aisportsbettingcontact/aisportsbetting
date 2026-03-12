@@ -1075,3 +1075,11 @@
 - [x] Fix date+league subtitle to always be single-line, fully centered, never clipped on any screen width
 - [x] Ensure tab bar scales proportionally to screen width (font size, padding, icon size all responsive)
 - [x] Verify no horizontal overflow anywhere on Dashboard on mobile (375px width)
+
+## Mobile Deep Optimization Audit (2026-03-12)
+- [x] Add useMobileDebug hook: logs vw/vh, devicePixelRatio, safeAreaInsets, headerHeight, scale factor on every resize
+- [x] Fix index.css: add env(safe-area-inset-*) support, ensure --scale is clamped correctly for 320px-430px range
+- [x] Fix ModelProjections header: all rows fit on every mobile width 320px-430px without overflow
+- [x] Fix GameCard: frozen left panel correct width, horizontal scroll table correct column widths on all mobile sizes
+- [x] Fix feed main area: height = 100dvh - headerHeight, no vertical scroll bleed, safe area bottom padding
+- [x] Verify no overflow:hidden clipping on any interactive element (search dropdown, calendar picker)

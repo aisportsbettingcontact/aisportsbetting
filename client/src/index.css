@@ -55,20 +55,38 @@
    *            2560px QHD · 2880px MacBook Retina · 3440px ultrawide · 3840px 4K
    * ─────────────────────────────────────────────────────────────────────── */
   --vp-base: 393;
-  --scale: clamp(1, calc(100vw / 393), 3.85);
+  /* ── CORRECTED scale: clamp(0.81, vw/393, 3.85)
+   *   At 320px (SE 1st gen): 320/393 = 0.814 — below 1 so pills/fonts shrink proportionally
+   *   At 375px (SE 3rd gen): 375/393 = 0.954
+   *   At 393px (iPhone 16 Pro): 1.000 (baseline)
+   *   At 430px (iPhone 16 Pro Max): 1.094
+   *   Old clamp(1, ...) floor prevented sub-393px shrinking — now corrected.
+   * ─────────────────────────────────────────────────────────────────────── */
+  --scale: clamp(0.81, calc(100vw / 393), 3.85);
 
-  /* Fluid typography tokens — clamp(mobile-min, scale-driven, desktop-max) */
-  --fs-xs:   clamp(9px,  calc(9px  * var(--scale)), 13px);
-  --fs-sm:   clamp(10px, calc(10px * var(--scale)), 14px);
-  --fs-base: clamp(11px, calc(11px * var(--scale)), 16px);
-  --fs-md:   clamp(12px, calc(12px * var(--scale)), 18px);
-  --fs-lg:   clamp(13px, calc(13px * var(--scale)), 20px);
-  --fs-xl:   clamp(15px, calc(15px * var(--scale)), 24px);
-  --fs-2xl:  clamp(18px, calc(18px * var(--scale)), 32px);
-  --fs-3xl:  clamp(22px, calc(22px * var(--scale)), 44px);
-  --fs-nav:  clamp(11px, calc(11px * var(--scale)), 15px);
-  --fs-label: clamp(9px, calc(9px  * var(--scale)), 13px);
-  --fs-header: clamp(10px, calc(10px * var(--scale)), 14px);
+  /* ── Safe area insets (populated by viewport-fit=cover in index.html) ────
+   * Falls back to 0px on non-notched devices. Used for header top padding
+   * and feed bottom padding so content is never obscured by notch/home bar.
+   * ─────────────────────────────────────────────────────────────────────── */
+  --safe-top:    env(safe-area-inset-top,    0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left:   env(safe-area-inset-left,   0px);
+  --safe-right:  env(safe-area-inset-right,  0px);
+
+  /* Fluid typography tokens — clamp(mobile-min, scale-driven, desktop-max)
+   * NOTE: mobile-min values are now reachable on 320px screens since --scale
+   * can go below 1. The clamp floor prevents text from going illegibly small. */
+  --fs-xs:   clamp(8px,  calc(9px  * var(--scale)), 13px);
+  --fs-sm:   clamp(9px,  calc(10px * var(--scale)), 14px);
+  --fs-base: clamp(10px, calc(11px * var(--scale)), 16px);
+  --fs-md:   clamp(11px, calc(12px * var(--scale)), 18px);
+  --fs-lg:   clamp(12px, calc(13px * var(--scale)), 20px);
+  --fs-xl:   clamp(13px, calc(15px * var(--scale)), 24px);
+  --fs-2xl:  clamp(16px, calc(18px * var(--scale)), 32px);
+  --fs-3xl:  clamp(18px, calc(22px * var(--scale)), 44px);
+  --fs-nav:  clamp(9px,  calc(11px * var(--scale)), 15px);
+  --fs-label: clamp(8px, calc(9px  * var(--scale)), 13px);
+  --fs-header: clamp(9px, calc(10px * var(--scale)), 14px);
 
   /* Fluid spacing tokens */
   --sp-1: clamp(2px,  calc(2px  * var(--scale)), 6px);
@@ -134,9 +152,24 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    /* Prevent iOS rubber-band overscroll from revealing white/gray background.
+     * overscroll-behavior: none on html prevents the bounce from propagating
+     * to the document root. Individual scrollable containers still bounce. */
+    overscroll-behavior: none;
+    /* Smooth momentum scrolling on iOS for the document root */
+    -webkit-overflow-scrolling: touch;
+  }
   body {
     @apply bg-background text-foreground;
     font-family: 'Barlow Condensed', system-ui, sans-serif;
+    /* Prevent horizontal overflow at the document level — catches any
+     * rogue element that might push past 100vw on narrow screens. */
+    overflow-x: hidden;
+    /* Allow vertical scrolling — the feed needs it */
+    overflow-y: auto;
+    /* Constrain to viewport width on all mobile screens */
+    max-width: 100vw;
   }
 }
 
@@ -155,7 +188,29 @@
   .text-edge-red   { color: var(--edge-red); }
 }
 
-/* Scrollbar styling */
+/* ── Safe area utility classes ─────────────────────────────────────────────
+ * Use these on the outermost layout containers to respect iPhone notch/home bar.
+ * pt-safe  = padding-top: env(safe-area-inset-top)
+ * pb-safe  = padding-bottom: env(safe-area-inset-bottom)
+ * pl-safe  = padding-left: env(safe-area-inset-left)
+ * pr-safe  = padding-right: env(safe-area-inset-right)
+ * ─────────────────────────────────────────────────────────────────────────── */
+.pt-safe  { padding-top:    env(safe-area-inset-top,    0px); }
+.pb-safe  { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.pl-safe  { padding-left:   env(safe-area-inset-left,   0px); }
+.pr-safe  { padding-right:  env(safe-area-inset-right,  0px); }
+
+/* Sticky header accounts for notch on notched devices */
+.sticky-header-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* Feed bottom padding: home indicator clearance */
+.feed-pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+}
+
+/* ── Scrollbar styling ────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: oklch(0.28 0.01 250); border-radius: 3px; }
