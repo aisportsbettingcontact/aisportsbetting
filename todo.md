@@ -1089,3 +1089,13 @@
 - [x] Fix ML edge: must be directionally consistent with spread edge (if UCLA spread is edge, Rutgers ML cannot also be edge)
 - [x] Implement unified edge direction model: spread-first with implied-prob fallback when no spread edge
 - [x] Write vitest tests for edge consistency across all scenarios (17 tests passing)
+
+## NHL Teams Database (2026-03-12)
+- [x] Extract NHL slugs and logo URLs from NHL.com HTML source
+- [x] Extract VSiN slugs and team names from VSiN HTML source
+- [x] Build complete 32-team mapping with all 12 columns validated (13 checks: 0 errors, 0 warnings)
+- [x] Add nhl_teams table to DB schema and run db:push (migration 0027)
+- [x] Add upsertNhlTeams, getNhlTeams, getNhlTeamByDbSlug, getNhlTeamByAbbrev helpers to db.ts
+- [x] Extend getTeamColors() to handle sport="NHL"
+- [x] Seed all 32 NHL teams into the database (32/32 inserted, 0 errors)
+- [x] Run validation query confirming 32 rows, no nulls, correct conferences/divisions (13/13 checks passed)

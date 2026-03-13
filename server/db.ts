@@ -1,6 +1,6 @@
 import { and, desc, eq, gte, isNotNull, lte, lt, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { games, modelFiles, users, nbaTeams, ncaamTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam } from "../drizzle/schema";
+import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -659,6 +659,18 @@ export async function getTeamColors(dbSlug: string, sport: string): Promise<Team
       .where(eq(nbaTeams.dbSlug, dbSlug))
       .limit(1);
     return rows[0] ?? null;
+  } else if (sport === "NHL") {
+    const rows = await db
+      .select({
+        primaryColor: nhlTeams.primaryColor,
+        secondaryColor: nhlTeams.secondaryColor,
+        tertiaryColor: nhlTeams.tertiaryColor,
+        abbrev: nhlTeams.abbrev,
+      })
+      .from(nhlTeams)
+      .where(eq(nhlTeams.dbSlug, dbSlug))
+      .limit(1);
+    return rows[0] ?? null;
   } else {
     // NCAAM (default)
     const rows = await db
@@ -689,6 +701,79 @@ export async function getGameTeamColors(
     getTeamColors(homeDbSlug, sport),
   ]);
   return { away, home };
+}
+
+// ─── NHL Team Helpers ────────────────────────────────────────────────────────────
+
+/**
+ * Upsert all 32 NHL teams. Uses dbSlug as the conflict key.
+ * On conflict, updates all mutable fields (slugs, name, colors, logo).
+ * Returns the count of teams processed.
+ */
+export async function upsertNhlTeams(teams: InsertNhlTeam[]): Promise<number> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[upsertNhlTeams] Database not available");
+    return 0;
+  }
+  console.log(`[upsertNhlTeams] Upserting ${teams.length} NHL teams...`);
+  let upserted = 0;
+  for (const team of teams) {
+    console.log(`[upsertNhlTeams]   ${team.abbrev} ${team.name} (dbSlug=${team.dbSlug})`);
+    await db
+      .insert(nhlTeams)
+      .values(team)
+      .onDuplicateKeyUpdate({
+        set: {
+          nhlSlug: team.nhlSlug,
+          vsinSlug: team.vsinSlug,
+          name: team.name,
+          nickname: team.nickname,
+          city: team.city,
+          conference: team.conference,
+          division: team.division,
+          logoUrl: team.logoUrl,
+          abbrev: team.abbrev,
+          primaryColor: team.primaryColor,
+          secondaryColor: team.secondaryColor,
+          tertiaryColor: team.tertiaryColor,
+        },
+      });
+    upserted++;
+  }
+  console.log(`[upsertNhlTeams] Done. Upserted: ${upserted}`);
+  return upserted;
+}
+
+/** Returns all 32 NHL teams ordered by conference, division, then name. */
+export async function getNhlTeams() {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(nhlTeams).orderBy(nhlTeams.conference, nhlTeams.division, nhlTeams.name);
+}
+
+/** Lookup a single NHL team by its dbSlug. Returns null if not found. */
+export async function getNhlTeamByDbSlug(dbSlug: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(nhlTeams)
+    .where(eq(nhlTeams.dbSlug, dbSlug))
+    .limit(1);
+  return rows[0] ?? null;
+}
+
+/** Lookup a single NHL team by its abbreviation (e.g. "BUF"). Returns null if not found. */
+export async function getNhlTeamByAbbrev(abbrev: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const rows = await db
+    .select()
+    .from(nhlTeams)
+    .where(eq(nhlTeams.abbrev, abbrev))
+    .limit(1);
+  return rows[0] ?? null;
 }
 
 // ─── User Favorite Games ─────────────────────────────────────────────────────

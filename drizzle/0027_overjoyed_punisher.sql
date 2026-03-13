@@ -1,0 +1,21 @@
+CREATE TABLE `nhl_teams` (
+	`id` int AUTO_INCREMENT NOT NULL,
+	`dbSlug` varchar(128) NOT NULL,
+	`nhlSlug` varchar(128) NOT NULL,
+	`vsinSlug` varchar(128) NOT NULL,
+	`name` varchar(255) NOT NULL,
+	`nickname` varchar(128) NOT NULL,
+	`city` varchar(128) NOT NULL,
+	`conference` enum('EASTERN','WESTERN') NOT NULL,
+	`division` enum('ATLANTIC','METROPOLITAN','CENTRAL','PACIFIC') NOT NULL,
+	`logoUrl` text NOT NULL,
+	`abbrev` varchar(8) NOT NULL,
+	`primaryColor` varchar(16) NOT NULL,
+	`secondaryColor` varchar(16) NOT NULL,
+	`tertiaryColor` varchar(16) NOT NULL,
+	`updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,
+	CONSTRAINT `nhl_teams_id` PRIMARY KEY(`id`),
+	CONSTRAINT `nhl_teams_dbSlug_unique` UNIQUE(`dbSlug`),
+	CONSTRAINT `nhl_teams_nhlSlug_unique` UNIQUE(`nhlSlug`),
+	CONSTRAINT `nhl_teams_vsinSlug_unique` UNIQUE(`vsinSlug`)
+);

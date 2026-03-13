@@ -253,6 +253,42 @@ export const ncaamTeams = mysqlTable("ncaam_teams", {
 export type NcaamTeamRow = typeof ncaamTeams.$inferSelect;
 export type InsertNcaamTeam = typeof ncaamTeams.$inferInsert;
 
+// ─── NHL Teams (seeded from NHL.com + VSiN mapping) ────────────────────────────
+
+export const nhlTeams = mysqlTable("nhl_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  /** DB storage key — vsinSlug with hyphens replaced by underscores, e.g. "buffalo_sabres" */
+  dbSlug: varchar("dbSlug", { length: 128 }).notNull().unique(),
+  /** NHL.com URL slug, e.g. "buffalo-sabres" */
+  nhlSlug: varchar("nhlSlug", { length: 128 }).notNull().unique(),
+  /** VSiN href slug, e.g. "buffalo-sabres" (special: "ny-islanders" for NYI) */
+  vsinSlug: varchar("vsinSlug", { length: 128 }).notNull().unique(),
+  /** Full team name, e.g. "Buffalo Sabres" */
+  name: varchar("name", { length: 255 }).notNull(),
+  /** Team nickname, e.g. "Sabres" */
+  nickname: varchar("nickname", { length: 128 }).notNull(),
+  /** City name, e.g. "Buffalo" */
+  city: varchar("city", { length: 128 }).notNull(),
+  /** Conference: "EASTERN" or "WESTERN" */
+  conference: mysqlEnum("conference", ["EASTERN", "WESTERN"]).notNull(),
+  /** Division: "ATLANTIC", "METROPOLITAN", "CENTRAL", or "PACIFIC" */
+  division: mysqlEnum("division", ["ATLANTIC", "METROPOLITAN", "CENTRAL", "PACIFIC"]).notNull(),
+  /** NHL.com CDN SVG logo URL, e.g. "https://assets.nhle.com/logos/nhl/svg/BUF_dark.svg" */
+  logoUrl: text("logoUrl").notNull(),
+  /** Standard NHL abbreviation, e.g. "BUF", "TBL", "VGK" */
+  abbrev: varchar("abbrev", { length: 8 }).notNull(),
+  /** Primary brand hex color, e.g. "#003087" */
+  primaryColor: varchar("primaryColor", { length: 16 }).notNull(),
+  /** Secondary brand hex color */
+  secondaryColor: varchar("secondaryColor", { length: 16 }).notNull(),
+  /** Tertiary brand hex color */
+  tertiaryColor: varchar("tertiaryColor", { length: 16 }).notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type NhlTeamRow = typeof nhlTeams.$inferSelect;
+export type InsertNhlTeam = typeof nhlTeams.$inferInsert;
+
 // ─── User Favorite Games ─────────────────────────────────────────────────────
 export const userFavoriteGames = mysqlTable(
   "user_favorite_games",
