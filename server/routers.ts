@@ -99,7 +99,7 @@ export const appRouter = router({
         });
 
         const files = await listModelFiles(ctx.user.id);
-        const fileRecord = files.find((f) => f.fileKey === fileKey);
+        const fileRecord = files.find((f: { fileKey: string }) => f.fileKey === fileKey);
         if (!fileRecord) {
           throw new TRPCError({
             code: "INTERNAL_SERVER_ERROR",

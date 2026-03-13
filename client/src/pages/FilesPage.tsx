@@ -16,6 +16,11 @@ import {
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import type { AppRouter } from "@/lib/trpc";
+import type { inferRouterOutputs } from "@trpc/server";
+
+type RouterOutput = inferRouterOutputs<AppRouter>;
+type FileRow = RouterOutput["files"]["list"][number];
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -257,7 +262,7 @@ export default function FilesPage() {
             </div>
           ) : (
             <div className="space-y-2">
-              {files.map((file) => (
+              {files.map((file: FileRow) => (
                 <div
                   key={file.id}
                   className="flex items-center gap-3 p-3 rounded-xl bg-card border border-border hover:border-border/80 transition-colors"

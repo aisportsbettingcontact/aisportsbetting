@@ -8,7 +8,22 @@ import App from "./App";
 import { getLoginUrl } from "./const";
 import "./index.css";
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      // Cache data for 5 minutes — prevents redundant refetches on navigation
+      staleTime: 5 * 60 * 1000,
+      // Only retry once (not 3 times) to avoid 30s+ spinner on slow connections
+      retry: 1,
+      retryDelay: 1000,
+      // Show stale data while refetching (no spinner flash on navigation)
+      refetchOnWindowFocus: false,
+    },
+    mutations: {
+      retry: 0,
+    },
+  },
+});
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
   if (!(error instanceof TRPCClientError)) return;

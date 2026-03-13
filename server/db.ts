@@ -1,18 +1,34 @@
 import { and, desc, eq, gte, isNotNull, lte, lt, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam } from "../drizzle/schema";
+import mysql from "mysql2/promise";
+import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, appUsers as appUsersTable, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _db: any = null;
+let _pool: mysql.Pool | null = null;
 
-// Lazily create the drizzle instance so local tooling can run without a DB.
+// Lazily create the drizzle instance with a proper connection pool.
+// Pool settings: 10 connections max, 30s acquire timeout, 10s idle timeout.
 export async function getDb() {
   if (!_db && process.env.DATABASE_URL) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        connectionLimit: 10,
+        waitForConnections: true,
+        queueLimit: 0,
+        connectTimeout: 10000,
+        idleTimeout: 10000,
+        enableKeepAlive: true,
+        keepAliveInitialDelay: 0,
+      });
+      _db = drizzle(_pool);
+      console.log("[Database] Connection pool created (max=10)");
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.warn("[Database] Failed to create connection pool:", error);
       _db = null;
+      _pool = null;
     }
   }
   return _db;
@@ -177,7 +193,7 @@ export async function insertGames(rows: InsertGame[]) {
   });
 }
 
-export async function listGames(opts?: { sport?: string; gameDate?: string }) {
+export async function listGames(opts?: { sport?: string; gameDate?: string }): Promise<Game[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
@@ -213,7 +229,7 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }) {
     'modelSpreadClamped', 'modelTotalClamped', 'modelCoverDirection', 'modelRunAt',
     'spreadEdge', 'spreadDiff', 'totalEdge', 'totalDiff',
   ] as const;
-  const gated = rows.map((row) => {
+  const gated = rows.map((row: Game) => {
     // Only gate NCAAM games
     if (row.sport !== 'NCAAM') return row;
     if (row.publishedModel) return row;
@@ -276,10 +292,10 @@ export async function createAppUser(data: InsertAppUser) {
   await db.insert(appUsers).values(data);
 }
 
-export async function listAppUsers() {
+export async function listAppUsers(): Promise<AppUser[]> {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(appUsers).orderBy(appUsers.createdAt);
+  return db.select().from(appUsersTable).orderBy(appUsersTable.createdAt);
 }
 
 export async function getAppUserById(id: number) {
@@ -359,7 +375,7 @@ export async function incrementAllTokenVersions(excludeOwnerId: number): Promise
 // ─── Publish / Model Projection helpers ──────────────────────────────────────
 
 /** List all games for a given date, optionally filtered by sport */
-export async function listGamesByDate(gameDate: string, sport?: string) {
+export async function listGamesByDate(gameDate: string, sport?: string): Promise<Game[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const conditions = [eq(games.gameDate, gameDate)];
@@ -373,7 +389,7 @@ export async function listGamesByDate(gameDate: string, sport?: string) {
 }
 
 /** List all staging games for a given date (fileId = 0, unpublished), optionally filtered by sport */
-export async function listStagingGames(gameDate: string, sport?: string) {
+export async function listStagingGames(gameDate: string, sport?: string): Promise<Game[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const conditions: ReturnType<typeof eq>[] = [eq(games.gameDate, gameDate), eq(games.fileId, 0)];
@@ -511,7 +527,7 @@ export async function setGamePublished(id: number, published: boolean) {
 }
 
 /** List all staging games for a date range (inclusive). Owner-only. */
-export async function listStagingGamesRange(fromDate: string, toDate: string, sport?: string) {
+export async function listStagingGamesRange(fromDate: string, toDate: string, sport?: string): Promise<Game[]> {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
   const conditions: ReturnType<typeof eq>[] = [
@@ -787,9 +803,8 @@ export async function getFavoriteGamesWithDates(appUserId: number): Promise<{ ga
     .from(userFavoriteGames)
     .innerJoin(games, eq(games.id, userFavoriteGames.gameId))
     .where(eq(userFavoriteGames.appUserId, appUserId));
-  return rows.map((r) => ({ gameId: r.gameId, gameDate: r.gameDate ?? '' }));
+   return rows.map((r: { gameId: number; gameDate: string | null }) => ({ gameId: r.gameId, gameDate: r.gameDate ?? '' }));
 }
-
 export async function getFavoriteGameIds(appUserId: number): Promise<number[]> {
   const db = await getDb();
   if (!db) return [];
@@ -797,7 +812,7 @@ export async function getFavoriteGameIds(appUserId: number): Promise<number[]> {
     .select({ gameId: userFavoriteGames.gameId })
     .from(userFavoriteGames)
     .where(eq(userFavoriteGames.appUserId, appUserId));
-  return rows.map((r) => r.gameId);
+  return rows.map((r: { gameId: number }) => r.gameId);
 }
 
 export async function toggleFavoriteGame(

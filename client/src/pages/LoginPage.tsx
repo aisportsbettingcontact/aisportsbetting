@@ -13,6 +13,15 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
 
+  // Auth loading timeout — if auth check takes > 4s, show the login page anyway
+  // Prevents the infinite black spinner on slow connections or dead server instances
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+  useEffect(() => {
+    if (!authLoading) return;
+    const timer = setTimeout(() => setAuthTimedOut(true), 4000);
+    return () => clearTimeout(timer);
+  }, [authLoading]);
+
   // Redirect if already logged in
   useEffect(() => {
     if (!authLoading && appUser) {
@@ -40,7 +49,8 @@ export default function LoginPage() {
     loginMutation.mutate({ emailOrUsername: email.trim(), password });
   };
 
-  if (authLoading) {
+  // Show spinner only while loading AND within the 4-second timeout window
+  if (authLoading && !authTimedOut) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-6 h-6 text-primary animate-spin" />

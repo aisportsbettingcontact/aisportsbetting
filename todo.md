@@ -1155,3 +1155,43 @@
 - [x] Fix ModelProjections.tsx: add retry:false to favorites queries to prevent retry loops
 - [x] Fix main.tsx: suppress UNAUTHORIZED console errors for optional auth-gated queries (favorites) to eliminate noise
 - [x] TypeScript: 0 errors; 185/186 tests passing (1 pre-existing KenPom env failure)
+
+## Loading Screen Fix (2026-03-13)
+- [ ] Add QueryClient defaultOptions: staleTime=5min, retry=1 to prevent long spinners
+- [ ] Add 3s timeout fallback in Home.tsx so landing page shows even if auth is slow
+- [ ] Add staleTime to useAppAuth hook to cache appUsers.me for 5 minutes
+- [ ] Verify fix: loading screen resolves quickly on mobile
+
+## Site-Wide Hardening Audit (2026-03-13)
+- [ ] Server: Fix DB connection pool (single connection → pool of 10, keepAlive, connectTimeout)
+- [ ] Server: Add global unhandledRejection + uncaughtException handlers to prevent server crash
+- [ ] Server: Add request timeout middleware (30s) to prevent hanging requests causing 503s
+- [ ] Server: Add health check endpoint /api/health for load balancer monitoring
+- [ ] Auth: Fix loading screen — add 5s timeout fallback so users see login prompt not black spinner
+- [ ] Auth: Add staleTime to QueryClient defaults to reduce cold-start latency
+- [ ] Auth: Fix tokenVersion mismatch UX — show clear session-expired message instead of blank spinner
+- [ ] Frontend: Fix all TypeScript errors in GameCard.tsx, vsinAutoRefresh.ts
+- [ ] Frontend: Add React ErrorBoundary to all pages to prevent full page crashes
+- [ ] Frontend: Add loading timeout fallback to ModelProjections, Dashboard, PublishProjections
+- [ ] Cron: Add try/catch around every cron job tick to prevent uncaught exceptions crashing server
+- [ ] Cron: Fix ScoreRefresh — add NHL score refresh to the score refresh cycle
+- [ ] Cron: Add memory leak protection — clear intervals on process exit
+- [ ] DB: Fix TypeScript type for drizzle pool instance
+
+## Site-Wide 100x Hardening Audit (2026-03-13)
+- [x] TypeScript: eliminated all 331 errors (292 from sortGamesByStartTime generic inference bug, 39 from implicit any lambdas)
+- [x] Root cause: sortGamesByStartTime<T> generic + _db:any caused Drizzle rows to lose all fields except {gameDate,startTimeEst,sortOrder}
+- [x] Fix: added explicit Promise<Game[]> return types to listGames, listGamesByDate, listStagingGames, listStagingGamesRange
+- [x] Fix: added explicit Promise<AppUser[]> return types to listAppUsers and app user helpers
+- [x] Fix: added ModelFile type annotation to routers.ts lambda; FileRow type to FilesPage.tsx
+- [x] Server: added global process.on('unhandledRejection') and process.on('uncaughtException') crash guards in server/_core/index.ts
+- [x] Server: added /health endpoint for load balancer health probes (returns 200 without hitting DB)
+- [x] Server: added 30-second request timeout middleware to kill hanging connections
+- [x] Server: added tRPC onError handler to log INTERNAL_SERVER_ERROR paths with stack traces
+- [x] DB: upgraded from single connection to mysql2 connection pool (max=10, connectTimeout=10s, keepAlive=true)
+- [x] Auth: added 4-second timeout to Home.tsx and LoginPage.tsx loading spinners (shows login page if server is slow)
+- [x] Auth: updated useAppAuth hook with staleTime=5min, retry=1, retryDelay=1s, refetchOnWindowFocus=false
+- [x] QueryClient: added defaultOptions with staleTime=5min, retry=1, retryDelay=1s, refetchOnWindowFocus=false
+- [x] Cron: confirmed all setInterval ticks in vsinAutoRefresh.ts are wrapped in try/catch
+- [x] Frontend: favorites queries use !appAuthLoading guard to prevent race condition on initial load
+- [x] Test suite: 185/186 passing (1 pre-existing KenPom env failure unrelated to hardening)

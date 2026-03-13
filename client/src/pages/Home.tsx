@@ -29,6 +29,15 @@ export default function Home() {
   const [, setLocation] = useLocation();
   const { appUser, loading: authLoading, refetch } = useAppAuth();
 
+  // Auth loading timeout — if auth check takes > 4s, show the login page anyway
+  // This prevents the infinite black spinner on slow connections or dead server instances
+  const [authTimedOut, setAuthTimedOut] = useState(false);
+  useEffect(() => {
+    if (!authLoading) return;
+    const timer = setTimeout(() => setAuthTimedOut(true), 4000);
+    return () => clearTimeout(timer);
+  }, [authLoading]);
+
   // Login form state
   const [showLoginPanel, setShowLoginPanel] = useState(false);
   const [credential, setCredential] = useState("");
@@ -80,7 +89,8 @@ export default function Home() {
     });
   };
 
-  if (authLoading) {
+  // Show spinner only while loading AND within the 4-second timeout window
+  if (authLoading && !authTimedOut) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
         <Loader2 className="w-6 h-6 text-primary animate-spin" />
