@@ -1216,3 +1216,8 @@
 - [x] Update GameCard BOOK view: show spread odds in parentheses e.g. +4.5 (-105) for all sports
 - [x] Update GameCard BOOK view: show O/U odds in parentheses e.g. o233.5 (-113) for all sports
 - [ ] Write vitest tests for MetaBet scraper decimal-to-American conversion
+
+## MetaBet DraftKings → Consensus Fallback
+- [x] Update metabetScraper: fetch both DraftKings and consensus providers per game
+- [x] Apply DK first, fall back to consensus per-market (spread, O/U, ML) when DK value is null
+- [x] Verify North Texas @ Tulsa resolves correctly with consensus fallback

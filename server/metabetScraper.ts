@@ -16,10 +16,14 @@
  *   HKN  = NHL
  *
  * Provider strategy:
- *   All leagues use DRAFTKINGS for spread, O/U, and ML odds.
- *   DraftKings is 100% coverage for today's games across all three leagues
- *   and always uses standard puck lines (±1.5) for NHL.
- *   If DRAFTKINGS is unavailable for a game, all odds fields are null.
+ *   Primary:  DRAFTKINGS — used for all leagues.
+ *             Always uses standard puck lines (±1.5) for NHL.
+ *   Fallback: CONSENSUS — used per-market when DraftKings has a null value
+ *             for that specific field (spread, spreadLine1/2, overUnder,
+ *             overUnderLineOver/Under, moneyLine1/2).
+ *
+ * This means every game that has ANY provider data will have full coverage.
+ * A game is only skipped entirely if it has no provider entries at all.
  *
  * The API returns odds in European decimal format.  This module converts
  * them to American format (e.g. 1.7299 → "-137", 2.14 → "+114").
@@ -50,14 +54,14 @@ export interface MetabetConsensusOdds {
   homeInitials: string;
   /**
    * Away team puck/spread line rounded to nearest 0.5, e.g. -1.5 or +4.5.
-   * null if no DraftKings data available.
+   * null if no data available from either DK or consensus.
    */
   awaySpread: number | null;
   /** Home team puck/spread line (mirror of awaySpread), e.g. +1.5 or -4.5 */
   homeSpread: number | null;
   /**
    * Away team spread/puck-line juice in American format, e.g. "-225" or "+185".
-   * null if not available.
+   * null if not available from either DK or consensus.
    */
   awaySpreadOdds: string | null;
   /** Home team spread/puck-line juice in American format */
@@ -77,6 +81,12 @@ export interface MetabetConsensusOdds {
   homeML: string | null;
   /** Unix timestamp (ms) of the game start time */
   gameTimestamp: number;
+  /** Which provider was used for spread (for logging/debugging) */
+  spreadSource: "DRAFTKINGS" | "CONSENSUS" | null;
+  /** Which provider was used for O/U (for logging/debugging) */
+  ouSource: "DRAFTKINGS" | "CONSENSUS" | null;
+  /** Which provider was used for ML (for logging/debugging) */
+  mlSource: "DRAFTKINGS" | "CONSENSUS" | null;
 }
 
 // ─── Raw API types ────────────────────────────────────────────────────────────
@@ -144,31 +154,38 @@ const METABET_API_KEY = "219f64094f67ed781035f5f7a08840fc";
 const METABET_BASE =
   "https://metabet.static.api.areyouwatchingthis.com/api/odds.json";
 
-/** The single provider used for all leagues */
-const ODDS_PROVIDER = "DRAFTKINGS";
+const PRIMARY_PROVIDER = "DRAFTKINGS";
+const FALLBACK_PROVIDER = "CONSENSUS";
+
+const HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  Referer: "https://vsin.com/",
+  Origin: "https://vsin.com",
+};
 
 /**
- * Fetches DraftKings odds from the MetaBet API for a given league.
+ * Fetches DraftKings odds (with consensus fallback per market) from the
+ * MetaBet API for a given league.
+ *
+ * Per-market fallback logic:
+ *   - Each of the three markets (spread, O/U, ML) is resolved independently.
+ *   - DraftKings is used first for each market.
+ *   - If DraftKings has null for a specific market field, consensus is used
+ *     for that market only.
+ *   - A game is included as long as it has at least one provider entry.
  *
  * @param leagueCode - "BKC" (NCAAB), "BKP" (NBA), or "HKN" (NHL)
- * @returns Array of MetabetConsensusOdds, one per game that has a DRAFTKINGS entry.
- *          Games without DraftKings odds are skipped.
+ * @returns Array of MetabetConsensusOdds, one per game.
  */
 export async function fetchMetabetConsensusOdds(
   leagueCode: MetabetLeagueCode
 ): Promise<MetabetConsensusOdds[]> {
   const url = `${METABET_BASE}?apiKey=${METABET_API_KEY}&includeDonBestData&leagueCode=${leagueCode}`;
 
-  console.log(`[MetaBet] Fetching ${leagueCode} DraftKings odds from MetaBet API...`);
+  console.log(`[MetaBet] Fetching ${leagueCode} odds (DK primary, consensus fallback)...`);
 
-  const resp = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      Referer: "https://vsin.com/",
-      Origin: "https://vsin.com",
-    },
-  });
+  const resp = await fetch(url, { headers: HEADERS });
 
   if (!resp.ok) {
     throw new Error(
@@ -185,17 +202,82 @@ export async function fetchMetabetConsensusOdds(
   }
 
   const results: MetabetConsensusOdds[] = [];
+  let fallbackCount = 0;
 
   for (const game of data.results) {
-    const dk = game.odds?.find((o) => o.provider === ODDS_PROVIDER);
-    // Skip games with no DraftKings entry
-    if (!dk) continue;
+    const dk = game.odds?.find((o) => o.provider === PRIMARY_PROVIDER);
+    const consensus = game.odds?.find((o) => o.provider === FALLBACK_PROVIDER);
 
-    const rawSpread = dk.spread;
-    const awaySpread = roundToHalf(rawSpread);
-    const homeSpread = awaySpread !== null && rawSpread != null
-      ? roundToHalf(-rawSpread)
+    // Skip games with no provider data at all
+    if (!dk && !consensus) continue;
+
+    // ── Spread market ──────────────────────────────────────────────────────
+    // Use DK spread if available; fall back to consensus spread per-field.
+    const spreadSource: "DRAFTKINGS" | "CONSENSUS" | null =
+      dk?.spread != null ? "DRAFTKINGS"
+      : consensus?.spread != null ? "CONSENSUS"
       : null;
+
+    const rawSpread =
+      dk?.spread != null ? dk.spread
+      : consensus?.spread ?? null;
+
+    const awaySpread = roundToHalf(rawSpread);
+    const homeSpread = rawSpread != null ? roundToHalf(-rawSpread) : null;
+
+    // Spread odds: use DK if available, else consensus
+    const spreadOddsSource = spreadSource; // same source for odds as for line
+    const rawSpreadLine1 =
+      dk?.spreadLine1 != null ? dk.spreadLine1
+      : consensus?.spreadLine1 ?? null;
+    const rawSpreadLine2 =
+      dk?.spreadLine2 != null ? dk.spreadLine2
+      : consensus?.spreadLine2 ?? null;
+
+    // ── O/U market ─────────────────────────────────────────────────────────
+    const ouSource: "DRAFTKINGS" | "CONSENSUS" | null =
+      dk?.overUnder != null ? "DRAFTKINGS"
+      : consensus?.overUnder != null ? "CONSENSUS"
+      : null;
+
+    const rawOU =
+      dk?.overUnder != null ? dk.overUnder
+      : consensus?.overUnder ?? null;
+    const rawOUOver =
+      dk?.overUnderLineOver != null ? dk.overUnderLineOver
+      : consensus?.overUnderLineOver ?? null;
+    const rawOUUnder =
+      dk?.overUnderLineUnder != null ? dk.overUnderLineUnder
+      : consensus?.overUnderLineUnder ?? null;
+
+    // ── ML market ──────────────────────────────────────────────────────────
+    const mlSource: "DRAFTKINGS" | "CONSENSUS" | null =
+      dk?.moneyLine1 != null ? "DRAFTKINGS"
+      : consensus?.moneyLine1 != null ? "CONSENSUS"
+      : null;
+
+    const rawML1 =
+      dk?.moneyLine1 != null ? dk.moneyLine1
+      : consensus?.moneyLine1 ?? null;
+    const rawML2 =
+      dk?.moneyLine2 != null ? dk.moneyLine2
+      : consensus?.moneyLine2 ?? null;
+
+    // ── Fallback logging ───────────────────────────────────────────────────
+    const usedFallback =
+      spreadSource === "CONSENSUS" ||
+      ouSource === "CONSENSUS" ||
+      mlSource === "CONSENSUS";
+
+    if (usedFallback) {
+      fallbackCount++;
+      const awayName = game.team1Name ?? game.team1Nickname ?? game.team1Initials;
+      const homeName = game.team2Name ?? game.team2Nickname ?? game.team2Initials;
+      console.log(
+        `[MetaBet] ${leagueCode} FALLBACK → ${awayName} @ ${homeName} ` +
+        `(spread:${spreadSource ?? "null"} ou:${ouSource ?? "null"} ml:${mlSource ?? "null"})`
+      );
+    }
 
     // NCAAB uses team1Nickname; NBA/NHL use team1Name
     const awayName = game.team1Name ?? game.team1Nickname ?? "";
@@ -211,20 +293,23 @@ export async function fetchMetabetConsensusOdds(
       homeInitials: game.team2Initials ?? "",
       awaySpread,
       homeSpread,
-      awaySpreadOdds: decimalToAmerican(dk.spreadLine1),
-      homeSpreadOdds: decimalToAmerican(dk.spreadLine2),
-      total: roundToHalf(dk.overUnder),
-      overOdds: decimalToAmerican(dk.overUnderLineOver),
-      underOdds: decimalToAmerican(dk.overUnderLineUnder),
-      awayML: decimalToAmerican(dk.moneyLine1),
-      homeML: decimalToAmerican(dk.moneyLine2),
+      awaySpreadOdds: decimalToAmerican(rawSpreadLine1),
+      homeSpreadOdds: decimalToAmerican(rawSpreadLine2),
+      total: roundToHalf(rawOU),
+      overOdds: decimalToAmerican(rawOUOver),
+      underOdds: decimalToAmerican(rawOUUnder),
+      awayML: decimalToAmerican(rawML1),
+      homeML: decimalToAmerican(rawML2),
       gameTimestamp: game.date,
+      spreadSource: spreadSource ?? null,
+      ouSource: ouSource ?? null,
+      mlSource: mlSource ?? null,
     });
   }
 
   console.log(
-    `[MetaBet] ${leagueCode}: ${results.length} games with DraftKings odds ` +
-      `(${data.results.length} total from API)`
+    `[MetaBet] ${leagueCode}: ${results.length} games processed ` +
+    `(${data.results.length} total from API, ${fallbackCount} used consensus fallback)`
   );
 
   return results;
