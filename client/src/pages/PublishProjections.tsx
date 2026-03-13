@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
+import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
 import { BettingSplitsPanel } from "@/components/BettingSplitsPanel";
 
 // ─── Helpers (mirrors GameCard exactly) ──────────────────────────────────────
@@ -666,13 +667,15 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba  = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba  = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
-  // For NBA: show city on line 1, nickname on line 2 (mirrors NCAAM school/nickname layout)
-  const awayName     = awayNcaa?.ncaaName ?? awayNba?.city ?? formatTeamName(game.awayTeam);
-  const homeName     = homeNcaa?.ncaaName ?? homeNba?.city ?? formatTeamName(game.homeTeam);
-  const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? undefined;
-  const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? undefined;
-  const awayLogoUrl  = awayNcaa?.logoUrl ?? awayNba?.logoUrl ?? undefined;
-  const homeLogoUrl  = homeNcaa?.logoUrl ?? homeNba?.logoUrl ?? undefined;
+  const awayNhl  = (!awayNcaa && !awayNba) ? NHL_BY_DB_SLUG.get(game.awayTeam) ?? null : null;
+  const homeNhl  = (!homeNcaa && !homeNba) ? NHL_BY_DB_SLUG.get(game.homeTeam) ?? null : null;
+  // For NBA/NHL: show city on line 1, nickname on line 2 (mirrors NCAAM school/nickname layout)
+  const awayName     = awayNcaa?.ncaaName ?? awayNba?.city ?? awayNhl?.city ?? formatTeamName(game.awayTeam);
+  const homeName     = homeNcaa?.ncaaName ?? homeNba?.city ?? homeNhl?.city ?? formatTeamName(game.homeTeam);
+  const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? awayNhl?.nickname ?? undefined;
+  const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? homeNhl?.nickname ?? undefined;
+  const awayLogoUrl  = awayNcaa?.logoUrl ?? awayNba?.logoUrl ?? awayNhl?.logoUrl ?? undefined;
+  const homeLogoUrl  = homeNcaa?.logoUrl ?? homeNba?.logoUrl ?? homeNhl?.logoUrl ?? undefined;
   const time      = formatMilitaryTime(game.startTimeEst);
   // Midnight ET games (startTimeEst = "00:00") are stored under the actual play date (e.g. Mar 5)
   // but the ET clock has rolled over to the next day (e.g. Fri, Mar 6 · 12:00 AM ET).

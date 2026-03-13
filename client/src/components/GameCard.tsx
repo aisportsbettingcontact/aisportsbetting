@@ -27,6 +27,7 @@ import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/lib/trpc";
 import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
+import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
@@ -1369,19 +1370,21 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
     ? Math.round(Math.abs(modelTotal - bookTotal) * 10) / 10
     : toNum(game.totalDiff);
 
-  // Resolve team info from NCAA or NBA registry
+  // Resolve team info from NCAA, NBA, or NHL registry
   const awayNcaa = getTeamByDbSlug(game.awayTeam);
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba  = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba  = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
+  const awayNhl  = (!awayNcaa && !awayNba) ? NHL_BY_DB_SLUG.get(game.awayTeam) ?? null : null;
+  const homeNhl  = (!homeNcaa && !homeNba) ? NHL_BY_DB_SLUG.get(game.homeTeam) ?? null : null;
   // Normalize city abbreviations: "LA" → "Los Angeles" (defensive, DB should already have full name)
   const normCity = (c: string | undefined) => c === 'LA' ? 'Los Angeles' : c;
-  const awayName = awayNcaa?.ncaaName ?? normCity(awayNba?.city) ?? game.awayTeam.replace(/_/g, " ");
-  const homeName = homeNcaa?.ncaaName ?? normCity(homeNba?.city) ?? game.homeTeam.replace(/_/g, " ");
-  const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? "";
-  const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? "";
-  const awayLogoUrl = awayNcaa?.logoUrl ?? awayNba?.logoUrl;
-  const homeLogoUrl = homeNcaa?.logoUrl ?? homeNba?.logoUrl;
+  const awayName = awayNcaa?.ncaaName ?? normCity(awayNba?.city) ?? awayNhl?.city ?? game.awayTeam.replace(/_/g, " ");
+  const homeName = homeNcaa?.ncaaName ?? normCity(homeNba?.city) ?? homeNhl?.city ?? game.homeTeam.replace(/_/g, " ");
+  const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? awayNhl?.nickname ?? "";
+  const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? homeNhl?.nickname ?? "";
+  const awayLogoUrl = awayNcaa?.logoUrl ?? awayNba?.logoUrl ?? awayNhl?.logoUrl;
+  const homeLogoUrl = homeNcaa?.logoUrl ?? homeNba?.logoUrl ?? homeNhl?.logoUrl;
 
   const time = formatMilitaryTime(game.startTimeEst);
   const displayDate = (() => {

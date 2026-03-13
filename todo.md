@@ -1128,3 +1128,15 @@
 - [x] Add NHL Refresh Stats section to Publish Projections stats bar
 - [x] Fix fetchNhlLiveScores() to use DST-aware ET date calculation (was hardcoded -5h, now uses Intl.DateTimeFormat)
 - [x] Live end-to-end validation: 13/13 HTML parse checks passed, 11/11 slug checks passed, 14/14 DB games verified
+
+## NHL Full-Stack Display Audit (2026-03-13)
+- [x] DB audit: 14/14 today's games with complete odds/splits/scores; 42 future schedule-only stubs (expected, no VSiN lines yet)
+- [x] GameCard.tsx: add NHL_BY_DB_SLUG import and NHL team lookup (city, nickname, logoUrl)
+- [x] PublishProjections.tsx: add NHL_BY_DB_SLUG import and NHL team lookup in EditableGameCard
+- [x] Dashboard.tsx: add NHL sport tab button (blue #4FC3F7 style), NHL_BY_DB_SLUG import
+- [x] Dashboard.tsx: fix SearchResultRow to use NHL city/nickname for NHL teams
+- [x] Dashboard.tsx: fix TeamBadge to use NHL logo for NHL teams
+- [x] Dashboard.tsx: fix sport label to show 'NHL HOCKEY' when NHL tab active
+- [x] routers.ts: confirmed isValidGame() handles sport='NHL' via NHL_VALID_DB_SLUGS
+- [x] TypeScript: 0 errors after all changes
+- [x] Test suite: 185/186 passing (1 pre-existing KenPom credentials failure)

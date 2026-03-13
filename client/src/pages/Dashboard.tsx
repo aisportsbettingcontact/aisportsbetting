@@ -9,6 +9,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
+import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -54,8 +55,9 @@ function formatDateShort(dateStr: string): string {
 function TeamBadge({ slug, size = 22 }: { slug: string; size?: number }) {
   const ncaa = getTeamByDbSlug(slug);
   const nba = !ncaa ? getNbaTeamByDbSlug(slug) : null;
-  const logo = ncaa?.logoUrl ?? nba?.logoUrl;
-  const initials = (ncaa?.ncaaName ?? nba?.name ?? slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
+  const nhl = (!ncaa && !nba) ? NHL_BY_DB_SLUG.get(slug) ?? null : null;
+  const logo = ncaa?.logoUrl ?? nba?.logoUrl ?? nhl?.logoUrl;
+  const initials = (ncaa?.ncaaName ?? nba?.name ?? nhl?.name ?? slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
   return (
     <div
       className="rounded overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0"
@@ -78,11 +80,13 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
   const homeNba = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
-  // For NBA: show city on line 1, nickname on line 2
-  const awaySchool = awayNcaa?.ncaaName ?? awayNba?.city ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const awayNick = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? "";
-  const homeSchool = homeNcaa?.ncaaName ?? homeNba?.city ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const homeNick = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? "";
+  const awayNhl = (!awayNcaa && !awayNba) ? NHL_BY_DB_SLUG.get(game.awayTeam) ?? null : null;
+  const homeNhl = (!homeNcaa && !homeNba) ? NHL_BY_DB_SLUG.get(game.homeTeam) ?? null : null;
+  // For NBA/NHL: show city on line 1, nickname on line 2
+  const awaySchool = awayNcaa?.ncaaName ?? awayNba?.city ?? awayNhl?.city ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const awayNick = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? awayNhl?.nickname ?? "";
+  const homeSchool = homeNcaa?.ncaaName ?? homeNba?.city ?? homeNhl?.city ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const homeNick = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? homeNhl?.nickname ?? "";
   const time = formatMilitaryTime(game.startTimeEst);
   const dateShort = formatDateShort(game.gameDate);
 
@@ -130,7 +134,7 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA">("NCAAM");
+  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NCAAM");
   // Multi-select status filter: empty Set = ALL
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
@@ -525,6 +529,24 @@ export default function Dashboard() {
             />
             NBA
           </button>
+          {/* NHL button */}
+          <button
+            onClick={() => setSelectedSport("NHL")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+            style={selectedSport === "NHL"
+              ? { background: "rgba(0,100,200,0.18)", color: "#4FC3F7", border: "1px solid rgba(0,100,200,0.5)" }
+              : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
+            }
+          >
+            <img
+              src="https://assets.nhle.com/logos/nhl/svg/NHL_light.svg"
+              alt="NHL"
+              width={16}
+              height={16}
+              style={{ opacity: selectedSport === "NHL" ? 1 : 0.5 }}
+            />
+            NHL
+          </button>
           {/* Splits timestamp — pushed to the right */}
           <div className="ml-auto flex items-center gap-1.5">
             <Clock style={{ width: 11, height: 11, flexShrink: 0, color: "#39FF14" }} />
@@ -691,7 +713,7 @@ export default function Dashboard() {
                   <span
                     className="font-semibold"
                     style={{ color: '#a3a3a3', letterSpacing: '0.06em', fontSize: 'clamp(9px, 2.8vw, 17px)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
-                  >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : 'NBA BASKETBALL'}</span>
+                  >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : selectedSport === 'NBA' ? 'NBA BASKETBALL' : 'NHL HOCKEY'}</span>
                 </div>
                 <div className="flex-1" />
               </div>
