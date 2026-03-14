@@ -1255,3 +1255,13 @@
 - [ ] Integrate Action Network scraper into vsinAutoRefresh replacing MetaBet
 - [ ] Backfill today's games (March 13) with Action Network odds
 - [ ] Verify all leagues display correctly on feed (mobile + desktop)
+- [x] Replace MetaBet with Action Network v1 API for all DK odds (spread, O/U, ML, juice) for NCAAM, NBA, NHL
+- [x] Add anSlug field to all 365 NCAAM, 30 NBA, and 32 NHL team registries
+- [x] Add BY_AN_SLUG lookup maps and getTeamByAnSlug helpers to all three team registries
+- [x] Build actionNetworkScraper.ts using AN v1 API for DK odds (spread, total, ML, awaySpreadOdds, homeSpreadOdds, overOdds, underOdds)
+- [x] Build vsinBettingSplitsScraper.ts using data.vsin.com/betting-splits/ for splits only (today + tomorrow)
+- [x] Rebuild vsinAutoRefresh.ts to use Action Network for odds and new VSiN scraper for splits
+- [x] Add tomorrow's VSiN splits pre-population (runTomorrowSplitsUpdate) in main refresh orchestrator
+- [x] Fix NHL live clock: rewrite fetchNhlLiveScores to use /v1/scoreboard/now for period/clock/intermission data
+- [x] Add NHL intermission support to frontend clock formatter (1ST INT, 2ND INT, OT INT, Final/OT, Final/SO)
+- [x] Confirm DK juice (awaySpreadOdds, homeSpreadOdds, overOdds, underOdds) populated in DB and displayed on Feed

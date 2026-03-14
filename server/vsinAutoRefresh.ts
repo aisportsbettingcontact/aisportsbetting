@@ -236,6 +236,99 @@ async function runActionNetworkOddsUpdate(
   }
 }
 
+// ─── Tomorrow's VSiN splits pre-population ──────────────────────────────────
+
+/**
+ * Fetches tomorrow's VSiN betting splits and applies them to tomorrow's games.
+ * This pre-populates splits for games that already exist in the DB for tomorrow.
+ * Non-fatal — errors are caught and logged.
+ */
+async function runTomorrowSplitsUpdate(tomorrowStr: string): Promise<void> {
+  try {
+    const allSplits = await scrapeVsinBettingSplits("tomorrow");
+    console.log(`[VSiNAutoRefresh][Tomorrow] ${allSplits.length} total splits games`);
+
+    // Process NCAAM (CBB)
+    const cbbSplits = allSplits.filter(g => g.sport === "CBB");
+    if (cbbSplits.length > 0) {
+      const existingNcaam = await listGamesByDate(tomorrowStr, "NCAAM");
+      let updated = 0;
+      for (const g of cbbSplits) {
+        const awayTeam = BY_VSIN_SLUG.get(g.awayVsinSlug) ?? BY_VSIN_SLUG.get(g.awayVsinSlug.replace(/-/g, '_'));
+        const homeTeam = BY_VSIN_SLUG.get(g.homeVsinSlug) ?? BY_VSIN_SLUG.get(g.homeVsinSlug.replace(/-/g, '_'));
+        if (!awayTeam || !homeTeam) continue;
+        const dbGame = existingNcaam.find(e => e.awayTeam === awayTeam.dbSlug && e.homeTeam === homeTeam.dbSlug);
+        if (!dbGame) continue;
+        await updateBookOdds(dbGame.id, {
+          spreadAwayBetsPct: g.spreadAwayBetsPct,
+          spreadAwayMoneyPct: g.spreadAwayMoneyPct,
+          totalOverBetsPct: g.totalOverBetsPct,
+          totalOverMoneyPct: g.totalOverMoneyPct,
+          mlAwayBetsPct: g.mlAwayBetsPct,
+          mlAwayMoneyPct: g.mlAwayMoneyPct,
+        });
+        updated++;
+      }
+      console.log(`[VSiNAutoRefresh][Tomorrow][NCAAM] ${updated} games updated with tomorrow's splits`);
+    }
+
+    // Process NBA
+    const nbaSplits = allSplits.filter(g => g.sport === "NBA");
+    if (nbaSplits.length > 0) {
+      const existingNba = await listGamesByDate(tomorrowStr, "NBA");
+      let updated = 0;
+      for (const g of nbaSplits) {
+        const awayTeam = NBA_BY_VSIN_SLUG.get(g.awayVsinSlug);
+        const homeTeam = NBA_BY_VSIN_SLUG.get(g.homeVsinSlug);
+        if (!awayTeam || !homeTeam) continue;
+        const dbGame = existingNba.find(e => e.awayTeam === awayTeam.dbSlug && e.homeTeam === homeTeam.dbSlug);
+        if (!dbGame) continue;
+        await updateBookOdds(dbGame.id, {
+          spreadAwayBetsPct: g.spreadAwayBetsPct,
+          spreadAwayMoneyPct: g.spreadAwayMoneyPct,
+          totalOverBetsPct: g.totalOverBetsPct,
+          totalOverMoneyPct: g.totalOverMoneyPct,
+          mlAwayBetsPct: g.mlAwayBetsPct,
+          mlAwayMoneyPct: g.mlAwayMoneyPct,
+        });
+        updated++;
+      }
+      console.log(`[VSiNAutoRefresh][Tomorrow][NBA] ${updated} games updated with tomorrow's splits`);
+    }
+
+    // Process NHL
+    const nhlSplits = allSplits.filter(g => g.sport === "NHL");
+    if (nhlSplits.length > 0) {
+      const existingNhl = await listGamesByDate(tomorrowStr, "NHL");
+      let updated = 0;
+      for (const g of nhlSplits) {
+        const awayTeam = NHL_BY_VSIN_SLUG.get(g.awayVsinSlug);
+        const homeTeam = NHL_BY_VSIN_SLUG.get(g.homeVsinSlug);
+        if (!awayTeam || !homeTeam) continue;
+        const dbGame = existingNhl.find(e => e.awayTeam === awayTeam.dbSlug && e.homeTeam === homeTeam.dbSlug);
+        if (!dbGame) continue;
+        await updateBookOdds(dbGame.id, {
+          spreadAwayBetsPct: g.spreadAwayBetsPct,
+          spreadAwayMoneyPct: g.spreadAwayMoneyPct,
+          totalOverBetsPct: g.totalOverBetsPct,
+          totalOverMoneyPct: g.totalOverMoneyPct,
+          mlAwayBetsPct: g.mlAwayBetsPct,
+          mlAwayMoneyPct: g.mlAwayMoneyPct,
+        });
+        updated++;
+      }
+      console.log(`[VSiNAutoRefresh][Tomorrow][NHL] ${updated} games updated with tomorrow's splits`);
+    }
+
+    // Also apply AN odds for tomorrow
+    await runActionNetworkOddsUpdate("NCAAM", "ncaab", tomorrowStr);
+    await runActionNetworkOddsUpdate("NBA", "nba", tomorrowStr);
+    await runActionNetworkOddsUpdate("NHL", "nhl", tomorrowStr);
+  } catch (err) {
+    console.warn("[VSiNAutoRefresh][Tomorrow] Tomorrow splits update failed (non-fatal):", err);
+  }
+}
+
 /// ─── NCAAM refresh ────────────────────────────────────────────
 
 async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
@@ -718,6 +811,11 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
     await runActionNetworkOddsUpdate("NCAAM", "ncaab", todayStr);
     await runActionNetworkOddsUpdate("NBA", "nba", todayStr);
     await runActionNetworkOddsUpdate("NHL", "nhl", todayStr);
+
+    // Pre-populate tomorrow's splits and odds (non-fatal)
+    const tomorrowStr = datePst(1);
+    await runTomorrowSplitsUpdate(tomorrowStr);
+
     const result: RefreshResult = {
       refreshedAt: new Date().toISOString(),
       scoresRefreshedAt: lastScoresRefreshedAt,

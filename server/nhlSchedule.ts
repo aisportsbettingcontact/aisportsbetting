@@ -360,19 +360,80 @@ export function invalidateNhlScheduleCache(): void {
 }
 
 /**
- * Fetches today's NHL live scores from the schedule API.
- * Returns all games for today with current scores and state.
+ * Parses NHL clock/period data into a human-readable game clock string.
+ *
+ * Examples:
+ *   period=1, inIntermission=false, timeRemaining="14:32" → "14:32 1P"
+ *   period=2, inIntermission=true                          → "2ND INT"
+ *   period=3, inIntermission=false, timeRemaining="00:00" → "END 3P"
+ *   period=4, periodType="OT"                             → "OT"
+ *   period=5, periodType="SO"                             → "SO"
+ */
+function parseNhlGameClock(
+  period: number,
+  timeRemaining: string | null,
+  inIntermission: boolean,
+  periodType: string
+): string {
+  // Shootout
+  if (periodType === "SO") return "SO";
+
+  // Overtime
+  if (periodType === "OT" || period > 3) {
+    if (inIntermission) return "OT INT";
+    if (timeRemaining) {
+      const isZero = /^0?0:00$/.test(timeRemaining);
+      if (isZero) return "END OT";
+      return `${timeRemaining} OT`;
+    }
+    return "OT";
+  }
+
+  // Regular periods (1, 2, 3)
+  const periodLabel = `${period}P`;
+
+  // Intermission between periods
+  if (inIntermission) {
+    // "1ST INT" = after period 1, "2ND INT" = after period 2
+    const ordinals = ["1ST", "2ND", "3RD"];
+    const ordinal = ordinals[period - 1] ?? `${period}TH`;
+    return `${ordinal} INT`;
+  }
+
+  if (!timeRemaining) return periodLabel;
+
+  const isZero = /^0?0:00$/.test(timeRemaining);
+  if (isZero) return `END ${periodLabel}`;
+
+  return `${timeRemaining} ${periodLabel}`;
+}
+
+/**
+ * Fetches today's NHL live scores from the /v1/scoreboard/now endpoint.
+ * This endpoint provides period, clock, and intermission data for live games.
+ * Returns all games for today with current scores, state, and game clock.
  */
 export async function fetchNhlLiveScores(): Promise<NhlLiveGame[]> {
   const startTime = Date.now();
-  console.log("[NHLSchedule] Fetching live scores...");
+  console.log("[NHLSchedule] Fetching live scores from scoreboard/now...");
 
-  // Always use fresh data for live scores (bypass cache)
-  invalidateNhlScheduleCache();
-  const games = await fetchNhlScheduleForDate("now");
+  const url = "https://api-web.nhle.com/v1/scoreboard/now";
+  const resp = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      Accept: "application/json",
+      Referer: "https://www.nhl.com/",
+    },
+  });
 
-  // Get today's date in ET using DST-aware Intl.DateTimeFormat
-  // (March 8+ = EDT = UTC-4; November–March = EST = UTC-5)
+  if (!resp.ok) {
+    throw new Error(`[NHLSchedule] scoreboard/now returned HTTP ${resp.status}`);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const json = (await resp.json()) as any;
+
+  // Get today's date in ET
   const todayEt = new Date().toLocaleDateString("en-US", {
     timeZone: "America/New_York",
     year: "numeric",
@@ -380,16 +441,59 @@ export async function fetchNhlLiveScores(): Promise<NhlLiveGame[]> {
     day: "2-digit",
   }).replace(/(\d+)\/(\d+)\/(\d+)/, "$3-$1-$2"); // MM/DD/YYYY → YYYY-MM-DD
 
-  const todayGames = games.filter((g) => g.gameDateEst === todayEt);
+  const result: NhlLiveGame[] = [];
 
-  const result: NhlLiveGame[] = todayGames.map((g) => ({
-    awayDbSlug: g.awayDbSlug,
-    homeDbSlug: g.homeDbSlug,
-    awayScore: g.awayScore,
-    homeScore: g.homeScore,
-    gameState: g.gameState,
-    gameClock: g.gameState === "final" ? "Final" : null,
-  }));
+  for (const dateEntry of json?.gamesByDate ?? []) {
+    const dateStr: string = dateEntry.date ?? "";
+    if (dateStr !== todayEt) continue;
+
+    for (const g of dateEntry.games ?? []) {
+      const awayAbbrev: string = g.awayTeam?.abbrev ?? "";
+      const homeAbbrev: string = g.homeTeam?.abbrev ?? "";
+
+      const awayTeam = NHL_BY_ABBREV.get(awayAbbrev);
+      const homeTeam = NHL_BY_ABBREV.get(homeAbbrev);
+      if (!awayTeam || !homeTeam) continue;
+
+      const nhlState: string = g.gameState ?? "FUT";
+      const gameState = mapGameState(nhlState);
+
+      const awayScore: number | null =
+        gameState !== "upcoming" ? (g.awayTeam?.score ?? null) : null;
+      const homeScore: number | null =
+        gameState !== "upcoming" ? (g.homeTeam?.score ?? null) : null;
+
+      let gameClock: string | null = null;
+      if (gameState === "final") {
+        // Show period info for OT/SO finals
+        const period: number = g.period ?? 3;
+        const periodType: string = g.periodDescriptor?.periodType ?? "REG";
+        if (periodType === "SO") {
+          gameClock = "Final/SO";
+        } else if (periodType === "OT" || period > 3) {
+          gameClock = "Final/OT";
+        } else {
+          gameClock = "Final";
+        }
+      } else if (gameState === "live") {
+        const period: number = g.period ?? 1;
+        const clock = g.clock ?? {};
+        const timeRemaining: string | null = clock.timeRemaining ?? null;
+        const inIntermission: boolean = clock.inIntermission === true;
+        const periodType: string = g.periodDescriptor?.periodType ?? "REG";
+        gameClock = parseNhlGameClock(period, timeRemaining, inIntermission, periodType);
+      }
+
+      result.push({
+        awayDbSlug: awayTeam.dbSlug,
+        homeDbSlug: homeTeam.dbSlug,
+        awayScore,
+        homeScore,
+        gameState,
+        gameClock,
+      });
+    }
+  }
 
   console.log(
     `[NHLSchedule] Live scores: ${result.length} games today (${result.filter((g) => g.gameState === "live").length} live, ` +

@@ -2234,6 +2234,22 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (/^2ND\s+HALF$/i.test(s)) return '2ND HALF';
               if (/^HALFTIME$/i.test(s)) return 'HALFTIME';
 
+              // ── NHL intermission strings (server-emitted from nhlSchedule.ts) ──
+              // "1ST INT", "2ND INT" = intermission after period 1/2
+              if (/^1ST\s+INT$/i.test(s)) return '1ST INT';
+              if (/^2ND\s+INT$/i.test(s)) return '2ND INT';
+              if (/^OT\s+INT$/i.test(s)) return 'OT INT';
+              // "END 1P", "END 2P", "END 3P", "END OT" = end of period
+              if (/^END\s+(\d+P|OT)$/i.test(s)) return s.toUpperCase();
+              // "Final/OT", "Final/SO" — pass through
+              if (/^Final\/(OT|SO)$/i.test(s)) return s;
+              // "SO" = shootout
+              if (/^SO$/i.test(s)) return 'SO';
+              // "OT" = overtime
+              if (/^OT$/i.test(s)) return 'OT';
+              // NHL period labels: "1P", "2P", "3P"
+              if (/^[123]P$/i.test(s)) return s.toUpperCase();
+
               // ── Legacy / NBA / raw NCAA labels (fallback normalization) ───────
               // Raw half labels (in case old DB rows still have these)
               if (/^1st$/i.test(s)) return '1ST HALF';
@@ -2244,14 +2260,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               if (/^q?2(nd)?$/i.test(s)) return '2Q';
               if (/^q?3(rd)?$/i.test(s)) return '3Q';
               if (/^q?4(th)?$/i.test(s)) return '4Q';
-              // Period labels (hockey) → 1P/2P/3P
+              // Period labels (hockey legacy) → 1P/2P/3P
               if (/^1(st)?\s+period$/i.test(s)) return '1P';
               if (/^2(nd)?\s+period$/i.test(s)) return '2P';
               if (/^3(rd)?\s+period$/i.test(s)) return '3P';
-              if (/^ot$/i.test(s)) return 'OT';
               // MM:SS clock — pass through as-is
               if (/^\d{1,2}:\d{2}$/.test(s)) return s;
-              // Compound: "09:36 1ST HALF" or "Q3 4:15" — normalize period label then keep clock
+              // Compound: "09:36 1ST HALF" or "14:32 1P" — normalize period label then keep clock
               // Pattern: clock-first (server format) "MM:SS LABEL"
               const clockFirst = s.match(/^(\d{1,2}:\d{2})\s+(.+)$/);
               if (clockFirst) {
@@ -2261,6 +2276,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 const isZero = /^0?0:00$/.test(mm);
                 if (isZero && /half/i.test(periodLabel)) {
                   return `END ${periodLabel}`;
+                }
+                if (isZero && /^[123]P$/i.test(periodLabel)) {
+                  return `END ${periodLabel.toUpperCase()}`;
                 }
                 return `${mm} ${periodLabel}`;
               }
