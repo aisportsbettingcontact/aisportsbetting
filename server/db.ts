@@ -844,3 +844,59 @@ export async function toggleFavoriteGame(
     return { favorited: true };
   }
 }
+
+/**
+ * Update Action Network open lines and DK NJ current lines for a single game.
+ * All fields are optional — only provided fields are written.
+ */
+export async function updateAnOdds(
+  id: number,
+  data: {
+    // Open lines
+    openAwaySpread?: string | null;
+    openAwaySpreadOdds?: string | null;
+    openHomeSpread?: string | null;
+    openHomeSpreadOdds?: string | null;
+    openTotal?: string | null;
+    openOverOdds?: string | null;
+    openUnderOdds?: string | null;
+    openAwayML?: string | null;
+    openHomeML?: string | null;
+    // DK NJ current lines
+    dkAwaySpread?: string | null;
+    dkAwaySpreadOdds?: string | null;
+    dkHomeSpread?: string | null;
+    dkHomeSpreadOdds?: string | null;
+    dkTotal?: string | null;
+    dkOverOdds?: string | null;
+    dkUnderOdds?: string | null;
+    dkAwayML?: string | null;
+    dkHomeML?: string | null;
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) return;
+  const updateData: Record<string, unknown> = {};
+  // Open lines
+  if (data.openAwaySpread !== undefined) updateData.openAwaySpread = data.openAwaySpread;
+  if (data.openAwaySpreadOdds !== undefined) updateData.openAwaySpreadOdds = data.openAwaySpreadOdds;
+  if (data.openHomeSpread !== undefined) updateData.openHomeSpread = data.openHomeSpread;
+  if (data.openHomeSpreadOdds !== undefined) updateData.openHomeSpreadOdds = data.openHomeSpreadOdds;
+  if (data.openTotal !== undefined) updateData.openTotal = data.openTotal;
+  if (data.openOverOdds !== undefined) updateData.openOverOdds = data.openOverOdds;
+  if (data.openUnderOdds !== undefined) updateData.openUnderOdds = data.openUnderOdds;
+  if (data.openAwayML !== undefined) updateData.openAwayML = data.openAwayML;
+  if (data.openHomeML !== undefined) updateData.openHomeML = data.openHomeML;
+  // DK NJ current lines
+  if (data.dkAwaySpread !== undefined) updateData.dkAwaySpread = data.dkAwaySpread;
+  if (data.dkAwaySpreadOdds !== undefined) updateData.dkAwaySpreadOdds = data.dkAwaySpreadOdds;
+  if (data.dkHomeSpread !== undefined) updateData.dkHomeSpread = data.dkHomeSpread;
+  if (data.dkHomeSpreadOdds !== undefined) updateData.dkHomeSpreadOdds = data.dkHomeSpreadOdds;
+  if (data.dkTotal !== undefined) updateData.dkTotal = data.dkTotal;
+  if (data.dkOverOdds !== undefined) updateData.dkOverOdds = data.dkOverOdds;
+  if (data.dkUnderOdds !== undefined) updateData.dkUnderOdds = data.dkUnderOdds;
+  if (data.dkAwayML !== undefined) updateData.dkAwayML = data.dkAwayML;
+  if (data.dkHomeML !== undefined) updateData.dkHomeML = data.dkHomeML;
+  if (Object.keys(updateData).length === 0) return;
+  await db.update(games).set(updateData).where(eq(games.id, id));
+}

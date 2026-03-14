@@ -24,11 +24,12 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
-import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame } from "./db";
+import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate } from "./db";
 import { getLastRefreshResult, runVsinRefresh, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
 import { triggerModelWatcherForDate } from "./ncaamModelWatcher";
-import { VALID_DB_SLUGS } from "@shared/ncaamTeams";
+import { VALID_DB_SLUGS, NCAAM_TEAMS, BY_AN_SLUG as NCAAM_BY_AN_SLUG } from "@shared/ncaamTeams";
+import { parseAnAllMarketsHtml } from "./anHtmlParser";
 import { NBA_VALID_DB_SLUGS } from "@shared/nbaTeams";
 import { NHL_VALID_DB_SLUGS } from "@shared/nhlTeams";
 
@@ -316,6 +317,138 @@ export const appRouter = router({
       const result = await syncNbaModelFromSheet();
       return result;
     }),
+
+    /**
+     * Ingest Action Network "All Markets" HTML paste.
+     * Parses Open lines + DK NJ lines for all games and writes them to the DB.
+     * Owner-only.
+     */
+    ingestAnHtml: ownerProcedure
+      .input(z.object({
+        html: z.string().min(100, "HTML too short — paste the full AN best-odds table HTML"),
+        gameDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "gameDate must be YYYY-MM-DD"),
+        sport: z.enum(["NCAAM", "NBA", "NHL"]).default("NCAAM"),
+      }))
+      .mutation(async ({ input }) => {
+        const { html, gameDate, sport } = input;
+
+        // ── Parse HTML ──
+        const parseResult = parseAnAllMarketsHtml(html);
+        if (!parseResult.games.length) {
+          return { updated: 0, skipped: 0, warnings: parseResult.warnings, errors: ["No games found in HTML"] };
+        }
+
+        // ── Build URL-slug → dbSlug lookup ──
+        // The AN game URL uses shortened combined slugs (e.g. "saint-josephs-vcu").
+        // We need to split them into individual team slugs and match to dbSlug.
+        const byNormSlug = new Map<string, string>();
+        // Add hardcoded URL-slug aliases for teams whose URL slug differs from all known slugs
+        const URL_SLUG_ALIASES: Record<string, string> = {
+          "wichita-state": "wichita_st",
+          "san-diego-state": "san_diego_st",
+          "utah-state": "utah_st",
+          "prairie-view-am": "prairie_view_a_and_m",
+          "southern-university": "southern_u",
+          "kennesaw-state": "kennesaw_st",
+          "north-carolina-central": "nc_central",
+          "cal-baptist": "california_baptist",
+          "utah-valley": "utah_valley",
+          "penn": "pennsylvania",
+          "ole-miss": "mississippi",
+          "uconn": "connecticut",
+          "vcu": "va_commonwealth",
+        };
+        for (const [alias, dbSlug] of Object.entries(URL_SLUG_ALIASES)) {
+          byNormSlug.set(alias, dbSlug);
+        }
+        for (const t of NCAAM_TEAMS) {
+          byNormSlug.set(t.dbSlug.replace(/_/g, "-"), t.dbSlug);
+          byNormSlug.set(t.ncaaSlug, t.dbSlug);
+          byNormSlug.set(t.vsinSlug, t.dbSlug);
+          byNormSlug.set(t.anSlug, t.dbSlug);
+        }
+
+        function splitCombinedSlug(combined: string): [string, string] | null {
+          const parts = combined.split("-");
+          for (let i = 1; i < parts.length; i++) {
+            const awayPart = parts.slice(0, i).join("-");
+            const homePart = parts.slice(i).join("-");
+            if (byNormSlug.has(awayPart) && byNormSlug.has(homePart)) {
+              return [byNormSlug.get(awayPart)!, byNormSlug.get(homePart)!];
+            }
+          }
+          return null;
+        }
+
+        // ── Load existing DB games for the date ──
+        const existingGames = await listGamesByDate(gameDate, sport);
+
+        let updated = 0;
+        let skipped = 0;
+        const errors: string[] = [];
+
+        for (const g of parseResult.games) {
+          // Extract combined slug from game URL
+          const urlParts = g.gameUrl.split("/");
+          const gamePart = urlParts[2] || "";
+          const combined = gamePart.replace(/-score-odds-.*$/, "");
+          const slugMatch = splitCombinedSlug(combined);
+
+          if (!slugMatch) {
+            const msg = `NO_SLUG: cannot split "${combined}" (game ${g.anGameId}: ${g.awayName} @ ${g.homeName})`;
+            errors.push(msg);
+            console.warn(`[ingestAnHtml] ${msg}`);
+            skipped++;
+            continue;
+          }
+
+          const [awayDbSlug, homeDbSlug] = slugMatch;
+          const dbGame = existingGames.find(
+            (e) => e.awayTeam === awayDbSlug && e.homeTeam === homeDbSlug
+          );
+
+          if (!dbGame) {
+            const msg = `NO_MATCH: ${awayDbSlug} @ ${homeDbSlug} on ${gameDate} (game ${g.anGameId})`;
+            errors.push(msg);
+            console.warn(`[ingestAnHtml] ${msg}`);
+            skipped++;
+            continue;
+          }
+
+          await updateAnOdds(dbGame.id, {
+            // Open lines
+            openAwaySpread: g.openAwaySpread?.line ?? null,
+            openAwaySpreadOdds: g.openAwaySpread?.juice ?? null,
+            openHomeSpread: g.openHomeSpread?.line ?? null,
+            openHomeSpreadOdds: g.openHomeSpread?.juice ?? null,
+            openTotal: g.openOver?.line?.replace(/^[ou]/i, "") ?? null,
+            openOverOdds: g.openOver?.juice ?? null,
+            openUnderOdds: g.openUnder?.juice ?? null,
+            openAwayML: g.openAwayML?.line ?? null,
+            openHomeML: g.openHomeML?.line ?? null,
+            // DK NJ current lines
+            dkAwaySpread: g.dkAwaySpread?.line ?? null,
+            dkAwaySpreadOdds: g.dkAwaySpread?.juice ?? null,
+            dkHomeSpread: g.dkHomeSpread?.line ?? null,
+            dkHomeSpreadOdds: g.dkHomeSpread?.juice ?? null,
+            dkTotal: g.dkOver?.line?.replace(/^[ou]/i, "") ?? null,
+            dkOverOdds: g.dkOver?.juice ?? null,
+            dkUnderOdds: g.dkUnder?.juice ?? null,
+            dkAwayML: g.dkAwayML?.line ?? null,
+            dkHomeML: g.dkHomeML?.line ?? null,
+          });
+
+          updated++;
+          console.log(
+            `[ingestAnHtml] Updated: ${awayDbSlug} @ ${homeDbSlug} (${gameDate}) | ` +
+            `spread=${g.dkAwaySpread?.line}/${g.dkHomeSpread?.line} ` +
+            `total=${g.dkOver?.line} ml=${g.dkAwayML?.line}/${g.dkHomeML?.line}`
+          );
+        }
+
+        console.log(`[ingestAnHtml] Done: updated=${updated} skipped=${skipped} errors=${errors.length}`);
+        return { updated, skipped, warnings: parseResult.warnings, errors };
+      }),
 
     /**
      * Manually trigger an immediate VSiN + NCAA refresh.

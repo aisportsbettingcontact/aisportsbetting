@@ -146,6 +146,44 @@ export const games = mysqlTable("games", {
   overOdds: varchar("overOdds", { length: 16 }),
   /** Under odds for the O/U total, e.g. "-113" (null = not available / standard -110) */
   underOdds: varchar("underOdds", { length: 16 }),
+  // ─── Action Network Open Lines (opening odds at time of market creation) ─────
+  /** AN opening spread for the away team, e.g. "+8.5" or "-3" */
+  openAwaySpread: varchar("openAwaySpread", { length: 16 }),
+  /** AN opening spread juice for the away team, e.g. "-102" or "-110" */
+  openAwaySpreadOdds: varchar("openAwaySpreadOdds", { length: 16 }),
+  /** AN opening spread for the home team, e.g. "-8.5" or "+3" */
+  openHomeSpread: varchar("openHomeSpread", { length: 16 }),
+  /** AN opening spread juice for the home team, e.g. "-120" or "-110" */
+  openHomeSpreadOdds: varchar("openHomeSpreadOdds", { length: 16 }),
+  /** AN opening total (over line), e.g. "151.5" */
+  openTotal: varchar("openTotal", { length: 16 }),
+  /** AN opening over juice, e.g. "-110" */
+  openOverOdds: varchar("openOverOdds", { length: 16 }),
+  /** AN opening under juice, e.g. "-110" */
+  openUnderOdds: varchar("openUnderOdds", { length: 16 }),
+  /** AN opening moneyline for the away team, e.g. "+285" */
+  openAwayML: varchar("openAwayML", { length: 16 }),
+  /** AN opening moneyline for the home team, e.g. "-365" */
+  openHomeML: varchar("openHomeML", { length: 16 }),
+  // ─── DK NJ Current Lines (from Action Network best-odds table) ───────────────
+  /** DK NJ current spread for the away team, e.g. "+6.5" */
+  dkAwaySpread: varchar("dkAwaySpread", { length: 16 }),
+  /** DK NJ spread juice for the away team, e.g. "-105" */
+  dkAwaySpreadOdds: varchar("dkAwaySpreadOdds", { length: 16 }),
+  /** DK NJ current spread for the home team, e.g. "-6.5" */
+  dkHomeSpread: varchar("dkHomeSpread", { length: 16 }),
+  /** DK NJ spread juice for the home team, e.g. "-115" */
+  dkHomeSpreadOdds: varchar("dkHomeSpreadOdds", { length: 16 }),
+  /** DK NJ current total (over line), e.g. "145.5" */
+  dkTotal: varchar("dkTotal", { length: 16 }),
+  /** DK NJ over juice, e.g. "-110" */
+  dkOverOdds: varchar("dkOverOdds", { length: 16 }),
+  /** DK NJ under juice, e.g. "-115" */
+  dkUnderOdds: varchar("dkUnderOdds", { length: 16 }),
+  /** DK NJ moneyline for the away team, e.g. "+255" */
+  dkAwayML: varchar("dkAwayML", { length: 16 }),
+  /** DK NJ moneyline for the home team, e.g. "-275" */
+  dkHomeML: varchar("dkHomeML", { length: 16 }),
   /** Model fair value moneyline for the away team, e.g. "+225" or "-670" */
   modelAwayML: varchar("modelAwayML", { length: 16 }),
   /** Model fair value moneyline for the home team, e.g. "-225" or "+670" */

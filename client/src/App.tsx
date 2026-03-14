@@ -8,6 +8,7 @@ import Dashboard from "./pages/Dashboard";
 import Home from "./pages/Home";
 import UserManagement from "./pages/UserManagement";
 import PublishProjections from "./pages/PublishProjections";
+import IngestAnOdds from "./pages/IngestAnOdds";
 import ModelProjections from "./pages/ModelProjections";
 
 function Router() {
@@ -25,6 +26,7 @@ function Router() {
       <Route path="/login">{() => <Redirect to="/" />}</Route>
       <Route path="/admin/users" component={UserManagement} />
       <Route path="/admin/publish" component={PublishProjections} />
+      <Route path="/admin/ingest-an" component={IngestAnOdds} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -1265,3 +1265,16 @@
 - [x] Fix NHL live clock: rewrite fetchNhlLiveScores to use /v1/scoreboard/now for period/clock/intermission data
 - [x] Add NHL intermission support to frontend clock formatter (1ST INT, 2ND INT, OT INT, Final/OT, Final/SO)
 - [x] Confirm DK juice (awaySpreadOdds, homeSpreadOdds, overOdds, underOdds) populated in DB and displayed on Feed
+- [ ] Switch AN scraper from v1 API to v2 API to get all 34 NCAAB games with DK odds and opening lines
+- [ ] Fix New Mexico vs San Diego St. gameDate (should be 2026-03-14, not 2026-03-13) and TBD start time
+- [ ] Add Utah Hockey Club to NHL registry (missing anSlug causing NO_SLUG in logs)
+## Action Network HTML Parser Integration (March 14, 2026)
+- [x] Build anHtmlParser.ts: parse AN best-odds HTML table to extract DK spread odds for all NCAAB games
+- [x] Build tRPC procedure: games.ingestAnHtml (owner-only) to accept spread HTML + totals HTML and apply DK odds to DB
+- [x] Add UI panel in PublishProjections for pasting AN HTML (spread + totals pages)
+- [x] Add vitest tests for anHtmlParser
+- [x] Upgrade to All Markets mode (3 rows per game: spread + total + ML)
+- [x] Add 18 new DB schema columns: openAwaySpread, openHomeSpread, openTotal, openOverOdds, openUnderOdds, openAwayML, openHomeML, openAwaySpreadOdds, openHomeSpreadOdds + DK NJ equivalents
+- [x] Build IngestAnOdds page at /admin/ingest-an with paste area, date/sport controls, result display
+- [x] 21/21 NCAAB games matched and parsed correctly with 0 failures
+- [x] 6 vitest tests passing for anHtmlParser
