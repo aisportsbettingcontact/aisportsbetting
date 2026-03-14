@@ -16,17 +16,15 @@
  */
 
 import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime } from "./db";
-import { scrapeVsinOdds } from "./vsinScraper";
-import { scrapeNbaVsinOdds } from "./nbaVsinScraper";
-import { scrapeNhlVsinOdds, type NhlScrapedOdds } from "./nhlVsinScraper";
+import { scrapeVsinBettingSplits, type VsinSplitsGame } from "./vsinBettingSplitsScraper";
+import { fetchActionNetworkOdds, type AnGameOdds } from "./actionNetworkScraper";
 import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
 import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "./nbaScoreboard";
 import { fetchNhlGamesForRange, buildNhlStartTimeMap, buildNhlGameMap, fetchNhlLiveScores, type NhlScheduleGame } from "./nhlSchedule";
-import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG as NCAAM_BY_VSIN } from "../shared/ncaamTeams";
-import { NBA_VALID_DB_SLUGS } from "../shared/nbaTeams";
-import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG } from "../shared/nhlTeams";
+import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG, BY_AN_SLUG as NCAAM_BY_AN } from "../shared/ncaamTeams";
+import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG } from "../shared/nbaTeams";
+import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG } from "../shared/nhlTeams";
 import { NBA_BY_DB_SLUG } from "../shared/nbaTeams";
-import { fetchMetabetConsensusOdds, type MetabetConsensusOdds } from "./metabetScraper";
 import type { InsertGame } from "../drizzle/schema";
 
 const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
@@ -120,36 +118,22 @@ function dateRange(start: string, end: string): string[] {
   return dates;
 }
 
-// ─── MetaBet DraftKings odds helpers ─────────────────────────────────────────
+// ─── Action Network DraftKings odds helpers ───────────────────────────────────
 
 /**
- * Normalizes a team name to a slug-like key for fuzzy matching.
- * e.g. "St. John's" → "st_johns", "North Texas" → "north_texas"
- */
-function normalizeToSlug(s: string): string {
-  return s
-    .toLowerCase()
-    .replace(/-/g, " ")  // treat hyphens as word separators (e.g. Texas-Arlington → texas_arlington)
-    .replace(/[^a-z0-9\s]/g, "")
-    .trim()
-    .replace(/\s+/g, "_");
-}
-
-/**
- * Applies DraftKings spread odds and O/U odds from MetaBet to existing DB games.
- * Matches MetaBet games to DB games by team identity, then calls updateBookOdds
- * to write awaySpreadOdds, homeSpreadOdds, overOdds, underOdds.
+ * Applies DraftKings spread/total/ML/juice from Action Network to existing DB games.
+ * Matches AN games to DB games by url_slug → dbSlug lookup.
  *
  * @param sport - "NCAAM" | "NBA" | "NHL"
  * @param dateStr - YYYY-MM-DD date to update
- * @param metabetGames - DraftKings odds from MetaBet API
+ * @param anGames - DraftKings odds from Action Network API
  */
-async function applyMetabetOdds(
+async function applyActionNetworkOdds(
   sport: "NCAAM" | "NBA" | "NHL",
   dateStr: string,
-  metabetGames: MetabetConsensusOdds[]
+  anGames: AnGameOdds[]
 ): Promise<{ updated: number; skipped: number }> {
-  if (metabetGames.length === 0) return { updated: 0, skipped: 0 };
+  if (anGames.length === 0) return { updated: 0, skipped: 0 };
 
   const existing = await listGamesByDate(dateStr, sport);
   if (existing.length === 0) return { updated: 0, skipped: 0 };
@@ -157,154 +141,72 @@ async function applyMetabetOdds(
   let updated = 0;
   let skipped = 0;
 
-  for (const mb of metabetGames) {
-    let dbGame = null;
+  for (const an of anGames) {
+    let awayDbSlug: string | undefined;
+    let homeDbSlug: string | undefined;
 
-    if (sport === "NHL") {
-      // NHL: match by 3-letter abbreviation (e.g. "LAK", "NYI")
-      // MetaBet uses standard NHL abbreviations that match our abbrev field
-      const awayTeam = NHL_BY_ABBREV.get(mb.awayInitials);
-      const homeTeam = NHL_BY_ABBREV.get(mb.homeInitials);
-      if (awayTeam && homeTeam) {
-        dbGame = existing.find(
-          e => e.awayTeam === awayTeam.dbSlug && e.homeTeam === homeTeam.dbSlug
-        );
-      }
-      // Fallback: try non-standard initials (e.g. "NJ" → "new_jersey_devils", "SJ" → "san_jose_sharks", "VGS" → "vegas_golden_knights")
-      if (!dbGame) {
-        const NHL_INITIALS_OVERRIDES: Record<string, string> = {
-          "NJ": "new_jersey_devils",
-          "SJ": "san_jose_sharks",
-          "VGS": "vegas_golden_knights",
-          "TB": "tampa_bay_lightning",
-          "UTA": "utah_mammoth",
-        };
-        const awaySlug = NHL_INITIALS_OVERRIDES[mb.awayInitials] ?? NHL_BY_ABBREV.get(mb.awayInitials)?.dbSlug;
-        const homeSlug = NHL_INITIALS_OVERRIDES[mb.homeInitials] ?? NHL_BY_ABBREV.get(mb.homeInitials)?.dbSlug;
-        if (awaySlug && homeSlug) {
-          dbGame = existing.find(e => e.awayTeam === awaySlug && e.homeTeam === homeSlug);
-        }
-      }
+    if (sport === "NCAAM") {
+      awayDbSlug = NCAAM_BY_AN.get(an.awayUrlSlug)?.dbSlug;
+      homeDbSlug = NCAAM_BY_AN.get(an.homeUrlSlug)?.dbSlug;
     } else if (sport === "NBA") {
-      // NBA: match by city+name (e.g. "Memphis Grizzlies" → "memphis_grizzlies")
-      const awayKey = normalizeToSlug(`${mb.awayCity} ${mb.awayName}`);
-      const homeKey = normalizeToSlug(`${mb.homeCity} ${mb.homeName}`);
-      // Try direct DB slug match first
-      dbGame = existing.find(
-        e => normalizeToSlug(e.awayTeam.replace(/_/g, " ")) === awayKey.replace(/_/g, " ") &&
-             normalizeToSlug(e.homeTeam.replace(/_/g, " ")) === homeKey.replace(/_/g, " ")
-      );
-      if (!dbGame) {
-        // Try matching via NBA_BY_DB_SLUG city+name
-        dbGame = existing.find(e => {
-          const awayTeam = NBA_BY_DB_SLUG.get(e.awayTeam);
-          const homeTeam = NBA_BY_DB_SLUG.get(e.homeTeam);
-          if (!awayTeam || !homeTeam) return false;
-          return normalizeToSlug(awayTeam.name) === awayKey &&
-                 normalizeToSlug(homeTeam.name) === homeKey;
-        });
-      }
+      awayDbSlug = NBA_BY_AN_SLUG.get(an.awayUrlSlug)?.dbSlug;
+      homeDbSlug = NBA_BY_AN_SLUG.get(an.homeUrlSlug)?.dbSlug;
     } else {
-      // NCAAM: match by city (school name) + nickname
-      // MetaBet city = school name (e.g. "Tennessee"), name = nickname (e.g. "Volunteers")
-      // DB slug is the vsinSlug with hyphens → underscores
-
-      // Explicit overrides for MetaBet city names that don't match our DB slugs or vsinSlugs
-      const NCAAM_CITY_OVERRIDES: Record<string, string> = {
-        "duquesne": "duquesne",
-        "south_carolina_state": "s_carolina_st",
-        "texas_arlington": "texas_arlington",
-        "cal_state_northridge": "csu_northridge",
-        "kent_state": "kent",
-        "cal_state_fullerton": "csu_fullerton",
-        "csu_fullerton": "csu_fullerton",
-        "uc_irvine": "uc_irvine",
-        "utah_valley": "utah_valley",
-        "hawaii": "hawaii",
-        "vcu": "va_commonwealth",
-        "virginia_commonwealth": "va_commonwealth",
-        "florida_am": "florida_a_and_m",
-        "florida_a_m": "florida_a_and_m",
-        "st_johns": "st_johns",
-        "saint_johns": "st_johns",
-        "uc_santa_barbara": "uc_santa_barbara",
-        "long_island": "liu",
-        "liu": "liu",
-        "north_carolina_at": "nc_a_and_t",
-        "nc_at": "nc_a_and_t",
-        "texas_am_corpus_christi": "tx_am_corpus_christi",
-        "texas_am_cc": "tx_am_corpus_christi",
-      };
-
-      const resolveNcaamSlug = (city: string): string => {
-        const normalized = normalizeToSlug(city);
-        return NCAAM_CITY_OVERRIDES[normalized] ?? normalized;
-      };
-
-      const awayVsinSlug = resolveNcaamSlug(mb.awayCity).replace(/_/g, "-");
-      const homeVsinSlug = resolveNcaamSlug(mb.homeCity).replace(/_/g, "-");
-      // Look up in NCAAM registry by vsinSlug (imported at module level for reliability)
-      const awayTeam = NCAAM_BY_VSIN.get(awayVsinSlug);
-      const homeTeam = NCAAM_BY_VSIN.get(homeVsinSlug);
-      if (awayTeam && homeTeam) {
-        dbGame = existing.find(
-          e => e.awayTeam === awayTeam.dbSlug && e.homeTeam === homeTeam.dbSlug
-        );
-      }
-      // Fallback 1: try direct DB slug match using override-resolved slug
-      if (!dbGame) {
-        const awayDbSlug = resolveNcaamSlug(mb.awayCity);
-        const homeDbSlug = resolveNcaamSlug(mb.homeCity);
-        dbGame = existing.find(
-          e => e.awayTeam === awayDbSlug && e.homeTeam === homeDbSlug
-        );
-      }
-      // Fallback 2: fuzzy prefix match
-      if (!dbGame) {
-        const awayDbSlug = resolveNcaamSlug(mb.awayCity);
-        const homeDbSlug = resolveNcaamSlug(mb.homeCity);
-        dbGame = existing.find(
-          e => e.awayTeam.startsWith(awayDbSlug.split("_")[0]) &&
-               e.homeTeam.startsWith(homeDbSlug.split("_")[0])
-        );
-      }
+      // NHL
+      awayDbSlug = NHL_BY_AN_SLUG.get(an.awayUrlSlug)?.dbSlug;
+      homeDbSlug = NHL_BY_AN_SLUG.get(an.homeUrlSlug)?.dbSlug;
     }
 
-    if (!dbGame) {
+    if (!awayDbSlug || !homeDbSlug) {
       console.log(
-        `[MetaBet][${sport}] NO_MATCH: ${mb.awayCity} ${mb.awayName} (${mb.awayInitials}) @ ` +
-        `${mb.homeCity} ${mb.homeName} (${mb.homeInitials}) on ${dateStr}`
+        `[ActionNetwork][${sport}] NO_SLUG: ${an.awayUrlSlug} @ ${an.homeUrlSlug} on ${dateStr} ` +
+        `(away=${awayDbSlug ?? 'UNKNOWN'} home=${homeDbSlug ?? 'UNKNOWN'})`
       );
       skipped++;
       continue;
     }
 
-    // Write spread/total numbers from MetaBet when DB fields are null (VSiN scraper missed them)
-    // Always write the odds (juice) fields — these always come from MetaBet DraftKings
+    const dbGame = existing.find(
+      e => e.awayTeam === awayDbSlug && e.homeTeam === homeDbSlug
+    );
+
+    if (!dbGame) {
+      console.log(
+        `[ActionNetwork][${sport}] NO_MATCH: ${awayDbSlug} @ ${homeDbSlug} on ${dateStr}`
+      );
+      skipped++;
+      continue;
+    }
+
+    // Write all DK odds from Action Network:
+    // - awayBookSpread/homeBookSpread/bookTotal: overwrite always (AN is authoritative for DK lines)
+    // - awayML/homeML: overwrite always
+    // - awaySpreadOdds/homeSpreadOdds/overOdds/underOdds: always update (juice from DK)
     await updateBookOdds(dbGame.id, {
-      // Only fill spread/total numbers if currently null in DB (don't overwrite VSiN data)
-      ...(dbGame.awayBookSpread == null && mb.awaySpread != null ? {
-        awayBookSpread: mb.awaySpread,
-        homeBookSpread: mb.homeSpread,
+      ...(an.dkAwaySpread != null ? {
+        awayBookSpread: an.dkAwaySpread,
+        homeBookSpread: an.dkHomeSpread,
       } : {}),
-      ...(dbGame.bookTotal == null && mb.total != null ? {
-        bookTotal: mb.total,
+      ...(an.dkTotal != null ? { bookTotal: an.dkTotal } : {}),
+      ...(an.dkAwayML != null ? {
+        awayML: an.dkAwayML,
+        homeML: an.dkHomeML,
       } : {}),
-      // Always update ML from MetaBet if DB is null
-      ...(dbGame.awayML == null && mb.awayML != null ? {
-        awayML: mb.awayML,
-        homeML: mb.homeML,
+      ...(an.dkAwaySpreadOdds != null ? {
+        awaySpreadOdds: an.dkAwaySpreadOdds,
+        homeSpreadOdds: an.dkHomeSpreadOdds,
       } : {}),
-      awaySpreadOdds: mb.awaySpreadOdds,
-      homeSpreadOdds: mb.homeSpreadOdds,
-      overOdds: mb.overOdds,
-      underOdds: mb.underOdds,
+      ...(an.dkOverOdds != null ? {
+        overOdds: an.dkOverOdds,
+        underOdds: an.dkUnderOdds,
+      } : {}),
     });
     updated++;
     console.log(
-      `[MetaBet][${sport}] Updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} (${dateStr}) | ` +
-      `spreadOdds=${mb.awaySpreadOdds}/${mb.homeSpreadOdds} ` +
-      `overOdds=${mb.overOdds} underOdds=${mb.underOdds}`
+      `[ActionNetwork][${sport}] Updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} (${dateStr}) | ` +
+      `spread=${an.dkAwaySpread}/${an.dkHomeSpread} (${an.dkAwaySpreadOdds}/${an.dkHomeSpreadOdds}) ` +
+      `total=${an.dkTotal} (${an.dkOverOdds}/${an.dkUnderOdds}) ` +
+      `ml=${an.dkAwayML}/${an.dkHomeML}`
     );
   }
 
@@ -312,36 +214,29 @@ async function applyMetabetOdds(
 }
 
 /**
- * Fetches MetaBet DraftKings odds for a sport and applies them to today's games.
+ * Fetches Action Network DraftKings odds for a sport and applies them to today's games.
  * Non-fatal — errors are caught and logged.
  */
-async function runMetabetOddsUpdate(
+async function runActionNetworkOddsUpdate(
   sport: "NCAAM" | "NBA" | "NHL",
-  leagueCode: "BKC" | "BKP" | "HKN",
+  anSport: "ncaab" | "nba" | "nhl",
   todayStr: string
 ): Promise<void> {
   try {
-    const mbGames = await fetchMetabetConsensusOdds(leagueCode);
-    // Filter to today's games only (MetaBet returns rolling history)
-    const todayStart = new Date(todayStr + "T00:00:00-08:00").getTime(); // PST midnight
-    const tomorrowStart = todayStart + 86400000;
-    const todayGames = mbGames.filter(
-      g => g.gameTimestamp >= todayStart && g.gameTimestamp < tomorrowStart
-    );
+    const anGames = await fetchActionNetworkOdds(anSport, todayStr);
     console.log(
-      `[MetaBet][${sport}] ${todayGames.length} games for today (${todayStr}) ` +
-      `out of ${mbGames.length} total from API`
+      `[ActionNetwork][${sport}] ${anGames.length} games with DK odds for ${todayStr}`
     );
-    const result = await applyMetabetOdds(sport, todayStr, todayGames);
+    const result = await applyActionNetworkOdds(sport, todayStr, anGames);
     console.log(
-      `[MetaBet][${sport}] Done: ${result.updated} updated, ${result.skipped} skipped`
+      `[ActionNetwork][${sport}] Done: ${result.updated} updated, ${result.skipped} skipped`
     );
   } catch (err) {
-    console.error(`[MetaBet][${sport}] Odds update failed (non-fatal):`, err);
+    console.error(`[ActionNetwork][${sport}] Odds update failed (non-fatal):`, err);
   }
 }
 
-// ─── NCAAM refresh ────────────────────────────────────────────────────────────
+/// ─── NCAAM refresh ────────────────────────────────────────────
 
 async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
   updated: number;
@@ -349,45 +244,38 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
   ncaaInserted: number;
   total: number;
 }> {
-  // Scrape ALL NCAAM games currently on VSiN
-  const allScraped = await scrapeVsinOdds("ALL");
-
-  if (allScraped.length === 0) {
-    console.log("[VSiNAutoRefresh] No NCAAM games returned from VSiN — skipping NCAAM step.");
-    return { updated: 0, inserted: 0, ncaaInserted: 0, total: 0 };
+  // Scrape VSiN CBB betting splits (today only)
+  let vsinSplits: VsinSplitsGame[] = [];
+  try {
+    const allSplits = await scrapeVsinBettingSplits("front");
+    vsinSplits = allSplits.filter(g => g.sport === "CBB");
+    console.log(`[VSiNAutoRefresh] VSiN CBB splits: ${vsinSplits.length} games`);
+  } catch (err) {
+    console.warn("[VSiNAutoRefresh] VSiN CBB splits scrape failed (non-fatal):", err);
   }
 
-  // Filter: only today+future, only 365-team registry
-  const relevantGames = allScraped.filter(g => {
-    const d = yyyymmddToIso(String(g.gameDate ?? ""));
-    if (d < todayStr) return false;
-    if (!VALID_DB_SLUGS.has(g.awaySlug) || !VALID_DB_SLUGS.has(g.homeSlug)) {
-      console.log(`[VSiNAutoRefresh] Skipping non-D1 NCAA game: ${g.awaySlug} @ ${g.homeSlug}`);
-      return false;
+  // Build a map: dbSlug pair → VsinSplitsGame for fast lookup
+  const vsinSplitsMap = new Map<string, VsinSplitsGame>();
+  for (const g of vsinSplits) {
+    const awayTeam = BY_VSIN_SLUG.get(g.awayVsinSlug) ?? BY_VSIN_SLUG.get(g.awayVsinSlug.replace(/-/g, '_'));
+    const homeTeam = BY_VSIN_SLUG.get(g.homeVsinSlug) ?? BY_VSIN_SLUG.get(g.homeVsinSlug.replace(/-/g, '_'));
+    if (awayTeam && homeTeam) {
+      vsinSplitsMap.set(`${awayTeam.dbSlug}@${homeTeam.dbSlug}`, g);
+    } else {
+      console.log(
+        `[VSiNAutoRefresh][NCAAM] Unknown VSiN slug: ${g.awayVsinSlug} @ ${g.homeVsinSlug}`
+      );
     }
-    return true;
-  });
+  }
 
-  console.log(
-    `[VSiNAutoRefresh] NCAAM VSiN: ${allScraped.length} total | ` +
-    `${relevantGames.length} relevant | ` +
-    `${allScraped.length - relevantGames.length} past/non-D1 (ignored)`
-  );
-
-  const vsinDateSet = Array.from(new Set(relevantGames.map(g => yyyymmddToIso(String(g.gameDate ?? "")))));
-
-  // Fetch NCAA start times for each relevant date
-  const startTimeMaps = new Map<string, Map<string, string>>();
+  // Fetch NCAA scoreboard for rolling window (primary source for game discovery)
   const ncaaGamesByDate = new Map<string, Awaited<ReturnType<typeof fetchNcaaGames>>>();
+  const startTimeMaps = new Map<string, Map<string, string>>();
 
-  const rangeEnd = datePst(RANGE_DAYS_AHEAD);
   for (const dateStr of allDates) {
     try {
       const yyyymmdd = dateStr.replace(/-/g, "");
       const ncaaGames = await fetchNcaaGames(yyyymmdd);
-
-      // NCAA API already places midnight ET games (00:00 ET) under the correct
-      // calendar date — no next-day pull-back adjustment needed.
       startTimeMaps.set(dateStr, buildStartTimeMap(ncaaGames));
       ncaaGamesByDate.set(dateStr, ncaaGames);
       console.log(`[VSiNAutoRefresh] NCAA: ${ncaaGames.length} games for ${dateStr}`);
@@ -396,185 +284,33 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
     }
   }
 
+  // Apply VSiN splits to today's existing NCAAM games
   let totalUpdated = 0;
-  let totalInserted = 0;
-
-  for (const dateStr of vsinDateSet) {
-    const gamesForDate = relevantGames.filter(
-      g => yyyymmddToIso(String(g.gameDate ?? "")) === dateStr
+  const existing = await listGamesByDate(todayStr, "NCAAM");
+  for (const dbGame of existing) {
+    const key = `${dbGame.awayTeam}@${dbGame.homeTeam}`;
+    const splits = vsinSplitsMap.get(key);
+    if (!splits) continue;
+    await updateBookOdds(dbGame.id, {
+      spreadAwayBetsPct: splits.spreadAwayBetsPct,
+      spreadAwayMoneyPct: splits.spreadAwayMoneyPct,
+      totalOverBetsPct: splits.totalOverBetsPct,
+      totalOverMoneyPct: splits.totalOverMoneyPct,
+      mlAwayBetsPct: splits.mlAwayBetsPct,
+      mlAwayMoneyPct: splits.mlAwayMoneyPct,
+    });
+    totalUpdated++;
+    console.log(
+      `[VSiNAutoRefresh][NCAAM] Splits updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} ` +
+      `spread=${splits.spreadAwayBetsPct}%/${splits.spreadAwayMoneyPct}% ` +
+      `total=${splits.totalOverBetsPct}%/${splits.totalOverMoneyPct}% ` +
+      `ml=${splits.mlAwayBetsPct}%/${splits.mlAwayMoneyPct}%`
     );
-
-    const existing = await listGamesByDate(dateStr, "NCAAM");
-    const startTimeMap = startTimeMaps.get(dateStr);
-
-    for (const scraped of gamesForDate) {
-      const awaySlug = scraped.awaySlug;
-      const homeSlug = scraped.homeSlug;
-
-      const existingGameCanonical = existing.find(
-        e => e.awayTeam === awaySlug && e.homeTeam === homeSlug
-      ) ?? existing.find(
-        e => slugsMatch(e.awayTeam, awaySlug) && slugsMatch(e.homeTeam, homeSlug)
-      );
-      // VSiN sometimes lists teams in reversed order vs NCAA.com — track if reversed
-      const existingGameReversed = !existingGameCanonical ? existing.find(
-        e => slugsMatch(e.awayTeam, homeSlug) && slugsMatch(e.homeTeam, awaySlug)
-      ) : undefined;
-      const existingGame = existingGameCanonical ?? existingGameReversed;
-      // isReversedMatch=true means DB stores [bethune_cookman @ prairie_view] but VSiN scraped [prairie_view @ bethune_cookman]
-      // In this case we MUST swap all team-directional odds before writing to DB
-      const isReversedMatch = !existingGameCanonical && !!existingGameReversed;
-
-      const startTimeKey = `${awaySlug}@${homeSlug}`;
-      const startTimeEst = startTimeMap?.get(startTimeKey);
-
-      // Look up NCAA game data — check both canonical and reversed team order
-      // because VSiN sometimes lists teams in opposite home/away order vs NCAA.com
-      const ncaaGamesForDate = ncaaGamesByDate.get(dateStr) ?? [];
-      const ncaaGame = ncaaGamesForDate.find(
-        g => g.awaySeoname === awaySlug && g.homeSeoname === homeSlug
-      ) ?? ncaaGamesForDate.find(
-        // Reversed order: VSiN away=X home=Y but NCAA has away=Y home=X
-        g => g.awaySeoname === homeSlug && g.homeSeoname === awaySlug
-      ) ?? ncaaGamesForDate.find(
-        // Fuzzy slug match (handles minor slug format differences)
-        g => slugsMatch(g.awaySeoname, awaySlug) && slugsMatch(g.homeSeoname, homeSlug)
-      ) ?? ncaaGamesForDate.find(
-        // Fuzzy + reversed
-        g => slugsMatch(g.awaySeoname, homeSlug) && slugsMatch(g.homeSeoname, awaySlug)
-      );
-
-      const ncaaContestId = ncaaGame?.contestId ?? null;
-      const ncaaGameStatus = ncaaGame?.gameStatus;
-
-      // Detailed merge decision logging
-      const matchType = !ncaaGame ? 'NO_NCAA_MATCH'
-        : (ncaaGame.awaySeoname === awaySlug ? 'EXACT' : 'REVERSED');
-      console.log(
-        `[VSiNAutoRefresh][MERGE] ${awaySlug}@${homeSlug} (${dateStr}) | ` +
-        `existingGame=${existingGame ? existingGame.id : 'NEW'} | ` +
-        `ncaaMatch=${matchType} | ` +
-        `startTime=${startTimeEst ?? 'TBD'} | ` +
-        `contestId=${ncaaContestId ?? 'null'} | ` +
-        `status=${ncaaGameStatus ?? 'null'}`
-      );
-
-      if (existingGame) {
-        // ─── REVERSED-MATCH ODDS SWAP ────────────────────────────────────────────
-        // When VSiN lists teams in opposite order vs DB (which uses NCAA ordering),
-        // the scraped "away" odds actually belong to the DB "home" team and vice versa.
-        // Example: DB has bethune_cookman(AWAY) @ prairie_view(HOME)
-        //          VSiN has prairie_view(AWAY, +5.5) @ bethune_cookman(HOME, -5.5)
-        //          Without swap: bethune_cookman gets +5.5 ← WRONG (they are the favorite)
-        //          With swap:    bethune_cookman gets -5.5 ← CORRECT
-        //
-        // Swap logic:
-        //   awaySpread ↔ homeSpread  (spread is team-directional)
-        //   awayML ↔ homeML          (ML is team-directional)
-        //   spreadAwayBetsPct → 100 - value (VSiN away% becomes DB home%)
-        //   spreadAwayMoneyPct → 100 - value
-        //   mlAwayBetsPct → 100 - value
-        //   mlAwayMoneyPct → 100 - value
-        //   totalOverBetsPct, totalOverMoneyPct → unchanged (not team-specific)
-        const oddsToWrite = isReversedMatch ? {
-          awayBookSpread: scraped.homeSpread,   // VSiN home spread → DB away spread
-          homeBookSpread: scraped.awaySpread,   // VSiN away spread → DB home spread
-          bookTotal: scraped.total,
-          sortOrder: scraped.vsinRowIndex,
-          ...(startTimeEst ? { startTimeEst } : {}),
-          spreadAwayBetsPct: scraped.spreadAwayBetsPct !== null ? 100 - scraped.spreadAwayBetsPct : null,
-          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct !== null ? 100 - scraped.spreadAwayMoneyPct : null,
-          totalOverBetsPct: scraped.totalOverBetsPct,
-          totalOverMoneyPct: scraped.totalOverMoneyPct,
-          awayML: scraped.homeML,               // VSiN home ML → DB away ML
-          homeML: scraped.awayML,               // VSiN away ML → DB home ML
-          mlAwayBetsPct: scraped.mlAwayBetsPct !== null ? 100 - scraped.mlAwayBetsPct : null,
-          mlAwayMoneyPct: scraped.mlAwayMoneyPct !== null ? 100 - scraped.mlAwayMoneyPct : null,
-        } : {
-          awayBookSpread: scraped.awaySpread,
-          homeBookSpread: scraped.homeSpread,
-          bookTotal: scraped.total,
-          sortOrder: scraped.vsinRowIndex,
-          ...(startTimeEst ? { startTimeEst } : {}),
-          // NCAAM betting splits (8 fields: spread + total + ML)
-          spreadAwayBetsPct: scraped.spreadAwayBetsPct,
-          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
-          totalOverBetsPct: scraped.totalOverBetsPct,
-          totalOverMoneyPct: scraped.totalOverMoneyPct,
-          awayML: scraped.awayML,
-          homeML: scraped.homeML,
-          mlAwayBetsPct: scraped.mlAwayBetsPct,
-          mlAwayMoneyPct: scraped.mlAwayMoneyPct,
-        };
-        if (isReversedMatch) {
-          console.log(
-            `[VSiNAutoRefresh][REVERSED_SWAP] ${awaySlug}@${homeSlug} → DB is ${existingGame.awayTeam}@${existingGame.homeTeam} | ` +
-            `Swapping: awaySpread ${scraped.awaySpread}→${oddsToWrite.awayBookSpread}, homeSpread ${scraped.homeSpread}→${oddsToWrite.homeBookSpread} | ` +
-            `awayML ${scraped.awayML}→${oddsToWrite.awayML}, homeML ${scraped.homeML}→${oddsToWrite.homeML} | ` +
-            `spreadAwayBets% ${scraped.spreadAwayBetsPct}→${oddsToWrite.spreadAwayBetsPct} | ` +
-            `mlAwayBets% ${scraped.mlAwayBetsPct}→${oddsToWrite.mlAwayBetsPct}`
-          );
-        }
-        await updateBookOdds(existingGame.id, oddsToWrite);
-        // Always update gameStatus, scores, and clock when we have NCAA data
-        await updateNcaaStartTime(existingGame.id, {
-          startTimeEst: startTimeEst ?? existingGame.startTimeEst,
-          ncaaContestId: ncaaContestId ?? existingGame.ncaaContestId ?? '',
-          ...(ncaaGameStatus ? { gameStatus: ncaaGameStatus } : {}),
-          awayScore: ncaaGame?.awayScore ?? null,
-          homeScore: ncaaGame?.homeScore ?? null,
-          gameClock: ncaaGame?.gameClock ?? null,
-        });
-        totalUpdated++;
-      } else {
-        const row: InsertGame = {
-          fileId: 0,
-          gameDate: dateStr,
-          startTimeEst: startTimeEst ?? "TBD",
-          awayTeam: awaySlug,
-          homeTeam: homeSlug,
-          awayBookSpread: scraped.awaySpread !== null ? String(scraped.awaySpread) : null,
-          homeBookSpread: scraped.homeSpread !== null ? String(scraped.homeSpread) : null,
-          bookTotal: scraped.total !== null ? String(scraped.total) : null,
-          awayModelSpread: null,
-          homeModelSpread: null,
-          modelTotal: null,
-          spreadEdge: null,
-          spreadDiff: null,
-          totalEdge: null,
-          totalDiff: null,
-          sport: "NCAAM",
-          gameType: "regular_season",
-          conference: null,
-          publishedToFeed: false,
-          rotNums: null,
-          sortOrder: scraped.vsinRowIndex,
-          ncaaContestId: ncaaContestId ?? null,
-          gameStatus: ncaaGameStatus ?? 'upcoming',
-          awayScore: ncaaGame?.awayScore ?? null,
-          homeScore: ncaaGame?.homeScore ?? null,
-          gameClock: ncaaGame?.gameClock ?? null,
-          // NCAAM betting splits (8 fields: spread + total + ML) — include on insert
-          spreadAwayBetsPct: scraped.spreadAwayBetsPct,
-          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
-          totalOverBetsPct: scraped.totalOverBetsPct,
-          totalOverMoneyPct: scraped.totalOverMoneyPct,
-          awayML: scraped.awayML,
-          homeML: scraped.homeML,
-          mlAwayBetsPct: scraped.mlAwayBetsPct,
-          mlAwayMoneyPct: scraped.mlAwayMoneyPct,
-        };
-        await insertGames([row]);
-        totalInserted++;
-        console.log(
-          `[VSiNAutoRefresh] Inserted NCAAM VSiN: ${scraped.awayTeam} @ ${scraped.homeTeam} (${dateStr})`
-        );
-      }
-    }
   }
 
   // NCAA-only game insertion (rolling 7-day window)
   let ncaaInserted = 0;
+  let totalInserted = 0;
 
   for (const dateStr of allDates) {
     if (dateStr < todayStr) continue;
@@ -582,7 +318,8 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
     const ncaaGames = ncaaGamesByDate.get(dateStr) ?? [];
     if (ncaaGames.length === 0) continue;
 
-    const existing = await listGamesByDate(dateStr, "NCAAM");
+    const existingForDate = await listGamesByDate(dateStr, "NCAAM");
+    const startTimeMap = startTimeMaps.get(dateStr);
 
     for (const ncaaGame of ncaaGames) {
       const { contestId, awaySeoname, homeSeoname, startTimeEst, gameStatus } = ncaaGame;
@@ -594,39 +331,29 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         continue;
       }
 
-      // The NCAA API returns midnight ET games under the correct calendar date.
-      // No date adjustment needed — store as-is.
-      const effectiveDateStr = dateStr;
-
       const byContestId = await getGameByNcaaContestId(contestId);
       if (byContestId) {
-        console.log(
-          `[VSiNAutoRefresh][NCAA-ONLY] SKIP by contestId=${contestId}: ` +
-          `${awaySeoname}@${homeSeoname} (${dateStr}) → DB id=${byContestId.id}`
-        );
+        // Update scores/status on existing game
+        await updateNcaaStartTime(byContestId.id, {
+          startTimeEst: startTimeEst !== "TBD" ? startTimeEst : byContestId.startTimeEst,
+          ncaaContestId: contestId,
+          gameStatus,
+          awayScore: ncaaGame.awayScore ?? null,
+          homeScore: ncaaGame.homeScore ?? null,
+          gameClock: ncaaGame.gameClock ?? null,
+        });
         continue;
       }
 
-      const existingForEffectiveDate = existing;
-      const bySlugCanonical = existingForEffectiveDate.find(
+      const bySlugCanonical = existingForDate.find(
         e => slugsMatch(e.awayTeam, awaySeoname) && slugsMatch(e.homeTeam, homeSeoname)
       );
-      const bySlugReversed = !bySlugCanonical ? existingForEffectiveDate.find(
-        // Also check reversed order — VSiN may have inserted the game with swapped teams
+      const bySlugReversed = !bySlugCanonical ? existingForDate.find(
         e => slugsMatch(e.awayTeam, homeSeoname) && slugsMatch(e.homeTeam, awaySeoname)
       ) : undefined;
       const bySlug = bySlugCanonical ?? bySlugReversed;
 
       if (bySlug) {
-        const matchDir = bySlugReversed ? 'REVERSED' : 'CANONICAL';
-        console.log(
-          `[VSiNAutoRefresh][NCAA-ONLY] UPDATE ${matchDir} match: ` +
-          `${awaySeoname}@${homeSeoname} (${dateStr}) → DB id=${bySlug.id} ` +
-          `(DB: ${bySlug.awayTeam}@${bySlug.homeTeam}) | ` +
-          `startTime=${startTimeEst} | status=${gameStatus} | ` +
-          `score=${ncaaGame.awayScore}-${ncaaGame.homeScore}`
-        );
-        // Always update gameStatus, scores, and clock; also patch ncaaContestId if missing
         await updateNcaaStartTime(bySlug.id, {
           startTimeEst: startTimeEst !== "TBD" ? startTimeEst : bySlug.startTimeEst,
           ncaaContestId: bySlug.ncaaContestId ?? contestId,
@@ -638,15 +365,12 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         continue;
       }
 
-      console.log(
-        `[VSiNAutoRefresh][NCAA-ONLY] INSERT new: ${awaySeoname}@${homeSeoname} (${dateStr}) | ` +
-        `contestId=${contestId} | startTime=${startTimeEst} | status=${gameStatus}`
-      );
-
+      // Insert new game stub from NCAA scoreboard
+      const resolvedStartTime = startTimeMap?.get(`${awaySeoname}@${homeSeoname}`) ?? startTimeEst ?? "TBD";
       const row: InsertGame = {
         fileId: 0,
-        gameDate: effectiveDateStr,
-        startTimeEst: startTimeEst ?? "TBD",
+        gameDate: dateStr,
+        startTimeEst: resolvedStartTime,
         awayTeam: awaySeoname,
         homeTeam: homeSeoname,
         awayBookSpread: null,
@@ -659,27 +383,28 @@ async function refreshNcaam(todayStr: string, allDates: string[]): Promise<{
         spreadDiff: null,
         totalEdge: null,
         totalDiff: null,
-          sport: "NCAAM",
-          gameType: "regular_season",
-          conference: null,
-          publishedToFeed: false,
-          rotNums: null,
-          sortOrder: 9999,
-          ncaaContestId: contestId,
-          gameStatus,
-          awayScore: ncaaGame.awayScore ?? null,
-          homeScore: ncaaGame.homeScore ?? null,
-          gameClock: ncaaGame.gameClock ?? null,
-        };
+        sport: "NCAAM",
+        gameType: "regular_season",
+        conference: null,
+        publishedToFeed: false,
+        rotNums: null,
+        sortOrder: 9999,
+        ncaaContestId: contestId,
+        gameStatus,
+        awayScore: ncaaGame.awayScore ?? null,
+        homeScore: ncaaGame.homeScore ?? null,
+        gameClock: ncaaGame.gameClock ?? null,
+      };
       await insertGames([row]);
       ncaaInserted++;
+      totalInserted++;
       console.log(
         `[VSiNAutoRefresh] Inserted NCAA-only: ${awaySeoname} @ ${homeSeoname} (${dateStr})`
       );
     }
   }
 
-  return { updated: totalUpdated, inserted: totalInserted, ncaaInserted, total: relevantGames.length };
+  return { updated: totalUpdated, inserted: totalInserted, ncaaInserted, total: vsinSplits.length };
 }
 
 // ─── NBA refresh ──────────────────────────────────────────────────────────────
@@ -690,35 +415,27 @@ async function refreshNba(todayStr: string, allDates: string[]): Promise<{
   scheduleInserted: number;
   total: number;
 }> {
-  // Scrape ALL NBA games currently on VSiN
-  let allScraped;
+  // Scrape VSiN NBA betting splits (today only)
+  let vsinSplits: VsinSplitsGame[] = [];
   try {
-    allScraped = await scrapeNbaVsinOdds("ALL");
+    const allSplits = await scrapeVsinBettingSplits("front");
+    vsinSplits = allSplits.filter(g => g.sport === "NBA");
+    console.log(`[VSiNAutoRefresh] VSiN NBA splits: ${vsinSplits.length} games`);
   } catch (err) {
-    console.error("[VSiNAutoRefresh] NBA VSiN scrape failed (non-fatal):", err);
-    return { updated: 0, inserted: 0, scheduleInserted: 0, total: 0 };
+    console.warn("[VSiNAutoRefresh] VSiN NBA splits scrape failed (non-fatal):", err);
   }
 
-  if (allScraped.length === 0) {
-    console.log("[VSiNAutoRefresh] No NBA games returned from VSiN — skipping NBA VSiN step.");
-  }
-
-  // Filter: only today+future, only 30-team registry
-  const relevantGames = allScraped.filter(g => {
-    const d = yyyymmddToIso(String(g.gameDate ?? ""));
-    if (d < todayStr) return false;
-    if (!NBA_VALID_DB_SLUGS.has(g.awaySlug) || !NBA_VALID_DB_SLUGS.has(g.homeSlug)) {
-      console.log(`[VSiNAutoRefresh] Skipping unknown NBA team: ${g.awaySlug} @ ${g.homeSlug}`);
-      return false;
+  // Build a map: dbSlug pair → VsinSplitsGame for fast lookup
+  const vsinSplitsMap = new Map<string, VsinSplitsGame>();
+  for (const g of vsinSplits) {
+    const awayTeam = NBA_BY_VSIN_SLUG.get(g.awayVsinSlug);
+    const homeTeam = NBA_BY_VSIN_SLUG.get(g.homeVsinSlug);
+    if (awayTeam && homeTeam) {
+      vsinSplitsMap.set(`${awayTeam.dbSlug}@${homeTeam.dbSlug}`, g);
+    } else {
+      console.log(`[VSiNAutoRefresh][NBA] Unknown VSiN slug: ${g.awayVsinSlug} @ ${g.homeVsinSlug}`);
     }
-    return true;
-  });
-
-  console.log(
-    `[VSiNAutoRefresh] NBA VSiN: ${allScraped.length} total | ` +
-    `${relevantGames.length} relevant | ` +
-    `${allScraped.length - relevantGames.length} past/unknown (ignored)`
-  );
+  }
 
   // Fetch NBA schedule start times for each date in the rolling window
   const nbaStartTimeMaps = new Map<string, Map<string, string>>();
@@ -737,94 +454,33 @@ async function refreshNba(todayStr: string, allDates: string[]): Promise<{
     }
   }
 
+  // Apply VSiN splits to today's existing NBA games
   let totalUpdated = 0;
-  let totalInserted = 0;
-
-  const vsinDateSet = Array.from(new Set(relevantGames.map(g => yyyymmddToIso(String(g.gameDate ?? "")))));
-
-  for (const dateStr of vsinDateSet) {
-    const gamesForDate = relevantGames.filter(
-      g => yyyymmddToIso(String(g.gameDate ?? "")) === dateStr
+  const existingToday = await listGamesByDate(todayStr, "NBA");
+  for (const dbGame of existingToday) {
+    const key = `${dbGame.awayTeam}@${dbGame.homeTeam}`;
+    const splits = vsinSplitsMap.get(key);
+    if (!splits) continue;
+    await updateBookOdds(dbGame.id, {
+      spreadAwayBetsPct: splits.spreadAwayBetsPct,
+      spreadAwayMoneyPct: splits.spreadAwayMoneyPct,
+      totalOverBetsPct: splits.totalOverBetsPct,
+      totalOverMoneyPct: splits.totalOverMoneyPct,
+      mlAwayBetsPct: splits.mlAwayBetsPct,
+      mlAwayMoneyPct: splits.mlAwayMoneyPct,
+    });
+    totalUpdated++;
+    console.log(
+      `[VSiNAutoRefresh][NBA] Splits updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} ` +
+      `spread=${splits.spreadAwayBetsPct}%/${splits.spreadAwayMoneyPct}% ` +
+      `total=${splits.totalOverBetsPct}%/${splits.totalOverMoneyPct}% ` +
+      `ml=${splits.mlAwayBetsPct}%/${splits.mlAwayMoneyPct}%`
     );
-
-    const existing = await listGamesByDate(dateStr, "NBA");
-    const startTimeMap = nbaStartTimeMaps.get(dateStr);
-
-    for (const scraped of gamesForDate) {
-      const awaySlug = scraped.awaySlug;
-      const homeSlug = scraped.homeSlug;
-
-      const existingGame = existing.find(
-        e => e.awayTeam === awaySlug && e.homeTeam === homeSlug
-      );
-
-      const startTimeKey = `${awaySlug}@${homeSlug}`;
-      const startTimeEst = startTimeMap?.get(startTimeKey);
-
-      if (existingGame) {
-        await updateBookOdds(existingGame.id, {
-          awayBookSpread: scraped.awaySpread,
-          homeBookSpread: scraped.homeSpread,
-          bookTotal: scraped.total,
-          sortOrder: scraped.vsinRowIndex,
-          ...(startTimeEst ? { startTimeEst } : {}),
-          // NBA betting splits (6 fields + ML odds)
-          spreadAwayBetsPct: scraped.spreadAwayBetsPct,
-          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
-          totalOverBetsPct: scraped.totalOverBetsPct,
-          totalOverMoneyPct: scraped.totalOverMoneyPct,
-          mlAwayBetsPct: scraped.mlAwayBetsPct,
-          mlAwayMoneyPct: scraped.mlAwayMoneyPct,
-          awayML: scraped.awayML,
-          homeML: scraped.homeML,
-        });
-        totalUpdated++;
-      } else {
-        const row: InsertGame = {
-          fileId: 0,
-          gameDate: dateStr,
-          startTimeEst: startTimeEst ?? "TBD",
-          awayTeam: awaySlug,
-          homeTeam: homeSlug,
-          awayBookSpread: scraped.awaySpread !== null ? String(scraped.awaySpread) : null,
-          homeBookSpread: scraped.homeSpread !== null ? String(scraped.homeSpread) : null,
-          bookTotal: scraped.total !== null ? String(scraped.total) : null,
-          awayModelSpread: null,
-          homeModelSpread: null,
-          modelTotal: null,
-          spreadEdge: null,
-          spreadDiff: null,
-          totalEdge: null,
-          totalDiff: null,
-          sport: "NBA",
-          gameType: "regular_season",
-          conference: null,
-          publishedToFeed: false,
-          rotNums: null,
-          sortOrder: scraped.vsinRowIndex,
-          ncaaContestId: null,
-          // NBA betting splits
-          spreadAwayBetsPct: scraped.spreadAwayBetsPct,
-          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
-          totalOverBetsPct: scraped.totalOverBetsPct,
-          totalOverMoneyPct: scraped.totalOverMoneyPct,
-          mlAwayBetsPct: scraped.mlAwayBetsPct,
-          mlAwayMoneyPct: scraped.mlAwayMoneyPct,
-          awayML: scraped.awayML,
-          homeML: scraped.homeML,
-        };
-        await insertGames([row]);
-        totalInserted++;
-        console.log(
-          `[VSiNAutoRefresh] Inserted NBA VSiN: ${scraped.awayTeam} @ ${scraped.homeTeam} (${dateStr})`
-        );
-      }
-    }
   }
 
   // NBA schedule-only game insertion (rolling 7-day window)
-  // Insert any NBA game from the schedule that isn't already in the DB
   let scheduleInserted = 0;
+  let totalInserted = 0;
 
   for (const dateStr of allDates) {
     if (dateStr < todayStr) continue;
@@ -833,24 +489,30 @@ async function refreshNba(todayStr: string, allDates: string[]): Promise<{
     if (nbaGames.length === 0) continue;
 
     const existing = await listGamesByDate(dateStr, "NBA");
+    const startTimeMap = nbaStartTimeMaps.get(dateStr);
 
     for (const nbaGame of nbaGames) {
       const { awayDbSlug, homeDbSlug, startTimeEst, gameId } = nbaGame;
 
-      // Skip if already in DB by slug match
       const bySlug = existing.find(
         e => e.awayTeam === awayDbSlug && e.homeTeam === homeDbSlug
       );
-      if (bySlug) continue;
+      if (bySlug) {
+        // Update start time if available
+        if (startTimeEst && startTimeEst !== bySlug.startTimeEst) {
+          await updateBookOdds(bySlug.id, { startTimeEst });
+        }
+        continue;
+      }
 
-      // Also skip if already in DB by ncaaContestId (reusing the field for NBA game IDs)
       const byGameId = await getGameByNcaaContestId(gameId);
       if (byGameId) continue;
 
+      const resolvedStartTime = startTimeMap?.get(`${awayDbSlug}@${homeDbSlug}`) ?? startTimeEst ?? "TBD";
       const row: InsertGame = {
         fileId: 0,
         gameDate: dateStr,
-        startTimeEst: startTimeEst ?? "TBD",
+        startTimeEst: resolvedStartTime,
         awayTeam: awayDbSlug,
         homeTeam: homeDbSlug,
         awayBookSpread: null,
@@ -869,52 +531,51 @@ async function refreshNba(todayStr: string, allDates: string[]): Promise<{
         publishedToFeed: false,
         rotNums: null,
         sortOrder: 9999,
-        ncaaContestId: gameId, // store NBA game ID in ncaaContestId for dedup
+        ncaaContestId: gameId,
       };
       await insertGames([row]);
       scheduleInserted++;
+      totalInserted++;
       console.log(
         `[VSiNAutoRefresh] Inserted NBA schedule-only: ${awayDbSlug} @ ${homeDbSlug} (${dateStr})`
       );
     }
   }
 
-  return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: relevantGames.length };
+  return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: vsinSplits.length };
 }
 
 // ─── NHL Refresh ─────────────────────────────────────────────────────────────
 
-/**
- * Scrapes VSiN NHL betting splits, fetches NHL.com schedule, and upserts all
- * NHL games into the DB. Mirrors refreshNba exactly but uses NHL-specific
- * scrapers, slugs, and sport="NHL".
- */
 async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
   updated: number;
   inserted: number;
   scheduleInserted: number;
   total: number;
 }> {
-  // ── Step 1: Scrape all NHL games from VSiN ───────────────────────────────
-  let allScraped: NhlScrapedOdds[] = [];
+  // Scrape VSiN NHL betting splits (today only)
+  let vsinSplits: VsinSplitsGame[] = [];
   try {
-    allScraped = await scrapeNhlVsinOdds("ALL");
+    const allSplits = await scrapeVsinBettingSplits("front");
+    vsinSplits = allSplits.filter(g => g.sport === "NHL");
+    console.log(`[VSiNAutoRefresh] VSiN NHL splits: ${vsinSplits.length} games`);
   } catch (err) {
-    console.error("[VSiNAutoRefresh] NHL VSiN scrape failed (non-fatal):", err);
-    allScraped = [];
+    console.warn("[VSiNAutoRefresh] VSiN NHL splits scrape failed (non-fatal):", err);
   }
 
-  // Filter to only games with valid DB slugs
-  const relevantGames = allScraped.filter(
-    (g) => NHL_VALID_DB_SLUGS.has(g.awaySlug) && NHL_VALID_DB_SLUGS.has(g.homeSlug)
-  );
+  // Build a map: dbSlug pair → VsinSplitsGame for fast lookup
+  const vsinSplitsMap = new Map<string, VsinSplitsGame>();
+  for (const g of vsinSplits) {
+    const awayTeam = NHL_BY_VSIN_SLUG.get(g.awayVsinSlug);
+    const homeTeam = NHL_BY_VSIN_SLUG.get(g.homeVsinSlug);
+    if (awayTeam && homeTeam) {
+      vsinSplitsMap.set(`${awayTeam.dbSlug}@${homeTeam.dbSlug}`, g);
+    } else {
+      console.log(`[VSiNAutoRefresh][NHL] Unknown VSiN slug: ${g.awayVsinSlug} @ ${g.homeVsinSlug}`);
+    }
+  }
 
-  console.log(
-    `[VSiNAutoRefresh] NHL VSiN: ${allScraped.length} total scraped, ` +
-    `${relevantGames.length} with valid DB slugs`
-  );
-
-  // ── Step 2: Fetch NHL schedule for the rolling 7-day window ─────────────
+  // Fetch NHL schedule for the rolling 7-day window
   const rangeEnd = allDates[allDates.length - 1];
   let nhlScheduleGames: NhlScheduleGame[] = [];
   try {
@@ -931,7 +592,6 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
     nhlStartTimeMaps.set(dateStr, buildNhlStartTimeMap(gamesOnDate));
   }
 
-  // Build a per-date lookup for NHL schedule games (for schedule-only insertion)
   const nhlGamesByDate = new Map<string, typeof nhlScheduleGames>();
   for (const g of nhlScheduleGames) {
     const list = nhlGamesByDate.get(g.gameDateEst) ?? [];
@@ -939,122 +599,62 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
     nhlGamesByDate.set(g.gameDateEst, list);
   }
 
-  // ── Step 3: Upsert VSiN games into DB ────────────────────────────────────
+  // Apply VSiN splits to today's existing NHL games
   let totalUpdated = 0;
-  let totalInserted = 0;
-
-  // Group scraped games by date
-  const vsinDatesSet = new Set<string>();
-  for (const g of relevantGames) vsinDatesSet.add(yyyymmddToIso(String(g.gameDate ?? "")));
-  const vsinDates = Array.from(vsinDatesSet);
-
-  for (const dateStr of vsinDates) {
-    const gamesForDate = relevantGames.filter(
-      (g) => yyyymmddToIso(String(g.gameDate ?? "")) === dateStr
+  const existingToday = await listGamesByDate(todayStr, "NHL");
+  for (const dbGame of existingToday) {
+    const key = `${dbGame.awayTeam}@${dbGame.homeTeam}`;
+    const splits = vsinSplitsMap.get(key);
+    if (!splits) continue;
+    await updateBookOdds(dbGame.id, {
+      spreadAwayBetsPct: splits.spreadAwayBetsPct,
+      spreadAwayMoneyPct: splits.spreadAwayMoneyPct,
+      totalOverBetsPct: splits.totalOverBetsPct,
+      totalOverMoneyPct: splits.totalOverMoneyPct,
+      mlAwayBetsPct: splits.mlAwayBetsPct,
+      mlAwayMoneyPct: splits.mlAwayMoneyPct,
+    });
+    totalUpdated++;
+    console.log(
+      `[VSiNAutoRefresh][NHL] Splits updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} ` +
+      `spread=${splits.spreadAwayBetsPct}%/${splits.spreadAwayMoneyPct}% ` +
+      `total=${splits.totalOverBetsPct}%/${splits.totalOverMoneyPct}% ` +
+      `ml=${splits.mlAwayBetsPct}%/${splits.mlAwayMoneyPct}%`
     );
-    const existing = await listGamesByDate(dateStr, "NHL");
-    const startTimeMap = nhlStartTimeMaps.get(dateStr);
-
-    for (const scraped of gamesForDate) {
-      const awaySlug = scraped.awaySlug;
-      const homeSlug = scraped.homeSlug;
-      const existingGame = existing.find(
-        (e) => e.awayTeam === awaySlug && e.homeTeam === homeSlug
-      );
-      const startTimeKey = `${awaySlug}@${homeSlug}`;
-      const startTimeEst = startTimeMap?.get(startTimeKey);
-
-      if (existingGame) {
-        // Update existing game with fresh VSiN odds + splits
-        await updateBookOdds(existingGame.id, {
-          awayBookSpread: scraped.awaySpread,
-          homeBookSpread: scraped.homeSpread,
-          bookTotal: scraped.total,
-          sortOrder: scraped.vsinRowIndex,
-          ...(startTimeEst ? { startTimeEst } : {}),
-          spreadAwayBetsPct: scraped.spreadAwayBetsPct,
-          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
-          totalOverBetsPct: scraped.totalOverBetsPct,
-          totalOverMoneyPct: scraped.totalOverMoneyPct,
-          mlAwayBetsPct: scraped.mlAwayBetsPct,
-          mlAwayMoneyPct: scraped.mlAwayMoneyPct,
-          awayML: scraped.awayML,
-          homeML: scraped.homeML,
-        });
-        totalUpdated++;
-        console.log(
-          `[VSiNAutoRefresh] Updated NHL VSiN: ${scraped.awayTeam} @ ${scraped.homeTeam} ` +
-          `(${dateStr}) spread=${scraped.awaySpread}/${scraped.homeSpread} total=${scraped.total} ` +
-          `awayML=${scraped.awayML ?? "?"} homeML=${scraped.homeML ?? "?"}`
-        );
-      } else {
-        // Insert new game stub from VSiN
-        const row: InsertGame = {
-          fileId: 0,
-          gameDate: dateStr,
-          startTimeEst: startTimeEst ?? "TBD",
-          awayTeam: awaySlug,
-          homeTeam: homeSlug,
-          awayBookSpread: scraped.awaySpread !== null ? String(scraped.awaySpread) : null,
-          homeBookSpread: scraped.homeSpread !== null ? String(scraped.homeSpread) : null,
-          bookTotal: scraped.total !== null ? String(scraped.total) : null,
-          awayModelSpread: null,
-          homeModelSpread: null,
-          modelTotal: null,
-          spreadEdge: null,
-          spreadDiff: null,
-          totalEdge: null,
-          totalDiff: null,
-          sport: "NHL",
-          gameType: "regular_season",
-          conference: null,
-          publishedToFeed: false,
-          rotNums: null,
-          sortOrder: scraped.vsinRowIndex,
-          ncaaContestId: null,
-          spreadAwayBetsPct: scraped.spreadAwayBetsPct,
-          spreadAwayMoneyPct: scraped.spreadAwayMoneyPct,
-          totalOverBetsPct: scraped.totalOverBetsPct,
-          totalOverMoneyPct: scraped.totalOverMoneyPct,
-          mlAwayBetsPct: scraped.mlAwayBetsPct,
-          mlAwayMoneyPct: scraped.mlAwayMoneyPct,
-          awayML: scraped.awayML,
-          homeML: scraped.homeML,
-        };
-        await insertGames([row]);
-        totalInserted++;
-        console.log(
-          `[VSiNAutoRefresh] Inserted NHL VSiN: ${scraped.awayTeam} @ ${scraped.homeTeam} (${dateStr})`
-        );
-      }
-    }
   }
 
-  // ── Step 4: Insert schedule-only NHL games (no VSiN odds yet) ────────────
+  // NHL schedule-only game insertion (rolling 7-day window)
   let scheduleInserted = 0;
+  let totalInserted = 0;
+
   for (const dateStr of allDates) {
     if (dateStr < todayStr) continue;
     const nhlGames = nhlGamesByDate.get(dateStr) ?? [];
     if (nhlGames.length === 0) continue;
     const existing = await listGamesByDate(dateStr, "NHL");
+    const startTimeMap = nhlStartTimeMaps.get(dateStr);
 
     for (const nhlGame of nhlGames) {
       const { awayDbSlug, homeDbSlug, startTimeEst, gameId } = nhlGame;
 
-      // Skip if already in DB by slug match
       const bySlug = existing.find(
         (e) => e.awayTeam === awayDbSlug && e.homeTeam === homeDbSlug
       );
-      if (bySlug) continue;
+      if (bySlug) {
+        if (startTimeEst && startTimeEst !== bySlug.startTimeEst) {
+          await updateBookOdds(bySlug.id, { startTimeEst });
+        }
+        continue;
+      }
 
-      // Skip if already in DB by game ID (stored in ncaaContestId for dedup)
       const byGameId = await getGameByNcaaContestId(String(gameId));
       if (byGameId) continue;
 
+      const resolvedStartTime = startTimeMap?.get(`${awayDbSlug}@${homeDbSlug}`) ?? startTimeEst ?? "TBD";
       const row: InsertGame = {
         fileId: 0,
         gameDate: dateStr,
-        startTimeEst: startTimeEst ?? "TBD",
+        startTimeEst: resolvedStartTime,
         awayTeam: awayDbSlug,
         homeTeam: homeDbSlug,
         awayBookSpread: null,
@@ -1073,17 +673,18 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
         publishedToFeed: false,
         rotNums: null,
         sortOrder: 9999,
-        ncaaContestId: String(gameId), // store NHL game ID for dedup
+        ncaaContestId: String(gameId),
       };
       await insertGames([row]);
       scheduleInserted++;
+      totalInserted++;
       console.log(
         `[VSiNAutoRefresh] Inserted NHL schedule-only: ${awayDbSlug} @ ${homeDbSlug} (${dateStr})`
       );
     }
   }
 
-  return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: relevantGames.length };
+  return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: vsinSplits.length };
 }
 
 // ─── Main refresh orchestrator ─────────────────────────────────────────────────
@@ -1112,11 +713,11 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
       `total=${nhlResult.total}`
     );
 
-    // Apply DraftKings spread odds + O/U odds from MetaBet for all three leagues
-    // Runs after VSiN upserts so DB rows exist before we try to update them
-    await runMetabetOddsUpdate("NCAAM", "BKC", todayStr);
-    await runMetabetOddsUpdate("NBA", "BKP", todayStr);
-    await runMetabetOddsUpdate("NHL", "HKN", todayStr);
+    // Apply DraftKings odds from Action Network for all three leagues
+    // Runs after VSiN splits upserts so DB rows exist before we try to update them
+    await runActionNetworkOddsUpdate("NCAAM", "ncaab", todayStr);
+    await runActionNetworkOddsUpdate("NBA", "nba", todayStr);
+    await runActionNetworkOddsUpdate("NHL", "nhl", todayStr);
     const result: RefreshResult = {
       refreshedAt: new Date().toISOString(),
       scoresRefreshedAt: lastScoresRefreshedAt,

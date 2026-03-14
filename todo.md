@@ -1236,3 +1236,22 @@
 - [ ] Integrate new odds scraper into vsinAutoRefresh.ts (replace/supplement current NBA/NHL odds source)
 - [ ] Publish NBA March 13 games to feed after odds are populated
 - [ ] Verify NBA and NHL game cards display spread, total, and ML with correct odds on mobile and desktop
+
+## NCAA.com Full Slate Audit (2026-03-13)
+- [ ] Fix March 13: remove duplicate new_mexico@san_diego_st entry (wrong date - real game is March 14)
+- [ ] Fix March 13: kent@akron status correction (showing live but should be upcoming)
+- [ ] Populate missing spread/total odds for 16 March 13 games via MetaBet NCAAM endpoint
+- [ ] Audit March 14+ dates for missing D1 NCAAM games (check NCAA.com for each date)
+- [ ] Ensure NCAA scoreboard sync covers all 365 teams on all dates going forward
+- [ ] Fix Ole Miss slug mapping (NCAA.com shows "Ole Miss", DB slug is "mississippi")
+- [ ] Fix CSUN slug mapping (NCAA.com shows "CSUN", DB slug is "csu_northridge")
+- [ ] Fix Southern U. slug mapping (NCAA.com shows "Southern U.", DB slug is "southern_u")
+- [ ] Fix Florida A&M HTML entity (NCAA.com shows "Florida A&amp;M", DB slug is "florida_a_and_m")
+- [ ] Fix Alabama A&M HTML entity (NCAA.com shows "Alabama A&amp;M", DB slug is "alabama_a_and_m")
+
+## Action Network Odds Integration
+- [ ] Discover Action Network API endpoints for NCAAB, NBA, NHL odds
+- [ ] Build actionNetworkScraper.ts using Open + DK NJ (book 128508) columns
+- [ ] Integrate Action Network scraper into vsinAutoRefresh replacing MetaBet
+- [ ] Backfill today's games (March 13) with Action Network odds
+- [ ] Verify all leagues display correctly on feed (mobile + desktop)

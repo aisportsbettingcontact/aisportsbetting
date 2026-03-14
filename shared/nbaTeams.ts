@@ -24,6 +24,7 @@ export interface NbaTeam {
   nbaSlug: string;
   vsinSlug: string;
   dbSlug: string;
+  anSlug: string;
   logoUrl: string;
 }
 
@@ -39,6 +40,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "celtics",
     vsinSlug: "boston-celtics",
     dbSlug: "boston_celtics",
+    anSlug: "boston-celtics",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612738/primary/L/logo.svg",
   },
   {
@@ -51,6 +53,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "nets",
     vsinSlug: "brooklyn-nets",
     dbSlug: "brooklyn_nets",
+    anSlug: "brooklyn-nets",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612751/primary/L/logo.svg",
   },
   {
@@ -63,6 +66,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "knicks",
     vsinSlug: "new-york-knicks",
     dbSlug: "new_york_knicks",
+    anSlug: "new-york-knicks",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612752/primary/L/logo.svg",
   },
   {
@@ -75,6 +79,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "sixers",
     vsinSlug: "philadelphia-76ers",
     dbSlug: "philadelphia_76ers",
+    anSlug: "philadelphia-76ers",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612755/primary/L/logo.svg",
   },
   {
@@ -87,6 +92,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "raptors",
     vsinSlug: "toronto-raptors",
     dbSlug: "toronto_raptors",
+    anSlug: "toronto-raptors",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612761/primary/L/logo.svg",
   },
   // ── Eastern Conference — Central Division ────────────────────────────────
@@ -100,6 +106,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "bulls",
     vsinSlug: "chicago-bulls",
     dbSlug: "chicago_bulls",
+    anSlug: "chicago-bulls",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612741/primary/L/logo.svg",
   },
   {
@@ -112,6 +119,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "cavaliers",
     vsinSlug: "cleveland-cavaliers",
     dbSlug: "cleveland_cavaliers",
+    anSlug: "cleveland-cavaliers",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612739/primary/L/logo.svg",
   },
   {
@@ -124,6 +132,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "pistons",
     vsinSlug: "detroit-pistons",
     dbSlug: "detroit_pistons",
+    anSlug: "detroit-pistons",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612765/primary/L/logo.svg",
   },
   {
@@ -136,6 +145,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "pacers",
     vsinSlug: "indiana-pacers",
     dbSlug: "indiana_pacers",
+    anSlug: "indiana-pacers",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612754/primary/L/logo.svg",
   },
   {
@@ -148,6 +158,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "bucks",
     vsinSlug: "milwaukee-bucks",
     dbSlug: "milwaukee_bucks",
+    anSlug: "milwaukee-bucks",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612749/primary/L/logo.svg",
   },
   // ── Eastern Conference — Southeast Division ───────────────────────────────
@@ -161,6 +172,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "hawks",
     vsinSlug: "atlanta-hawks",
     dbSlug: "atlanta_hawks",
+    anSlug: "atlanta-hawks",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612737/primary/L/logo.svg",
   },
   {
@@ -173,6 +185,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "hornets",
     vsinSlug: "charlotte-hornets",
     dbSlug: "charlotte_hornets",
+    anSlug: "charlotte-hornets",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612766/primary/L/logo.svg",
   },
   {
@@ -185,6 +198,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "heat",
     vsinSlug: "miami-heat",
     dbSlug: "miami_heat",
+    anSlug: "miami-heat",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612748/primary/L/logo.svg",
   },
   {
@@ -197,6 +211,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "magic",
     vsinSlug: "orlando-magic",
     dbSlug: "orlando_magic",
+    anSlug: "orlando-magic",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612753/primary/L/logo.svg",
   },
   {
@@ -209,6 +224,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "wizards",
     vsinSlug: "washington-wizards",
     dbSlug: "washington_wizards",
+    anSlug: "washington-wizards",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612764/primary/L/logo.svg",
   },
   // ── Western Conference — Northwest Division ───────────────────────────────
@@ -222,6 +238,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "nuggets",
     vsinSlug: "denver-nuggets",
     dbSlug: "denver_nuggets",
+    anSlug: "denver-nuggets",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612743/primary/L/logo.svg",
   },
   {
@@ -234,6 +251,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "timberwolves",
     vsinSlug: "minnesota-timberwolves",
     dbSlug: "minnesota_timberwolves",
+    anSlug: "minnesota-timberwolves",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612750/primary/L/logo.svg",
   },
   {
@@ -246,6 +264,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "thunder",
     vsinSlug: "oklahoma-city-thunder",
     dbSlug: "oklahoma_city_thunder",
+    anSlug: "oklahoma-city-thunder",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612760/primary/L/logo.svg",
   },
   {
@@ -258,6 +277,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "trailblazers",
     vsinSlug: "portland-trail-blazers",
     dbSlug: "portland_trail_blazers",
+    anSlug: "portland-trail-blazers",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612757/primary/L/logo.svg",
   },
   {
@@ -270,6 +290,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "jazz",
     vsinSlug: "utah-jazz",
     dbSlug: "utah_jazz",
+    anSlug: "utah-jazz",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612762/primary/L/logo.svg",
   },
   // ── Western Conference — Pacific Division ────────────────────────────────
@@ -283,6 +304,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "warriors",
     vsinSlug: "golden-state-warriors",
     dbSlug: "golden_state_warriors",
+    anSlug: "golden-state-warriors",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612744/primary/L/logo.svg",
   },
   {
@@ -295,6 +317,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "clippers",
     vsinSlug: "los-angeles-clippers",
     dbSlug: "los_angeles_clippers",
+    anSlug: "los-angeles-clippers",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612746/primary/L/logo.svg",
   },
   {
@@ -307,6 +330,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "lakers",
     vsinSlug: "los-angeles-lakers",
     dbSlug: "los_angeles_lakers",
+    anSlug: "los-angeles-lakers",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612747/primary/L/logo.svg",
   },
   {
@@ -319,6 +343,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "suns",
     vsinSlug: "phoenix-suns",
     dbSlug: "phoenix_suns",
+    anSlug: "phoenix-suns",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612756/primary/L/logo.svg",
   },
   {
@@ -331,6 +356,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "kings",
     vsinSlug: "sacramento-kings",
     dbSlug: "sacramento_kings",
+    anSlug: "sacramento-kings",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612758/primary/L/logo.svg",
   },
   // ── Western Conference — Southwest Division ───────────────────────────────
@@ -344,6 +370,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "mavericks",
     vsinSlug: "dallas-mavericks",
     dbSlug: "dallas_mavericks",
+    anSlug: "dallas-mavericks",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612742/primary/L/logo.svg",
   },
   {
@@ -356,6 +383,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "rockets",
     vsinSlug: "houston-rockets",
     dbSlug: "houston_rockets",
+    anSlug: "houston-rockets",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612745/primary/L/logo.svg",
   },
   {
@@ -368,6 +396,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "grizzlies",
     vsinSlug: "memphis-grizzlies",
     dbSlug: "memphis_grizzlies",
+    anSlug: "memphis-grizzlies",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612763/primary/L/logo.svg",
   },
   {
@@ -380,6 +409,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "pelicans",
     vsinSlug: "new-orleans-pelicans",
     dbSlug: "new_orleans_pelicans",
+    anSlug: "new-orleans-pelicans",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612740/primary/L/logo.svg",
   },
   {
@@ -392,6 +422,7 @@ export const NBA_TEAMS: NbaTeam[] = [
     nbaSlug: "spurs",
     vsinSlug: "san-antonio-spurs",
     dbSlug: "san_antonio_spurs",
+    anSlug: "san-antonio-spurs",
     logoUrl: "https://cdn.nba.com/logos/nba/1610612759/primary/L/logo.svg",
   },
 ];
@@ -408,6 +439,10 @@ export const NBA_BY_NBA_SLUG = new Map<string, NbaTeam>(
 /** Lookup by VSiN slug (hyphen format from VSiN) */
 export const NBA_BY_VSIN_SLUG = new Map<string, NbaTeam>(
   NBA_TEAMS.map(t => [t.vsinSlug, t])
+);
+/** Lookup by Action Network url_slug (hyphen format from AN API) */
+export const NBA_BY_AN_SLUG = new Map<string, NbaTeam>(
+  NBA_TEAMS.map(t => [t.anSlug, t])
 );
 /** Set of all valid DB slugs — used for server-side filtering */
 export const NBA_VALID_DB_SLUGS = new Set<string>(NBA_TEAMS.map(t => t.dbSlug));
@@ -448,4 +483,8 @@ export function getNbaTeamByNbaSlug(nbaSlug: string): NbaTeam | undefined {
 export function getNbaTeamByVsinSlug(vsinSlug: string): NbaTeam | undefined {
   const canonical = VSIN_HREF_ALIASES[vsinSlug] ?? vsinSlug;
   return NBA_BY_VSIN_SLUG.get(canonical);
+}
+/** Get team by Action Network url_slug (from AN API) */
+export function getNbaTeamByAnSlug(anSlug: string): NbaTeam | undefined {
+  return NBA_BY_AN_SLUG.get(anSlug);
 }
