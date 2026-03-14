@@ -87,7 +87,7 @@ function makeGameInfoCell(): string {
   </td>`;
 }
 
-// Build a minimal 3-row game HTML (SPREAD + TOTAL + ML) with 12 columns
+// Build a minimal 3-row game HTML (SPREAD + TOTAL + ML) with 12 columns (NCAAB)
 function buildMinimalGameHtml(): string {
   const emptyCell = `<td><div class="best-odds__odds-container"><div></div><div></div></div></td>`;
   const emptyCells = Array(9).fill(emptyCell).join("");
@@ -116,6 +116,104 @@ function buildMinimalGameHtml(): string {
   // Separator (1 cell)
   const separatorRow = `<tr><td colspan="12"></td></tr>`;
 
+  return spreadRow + totalRow + mlRow + separatorRow;
+}
+
+// Build a minimal 3-row game HTML for NBA (11 columns, nba-game link)
+function makeNbaGameInfoCell(): string {
+  return `<td>
+    <div class="game-info__rot-number"><div>1</div><div>2</div></div>
+    <div class="game-info__teams">
+      <div>
+        <img class="game-info__team-icon" src="wiz.png" />
+        <span class="game-info__team--desktop">Wizards</span>
+      </div>
+    </div>
+    <div class="game-info__teams">
+      <div>
+        <img class="game-info__team-icon" src="cel.png" />
+        <span class="game-info__team--desktop">Celtics</span>
+      </div>
+    </div>
+    <a href="/nba-game/wizards-celtics-score-odds-march-14-2026/281090">Game</a>
+  </td>`;
+}
+
+function buildMinimalNbaGameHtml(): string {
+  const emptyCell = `<td><div class="best-odds__odds-container"><div></div><div></div></div></td>`;
+  const emptyCells = Array(8).fill(emptyCell).join(""); // 11 total cols
+
+  const spreadRow = `<tr>
+    ${makeNbaGameInfoCell()}
+    ${makeOpenCell("+16.5", "-110", "-16.5", "-110")}
+    ${makeDkCell("+20.5", "-110", "-20.5", "-110")}
+    ${emptyCells}
+  </tr>`;
+
+  const totalRow = `<tr>
+    <td></td>
+    ${makeOpenCell("o228.5", "-110", "u228.5", "-110")}
+    ${makeDkCell("o233.5", "-110", "u233.5", "-110")}
+    ${emptyCells}
+  </tr>`;
+
+  const mlRow = `<tr>
+    <td></td>
+    ${makeOpenCell("+1100", "-110", "-2200", "-110")}
+    ${makeDkCell("+1500", "-110", "-2400", "-110")}
+    ${emptyCells}
+  </tr>`;
+
+  const separatorRow = `<tr><td colspan="11"></td></tr>`;
+  return spreadRow + totalRow + mlRow + separatorRow;
+}
+
+// Build a minimal 3-row game HTML for NHL (11 columns, nhl-game link)
+function makeNhlGameInfoCell(): string {
+  return `<td>
+    <div class="game-info__rot-number"><div>43</div><div>44</div></div>
+    <div class="game-info__teams">
+      <div>
+        <img class="game-info__team-icon" src="rng.png" />
+        <span class="game-info__team--desktop">Rangers</span>
+      </div>
+    </div>
+    <div class="game-info__teams">
+      <div>
+        <img class="game-info__team-icon" src="wld.png" />
+        <span class="game-info__team--desktop">Wild</span>
+      </div>
+    </div>
+    <a href="/nhl-game/rangers-wild-score-odds-march-14-2026/263572">Game</a>
+  </td>`;
+}
+
+function buildMinimalNhlGameHtml(): string {
+  const emptyCell = `<td><div class="best-odds__odds-container"><div></div><div></div></div></td>`;
+  const emptyCells = Array(8).fill(emptyCell).join(""); // 11 total cols
+
+  const spreadRow = `<tr>
+    ${makeNhlGameInfoCell()}
+    ${makeOpenCell("+1.5", "-130", "-1.5", "+106")}
+    ${makeDkCell("+1.5", "-133", "-1.5", "+127")}
+    ${emptyCells}
+  </tr>`;
+
+  const totalRow = `<tr>
+    <td></td>
+    ${makeOpenCell("o6.5", "+110", "u6.5", "-134")}
+    ${makeDkCell("o6.5", "+117", "u6.5", "-122")}
+    ${emptyCells}
+  </tr>`;
+
+  const mlRow = `<tr>
+    <td></td>
+    ${makeOpenCell("+195", "-110", "-240", "-110")}
+    ${makeDkCell("+162", "-110", "-196", "-110")}
+    ${emptyCells}
+  </tr>`;
+
+  const separatorRow = `<tr><td colspan="11"></td></tr>`;
   return spreadRow + totalRow + mlRow + separatorRow;
 }
 
@@ -202,5 +300,95 @@ describe("parseAnAllMarketsHtml", () => {
     const rawOver = g.dkOver?.line ?? "";
     const dbTotal = rawOver.replace(/^[ou]/i, "");
     expect(dbTotal).toBe("139.5");
+  });
+});
+
+describe("parseAnAllMarketsHtml - NBA", () => {
+  it("parses NBA game with nba-game link (11 columns)", () => {
+    const html = buildMinimalNbaGameHtml();
+    const result = parseAnAllMarketsHtml(html, "nba");
+
+    expect(result.games).toHaveLength(1);
+    const g = result.games[0];
+
+    expect(g.anGameId).toBe("281090");
+    expect(g.awayName).toBe("Wizards");
+    expect(g.homeName).toBe("Celtics");
+
+    // Open spread
+    expect(g.openAwaySpread?.line).toBe("+16.5");
+    expect(g.openHomeSpread?.line).toBe("-16.5");
+
+    // DK NJ spread
+    expect(g.dkAwaySpread?.line).toBe("+20.5");
+    expect(g.dkHomeSpread?.line).toBe("-20.5");
+
+    // Open total
+    expect(g.openOver?.line).toBe("o228.5");
+    expect(g.openUnder?.line).toBe("u228.5");
+
+    // DK NJ total
+    expect(g.dkOver?.line).toBe("o233.5");
+    expect(g.dkUnder?.line).toBe("u233.5");
+
+    // Open ML
+    expect(g.openAwayML?.line).toBe("+1100");
+    expect(g.openHomeML?.line).toBe("-2200");
+
+    // DK NJ ML
+    expect(g.dkAwayML?.line).toBe("+1500");
+    expect(g.dkHomeML?.line).toBe("-2400");
+  });
+
+  it("does not parse NBA game when sport is ncaab", () => {
+    const html = buildMinimalNbaGameHtml();
+    const result = parseAnAllMarketsHtml(html, "ncaab"); // wrong sport
+    expect(result.games).toHaveLength(0); // nba-game link not matched
+  });
+});
+
+describe("parseAnAllMarketsHtml - NHL", () => {
+  it("parses NHL game with nhl-game link (11 columns)", () => {
+    const html = buildMinimalNhlGameHtml();
+    const result = parseAnAllMarketsHtml(html, "nhl");
+
+    expect(result.games).toHaveLength(1);
+    const g = result.games[0];
+
+    expect(g.anGameId).toBe("263572");
+    expect(g.awayName).toBe("Rangers");
+    expect(g.homeName).toBe("Wild");
+
+    // Open spread (puck line)
+    expect(g.openAwaySpread?.line).toBe("+1.5");
+    expect(g.openAwaySpread?.juice).toBe("-130");
+    expect(g.openHomeSpread?.line).toBe("-1.5");
+    expect(g.openHomeSpread?.juice).toBe("+106");
+
+    // DK NJ spread
+    expect(g.dkAwaySpread?.line).toBe("+1.5");
+    expect(g.dkAwaySpread?.juice).toBe("-133");
+
+    // Open total
+    expect(g.openOver?.line).toBe("o6.5");
+    expect(g.openUnder?.line).toBe("u6.5");
+
+    // DK NJ total
+    expect(g.dkOver?.line).toBe("o6.5");
+    expect(g.dkUnder?.line).toBe("u6.5");
+
+    // Open ML
+    expect(g.openAwayML?.line).toBe("+195");
+    expect(g.openHomeML?.line).toBe("-240");
+
+    // DK NJ ML
+    expect(g.dkAwayML?.line).toBe("+162");
+    expect(g.dkHomeML?.line).toBe("-196");
+  });
+
+  it("does not parse NHL game when sport is nba", () => {
+    const html = buildMinimalNhlGameHtml();
+    const result = parseAnAllMarketsHtml(html, "nba"); // wrong sport
+    expect(result.games).toHaveLength(0); // nhl-game link not matched
   });
 });

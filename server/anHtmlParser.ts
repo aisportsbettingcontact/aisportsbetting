@@ -3,6 +3,8 @@
  *
  * Parses the HTML from the Action Network "All Markets" best-odds table
  * (https://www.actionnetwork.com/ncaab/odds?oddsType=combined)
+ * (https://www.actionnetwork.com/nba/odds?oddsType=combined)
+ * (https://www.actionnetwork.com/nhl/odds?oddsType=combined)
  *
  * In "All Markets" view, the table has 3 <tr> rows per game:
  *   Row 1 (SPREAD)    — has the game link + team names + rotation numbers
@@ -103,11 +105,32 @@ function findDkColumnIndex(api: CheerioAPI, rows: El[]): number {
 
 type RowType = "SPREAD" | "TOTAL" | "ML" | "SEPARATOR";
 
-function classifyRow(api: CheerioAPI, row: El): RowType {
-  const cells = api(row).find("> td").toArray();
-  if (cells.length < 12) return "SEPARATOR";
+/** Supported sports for AN HTML parsing */
+export type AnSport = "ncaab" | "nba" | "nhl";
 
-  const hasLink = api(row).find('a[href*="ncaab-game"]').length > 0;
+/** Game link patterns per sport */
+const SPORT_LINK_PATTERNS: Record<AnSport, string> = {
+  ncaab: "ncaab-game",
+  nba: "nba-game",
+  nhl: "nhl-game",
+};
+
+// Minimum cell count per sport:
+// NCAAB: 12 (8 books + Open + Game info + Best Odds + 1 extra)
+// NBA/NHL: 11 (7 books + Open + Game info + Best Odds + 1 extra)
+const MIN_CELLS_BY_SPORT: Record<AnSport, number> = {
+  ncaab: 10, // use 10 as floor to be safe (actual is 12)
+  nba: 9,    // use 9 as floor to be safe (actual is 11)
+  nhl: 9,    // use 9 as floor to be safe (actual is 11)
+};
+
+function classifyRow(api: CheerioAPI, row: El, sport: AnSport): RowType {
+  const cells = api(row).find("> td").toArray();
+  const minCells = MIN_CELLS_BY_SPORT[sport];
+  if (cells.length < minCells) return "SEPARATOR";
+
+  const linkPattern = SPORT_LINK_PATTERNS[sport];
+  const hasLink = api(row).find(`a[href*="${linkPattern}"]`).length > 0;
   if (hasLink) return "SPREAD";
 
   const openCells = api(row).find(".best-odds__open-cell").toArray();
@@ -183,10 +206,11 @@ function parseBookCell(api: CheerioAPI, cell: El): { away: AnOddsEntry | null; h
  * Pass the raw HTML from the AN best-odds page (the <tbody> content or full page).
  * The parser wraps it in a <table> to ensure cheerio handles <tr>/<td> correctly.
  *
- * @param html  Raw HTML string from the AN best-odds page
- * @returns     Parsed game odds with open lines and DK NJ lines for all markets
+ * @param html   Raw HTML string from the AN best-odds page
+ * @param sport  Sport identifier: "ncaab" | "nba" | "nhl" (default: "ncaab")
+ * @returns      Parsed game odds with open lines and DK NJ lines for all markets
  */
-export function parseAnAllMarketsHtml(html: string): AnParseResult {
+export function parseAnAllMarketsHtml(html: string, sport: AnSport = "ncaab"): AnParseResult {
   const warnings: string[] = [];
 
   // Wrap in <table> so cheerio correctly parses <tr>/<td> elements
@@ -207,12 +231,13 @@ export function parseAnAllMarketsHtml(html: string): AnParseResult {
   let currentGame: AnParsedGame | null = null;
 
   for (const row of rows) {
-    const type = classifyRow($, row);
+    const type = classifyRow($, row, sport);
     const cells = $(row).find("> td").toArray();
 
     if (type === "SPREAD") {
       // ── Extract game metadata ──
-      const link = $(row).find('a[href*="ncaab-game"]').attr("href") || "";
+      const linkPattern = SPORT_LINK_PATTERNS[sport];
+      const link = $(row).find(`a[href*="${linkPattern}"]`).attr("href") || "";
       const idMatch = link.match(/\/(\d+)$/);
       if (!idMatch) {
         warnings.push(`Could not extract AN game ID from link: ${link}`);

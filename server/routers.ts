@@ -29,9 +29,9 @@ import { getLastRefreshResult, runVsinRefresh, refreshAllScoresNow } from "./vsi
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
 import { triggerModelWatcherForDate } from "./ncaamModelWatcher";
 import { VALID_DB_SLUGS, NCAAM_TEAMS, BY_AN_SLUG as NCAAM_BY_AN_SLUG } from "@shared/ncaamTeams";
-import { parseAnAllMarketsHtml } from "./anHtmlParser";
-import { NBA_VALID_DB_SLUGS } from "@shared/nbaTeams";
-import { NHL_VALID_DB_SLUGS } from "@shared/nhlTeams";
+import { parseAnAllMarketsHtml, type AnSport } from "./anHtmlParser";
+import { NBA_VALID_DB_SLUGS, NBA_TEAMS } from "@shared/nbaTeams";
+import { NHL_VALID_DB_SLUGS, NHL_TEAMS } from "@shared/nhlTeams";
 
 /** Returns true if both teams are in the appropriate registry for the given sport */
 function isValidGame(awayTeam: string, homeTeam: string, sport?: string | null): boolean {
@@ -332,8 +332,11 @@ export const appRouter = router({
       .mutation(async ({ input }) => {
         const { html, gameDate, sport } = input;
 
+        // Map sport string to AnSport type
+        const anSport: AnSport = sport === "NBA" ? "nba" : sport === "NHL" ? "nhl" : "ncaab";
+
         // ── Parse HTML ──
-        const parseResult = parseAnAllMarketsHtml(html);
+        const parseResult = parseAnAllMarketsHtml(html, anSport);
         if (!parseResult.games.length) {
           return { updated: 0, skipped: 0, warnings: parseResult.warnings, errors: ["No games found in HTML"] };
         }
@@ -342,30 +345,121 @@ export const appRouter = router({
         // The AN game URL uses shortened combined slugs (e.g. "saint-josephs-vcu").
         // We need to split them into individual team slugs and match to dbSlug.
         const byNormSlug = new Map<string, string>();
-        // Add hardcoded URL-slug aliases for teams whose URL slug differs from all known slugs
-        const URL_SLUG_ALIASES: Record<string, string> = {
-          "wichita-state": "wichita_st",
-          "san-diego-state": "san_diego_st",
-          "utah-state": "utah_st",
-          "prairie-view-am": "prairie_view_a_and_m",
-          "southern-university": "southern_u",
-          "kennesaw-state": "kennesaw_st",
-          "north-carolina-central": "nc_central",
-          "cal-baptist": "california_baptist",
-          "utah-valley": "utah_valley",
-          "penn": "pennsylvania",
-          "ole-miss": "mississippi",
-          "uconn": "connecticut",
-          "vcu": "va_commonwealth",
-        };
-        for (const [alias, dbSlug] of Object.entries(URL_SLUG_ALIASES)) {
-          byNormSlug.set(alias, dbSlug);
-        }
-        for (const t of NCAAM_TEAMS) {
-          byNormSlug.set(t.dbSlug.replace(/_/g, "-"), t.dbSlug);
-          byNormSlug.set(t.ncaaSlug, t.dbSlug);
-          byNormSlug.set(t.vsinSlug, t.dbSlug);
-          byNormSlug.set(t.anSlug, t.dbSlug);
+
+        if (sport === "NCAAM") {
+          // NCAAM-specific URL-slug aliases
+          const NCAAM_URL_ALIASES: Record<string, string> = {
+            "wichita-state": "wichita_st",
+            "san-diego-state": "san_diego_st",
+            "utah-state": "utah_st",
+            "prairie-view-am": "prairie_view_a_and_m",
+            "southern-university": "southern_u",
+            "kennesaw-state": "kennesaw_st",
+            "north-carolina-central": "nc_central",
+            "cal-baptist": "california_baptist",
+            "utah-valley": "utah_valley",
+            "penn": "pennsylvania",
+            "ole-miss": "mississippi",
+            "uconn": "connecticut",
+            "vcu": "va_commonwealth",
+          };
+          for (const [alias, dbSlug] of Object.entries(NCAAM_URL_ALIASES)) {
+            byNormSlug.set(alias, dbSlug);
+          }
+          for (const t of NCAAM_TEAMS) {
+            byNormSlug.set(t.dbSlug.replace(/_/g, "-"), t.dbSlug);
+            byNormSlug.set(t.ncaaSlug, t.dbSlug);
+            byNormSlug.set(t.vsinSlug, t.dbSlug);
+            byNormSlug.set(t.anSlug, t.dbSlug);
+          }
+        } else if (sport === "NBA") {
+          // NBA URL-slug aliases (short nicknames used in AN game URLs)
+          const NBA_URL_ALIASES: Record<string, string> = {
+            "wizards": "washington_wizards",
+            "celtics": "boston_celtics",
+            "magic": "orlando_magic",
+            "heat": "miami_heat",
+            "nuggets": "denver_nuggets",
+            "lakers": "los_angeles_lakers",
+            "kings": "sacramento_kings",
+            "clippers": "los_angeles_clippers",
+            "bucks": "milwaukee_bucks",
+            "hawks": "atlanta_hawks",
+            "hornets": "charlotte_hornets",
+            "spurs": "san_antonio_spurs",
+            "nets": "brooklyn_nets",
+            "76ers": "philadelphia_76ers",
+            "knicks": "new_york_knicks",
+            "raptors": "toronto_raptors",
+            "bulls": "chicago_bulls",
+            "cavaliers": "cleveland_cavaliers",
+            "pistons": "detroit_pistons",
+            "pacers": "indiana_pacers",
+            "timberwolves": "minnesota_timberwolves",
+            "thunder": "oklahoma_city_thunder",
+            "jazz": "utah_jazz",
+            "trail-blazers": "portland_trail_blazers",
+            "warriors": "golden_state_warriors",
+            "suns": "phoenix_suns",
+            "mavericks": "dallas_mavericks",
+            "rockets": "houston_rockets",
+            "grizzlies": "memphis_grizzlies",
+            "pelicans": "new_orleans_pelicans",
+          };
+          for (const [alias, dbSlug] of Object.entries(NBA_URL_ALIASES)) {
+            byNormSlug.set(alias, dbSlug);
+          }
+          for (const t of NBA_TEAMS) {
+            byNormSlug.set(t.dbSlug.replace(/_/g, "-"), t.dbSlug);
+            byNormSlug.set(t.anSlug, t.dbSlug);
+            byNormSlug.set(t.nbaSlug, t.dbSlug);
+            byNormSlug.set(t.vsinSlug, t.dbSlug);
+          }
+        } else if (sport === "NHL") {
+          // NHL URL-slug aliases (short nicknames used in AN game URLs)
+          const NHL_URL_ALIASES: Record<string, string> = {
+            "rangers": "new_york_rangers",
+            "wild": "minnesota_wild",
+            "kings": "los_angeles_kings",
+            "devils": "new_jersey_devils",
+            "sharks": "san_jose_sharks",
+            "canadiens": "montreal_canadiens",
+            "hurricanes": "carolina_hurricanes",
+            "lightning": "tampa_bay_lightning",
+            "maple-leafs": "toronto_maple_leafs",
+            "sabres": "buffalo_sabres",
+            "flames": "calgary_flames",
+            "islanders": "new_york_islanders",
+            "blue-jackets": "columbus_blue_jackets",
+            "flyers": "philadelphia_flyers",
+            "red-wings": "detroit_red_wings",
+            "stars": "dallas_stars",
+            "penguins": "pittsburgh_penguins",
+            "mammoth": "utah_hockey_club",
+            "blackhawks": "chicago_blackhawks",
+            "golden-knights": "vegas_golden_knights",
+            "kraken": "seattle_kraken",
+            "canucks": "vancouver_canucks",
+            "bruins": "boston_bruins",
+            "capitals": "washington_capitals",
+            "avalanche": "colorado_avalanche",
+            "jets": "winnipeg_jets",
+            "ducks": "anaheim_ducks",
+            "senators": "ottawa_senators",
+            "oilers": "edmonton_oilers",
+            "predators": "nashville_predators",
+            "blues": "st_louis_blues",
+            "panthers": "florida_panthers",
+          };
+          for (const [alias, dbSlug] of Object.entries(NHL_URL_ALIASES)) {
+            byNormSlug.set(alias, dbSlug);
+          }
+          for (const t of NHL_TEAMS) {
+            byNormSlug.set(t.dbSlug.replace(/_/g, "-"), t.dbSlug);
+            byNormSlug.set(t.anSlug, t.dbSlug);
+            byNormSlug.set(t.vsinSlug, t.dbSlug);
+            byNormSlug.set(t.nhlSlug, t.dbSlug);
+          }
         }
 
         function splitCombinedSlug(combined: string): [string, string] | null {

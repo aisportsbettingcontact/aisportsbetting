@@ -1278,3 +1278,14 @@
 - [x] Build IngestAnOdds page at /admin/ingest-an with paste area, date/sport controls, result display
 - [x] 21/21 NCAAB games matched and parsed correctly with 0 failures
 - [x] 6 vitest tests passing for anHtmlParser
+
+## NBA + NHL AN HTML Parser Extension (March 14, 2026)
+- [x] Fetch and deep-parse NBA AN HTML to understand team slug format
+- [x] Fetch and deep-parse NHL AN HTML to understand team slug format
+- [x] Build NBA slug lookup map (anSlug → dbSlug) in ingestAnHtml procedure
+- [x] Build NHL slug lookup map (anSlug → dbSlug) in ingestAnHtml procedure
+- [x] Test NBA: 7/7 games matched and parsed correctly
+- [x] Test NHL: 14/14 games matched and parsed correctly
+- [x] Add vitest cases for NBA and NHL (4 new tests, 10 total passing)
+- [x] Fix classifyRow MIN_CELLS threshold for 11-column NBA/NHL tables
+- [x] Checkpoint
