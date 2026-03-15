@@ -15,7 +15,7 @@
  * `trpc.games.lastRefresh` so the UI can show "Last updated HH:MM".
  */
 
-import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime, updateAnOdds } from "./db";
+import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime, updateAnOdds, insertOddsHistory } from "./db";
 import { fetchActionNetworkOdds, type AnSport } from "./actionNetworkScraper";
 import { scrapeVsinBettingSplits, type VsinSplitsGame } from "./vsinBettingSplitsScraper";
 import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
@@ -27,7 +27,7 @@ import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NH
 import { NBA_BY_DB_SLUG } from "../shared/nbaTeams";
 import type { InsertGame } from "../drizzle/schema";
 
-const INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 // Rolling window: today through N days ahead
 const RANGE_DAYS_AHEAD = 6; // fetch today + 6 more days = 7-day window
@@ -73,7 +73,7 @@ function slugsMatch(a: string, b: string): boolean {
   return false;
 }
 
-/** Returns true if the current moment is inside 6am–midnight Pacific Time. */
+/** Returns true if the current moment is inside 3am–midnight Pacific Time. */
 function isWithinActiveHours(): boolean {
   const now = new Date();
   const pstFormatter = new Intl.DateTimeFormat("en-US", {
@@ -82,7 +82,8 @@ function isWithinActiveHours(): boolean {
     hour12: false,
   });
   const hour = Number(pstFormatter.format(now));
-  return hour >= 6 && hour < 24;
+  // Active window: 3am PST (hour=3) through midnight (hour=23)
+  return hour >= 3 && hour < 24;
 }
 
 /** Returns a date string as YYYY-MM-DD in Pacific Time. */
@@ -698,10 +699,12 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
  */
 async function refreshAnApiOdds(
   dateStr: string,
-  sports: AnSport[] = ["ncaab", "nba", "nhl"]
-): Promise<{ updated: number; skipped: number; errors: string[] }> {
+  sports: AnSport[] = ["ncaab", "nba", "nhl"],
+  source: "auto" | "manual" = "auto"
+): Promise<{ updated: number; skipped: number; frozen: number; errors: string[] }> {
   let totalUpdated = 0;
   let totalSkipped = 0;
+  let totalFrozen = 0;
   const allErrors: string[] = [];
 
   for (const sport of sports) {
@@ -756,6 +759,18 @@ async function refreshAnApiOdds(
           continue;
         }
 
+        // ── ODDS FREEZE: skip games that have already started or finished ──────
+        // Once a game goes live, the AN API starts returning live in-game lines.
+        // We lock in the pre-game line by refusing to overwrite it.
+        if (dbGame.gameStatus === "live" || dbGame.gameStatus === "final") {
+          console.log(
+            `[ANApiOdds][${dbSport}] FROZEN: ${awayDbSlug} @ ${homeDbSlug} (${dateStr}) ` +
+            `— gameStatus=${dbGame.gameStatus}, odds locked in, skipping update`
+          );
+          totalFrozen++;
+          continue;
+        }
+
         // Populate DK NJ current lines + Open lines
         await updateAnOdds(dbGame.id, {
           // DK NJ current line
@@ -780,16 +795,34 @@ async function refreshAnApiOdds(
           } : {}),
         });
 
+        // ── ODDS HISTORY: snapshot the DK NJ lines we just wrote ─────────────
+        await insertOddsHistory(
+          dbGame.id,
+          dbSport,
+          source,
+          {
+            awaySpread: anGame.dkAwaySpread !== null ? String(anGame.dkAwaySpread) : null,
+            awaySpreadOdds: anGame.dkAwaySpreadOdds,
+            homeSpread: anGame.dkHomeSpread !== null ? String(anGame.dkHomeSpread) : null,
+            homeSpreadOdds: anGame.dkHomeSpreadOdds,
+            total: anGame.dkTotal !== null ? String(anGame.dkTotal) : null,
+            overOdds: anGame.dkOverOdds,
+            underOdds: anGame.dkUnderOdds,
+            awayML: anGame.dkAwayML,
+            homeML: anGame.dkHomeML,
+          }
+        );
+
         updated++;
         console.log(
-          `[ANApiOdds][${dbSport}] Updated: ${awayDbSlug} @ ${homeDbSlug} (${dateStr}) | ` +
+          `[ANApiOdds][${dbSport}] Updated: ${awayDbSlug} @ ${homeDbSlug} (${dateStr}) source=${source} | ` +
           `spread=${anGame.dkAwaySpread}/${anGame.dkHomeSpread} ` +
           `total=${anGame.dkTotal} ` +
           `ml=${anGame.dkAwayML}/${anGame.dkHomeML}`
         );
       }
 
-      console.log(`[ANApiOdds][${dbSport}] ${dateStr}: updated=${updated} skipped=${skipped} total=${anGames.length}`);
+      console.log(`[ANApiOdds][${dbSport}] ${dateStr}: updated=${updated} skipped=${skipped} frozen=${totalFrozen} total=${anGames.length}`);
       totalUpdated += updated;
       totalSkipped += skipped;
     } catch (err) {
@@ -799,7 +832,7 @@ async function refreshAnApiOdds(
     }
   }
 
-  return { updated: totalUpdated, skipped: totalSkipped, errors: allErrors };
+  return { updated: totalUpdated, skipped: totalSkipped, frozen: totalFrozen, errors: allErrors };
 }
 
 // ─── Main refresh orchestrator ─────────────────────────────────────────────────
@@ -830,20 +863,20 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
 
     // Auto-populate DK NJ current lines from Action Network API for today
     // (non-fatal — errors are logged but do not block the refresh)
-    const anOddsResult = await refreshAnApiOdds(todayStr);
+    const anOddsResult = await refreshAnApiOdds(todayStr, ["ncaab", "nba", "nhl"], "auto");
     console.log(
       `[VSiNAutoRefresh] AN API DK odds: updated=${anOddsResult.updated} ` +
-      `skipped=${anOddsResult.skipped} errors=${anOddsResult.errors.length}`
+      `skipped=${anOddsResult.skipped} frozen=${anOddsResult.frozen} errors=${anOddsResult.errors.length}`
     );
 
     // Pre-populate tomorrow's splits and DK odds (non-fatal)
     const tomorrowStr = datePst(1);
     await runTomorrowSplitsUpdate(tomorrowStr);
-    // Also populate tomorrow's DK odds from AN API
-    const anOddsTomorrow = await refreshAnApiOdds(tomorrowStr);
+    // Also populate tomorrow's DK odds from AN API (tomorrow games are never live, no freeze needed)
+    const anOddsTomorrow = await refreshAnApiOdds(tomorrowStr, ["ncaab", "nba", "nhl"], "auto");
     console.log(
       `[VSiNAutoRefresh] AN API DK odds (tomorrow): updated=${anOddsTomorrow.updated} ` +
-      `skipped=${anOddsTomorrow.skipped} errors=${anOddsTomorrow.errors.length}`
+      `skipped=${anOddsTomorrow.skipped} frozen=${anOddsTomorrow.frozen} errors=${anOddsTomorrow.errors.length}`
     );
 
     const result: RefreshResult = {
@@ -1043,30 +1076,99 @@ export async function refreshAllScoresNow(): Promise<void> {
 }
 
 /**
- * Start the 30-minute auto-refresh scheduler.
- * Fires immediately if inside the active window, then every 30 minutes.
- * Also starts a separate 5-minute score-only refresh for live/final scores.
+ * Manual refresh variant — same as runVsinRefresh() but passes source='manual'
+ * to refreshAnApiOdds so every odds snapshot is tagged as a manual trigger.
+ * Called by the owner's "Refresh Now" button in Publish Projections.
+ */
+export async function runVsinRefreshManual(): Promise<RefreshResult | null> {
+  const todayStr = datePst();
+
+  console.log(`[VSiNAutoRefresh][MANUAL] Starting manual refresh — today: ${todayStr}`);
+
+  try {
+    const rangeEnd = datePst(RANGE_DAYS_AHEAD);
+    const allDates = dateRange(todayStr, rangeEnd);
+
+    // Run NCAAM, NBA, and NHL refreshes in sequence
+    const ncaamResult = await refreshNcaam(todayStr, allDates);
+    const nbaResult = await refreshNba(todayStr, allDates);
+    const nhlResult = await refreshNhl(todayStr, allDates);
+
+    // Manual AN odds update — tagged source='manual' so history rows are labeled correctly
+    const anOddsResult = await refreshAnApiOdds(todayStr, ["ncaab", "nba", "nhl"], "manual");
+    console.log(
+      `[VSiNAutoRefresh][MANUAL] AN API DK odds: updated=${anOddsResult.updated} ` +
+      `skipped=${anOddsResult.skipped} frozen=${anOddsResult.frozen} errors=${anOddsResult.errors.length}`
+    );
+
+    // Pre-populate tomorrow's splits and DK odds
+    const tomorrowStr = datePst(1);
+    await runTomorrowSplitsUpdate(tomorrowStr);
+    const anOddsTomorrow = await refreshAnApiOdds(tomorrowStr, ["ncaab", "nba", "nhl"], "manual");
+    console.log(
+      `[VSiNAutoRefresh][MANUAL] AN API DK odds (tomorrow): updated=${anOddsTomorrow.updated} ` +
+      `frozen=${anOddsTomorrow.frozen}`
+    );
+
+    const result: RefreshResult = {
+      refreshedAt: new Date().toISOString(),
+      scoresRefreshedAt: lastScoresRefreshedAt,
+      updated: ncaamResult.updated,
+      inserted: ncaamResult.inserted,
+      ncaaInserted: ncaamResult.ncaaInserted,
+      nbaUpdated: nbaResult.updated,
+      nbaInserted: nbaResult.inserted,
+      nbaScheduleInserted: nbaResult.scheduleInserted,
+      total: ncaamResult.total,
+      nbaTotal: nbaResult.total,
+      nhlUpdated: nhlResult.updated,
+      nhlInserted: nhlResult.inserted,
+      nhlScheduleInserted: nhlResult.scheduleInserted,
+      nhlTotal: nhlResult.total,
+      gameDate: todayStr,
+    };
+
+    lastRefreshResult = result;
+    console.log(
+      `[VSiNAutoRefresh][MANUAL] Done — ` +
+      `NCAAM: ${ncaamResult.updated} updated | NBA: ${nbaResult.updated} updated | NHL: ${nhlResult.updated} updated`
+    );
+    return result;
+  } catch (err) {
+    console.error("[VSiNAutoRefresh][MANUAL] Refresh failed:", err);
+    return null;
+  }
+}
+
+/**
+ * Start the hourly auto-refresh scheduler.
+ * Active window: 3am–midnight PST (covers early morning line releases through end of night).
+ * Fires immediately if inside the active window, then every 60 minutes.
+ * Also starts a separate 15-second score-only refresh for live/final scores.
  * Score refresh fires immediately on startup so scores are never stale after a restart.
+ *
+ * Odds freeze: games with gameStatus='live' or 'final' are skipped by refreshAnApiOdds
+ * so the pre-game DK NJ line is permanently locked in the DB once the game starts.
  */
 export function startVsinAutoRefresh() {
   if (isWithinActiveHours()) {
     void runVsinRefresh();
   } else {
-    console.log("[VSiNAutoRefresh] Outside active hours (6am–midnight PST) — waiting for next tick.");
+    console.log("[VSiNAutoRefresh] Outside active hours (3am–midnight PST) — waiting for next tick.");
   }
 
-  // Fire score refresh immediately on startup (don't wait for first 5-min tick)
+  // Fire score refresh immediately on startup (don't wait for first 15-sec tick)
   void refreshAllScoresNow();
 
   setInterval(() => {
     if (isWithinActiveHours()) {
       void runVsinRefresh();
     } else {
-      console.log("[VSiNAutoRefresh] Tick skipped — outside active hours (6am–midnight PST).");
+      console.log("[VSiNAutoRefresh] Tick skipped — outside active hours (3am–midnight PST).");
     }
   }, INTERVAL_MS);
 
-  // 5-minute score refresh (runs independently of the 30-min full refresh)
+  // 15-second score refresh (runs independently of the hourly full refresh)
   setInterval(() => {
     if (isWithinActiveHours()) {
       void refreshNcaamScores();
@@ -1075,5 +1177,5 @@ export function startVsinAutoRefresh() {
     }
   }, SCORE_INTERVAL_MS);
 
-  console.log("[VSiNAutoRefresh] Scheduler started — every 30 min (6am–midnight PST) + score refresh every 5 min.");
+  console.log("[VSiNAutoRefresh] Scheduler started — every 60 min (3am–midnight PST) + score refresh every 15 sec.");
 }

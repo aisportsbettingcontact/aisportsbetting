@@ -32,6 +32,7 @@ import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
 import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
 import { BettingSplitsPanel } from "@/components/BettingSplitsPanel";
+import { OddsHistoryPanel } from "@/components/OddsHistoryPanel";
 
 // ─── Helpers (mirrors GameCard exactly) ──────────────────────────────────────
 
@@ -1270,6 +1271,14 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
         </div>{/* end MOBILE layout */}
 
       </div>
+
+      {/* ── ODDS HISTORY: collapsible snapshot table (owner-only) ── */}
+      <OddsHistoryPanel
+        gameId={game.id}
+        awayTeam={game.awayTeam}
+        homeTeam={game.homeTeam}
+      />
+
     </motion.div>
   );
 }

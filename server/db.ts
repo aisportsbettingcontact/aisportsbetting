@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, isNotNull, lte, lt, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
-import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, appUsers as appUsersTable, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam } from "../drizzle/schema";
+import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, appUsers as appUsersTable, oddsHistory, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam, type OddsHistoryRow } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -908,4 +908,85 @@ export async function updateAnOdds(
   if (data.homeML !== undefined) updateData.homeML = data.homeML;
   if (Object.keys(updateData).length === 0) return;
   await db.update(games).set(updateData).where(eq(games.id, id));
+}
+
+// ─── Odds History helpers ─────────────────────────────────────────────────────
+
+/**
+ * Insert a snapshot of DK NJ current lines for a game into the odds_history table.
+ * Called after every successful AN odds update (auto cron + manual refresh).
+ *
+ * @param gameId  - games.id FK
+ * @param sport   - 'NCAAM' | 'NBA' | 'NHL'
+ * @param source  - 'auto' (hourly cron) | 'manual' (Refresh Now button)
+ * @param snap    - the current DK NJ lines to snapshot
+ */
+export async function insertOddsHistory(
+  gameId: number,
+  sport: string,
+  source: "auto" | "manual",
+  snap: {
+    awaySpread?: string | null;
+    awaySpreadOdds?: string | null;
+    homeSpread?: string | null;
+    homeSpreadOdds?: string | null;
+    total?: string | null;
+    overOdds?: string | null;
+    underOdds?: string | null;
+    awayML?: string | null;
+    homeML?: string | null;
+  }
+): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    console.warn("[OddsHistory] DB not available — skipping snapshot for gameId=%d", gameId);
+    return;
+  }
+  const now = Date.now();
+  try {
+    await db.insert(oddsHistory).values({
+      gameId,
+      sport,
+      scrapedAt: now,
+      source,
+      awaySpread: snap.awaySpread ?? null,
+      awaySpreadOdds: snap.awaySpreadOdds ?? null,
+      homeSpread: snap.homeSpread ?? null,
+      homeSpreadOdds: snap.homeSpreadOdds ?? null,
+      total: snap.total ?? null,
+      overOdds: snap.overOdds ?? null,
+      underOdds: snap.underOdds ?? null,
+      awayML: snap.awayML ?? null,
+      homeML: snap.homeML ?? null,
+    });
+    console.log(
+      "[OddsHistory] Snapshot saved: gameId=%d sport=%s source=%s scrapedAt=%s EST",
+      gameId,
+      sport,
+      source,
+      new Date(now).toLocaleString("en-US", { timeZone: "America/New_York" })
+    );
+  } catch (err) {
+    console.error("[OddsHistory] Failed to insert snapshot for gameId=%d:", gameId, err);
+  }
+}
+
+/**
+ * List all odds history snapshots for a game, newest first.
+ * Returns at most 200 rows to avoid unbounded result sets.
+ */
+export async function listOddsHistory(gameId: number): Promise<OddsHistoryRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    return await db
+      .select()
+      .from(oddsHistory)
+      .where(eq(oddsHistory.gameId, gameId))
+      .orderBy(desc(oddsHistory.scrapedAt))
+      .limit(200);
+  } catch (err) {
+    console.error("[OddsHistory] Failed to list history for gameId=%d:", gameId, err);
+    return [];
+  }
 }

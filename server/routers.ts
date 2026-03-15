@@ -24,8 +24,8 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
-import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate } from "./db";
-import { getLastRefreshResult, runVsinRefresh, refreshAllScoresNow } from "./vsinAutoRefresh";
+import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory } from "./db";
+import { getLastRefreshResult, runVsinRefresh, runVsinRefreshManual, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
 import { triggerModelWatcherForDate } from "./ncaamModelWatcher";
 import { VALID_DB_SLUGS, NCAAM_TEAMS, BY_AN_SLUG as NCAAM_BY_AN_SLUG } from "@shared/ncaamTeams";
@@ -552,8 +552,9 @@ export const appRouter = router({
      * Owner-only.
      */
     triggerRefresh: ownerProcedure.mutation(async () => {
-      // Run VSiN odds/lines refresh first, then immediately refresh all scores
-      const [result] = await Promise.allSettled([runVsinRefresh()]);
+      // Run VSiN odds/lines refresh first (manual variant tags history rows as source='manual'),
+      // then immediately refresh all scores
+      const [result] = await Promise.allSettled([runVsinRefreshManual()]);
       // Always refresh scores regardless of whether VSiN succeeded
       await refreshAllScoresNow();
       const now = new Date().toISOString();
@@ -639,7 +640,19 @@ export const appRouter = router({
         return result;
       }),
   }),
+  // ─── Odds History ────────────────────────────────────────────────────────────────────────────
+  oddsHistory: router({
+    /**
+     * List all odds snapshots for a specific game, newest first.
+     * Owner-only — used in Publish Projections odds history table.
+     */
+    listForGame: ownerProcedure
+      .input(z.object({ gameId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const rows = await listOddsHistory(input.gameId);
+        return { history: rows };
+      }),
+  }),
 });
-
 export type AppRouter = typeof appRouter;
 

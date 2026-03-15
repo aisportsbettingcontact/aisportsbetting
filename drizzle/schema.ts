@@ -324,6 +324,40 @@ export const nhlTeams = mysqlTable("nhl_teams", {
 export type NhlTeamRow = typeof nhlTeams.$inferSelect;
 export type InsertNhlTeam = typeof nhlTeams.$inferInsert;
 
+// ─── Odds History (per-game DK NJ line snapshots from AN API) ───────────────────
+
+export const oddsHistory = mysqlTable("odds_history", {
+  id: int("id").autoincrement().primaryKey(),
+  /** FK → games.id */
+  gameId: int("gameId").notNull(),
+  /** Sport: NCAAM, NBA, NHL */
+  sport: varchar("sport", { length: 16 }).notNull(),
+  /**
+   * UTC timestamp (ms) when this snapshot was captured.
+   * Stored as bigint so it survives timezone conversions cleanly.
+   * Display in EST: new Date(scrapedAt).toLocaleString('en-US', { timeZone: 'America/New_York' })
+   */
+  scrapedAt: bigint("scrapedAt", { mode: "number" }).notNull(),
+  /** Source: 'auto' (hourly cron) or 'manual' (Refresh Now button) */
+  source: mysqlEnum("source", ["auto", "manual"]).notNull().default("auto"),
+  // ── DK NJ Spread snapshot ──
+  awaySpread: varchar("awaySpread", { length: 16 }),
+  awaySpreadOdds: varchar("awaySpreadOdds", { length: 16 }),
+  homeSpread: varchar("homeSpread", { length: 16 }),
+  homeSpreadOdds: varchar("homeSpreadOdds", { length: 16 }),
+  // ── DK NJ Total snapshot ──
+  total: varchar("total", { length: 16 }),
+  overOdds: varchar("overOdds", { length: 16 }),
+  underOdds: varchar("underOdds", { length: 16 }),
+  // ── DK NJ Moneyline snapshot ──
+  awayML: varchar("awayML", { length: 16 }),
+  homeML: varchar("homeML", { length: 16 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type OddsHistoryRow = typeof oddsHistory.$inferSelect;
+export type InsertOddsHistory = typeof oddsHistory.$inferInsert;
+
 // ─── User Favorite Games ─────────────────────────────────────────────────────
 export const userFavoriteGames = mysqlTable(
   "user_favorite_games",

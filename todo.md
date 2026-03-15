@@ -1364,3 +1364,16 @@
 - [x] DEBUG: Diagnose why book odds update constantly/dynamically (possibly pulling live-betting lines from AN instead of pre-game)
 - [x] FIX: Ensure AN scraper targets only pre-game DK NJ lines, not live/in-game lines
 - [x] FIX: Ensure correct book (DK NJ) and correct line type (spread, not live) is being stored and displayed
+
+## AN Odds Pipeline Hardening + Odds History (March 15, 2026)
+- [x] Add odds_history table to drizzle schema (gameId, sport, scrapedAt UTC, source, awaySpread, awaySpreadOdds, homeSpread, homeSpreadOdds, total, overOdds, underOdds, awayML, homeML)
+- [x] Run db:push to migrate schema
+- [x] Build insertOddsHistory() and listOddsHistory() DB helpers
+- [x] Freeze odds on game start: skip updateAnOdds() for games with gameStatus='live' or 'final'
+- [x] Change AN refresh schedule from 30-min to hourly, 3am–midnight PST
+- [x] Write to odds_history on every AN refresh (auto + manual)
+- [x] Ensure manual Refresh Now button also writes to odds_history
+- [x] Build OddsHistory UI component in Publish Projections (per-game collapsible table, EST timestamps)
+- [x] Confirm EST timestamp: DST-aware (10:59am PDT → 1:59pm EDT; 10:59am PST → 1:59pm EST)
+- [x] Write vitest tests for odds freeze logic and history insertion
+- [x] Save checkpoint
