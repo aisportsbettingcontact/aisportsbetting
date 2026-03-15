@@ -211,6 +211,13 @@
       "when": 1773518420246,
       "tag": "0029_known_blue_shield",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "5",
+      "when": 1773533749811,
+      "tag": "0030_noisy_vampiro",
+      "breakpoints": true
     }
   ]
 }

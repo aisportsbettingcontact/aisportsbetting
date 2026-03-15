@@ -627,6 +627,18 @@ interface DesktopMergedPanelProps {
     homeSpreadOdds?: string | null;
     overOdds?: string | null;
     underOdds?: string | null;
+    // Open line fields (from AN HTML ingest)
+    openAwaySpread?: string | null;
+    openHomeSpread?: string | null;
+    openAwaySpreadOdds?: string | null;
+    openHomeSpreadOdds?: string | null;
+    openTotal?: string | null;
+    openOverOdds?: string | null;
+    openUnderOdds?: string | null;
+    openAwayML?: string | null;
+    openHomeML?: string | null;
+    // Note: DK NJ current lines are in awayBookSpread/homeBookSpread/bookTotal/awayML/homeML
+    // (populated by ingestAnHtml from AN HTML best-odds table).
   };
 }
 
@@ -731,6 +743,26 @@ function DesktopMergedPanel({
     ? (underOddsStr ? `${String(bkTotal)} (${underOddsStr})` : String(bkTotal))
     : '—';
 
+  // ── Open line strings (from AN HTML ingest) ───────────────────────────────
+  const fmtLine = (line: string | null | undefined, odds: string | null | undefined): string | null => {
+    if (!line) return null;
+    return odds ? `${line} (${odds})` : line;
+  };
+  const openAwaySpreadStr = fmtLine(game.openAwaySpread, game.openAwaySpreadOdds);
+  const openHomeSpreadStr = fmtLine(game.openHomeSpread, game.openHomeSpreadOdds);
+  const openOverStr       = fmtLine(game.openTotal, game.openOverOdds);
+  const openUnderStr      = fmtLine(game.openTotal, game.openUnderOdds);
+  const openAwayMlStr     = game.openAwayML ?? null;
+  const openHomeMlStr     = game.openHomeML ?? null;
+
+    // DK NJ lines ARE the primary book columns (awayBookSpread IS the DK line)
+  const displayAwaySpread = bkAwaySpread;
+  const displayHomeSpread = bkHomeSpread;
+  const displayOver       = bkOver;
+  const displayUnder      = bkUnder;
+  const displayAwayML     = game.awayML ?? '—';
+  const displayHomeML     = game.homeML ?? '—';
+
   const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread) ? spreadSign(mdlAwaySpread) : '—';
   const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread) ? spreadSign(mdlHomeSpread) : '—';
   const mdlOver          = hasModelData && !isNaN(mdlTotal) ? String(mdlTotal) : '—';
@@ -822,6 +854,7 @@ function DesktopMergedPanel({
     homeLogoUrl: sectionHomeLogoUrl,
     awayAbbr: sectionAwayAbbr,
     homeAbbr: sectionHomeAbbr,
+    openAwayBook, openHomeBook,
   }: {
     title: string;
     awayLabel: string; homeLabel: string;
@@ -840,6 +873,10 @@ function DesktopMergedPanel({
     awayAbbr?: string;
     /** Team abbreviation for the home row (shown right of logo in SPREAD/ML) */
     homeAbbr?: string;
+    /** Open line string for away (shown above DK line in BOOK cell, muted) */
+    openAwayBook?: string | null;
+    /** Open line string for home (shown above DK line in BOOK cell, muted) */
+    openHomeBook?: string | null;
   }) => {
     const awayTickets = ticketsPct != null ? ticketsPct : null;
     const homeTickets = ticketsPct != null ? 100 - ticketsPct : null;
@@ -906,22 +943,38 @@ function DesktopMergedPanel({
 
           {/* Away / OVER — BOOK cell */}
           {totalLine ? (
-            /* TOTAL: "OVER" label + book over total value */
-            <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
-              <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0 }}>OVER</span>
-              <span className="tabular-nums">{awayBook}</span>
-            </span>
+            /* TOTAL: "OVER" label + book over total value, with optional OPEN sub-row */
+            <div className="flex flex-col items-center justify-center" style={{ gap: 1 }}>
+              {openAwayBook && (
+                <span className="flex items-center justify-center gap-1" style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 500, color: 'rgba(255,255,255,0.38)', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 'clamp(7px,0.58vw,9px)', fontWeight: 600, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>OPEN</span>
+                  <span className="tabular-nums">{openAwayBook}</span>
+                </span>
+              )}
+              <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
+                <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0 }}>OVER</span>
+                <span className="tabular-nums">{awayBook}</span>
+              </span>
+            </div>
           ) : (
-            /* SPREAD/ML: logo + abbreviation immediately left of book value */
-            <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
-              {sectionAwayLogoUrl && (
-                <img src={sectionAwayLogoUrl} alt="" style={{ width: 'clamp(13px,1.1vw,18px)', height: 'clamp(13px,1.1vw,18px)', objectFit: 'contain', flexShrink: 0, mixBlendMode: 'screen' }} />
+            /* SPREAD/ML: logo + abbreviation immediately left of book value, with optional OPEN sub-row */
+            <div className="flex flex-col items-center justify-center" style={{ gap: 1 }}>
+              {openAwayBook && (
+                <span className="flex items-center justify-center gap-1" style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 500, color: 'rgba(255,255,255,0.38)', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 'clamp(7px,0.58vw,9px)', fontWeight: 600, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>OPEN</span>
+                  <span className="tabular-nums">{openAwayBook}</span>
+                </span>
               )}
-              {sectionAwayAbbr && (
-                <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0, textTransform: 'uppercase' }}>{sectionAwayAbbr}</span>
-              )}
-              <span className="tabular-nums">{awayBook}</span>
-            </span>
+              <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
+                {sectionAwayLogoUrl && (
+                  <img src={sectionAwayLogoUrl} alt="" style={{ width: 'clamp(13px,1.1vw,18px)', height: 'clamp(13px,1.1vw,18px)', objectFit: 'contain', flexShrink: 0, mixBlendMode: 'screen' }} />
+                )}
+                {sectionAwayAbbr && (
+                  <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0, textTransform: 'uppercase' }}>{sectionAwayAbbr}</span>
+                )}
+                <span className="tabular-nums">{awayBook}</span>
+              </span>
+            </div>
           )}
           {/* Away — MODEL cell */}
           {totalLine ? (
@@ -945,22 +998,38 @@ function DesktopMergedPanel({
 
           {/* Home / UNDER — BOOK cell */}
           {totalLine ? (
-            /* TOTAL: "UNDER" label + book under total value */
-            <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
-              <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0 }}>UNDER</span>
-              <span className="tabular-nums">{homeBook}</span>
-            </span>
+            /* TOTAL: "UNDER" label + book under total value, with optional OPEN sub-row */
+            <div className="flex flex-col items-center justify-center" style={{ gap: 1 }}>
+              {openHomeBook && (
+                <span className="flex items-center justify-center gap-1" style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 500, color: 'rgba(255,255,255,0.38)', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 'clamp(7px,0.58vw,9px)', fontWeight: 600, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>OPEN</span>
+                  <span className="tabular-nums">{openHomeBook}</span>
+                </span>
+              )}
+              <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
+                <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0 }}>UNDER</span>
+                <span className="tabular-nums">{homeBook}</span>
+              </span>
+            </div>
           ) : (
-            /* SPREAD/ML: logo + abbreviation immediately left of book value */
-            <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
-              {sectionHomeLogoUrl && (
-                <img src={sectionHomeLogoUrl} alt="" style={{ width: 'clamp(13px,1.1vw,18px)', height: 'clamp(13px,1.1vw,18px)', objectFit: 'contain', flexShrink: 0, mixBlendMode: 'screen' }} />
+            /* SPREAD/ML: logo + abbreviation immediately left of book value, with optional OPEN sub-row */
+            <div className="flex flex-col items-center justify-center" style={{ gap: 1 }}>
+              {openHomeBook && (
+                <span className="flex items-center justify-center gap-1" style={{ fontSize: 'clamp(8px,0.65vw,10px)', fontWeight: 500, color: 'rgba(255,255,255,0.38)', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 'clamp(7px,0.58vw,9px)', fontWeight: 600, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.08em', textTransform: 'uppercase' }}>OPEN</span>
+                  <span className="tabular-nums">{openHomeBook}</span>
+                </span>
               )}
-              {sectionHomeAbbr && (
-                <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0, textTransform: 'uppercase' }}>{sectionHomeAbbr}</span>
-              )}
-              <span className="tabular-nums">{homeBook}</span>
-            </span>
+              <span className="flex items-center justify-center gap-1" style={{ ...bookCell, fontSize: valFontSize }}>
+                {sectionHomeLogoUrl && (
+                  <img src={sectionHomeLogoUrl} alt="" style={{ width: 'clamp(13px,1.1vw,18px)', height: 'clamp(13px,1.1vw,18px)', objectFit: 'contain', flexShrink: 0, mixBlendMode: 'screen' }} />
+                )}
+                {sectionHomeAbbr && (
+                  <span style={{ fontSize: ABBR_FS, fontWeight: 600, color: 'rgba(255,255,255,0.55)', letterSpacing: '0.06em', flexShrink: 0, textTransform: 'uppercase' }}>{sectionHomeAbbr}</span>
+                )}
+                <span className="tabular-nums">{homeBook}</span>
+              </span>
+            </div>
           )}
           {/* Home — MODEL cell */}
           {totalLine ? (
@@ -1027,12 +1096,14 @@ function DesktopMergedPanel({
       <SectionCol
         title="Spread"
         awayLabel={awaySpreadLabel} homeLabel={homeSpreadLabel}
-        awayBook={bkAwaySpread} homeBook={bkHomeSpread}
+        awayBook={displayAwaySpread} homeBook={displayHomeSpread}
         awayModel={mdlAwaySpreadStr} homeModel={mdlHomeSpreadStr}
         awayModelStyle={awaySpreadModelStyle} homeModelStyle={homeSpreadModelStyle}
         ticketsPct={spreadTicketsPct} handlePct={spreadHandlePct}
         awayLogoUrl={awayLogoUrl} homeLogoUrl={homeLogoUrl}
         awayAbbr={awayAbbr} homeAbbr={homeAbbr}
+        openAwayBook={openAwaySpreadStr}
+        openHomeBook={openHomeSpreadStr}
       />
       {/* Divider */}
       <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0, alignSelf: 'stretch', margin: '8px 0' }} />
@@ -1040,11 +1111,13 @@ function DesktopMergedPanel({
       <SectionCol
         title="Total"
         awayLabel="OVER" homeLabel="UNDER"
-        awayBook={String(bkOver)} homeBook={String(bkUnder)}
+        awayBook={displayOver} homeBook={displayUnder}
         awayModel={String(mdlOver)} homeModel={String(mdlUnder)}
         awayModelStyle={overTotalModelStyle} homeModelStyle={underTotalModelStyle}
         ticketsPct={totalTicketsPct} handlePct={totalHandlePct}
         totalLine={!isNaN(bkTotal) ? String(bkTotal) : undefined}
+        openAwayBook={openOverStr}
+        openHomeBook={openUnderStr}
       />
       {/* Divider */}
       <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0, alignSelf: 'stretch', margin: '8px 0' }} />
@@ -1052,12 +1125,14 @@ function DesktopMergedPanel({
       <SectionCol
         title="Moneyline"
         awayLabel={awayMlLabel} homeLabel={homeMlLabel}
-        awayBook={awayMl || '—'} homeBook={homeMl || '—'}
+        awayBook={displayAwayML} homeBook={displayHomeML}
         awayModel={mdlAwayMlStr} homeModel={mdlHomeMlStr}
         awayModelStyle={awayMlModelStyle} homeModelStyle={homeMlModelStyle}
         ticketsPct={mlTicketsPct} handlePct={mlHandlePct}
         awayLogoUrl={awayLogoUrl} homeLogoUrl={homeLogoUrl}
         awayAbbr={awayAbbr} homeAbbr={homeAbbr}
+        openAwayBook={openAwayMlStr}
+        openHomeBook={openHomeMlStr}
       />
       {/* Divider */}
       <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
@@ -1166,6 +1241,20 @@ interface OddsLinesPanelProps {
   homeSpreadOdds?: string | null;
   overOdds?: string | null;
   underOdds?: string | null;
+  // Open line strings (from AN HTML ingest)
+  openAwaySpreadStr?: string | null;
+  openHomeSpreadStr?: string | null;
+  openOverStr?: string | null;
+  openUnderStr?: string | null;
+  openAwayMlStr?: string | null;
+  openHomeMlStr?: string | null;
+  // DK NJ current line strings (from AN HTML ingest)
+  displayAwaySpread?: string;
+  displayHomeSpread?: string;
+  displayOver?: string;
+  displayUnder?: string;
+  displayAwayML?: string;
+  displayHomeML?: string;
   // Model values
   awayModelSpread: number;
   homeModelSpread: number;
@@ -1199,6 +1288,18 @@ function OddsLinesPanel({
   homeSpreadOdds,
   overOdds,
   underOdds,
+  openAwaySpreadStr,
+  openHomeSpreadStr,
+  openOverStr,
+  openUnderStr,
+  openAwayMlStr,
+  openHomeMlStr,
+  displayAwaySpread: dkAwaySpreadProp,
+  displayHomeSpread: dkHomeSpreadProp,
+  displayOver: dkOverProp,
+  displayUnder: dkUnderProp,
+  displayAwayML: dkAwayMlProp,
+  displayHomeML: dkHomeMlProp,
   awayModelSpread: mdlAwaySpread,
   homeModelSpread: mdlHomeSpread,
   modelTotal: mdlTotal,
@@ -1222,20 +1323,27 @@ function OddsLinesPanel({
   const mdlHomeMl = modelHomeML ?? '—';
   const hasModelData = !isNaN(mdlAwaySpread) || !isNaN(mdlTotal) || mdlAwayMl !== '—';
 
-  // Book values — include odds in parentheses when available, e.g. "+6.5 (-110)"
+  // Book values — use DK-specific if available, otherwise fall back to awayBookSpread (from AN API)
   const bkTotalStr    = !isNaN(bkTotal) ? String(bkTotal) : '—';
-  const bkAwaySpread  = !isNaN(awaySpread)
+  const bkAwaySpreadBase  = !isNaN(awaySpread)
     ? (awaySpreadOdds ? `${spreadSign(awaySpread)} (${awaySpreadOdds})` : spreadSign(awaySpread))
     : '—';
-  const bkHomeSpread  = !isNaN(homeSpread)
+  const bkHomeSpreadBase  = !isNaN(homeSpread)
     ? (homeSpreadOdds ? `${spreadSign(homeSpread)} (${homeSpreadOdds})` : spreadSign(homeSpread))
     : '—';
-  const bkOverTotal   = !isNaN(bkTotal)
+  const bkOverTotalBase   = !isNaN(bkTotal)
     ? (overOdds  ? `o${bkTotalStr} (${overOdds})`  : `o${bkTotalStr}`)
     : 'o—';
-  const bkUnderTotal  = !isNaN(bkTotal)
+  const bkUnderTotalBase  = !isNaN(bkTotal)
     ? (underOdds ? `u${bkTotalStr} (${underOdds})` : `u${bkTotalStr}`)
     : 'u—';
+  // Prefer DK-specific display values when available
+  const bkAwaySpread  = dkAwaySpreadProp ?? bkAwaySpreadBase;
+  const bkHomeSpread  = dkHomeSpreadProp ?? bkHomeSpreadBase;
+  const bkOverTotal   = dkOverProp   ? `o${dkOverProp}`   : bkOverTotalBase;
+  const bkUnderTotal  = dkUnderProp  ? `u${dkUnderProp}`  : bkUnderTotalBase;
+  const awayMlDisplay = dkAwayMlProp ?? awayMl;
+  const homeMlDisplay = dkHomeMlProp ?? homeMl;
 
   // Model values
   const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread) ? spreadSign(mdlAwaySpread) : '—';
@@ -1336,11 +1444,23 @@ function OddsLinesPanel({
 
       {/* Away row */}
       <div className={`grid ${GRID} py-2`} style={{ transition: 'grid-template-columns 200ms ease' }}>
-        <Cell val={bkAwaySpread} style={bookCell} />
+        {/* Away Spread BOOK cell: OPEN sub-row + DK line */}
+        <div className="flex flex-col items-center justify-center" style={{ gap: 0 }}>
+          {openAwaySpreadStr && <span className="tabular-nums" style={{ fontSize: '8px', fontWeight: 500, color: 'rgba(255,255,255,0.32)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>o:{openAwaySpreadStr}</span>}
+          <span className="tabular-nums" style={bookCell}>{bkAwaySpread}</span>
+        </div>
         {showModel && <Cell val={mdlAwaySpreadStr} style={awaySpreadModelStyle} />}
-        <Cell val={bkOverTotal} style={bookCell} />
+        {/* Away Total BOOK cell: OPEN sub-row + DK line */}
+        <div className="flex flex-col items-center justify-center" style={{ gap: 0 }}>
+          {openOverStr && <span className="tabular-nums" style={{ fontSize: '8px', fontWeight: 500, color: 'rgba(255,255,255,0.32)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>o:{openOverStr}</span>}
+          <span className="tabular-nums" style={bookCell}>{bkOverTotal}</span>
+        </div>
         {showModel && <Cell val={mdlOverTotal} style={overTotalModelStyle} />}
-        <Cell val={awayMl || '—'} style={bookCell} />
+        {/* Away ML BOOK cell: OPEN sub-row + DK line */}
+        <div className="flex flex-col items-center justify-center" style={{ gap: 0 }}>
+          {openAwayMlStr && <span className="tabular-nums" style={{ fontSize: '8px', fontWeight: 500, color: 'rgba(255,255,255,0.32)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>o:{openAwayMlStr}</span>}
+          <span className="tabular-nums" style={bookCell}>{awayMlDisplay || '—'}</span>
+        </div>
         {showModel && <Cell val={mdlAwayMlStr} style={awayMlModelStyle} />}
       </div>
 
@@ -1349,11 +1469,23 @@ function OddsLinesPanel({
 
       {/* Home row */}
       <div className={`grid ${GRID} py-2`} style={{ transition: 'grid-template-columns 200ms ease' }}>
-        <Cell val={bkHomeSpread} style={bookCell} />
+        {/* Home Spread BOOK cell: OPEN sub-row + DK line */}
+        <div className="flex flex-col items-center justify-center" style={{ gap: 0 }}>
+          {openHomeSpreadStr && <span className="tabular-nums" style={{ fontSize: '8px', fontWeight: 500, color: 'rgba(255,255,255,0.32)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>o:{openHomeSpreadStr}</span>}
+          <span className="tabular-nums" style={bookCell}>{bkHomeSpread}</span>
+        </div>
         {showModel && <Cell val={mdlHomeSpreadStr} style={homeSpreadModelStyle} />}
-        <Cell val={bkUnderTotal} style={bookCell} />
+        {/* Home Total BOOK cell: OPEN sub-row + DK line */}
+        <div className="flex flex-col items-center justify-center" style={{ gap: 0 }}>
+          {openUnderStr && <span className="tabular-nums" style={{ fontSize: '8px', fontWeight: 500, color: 'rgba(255,255,255,0.32)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>o:{openUnderStr}</span>}
+          <span className="tabular-nums" style={bookCell}>{bkUnderTotal}</span>
+        </div>
         {showModel && <Cell val={mdlUnderTotal} style={underTotalModelStyle} />}
-        <Cell val={homeMl || '—'} style={bookCell} />
+        {/* Home ML BOOK cell: OPEN sub-row + DK line */}
+        <div className="flex flex-col items-center justify-center" style={{ gap: 0 }}>
+          {openHomeMlStr && <span className="tabular-nums" style={{ fontSize: '8px', fontWeight: 500, color: 'rgba(255,255,255,0.32)', letterSpacing: '0.03em', whiteSpace: 'nowrap' }}>o:{openHomeMlStr}</span>}
+          <span className="tabular-nums" style={bookCell}>{homeMlDisplay || '—'}</span>
+        </div>
         {showModel && <Cell val={mdlHomeMlStr} style={homeMlModelStyle} />}
       </div>
 
@@ -1430,6 +1562,37 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const totalDiff = (!isNaN(modelTotal) && !isNaN(bookTotal))
     ? Math.round(Math.abs(modelTotal - bookTotal) * 10) / 10
     : toNum(game.totalDiff);
+  // ── Open line strings (from AN HTML ingest) — available in GameCard scope ─
+  const _fmtLine = (line: string | null | undefined, odds: string | null | undefined): string | null => {
+    if (!line) return null;
+    return odds ? `${line} (${odds})` : line;
+  };
+  const openAwaySpreadStr = _fmtLine(game.openAwaySpread, game.openAwaySpreadOdds);
+  const openHomeSpreadStr = _fmtLine(game.openHomeSpread, game.openHomeSpreadOdds);
+  const openOverStr       = _fmtLine(game.openTotal, game.openOverOdds);
+  const openUnderStr      = _fmtLine(game.openTotal, game.openUnderOdds);
+  const openAwayMlStr     = game.openAwayML ?? null;
+  const openHomeMlStr     = game.openHomeML ?? null;
+  // ── Display strings: use awayBookSpread (DK line from AN HTML ingest) ─────
+  const _spreadSign = (n: number) => n > 0 ? `+${n}` : String(n);
+  const _bkAwaySpreadStr = !isNaN(awayBookSpread)
+    ? (game.awaySpreadOdds ? `${_spreadSign(awayBookSpread)} (${game.awaySpreadOdds})` : _spreadSign(awayBookSpread))
+    : '—';
+  const _bkHomeSpreadStr = !isNaN(homeBookSpread)
+    ? (game.homeSpreadOdds ? `${_spreadSign(homeBookSpread)} (${game.homeSpreadOdds})` : _spreadSign(homeBookSpread))
+    : '—';
+  const _bkOver  = !isNaN(bookTotal)
+    ? (game.overOdds  ? `${bookTotal} (${game.overOdds})`  : String(bookTotal))
+    : '—';
+  const _bkUnder = !isNaN(bookTotal)
+    ? (game.underOdds ? `${bookTotal} (${game.underOdds})` : String(bookTotal))
+    : '—';
+  const displayAwaySpread = _bkAwaySpreadStr;
+  const displayHomeSpread = _bkHomeSpreadStr;
+  const displayOver       = _bkOver;
+  const displayUnder      = _bkUnder;
+  const displayAwayML     = game.awayML ?? '—';
+  const displayHomeML     = game.homeML ?? '—';
 
   // Resolve team info from NCAA, NBA, or NHL registry
   const awayNcaa = getTeamByDbSlug(game.awayTeam);
@@ -2011,6 +2174,22 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 bookTotal={bookTotal}
                 awayML={game.awayML ?? '—'}
                 homeML={game.homeML ?? '—'}
+                awaySpreadOdds={game.awaySpreadOdds ?? null}
+                homeSpreadOdds={game.homeSpreadOdds ?? null}
+                overOdds={game.overOdds ?? null}
+                underOdds={game.underOdds ?? null}
+                openAwaySpreadStr={openAwaySpreadStr}
+                openHomeSpreadStr={openHomeSpreadStr}
+                openOverStr={openOverStr}
+                openUnderStr={openUnderStr}
+                openAwayMlStr={openAwayMlStr}
+                openHomeMlStr={openHomeMlStr}
+                displayAwaySpread={displayAwaySpread}
+                displayHomeSpread={displayHomeSpread}
+                displayOver={displayOver}
+                displayUnder={displayUnder}
+                displayAwayML={displayAwayML}
+                displayHomeML={displayHomeML}
                 awayModelSpread={awayModelSpread}
                 homeModelSpread={homeModelSpread}
                 modelTotal={modelTotal}
@@ -2108,6 +2287,18 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       homeSpreadOdds={game.homeSpreadOdds ?? null}
                       overOdds={game.overOdds ?? null}
                       underOdds={game.underOdds ?? null}
+                      openAwaySpreadStr={openAwaySpreadStr}
+                      openHomeSpreadStr={openHomeSpreadStr}
+                      openOverStr={openOverStr}
+                      openUnderStr={openUnderStr}
+                      openAwayMlStr={openAwayMlStr}
+                      openHomeMlStr={openHomeMlStr}
+                      displayAwaySpread={displayAwaySpread}
+                      displayHomeSpread={displayHomeSpread}
+                      displayOver={displayOver}
+                      displayUnder={displayUnder}
+                      displayAwayML={displayAwayML}
+                      displayHomeML={displayHomeML}
                       awayModelSpread={awayModelSpread}
                       homeModelSpread={homeModelSpread}
                       modelTotal={modelTotal}

@@ -1289,3 +1289,31 @@
 - [x] Add vitest cases for NBA and NHL (4 new tests, 10 total passing)
 - [x] Fix classifyRow MIN_CELLS threshold for 11-column NBA/NHL tables
 - [x] Checkpoint
+
+## Full Pipeline Audit: VSIN ↔ League Site + AN Odds + Splits (March 14, 2026)
+- [ ] Deep audit: parse VSiN splits HTML (pasted_content_27) and extract all NCAAB/NBA/NHL games
+- [ ] Deep audit: parse NBA.com schedule HTML (pasted_content_28) and extract all NBA games
+- [ ] Deep audit: parse NHL.com scores HTML (pasted_content_29) and extract all NHL games
+- [ ] Deep audit: parse NCAA.com scoreboard HTML (pasted_content_30) and extract all NCAAB games
+- [ ] Cross-reference DB state vs league site: find all unmatched/missing games
+- [ ] Fix VSIN ↔ League site matching for NCAAB (slug normalization, missing teams)
+- [ ] Fix VSIN ↔ League site matching for NBA (team name normalization)
+- [ ] Fix VSIN ↔ League site matching for NHL (team name normalization)
+- [ ] Verify AN odds (Open + DK) are mapped to correct away/home fields for all 3 sports
+- [ ] Fix any AN odds field inversion issues (away vs home team assignment)
+- [ ] Verify betting splits are fetched and stored for all 3 sports
+- [ ] Fix splits pipeline for NBA and NHL if not working
+- [ ] Verify splits display correctly on GameCard for all 3 sports
+- [ ] Full end-to-end test and checkpoint
+
+## Odds/Lines Source Refactor: AN Only (March 14, 2026)
+- [x] Remove all VSiN odds/lines scraping — keep only splits scraping in vsinAutoRefresh.ts
+- [x] Remove applyActionNetworkOdds and fetchActionNetworkOdds (AN API-based odds) from pipeline
+- [x] Fix ingestAnHtml to write DK line to awayBookSpread/homeBookSpread/bookTotal/awayML/homeML + juice fields
+- [x] Remove redundant dkAwaySpread/dkHomeSpread/dkTotal/dkAwayML/dkHomeML columns from schema (9 columns dropped)
+- [x] Fix GameCard to use awayBookSpread/homeBookSpread as primary display (no DK-specific fallback)
+- [x] Fix GameCard TypeScript errors from open/dk line refactor (moved string builders to correct scope)
+- [x] Fix OddsLinesPanel second call site to pass open line props
+- [x] Fix updateAnOdds to parse spread/total strings to numbers for decimal columns
+- [x] 195/196 vitest tests passing (1 pre-existing KenPom env var failure)
+- [x] Checkpoint

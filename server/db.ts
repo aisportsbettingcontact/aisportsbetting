@@ -852,7 +852,7 @@ export async function toggleFavoriteGame(
 export async function updateAnOdds(
   id: number,
   data: {
-    // Open lines
+    // Open lines (from AN HTML open column)
     openAwaySpread?: string | null;
     openAwaySpreadOdds?: string | null;
     openHomeSpread?: string | null;
@@ -862,16 +862,16 @@ export async function updateAnOdds(
     openUnderOdds?: string | null;
     openAwayML?: string | null;
     openHomeML?: string | null;
-    // DK NJ current lines
-    dkAwaySpread?: string | null;
-    dkAwaySpreadOdds?: string | null;
-    dkHomeSpread?: string | null;
-    dkHomeSpreadOdds?: string | null;
-    dkTotal?: string | null;
-    dkOverOdds?: string | null;
-    dkUnderOdds?: string | null;
-    dkAwayML?: string | null;
-    dkHomeML?: string | null;
+    // DK NJ current lines — stored in primary book columns
+    awayBookSpread?: string | null;
+    awaySpreadOdds?: string | null;
+    homeBookSpread?: string | null;
+    homeSpreadOdds?: string | null;
+    bookTotal?: string | null;
+    overOdds?: string | null;
+    underOdds?: string | null;
+    awayML?: string | null;
+    homeML?: string | null;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -887,16 +887,23 @@ export async function updateAnOdds(
   if (data.openUnderOdds !== undefined) updateData.openUnderOdds = data.openUnderOdds;
   if (data.openAwayML !== undefined) updateData.openAwayML = data.openAwayML;
   if (data.openHomeML !== undefined) updateData.openHomeML = data.openHomeML;
-  // DK NJ current lines
-  if (data.dkAwaySpread !== undefined) updateData.dkAwaySpread = data.dkAwaySpread;
-  if (data.dkAwaySpreadOdds !== undefined) updateData.dkAwaySpreadOdds = data.dkAwaySpreadOdds;
-  if (data.dkHomeSpread !== undefined) updateData.dkHomeSpread = data.dkHomeSpread;
-  if (data.dkHomeSpreadOdds !== undefined) updateData.dkHomeSpreadOdds = data.dkHomeSpreadOdds;
-  if (data.dkTotal !== undefined) updateData.dkTotal = data.dkTotal;
-  if (data.dkOverOdds !== undefined) updateData.dkOverOdds = data.dkOverOdds;
-  if (data.dkUnderOdds !== undefined) updateData.dkUnderOdds = data.dkUnderOdds;
-  if (data.dkAwayML !== undefined) updateData.dkAwayML = data.dkAwayML;
-  if (data.dkHomeML !== undefined) updateData.dkHomeML = data.dkHomeML;
+  // DK NJ current lines — stored in primary book columns
+  // awayBookSpread/homeBookSpread/bookTotal are decimal columns — parse string to number
+  const parseSpread = (s: string | null | undefined): number | null | undefined => {
+    if (s === undefined) return undefined;
+    if (s === null) return null;
+    const n = parseFloat(s); // parseFloat handles "+6.5" and "-6.5" correctly
+    return isNaN(n) ? null : n;
+  };
+  if (data.awayBookSpread !== undefined) updateData.awayBookSpread = parseSpread(data.awayBookSpread);
+  if (data.awaySpreadOdds !== undefined) updateData.awaySpreadOdds = data.awaySpreadOdds;
+  if (data.homeBookSpread !== undefined) updateData.homeBookSpread = parseSpread(data.homeBookSpread);
+  if (data.homeSpreadOdds !== undefined) updateData.homeSpreadOdds = data.homeSpreadOdds;
+  if (data.bookTotal !== undefined) updateData.bookTotal = parseSpread(data.bookTotal);
+  if (data.overOdds !== undefined) updateData.overOdds = data.overOdds;
+  if (data.underOdds !== undefined) updateData.underOdds = data.underOdds;
+  if (data.awayML !== undefined) updateData.awayML = data.awayML;
+  if (data.homeML !== undefined) updateData.homeML = data.homeML;
   if (Object.keys(updateData).length === 0) return;
   await db.update(games).set(updateData).where(eq(games.id, id));
 }

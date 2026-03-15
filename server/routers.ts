@@ -509,6 +509,8 @@ export const appRouter = router({
             continue;
           }
 
+          // Write open lines (AN HTML open column) AND DK NJ current lines
+          // DK lines are stored in the primary book columns (awayBookSpread IS the DK line)
           await updateAnOdds(dbGame.id, {
             // Open lines
             openAwaySpread: g.openAwaySpread?.line ?? null,
@@ -520,16 +522,16 @@ export const appRouter = router({
             openUnderOdds: g.openUnder?.juice ?? null,
             openAwayML: g.openAwayML?.line ?? null,
             openHomeML: g.openHomeML?.line ?? null,
-            // DK NJ current lines
-            dkAwaySpread: g.dkAwaySpread?.line ?? null,
-            dkAwaySpreadOdds: g.dkAwaySpread?.juice ?? null,
-            dkHomeSpread: g.dkHomeSpread?.line ?? null,
-            dkHomeSpreadOdds: g.dkHomeSpread?.juice ?? null,
-            dkTotal: g.dkOver?.line?.replace(/^[ou]/i, "") ?? null,
-            dkOverOdds: g.dkOver?.juice ?? null,
-            dkUnderOdds: g.dkUnder?.juice ?? null,
-            dkAwayML: g.dkAwayML?.line ?? null,
-            dkHomeML: g.dkHomeML?.line ?? null,
+            // DK NJ current lines — stored in primary book columns
+            awayBookSpread: g.dkAwaySpread?.line ?? null,
+            awaySpreadOdds: g.dkAwaySpread?.juice ?? null,
+            homeBookSpread: g.dkHomeSpread?.line ?? null,
+            homeSpreadOdds: g.dkHomeSpread?.juice ?? null,
+            bookTotal: g.dkOver?.line?.replace(/^[ou]/i, "") ?? null,
+            overOdds: g.dkOver?.juice ?? null,
+            underOdds: g.dkUnder?.juice ?? null,
+            awayML: g.dkAwayML?.line ?? null,
+            homeML: g.dkHomeML?.line ?? null,
           });
 
           updated++;

@@ -17,7 +17,6 @@
 
 import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime } from "./db";
 import { scrapeVsinBettingSplits, type VsinSplitsGame } from "./vsinBettingSplitsScraper";
-import { fetchActionNetworkOdds, type AnGameOdds } from "./actionNetworkScraper";
 import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
 import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "./nbaScoreboard";
 import { fetchNhlGamesForRange, buildNhlStartTimeMap, buildNhlGameMap, fetchNhlLiveScores, type NhlScheduleGame } from "./nhlSchedule";
@@ -118,123 +117,9 @@ function dateRange(start: string, end: string): string[] {
   return dates;
 }
 
-// ─── Action Network DraftKings odds helpers ───────────────────────────────────
-
-/**
- * Applies DraftKings spread/total/ML/juice from Action Network to existing DB games.
- * Matches AN games to DB games by url_slug → dbSlug lookup.
- *
- * @param sport - "NCAAM" | "NBA" | "NHL"
- * @param dateStr - YYYY-MM-DD date to update
- * @param anGames - DraftKings odds from Action Network API
- */
-async function applyActionNetworkOdds(
-  sport: "NCAAM" | "NBA" | "NHL",
-  dateStr: string,
-  anGames: AnGameOdds[]
-): Promise<{ updated: number; skipped: number }> {
-  if (anGames.length === 0) return { updated: 0, skipped: 0 };
-
-  const existing = await listGamesByDate(dateStr, sport);
-  if (existing.length === 0) return { updated: 0, skipped: 0 };
-
-  let updated = 0;
-  let skipped = 0;
-
-  for (const an of anGames) {
-    let awayDbSlug: string | undefined;
-    let homeDbSlug: string | undefined;
-
-    if (sport === "NCAAM") {
-      awayDbSlug = NCAAM_BY_AN.get(an.awayUrlSlug)?.dbSlug;
-      homeDbSlug = NCAAM_BY_AN.get(an.homeUrlSlug)?.dbSlug;
-    } else if (sport === "NBA") {
-      awayDbSlug = NBA_BY_AN_SLUG.get(an.awayUrlSlug)?.dbSlug;
-      homeDbSlug = NBA_BY_AN_SLUG.get(an.homeUrlSlug)?.dbSlug;
-    } else {
-      // NHL
-      awayDbSlug = NHL_BY_AN_SLUG.get(an.awayUrlSlug)?.dbSlug;
-      homeDbSlug = NHL_BY_AN_SLUG.get(an.homeUrlSlug)?.dbSlug;
-    }
-
-    if (!awayDbSlug || !homeDbSlug) {
-      console.log(
-        `[ActionNetwork][${sport}] NO_SLUG: ${an.awayUrlSlug} @ ${an.homeUrlSlug} on ${dateStr} ` +
-        `(away=${awayDbSlug ?? 'UNKNOWN'} home=${homeDbSlug ?? 'UNKNOWN'})`
-      );
-      skipped++;
-      continue;
-    }
-
-    const dbGame = existing.find(
-      e => e.awayTeam === awayDbSlug && e.homeTeam === homeDbSlug
-    );
-
-    if (!dbGame) {
-      console.log(
-        `[ActionNetwork][${sport}] NO_MATCH: ${awayDbSlug} @ ${homeDbSlug} on ${dateStr}`
-      );
-      skipped++;
-      continue;
-    }
-
-    // Write all DK odds from Action Network:
-    // - awayBookSpread/homeBookSpread/bookTotal: overwrite always (AN is authoritative for DK lines)
-    // - awayML/homeML: overwrite always
-    // - awaySpreadOdds/homeSpreadOdds/overOdds/underOdds: always update (juice from DK)
-    await updateBookOdds(dbGame.id, {
-      ...(an.dkAwaySpread != null ? {
-        awayBookSpread: an.dkAwaySpread,
-        homeBookSpread: an.dkHomeSpread,
-      } : {}),
-      ...(an.dkTotal != null ? { bookTotal: an.dkTotal } : {}),
-      ...(an.dkAwayML != null ? {
-        awayML: an.dkAwayML,
-        homeML: an.dkHomeML,
-      } : {}),
-      ...(an.dkAwaySpreadOdds != null ? {
-        awaySpreadOdds: an.dkAwaySpreadOdds,
-        homeSpreadOdds: an.dkHomeSpreadOdds,
-      } : {}),
-      ...(an.dkOverOdds != null ? {
-        overOdds: an.dkOverOdds,
-        underOdds: an.dkUnderOdds,
-      } : {}),
-    });
-    updated++;
-    console.log(
-      `[ActionNetwork][${sport}] Updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} (${dateStr}) | ` +
-      `spread=${an.dkAwaySpread}/${an.dkHomeSpread} (${an.dkAwaySpreadOdds}/${an.dkHomeSpreadOdds}) ` +
-      `total=${an.dkTotal} (${an.dkOverOdds}/${an.dkUnderOdds}) ` +
-      `ml=${an.dkAwayML}/${an.dkHomeML}`
-    );
-  }
-
-  return { updated, skipped };
-}
-
-/**
- * Fetches Action Network DraftKings odds for a sport and applies them to today's games.
- * Non-fatal — errors are caught and logged.
- */
-async function runActionNetworkOddsUpdate(
-  sport: "NCAAM" | "NBA" | "NHL",
-  anSport: "ncaab" | "nba" | "nhl",
-  todayStr: string
-): Promise<void> {
-  try {
-    const anGames = await fetchActionNetworkOdds(anSport, todayStr);
-    console.log(
-      `[ActionNetwork][${sport}] ${anGames.length} games with DK odds for ${todayStr}`
-    );
-    const result = await applyActionNetworkOdds(sport, todayStr, anGames);
-    console.log(
-      `[ActionNetwork][${sport}] Done: ${result.updated} updated, ${result.skipped} skipped`
-    );
-  } catch (err) {
-    console.error(`[ActionNetwork][${sport}] Odds update failed (non-fatal):`, err);
-  }
-}
+// Action Network odds are now ingested exclusively via the ingestAnHtml tRPC procedure
+// (paste AN HTML from actionnetwork.com/ncaab/odds?oddsType=combined etc.)
+// VSiN is used only for betting splits.
 
 // ─── Tomorrow's VSiN splits pre-population ──────────────────────────────────
 
@@ -320,10 +205,7 @@ async function runTomorrowSplitsUpdate(tomorrowStr: string): Promise<void> {
       console.log(`[VSiNAutoRefresh][Tomorrow][NHL] ${updated} games updated with tomorrow's splits`);
     }
 
-    // Also apply AN odds for tomorrow
-    await runActionNetworkOddsUpdate("NCAAM", "ncaab", tomorrowStr);
-    await runActionNetworkOddsUpdate("NBA", "nba", tomorrowStr);
-    await runActionNetworkOddsUpdate("NHL", "nhl", tomorrowStr);
+    // AN odds for tomorrow are ingested via ingestAnHtml tRPC procedure (paste AN HTML)
   } catch (err) {
     console.warn("[VSiNAutoRefresh][Tomorrow] Tomorrow splits update failed (non-fatal):", err);
   }
@@ -806,11 +688,8 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
       `total=${nhlResult.total}`
     );
 
-    // Apply DraftKings odds from Action Network for all three leagues
-    // Runs after VSiN splits upserts so DB rows exist before we try to update them
-    await runActionNetworkOddsUpdate("NCAAM", "ncaab", todayStr);
-    await runActionNetworkOddsUpdate("NBA", "nba", todayStr);
-    await runActionNetworkOddsUpdate("NHL", "nhl", todayStr);
+    // AN odds are ingested exclusively via the ingestAnHtml tRPC procedure (paste AN HTML)
+    // VSiN is used only for betting splits.
 
     // Pre-populate tomorrow's splits and odds (non-fatal)
     const tomorrowStr = datePst(1);
