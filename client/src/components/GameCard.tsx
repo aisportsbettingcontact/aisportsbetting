@@ -918,7 +918,7 @@ function DesktopMergedPanel({
 
     return (
       /* flex: 1 1 0% ensures all three SectionCols grow equally from 0 base — identical width regardless of content */
-      <div className="flex flex-col" style={{ flex: '1 1 0%', minWidth: 0, width: 0, padding: '8px 10px 10px', overflow: 'hidden' }}>
+      <div className="flex flex-col" style={{ flex: '1 1 0%', minWidth: 0, width: 0, padding: '8px 10px 10px' }}>
 
         {/* ── Section title ── */}
         <div className="flex items-center gap-1.5" style={{ marginBottom: 4 }}>
@@ -1059,8 +1059,8 @@ function DesktopMergedPanel({
         {/* ── Thin separator ── */}
         <div style={{ height: 1, background: 'rgba(255,255,255,0.1)', marginBottom: 7 }} />
 
-        {/* ── TICKETS split bar — fixed-height wrapper so TICKETS and MONEY bars are identical size ── */}
-        <div style={{ flex: '1 1 0%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+        {/* ── TICKETS split bar ── */}
+        <div style={{ marginTop: 4 }}>
           <MergedSplitBar
             awayPct={awayTickets} homePct={homeTickets}
             awayColor={awayColor} homeColor={homeColor}
@@ -1069,8 +1069,8 @@ function DesktopMergedPanel({
           />
         </div>
 
-        {/* ── MONEY split bar — same fixed-height wrapper as TICKETS ── */}
-        <div style={{ flex: '1 1 0%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
+        {/* ── MONEY split bar ── */}
+        <div style={{ marginTop: 4 }}>
           <MergedSplitBar
             awayPct={awayHandle} homePct={homeHandle}
             awayColor={awayColor} homeColor={homeColor}
@@ -1095,7 +1095,7 @@ function DesktopMergedPanel({
   const spreadVerdictTeam = spreadEdgeIsAwayForVerdict ? awayDisplayName : homeDisplayName;
 
   return (
-    <div className="flex items-stretch w-full h-full">
+    <div className="flex items-stretch w-full" style={{ minHeight: '100%' }}>
       {/* SPREAD section */}
       <SectionCol
         title="Spread"
@@ -1142,7 +1142,7 @@ function DesktopMergedPanel({
       <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
       {/* EdgeVerdict column */}
       {showModel ? (
-        <div className="flex flex-col items-start justify-center" style={{ flex: '0 0 clamp(150px,11.5vw,190px)', width: 'clamp(150px,11.5vw,190px)', overflow: 'hidden', padding: '10px 12px', gap: 0 }}>
+        <div className="flex flex-col items-start justify-center" style={{ flex: '0 0 clamp(150px,11.5vw,190px)', width: 'clamp(150px,11.5vw,190px)', padding: '10px 12px', gap: 0 }}>
           {/* EDGE header */}
           <span style={{ fontSize: 'clamp(9px,0.7vw,11px)', fontWeight: 800, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8, alignSelf: 'center' }}>EDGE</span>
           {spreadPass && totalPass ? (
@@ -1406,7 +1406,7 @@ function OddsLinesPanel({
   );
 
   return (
-    <div className="flex flex-col pl-2 pr-0 pt-0 pb-0 min-w-0" style={{ justifyContent: 'center', height: '100%' }}>
+    <div className="flex flex-col pl-2 pr-0 pt-0 pb-0 min-w-0" style={{ justifyContent: 'center' }}>
       {/* Top-level column group headers: SPREAD | TOTAL | MONEYLINE */}
       <div
         className={`grid ${GRID} pb-0.5`}
@@ -1876,7 +1876,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
     const teamGroupJustify = 'center';
     const teamGroupPaddingTop = '0px';
     return (
-    <div className="flex flex-col pl-2 pr-2 pt-0 pb-0" style={{ height: '100%', justifyContent: 'center' }}>
+    <div className="flex flex-col pl-2 pr-2 pt-0 pb-0" style={{ minHeight: '100%', justifyContent: 'center' }}>
       {/* Status row: [star] [clock/status] [LIVE badge]
           This row acts as the header spacer to align away/home rows with OddsTable.
           The OddsLinesPanel header (SPREAD/TOTAL/MONEYLINE + BOOK/MODEL rows) takes
@@ -2112,15 +2112,14 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         */}
 
         {/* ── Desktop layout ── */}
-        {/* UNIFORM HEIGHT: fixed clamp height so every card is identical regardless of content */}
-        <div className="hidden lg:flex items-stretch w-full" style={{ height: 'clamp(160px,14vw,220px)', overflow: 'hidden' }}>
+        {/* MIN-HEIGHT: ensures a consistent baseline card height while allowing taller content (e.g. OPEN sub-rows) to expand naturally without clipping */}
+        <div className="hidden lg:flex items-stretch w-full" style={{ minHeight: 'clamp(160px,14vw,220px)' }}>
           {/* Col 1: Score panel — fixed width so all SPREAD/TOTAL/ML/EDGE borders align at same horizontal position */}
           <div
             style={{
               flex: mode === "splits" ? "1 1 30%" : "0 0 clamp(200px,16vw,260px)",
               width: mode === "splits" ? undefined : 'clamp(200px,16vw,260px)',
               borderRight: "1px solid hsl(var(--border) / 0.5)",
-              overflow: 'hidden',
             }}
           >
             <ScorePanel />
@@ -2213,7 +2212,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
           {/* Col 3: Betting Splits — non-projections, non-full, non-splits modes */}
           {mode !== "projections" && mode !== "full" && mode !== "splits" && (
             <div className="flex flex-col" style={{ flex: "2 1 40%", minWidth: 220, borderLeft: "1px solid hsl(var(--border) / 0.5)" }}>
-              <div className="flex-1 px-3 py-2">
+              <div className="px-3 py-2">
                 <BettingSplitsPanel
                   game={game}
                   awayLabel={awayName}

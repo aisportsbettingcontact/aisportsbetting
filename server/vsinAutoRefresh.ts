@@ -21,7 +21,7 @@ import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
 import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "./nbaScoreboard";
 import { fetchNhlGamesForRange, buildNhlStartTimeMap, buildNhlGameMap, fetchNhlLiveScores, type NhlScheduleGame } from "./nhlSchedule";
 import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG, BY_AN_SLUG as NCAAM_BY_AN } from "../shared/ncaamTeams";
-import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG } from "../shared/nbaTeams";
+import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG, getNbaTeamByVsinSlug } from "../shared/nbaTeams";
 import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG } from "../shared/nhlTeams";
 import { NBA_BY_DB_SLUG } from "../shared/nbaTeams";
 import type { InsertGame } from "../drizzle/schema";
@@ -163,8 +163,8 @@ async function runTomorrowSplitsUpdate(tomorrowStr: string): Promise<void> {
       const existingNba = await listGamesByDate(tomorrowStr, "NBA");
       let updated = 0;
       for (const g of nbaSplits) {
-        const awayTeam = NBA_BY_VSIN_SLUG.get(g.awayVsinSlug);
-        const homeTeam = NBA_BY_VSIN_SLUG.get(g.homeVsinSlug);
+        const awayTeam = getNbaTeamByVsinSlug(g.awayVsinSlug);
+        const homeTeam = getNbaTeamByVsinSlug(g.homeVsinSlug);
         if (!awayTeam || !homeTeam) continue;
         const dbGame = existingNba.find(e => e.awayTeam === awayTeam.dbSlug && e.homeTeam === homeTeam.dbSlug);
         if (!dbGame) continue;
@@ -418,10 +418,11 @@ async function refreshNba(todayStr: string, allDates: string[]): Promise<{
   }
 
   // Build a map: dbSlug pair → VsinSplitsGame for fast lookup
+  // Use getNbaTeamByVsinSlug() which applies alias resolution (e.g. "la-clippers" → "los-angeles-clippers")
   const vsinSplitsMap = new Map<string, VsinSplitsGame>();
   for (const g of vsinSplits) {
-    const awayTeam = NBA_BY_VSIN_SLUG.get(g.awayVsinSlug);
-    const homeTeam = NBA_BY_VSIN_SLUG.get(g.homeVsinSlug);
+    const awayTeam = getNbaTeamByVsinSlug(g.awayVsinSlug);
+    const homeTeam = getNbaTeamByVsinSlug(g.homeVsinSlug);
     if (awayTeam && homeTeam) {
       vsinSplitsMap.set(`${awayTeam.dbSlug}@${homeTeam.dbSlug}`, g);
     } else {

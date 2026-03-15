@@ -1332,3 +1332,7 @@
 - [x] Update vsinAutoRefresh to use gameDatePst when inserting NCAAM games
 - [x] Update sortGamesByStartTime to remove 00:00 special case (no longer needed with PST)
 - [x] Update GameCard.tsx formatMilitaryTime to show PST for NCAAM, EST for NBA/NHL
+
+- [x] Fix Kings vs Clippers missing splits from VSiN HTML provided by user (getNbaTeamByVsinSlug alias resolution fix)
+- [x] Fix GameCard height/overflow/truncation - replaced fixed height+overflow:hidden with minHeight so content never clips
+- [x] Ensure dynamic scaling for all GameCard content across all leagues and screen sizes (removed all overflow:hidden from desktop layout columns)
