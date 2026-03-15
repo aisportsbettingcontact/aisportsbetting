@@ -721,6 +721,16 @@ export const appRouter = router({
       .query(() => {
         return getLastGoalieWatchResult();
       }),
+    /**
+     * Force re-run the NHL model for today's games, even if already modeled.
+     * Owner-only — clears modelRunAt and re-runs the model for all upcoming games.
+     * Use this after schema changes or model engine updates.
+     */
+    forceRerun: ownerProcedure
+      .mutation(async () => {
+        const result = await syncNhlModelForToday("manual", true);
+        return result;
+      }),
   }),
   // ─── Odds History ────────────────────────────────────────────────────────────────────────────
   oddsHistory: router({

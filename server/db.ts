@@ -432,6 +432,13 @@ export async function updateGameProjections(
     homeSpreadOdds?: string | null;
     overOdds?: string | null;
     underOdds?: string | null;
+    // NHL model puck line spread and fair-value odds (set by model sync)
+    modelAwayPuckLine?: string | null;
+    modelHomePuckLine?: string | null;
+    modelAwayPLOdds?: string | null;
+    modelHomePLOdds?: string | null;
+    modelOverOdds?: string | null;
+    modelUnderOdds?: string | null;
   }
 ) {
   const db = await getDb();

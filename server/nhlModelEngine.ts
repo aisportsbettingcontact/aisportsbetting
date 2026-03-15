@@ -12,6 +12,7 @@
  */
 
 import { spawn } from "child_process";
+import { getDefaultTeamStats } from "./nhlNaturalStatScraper.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import type { NhlTeamStats, NhlGoalieStats } from "./nhlNaturalStatScraper.js";
@@ -121,9 +122,17 @@ export async function runNhlModelForGame(input: NhlModelEngineInput): Promise<Nh
   console.log(`[NhlModelEngine]   Market: PL_odds=${input.mkt_away_pl_odds}/${input.mkt_home_pl_odds} Total=${input.mkt_total} ML=${input.mkt_away_ml}/${input.mkt_home_ml}`);
 
   return new Promise<NhlModelResult>((resolve) => {
-    const proc = spawn("python3.11", [enginePath], {
+    // Clear PYTHONHOME and PYTHONPATH to prevent conflicts with the server's
+    // uv-managed Python 3.13 environment (which sets PYTHONHOME to 3.13 stdlib).
+    // python3.11 must use its own /usr/lib/python3.11 standard library.
+    const cleanEnv = { ...process.env };
+    delete cleanEnv.PYTHONHOME;
+    delete cleanEnv.PYTHONPATH;
+
+    const proc = spawn("/usr/bin/python3.11", [enginePath], {
       cwd: __dirname,
       stdio: ["pipe", "pipe", "pipe"],
+      env: cleanEnv,
     });
 
     let stdout = "";
@@ -298,7 +307,7 @@ export function buildTeamStatsDict(
   }> = {};
 
   for (const abbrev of [awayAbbrev, homeAbbrev]) {
-    const stats = teamStatsMap.get(abbrev);
+    const stats = teamStatsMap.get(abbrev) ?? getDefaultTeamStats(abbrev);
     if (stats) {
       result[abbrev] = {
         // Percentage-based

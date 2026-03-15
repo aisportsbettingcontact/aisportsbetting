@@ -459,6 +459,13 @@ type GameRow = {
   modelHomeScore: string | null;
   modelAwayWinPct: string | null;
   modelHomeWinPct: string | null;
+  // Model fair-value puck line and O/U odds (from model engine)
+  modelAwayPuckLine: string | null;
+  modelHomePuckLine: string | null;
+  modelAwayPLOdds: string | null;
+  modelHomePLOdds: string | null;
+  modelOverOdds: string | null;
+  modelUnderOdds: string | null;
 };
 
 // ─── EditableGameCard ─────────────────────────────────────────────────────────
@@ -1443,6 +1450,95 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
         </div>{/* end MOBILE layout */}
 
       </div>
+
+      {/* ── NHL MODEL PROJECTIONS: read-only panel showing model's own puck line, odds, and total ── */}
+      {isNHL && (game.modelAwayPuckLine || game.modelOverOdds || game.modelAwayScore) && (
+        <div
+          className="px-3 pt-2.5 pb-3"
+          style={{ borderTop: "1px solid hsl(var(--border) / 0.6)", background: "rgba(0,100,200,0.04)" }}
+        >
+          {/* Section header */}
+          <div className="flex items-center gap-2 mb-2">
+            <span
+              className="text-[10px] font-black uppercase tracking-[0.18em]"
+              style={{ color: "#0099e6" }}
+            >
+              ⚙ NHL MODEL PROJECTIONS
+            </span>
+            <span className="text-[9px] uppercase tracking-widest" style={{ color: "rgba(0,153,230,0.5)" }}>
+              (auto-generated · read-only)
+            </span>
+          </div>
+
+          {/* Puck line row */}
+          {game.modelAwayPuckLine && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] uppercase tracking-widest flex-shrink-0" style={{ color: "hsl(var(--muted-foreground))", minWidth: 72 }}>PUCK LINE</span>
+              <div className="flex items-center gap-3 flex-1 flex-wrap">
+                <span className="text-[12px] font-bold tabular-nums" style={{ color: "#e2e8f0" }}>
+                  {awayName}: <span style={{ color: "#0099e6" }}>{game.modelAwayPuckLine}</span>
+                  {game.modelAwayPLOdds && (
+                    <span className="font-semibold" style={{ color: "rgba(0,153,230,0.8)" }}> ({game.modelAwayPLOdds})</span>
+                  )}
+                  {game.modelAwayPLCoverPct && (
+                    <span className="text-[10px] ml-1" style={{ color: "rgba(255,255,255,0.4)" }}>{parseFloat(game.modelAwayPLCoverPct).toFixed(1)}% cover</span>
+                  )}
+                </span>
+                <span className="text-[10px]" style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
+                <span className="text-[12px] font-bold tabular-nums" style={{ color: "#e2e8f0" }}>
+                  {homeName}: <span style={{ color: "#0099e6" }}>{game.modelHomePuckLine}</span>
+                  {game.modelHomePLOdds && (
+                    <span className="font-semibold" style={{ color: "rgba(0,153,230,0.8)" }}> ({game.modelHomePLOdds})</span>
+                  )}
+                  {game.modelHomePLCoverPct && (
+                    <span className="text-[10px] ml-1" style={{ color: "rgba(255,255,255,0.4)" }}>{parseFloat(game.modelHomePLCoverPct).toFixed(1)}% cover</span>
+                  )}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Total row */}
+          {game.modelOverOdds && (
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="text-[10px] uppercase tracking-widest flex-shrink-0" style={{ color: "hsl(var(--muted-foreground))", minWidth: 72 }}>TOTAL</span>
+              <span className="text-[12px] font-bold tabular-nums" style={{ color: "#e2e8f0" }}>
+                {game.modelTotal ? (
+                  <>
+                    <span style={{ color: "#0099e6" }}>{game.modelTotal}</span>
+                    {" "}
+                    <span style={{ color: "rgba(0,153,230,0.8)" }}>O({game.modelOverOdds})</span>
+                    {" / "}
+                    <span style={{ color: "rgba(0,153,230,0.8)" }}>U({game.modelUnderOdds})</span>
+                  </>
+                ) : "—"}
+              </span>
+            </div>
+          )}
+
+          {/* Projected goals + win probability row */}
+          {(game.modelAwayScore || game.modelAwayWinPct) && (
+            <div className="flex items-center gap-3 flex-wrap">
+              {game.modelAwayScore && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-widest" style={{ color: "hsl(var(--muted-foreground))" }}>PROJ GOALS</span>
+                  <span className="text-[11px] font-bold tabular-nums" style={{ color: "rgba(255,255,255,0.7)" }}>
+                    {awayName} {parseFloat(game.modelAwayScore).toFixed(2)} — {homeName} {parseFloat(game.modelHomeScore ?? "0").toFixed(2)}
+                  </span>
+                </div>
+              )}
+              {game.modelAwayWinPct && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] uppercase tracking-widest" style={{ color: "hsl(var(--muted-foreground))" }}>WIN%</span>
+                  <span className="text-[11px] font-bold tabular-nums" style={{ color: "rgba(255,255,255,0.7)" }}>
+                    {awayName} {parseFloat(game.modelAwayWinPct).toFixed(1)}% / {homeName} {parseFloat(game.modelHomeWinPct ?? "0").toFixed(1)}%
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── ODDS HISTORY: collapsible snapshot table (owner-only) ── */}
       <OddsHistoryPanel

@@ -165,15 +165,15 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
       and(
         eq(games.gameDate, gameDate),
         eq(games.sport, "NHL"),
-        eq(games.gameStatus, "upcoming"),
+        // Process ALL games (upcoming, live, final) — goalie data should be tracked for every game
       )
     );
 
   result.gamesChecked = todayGames.length;
-  console.log(`[GoalieWatcher]${tag}   Found ${todayGames.length} upcoming NHL games for ${gameDate}`);
+  console.log(`[GoalieWatcher]${tag}   Found ${todayGames.length} NHL games for ${gameDate} (all statuses)`);
 
   if (todayGames.length === 0) {
-    console.log(`[GoalieWatcher]${tag} No upcoming NHL games today`);
+    console.log(`[GoalieWatcher]${tag} No NHL games today`);
     lastWatchResult = result;
     return result;
   }
@@ -199,6 +199,7 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
 
   // Step 3: Compare scraped goalies vs DB
   const changedGameIds: number[] = [];
+  const newlyPopulatedGameIds: number[] = []; // games where both goalies just became available
 
   for (const rotoGame of rotoGames) {
     const dbGame = matchGameToDb(rotoGame, todayGames);
@@ -256,7 +257,6 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
 
     if (gameChanges.length > 0) {
       result.changes.push(...gameChanges);
-      changedGameIds.push(dbGame.id);
 
       // Build DB update payload
       const updatePayload: Record<string, unknown> = {};
@@ -270,12 +270,14 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
         }
       }
 
-      // Clear modelRunAt for scratches/new goalies so the model re-runs
-      const hasScratch = gameChanges.some(c => c.changeType === "scratch");
-      const hasNew     = gameChanges.some(c => c.changeType === "new");
-      if (hasScratch || hasNew) {
+      // Only clear modelRunAt and queue model re-run for upcoming games
+      // (live/final games have already started — no point re-running model)
+      if (dbGame.gameStatus === "upcoming") {
+        changedGameIds.push(dbGame.id);
         updatePayload.modelRunAt = null;
         console.log(`[GoalieWatcher]${tag}   Clearing modelRunAt for ${gameLabel} - model will re-run`);
+      } else {
+        console.log(`[GoalieWatcher]${tag}   Goalie updated for ${gameLabel} (${dbGame.gameStatus}) - no model re-run needed`);
       }
 
       try {
@@ -300,9 +302,25 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
           silentUpdate.homeGoalie          = rotoGame.homeGoalie.name;
           silentUpdate.homeGoalieConfirmed = rotoGame.homeGoalie.confirmed;
         }
+
+        // Check if BOTH goalies are now available after this update
+        // Only trigger model run for upcoming games (live/final already started)
+        const awayGoalieAfter = (awayMissing && rotoGame.awayGoalie) ? rotoGame.awayGoalie.name : dbGame.awayGoalie;
+        const homeGoalieAfter = (homeMissing && rotoGame.homeGoalie) ? rotoGame.homeGoalie.name : dbGame.homeGoalie;
+        const bothGoaliesNowAvailable = !!awayGoalieAfter && !!homeGoalieAfter;
+        const modelNotYetRun = !dbGame.modelRunAt;
+        const isUpcoming = dbGame.gameStatus === "upcoming";
+
+        if (bothGoaliesNowAvailable && modelNotYetRun && isUpcoming) {
+          // Clear modelRunAt to ensure model runs (it may already be null)
+          silentUpdate.modelRunAt = null;
+          newlyPopulatedGameIds.push(dbGame.id);
+          console.log(`[GoalieWatcher]${tag}   BOTH goalies now available for ${gameLabel} - queuing model run`);
+        }
+
         try {
           await db.update(games).set(silentUpdate).where(eq(games.id, dbGame.id));
-          console.log(`[GoalieWatcher]${tag}   Populated missing goalie data for ${gameLabel}`);
+          console.log(`[GoalieWatcher]${tag}   Silent goalie populate for ${gameLabel}: away=${awayGoalieAfter ?? "TBD"} home=${homeGoalieAfter ?? "TBD"}`);
         } catch (err) {
           console.warn(`[GoalieWatcher]${tag} Silent goalie update failed for ${gameLabel}: ${err}`);
         }
@@ -312,20 +330,22 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
     }
   }
 
-  // Step 4: Re-run model for games with goalie changes
-  if (changedGameIds.length > 0) {
-    console.log(`\n[GoalieWatcher]${tag} Goalie changes in ${changedGameIds.length} game(s) - re-running model...`);
+  // Step 4: Re-run model for games with goalie changes OR newly populated goalies
+  const allGameIdsToRerun = Array.from(new Set([...changedGameIds, ...newlyPopulatedGameIds]));
+
+  if (allGameIdsToRerun.length > 0) {
+    console.log(`\n[GoalieWatcher]${tag} Triggering model for ${allGameIdsToRerun.length} game(s) (${changedGameIds.length} changed + ${newlyPopulatedGameIds.length} newly populated)...`);
     try {
       const syncResult = await syncNhlModelForToday("auto");
       result.modelRerun = true;
-      console.log(`[GoalieWatcher]${tag} Model re-run complete: synced=${syncResult.synced} skipped=${syncResult.skipped} errors=${syncResult.errors.length}`);
+      console.log(`[GoalieWatcher]${tag} Model run complete: synced=${syncResult.synced} skipped=${syncResult.skipped} errors=${syncResult.errors.length}`);
     } catch (err) {
-      const msg = `Model re-run failed: ${err}`;
+      const msg = `Model run failed: ${err}`;
       console.error(`[GoalieWatcher]${tag} ${msg}`);
       result.errors.push(msg);
     }
   } else {
-    console.log(`[GoalieWatcher]${tag} No goalie changes - model not re-run`);
+    console.log(`[GoalieWatcher]${tag} No goalie changes or new populations - model not re-run`);
   }
 
   console.log(`[GoalieWatcher]${tag} DONE - changes=${result.changes.length} modelRerun=${result.modelRerun} errors=${result.errors.length}`);

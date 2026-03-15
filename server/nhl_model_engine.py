@@ -231,9 +231,9 @@ def compute_pace_factor(away_stats: dict, home_stats: dict) -> float:
     pace_factor = combined_SA60 / (2 * league_SA60)
     Clamped to [0.85, 1.15] to prevent extreme outliers.
     """
-    away_sa = away_stats.get("SA_60", LEAGUE_SA_60)
-    home_sa = home_stats.get("SA_60", LEAGUE_SA_60)
-    combined = (away_sa + home_sa) / 2.0
+    away_sa = away_stats.get("SA_60") or LEAGUE_SA_60
+    home_sa = home_stats.get("SA_60") or LEAGUE_SA_60
+    combined = (float(away_sa) + float(home_sa)) / 2.0
     factor = combined / LEAGUE_SA_60
     return max(0.85, min(1.15, factor))
 
@@ -472,10 +472,54 @@ def calculate_probs(away_scores: np.ndarray, home_scores: np.ndarray) -> dict:
         home_win_prob /= total_prob
         away_win_prob /= total_prob
 
-    # Section 9: Puck line
-    # P(home −1.5) = P(margin ≥ 2)
-    home_pl_cover = float(np.sum(margin >= 2)) / n
-    away_pl_cover = 1.0 - home_pl_cover
+    # ── Section 9: Puck Line Origination Engine ─────────────────────────────
+    # Per spec (Sections 2–7 of Puck Line Origination Engine):
+    #
+    # Step 1: Determine favorite by win probability
+    #   favorite = HOME if home_win_prob > away_win_prob else AWAY
+    #
+    # Step 2: Compute P_win_by_2_or_more and P_win_by_3_or_more for the FAVORITE
+    #   (margin = home - away; positive = home winning)
+    #
+    # Step 3: Determine spread
+    #   if P_win_by_3_or_more >= 0.36 → spread = ±2.5
+    #   else                          → spread = ±1.5
+    #
+    # Step 4: P_favorite_cover = P_win_by_2_or_more (if -1.5) or P_win_by_3_or_more (if -2.5)
+    # Step 5: P_underdog_cover = 1 - P_favorite_cover
+    # Step 6: Assign to home/away based on who is favorite
+
+    fav_is_home = home_win_prob > away_win_prob
+
+    # Wins by 2+ and 3+ for the FAVORITE (from the margin distribution)
+    if fav_is_home:
+        wins_by_2 = float(np.sum(margin >= 2)) / n
+        wins_by_3 = float(np.sum(margin >= 3)) / n
+    else:
+        wins_by_2 = float(np.sum(margin <= -2)) / n
+        wins_by_3 = float(np.sum(margin <= -3)) / n
+
+    # Determine spread: -2.5 if favorite wins by 3+ at least 36% of the time
+    if wins_by_3 >= 0.36:
+        puck_line_spread = 2.5   # favorite = -2.5, underdog = +2.5
+        p_favorite_cover = wins_by_3
+    else:
+        puck_line_spread = 1.5   # favorite = -1.5, underdog = +1.5
+        p_favorite_cover = wins_by_2
+
+    p_underdog_cover = 1.0 - p_favorite_cover
+
+    # Assign cover probabilities to home/away
+    if fav_is_home:
+        home_pl_cover = p_favorite_cover
+        away_pl_cover = p_underdog_cover
+        home_pl_spread = -puck_line_spread
+        away_pl_spread = +puck_line_spread
+    else:
+        away_pl_cover = p_favorite_cover
+        home_pl_cover = p_underdog_cover
+        away_pl_spread = -puck_line_spread
+        home_pl_spread = +puck_line_spread
 
     # Section 10: Total — find the best line (nearest 0.5)
     e_total = float(np.mean(totals))
@@ -503,6 +547,10 @@ def calculate_probs(away_scores: np.ndarray, home_scores: np.ndarray) -> dict:
         "home_win":        home_win_prob,
         "away_pl_cover":   away_pl_cover,
         "home_pl_cover":   home_pl_cover,
+        "away_pl_spread":  away_pl_spread,   # e.g. +1.5 or -2.5
+        "home_pl_spread":  home_pl_spread,   # e.g. -1.5 or +2.5
+        "puck_line_spread": puck_line_spread, # 1.5 or 2.5 (absolute value)
+        "fav_is_home":     fav_is_home,
         "best_total_line": best_line,
         "over_prob":       over_prob,
         "under_prob":      under_prob,
@@ -721,7 +769,7 @@ def detect_edges(
                 "conf":           "HIGH" if edge_under >= 0.08 else ("MOD" if edge_under >= 0.05 else "LOW"),
             })
 
-    # ── PUCK LINE MARKET ─────────────────────────────────────────────────────
+    # ── PUCK LINE MARKET ───────────────────────────────────────────────────────────────────
     if mkt_away_pl_odds is not None and mkt_home_pl_odds is not None:
         # Raw implied probabilities
         p_away_pl_raw = ml_to_prob(mkt_away_pl_odds)
@@ -730,13 +778,11 @@ def detect_edges(
         # Remove vig
         p_away_pl_market, p_home_pl_market = remove_vig(p_away_pl_raw, p_home_pl_raw)
 
-        # Distribution-translated model probabilities
-        # P(away +1.5 covers) = P(margin < 2) = P(home margin < 2)
-        # P(home -1.5 covers) = P(margin >= 2)
-        p_home_pl_model = sum(
-            count for margin, count in margin_dist.items() if margin >= 2
-        ) / n
-        p_away_pl_model = 1.0 - p_home_pl_model
+        # Distribution-translated model probabilities using the DYNAMIC spread
+        # from the puck line origination engine (could be ±1.5 or ±2.5)
+        # Use the cover probabilities already computed in calculate_probs
+        p_home_pl_model = probs["home_pl_cover"]
+        p_away_pl_model = probs["away_pl_cover"]
 
         # Fair odds
         fair_away_pl_odds = prob_to_ml(p_away_pl_model)
@@ -986,17 +1032,30 @@ def originate_game(inp: dict) -> dict:
     # ── Step 7: Probabilities ─────────────────────────────────────────────────
     probs = calculate_probs(away_scores, home_scores)
     print(f"[NHLModel]   Win%: {away_abbrev}={probs['away_win']*100:.2f}% {home_abbrev}={probs['home_win']*100:.2f}%", file=sys.stderr)
-    print(f"[NHLModel]   PL%:  {away_abbrev}+1.5={probs['away_pl_cover']*100:.2f}% {home_abbrev}-1.5={probs['home_pl_cover']*100:.2f}%", file=sys.stderr)
+    pl_spread = probs['puck_line_spread']
+    fav_label = home_abbrev if probs['fav_is_home'] else away_abbrev
+    print(f"[NHLModel]   PL spread: ±{pl_spread} | Fav={fav_label}", file=sys.stderr)
+    print(f"[NHLModel]   PL%:  {away_abbrev}{probs['away_pl_spread']:+.1f}={probs['away_pl_cover']*100:.2f}% {home_abbrev}{probs['home_pl_spread']:+.1f}={probs['home_pl_cover']*100:.2f}%", file=sys.stderr)
     print(f"[NHLModel]   Total: line={probs['best_total_line']} over={probs['over_prob']*100:.2f}% under={probs['under_prob']*100:.2f}%", file=sys.stderr)
-
-    # ── Steps 8–10: Market origination ───────────────────────────────────────
+    # ── Steps 8–10: Market origination ───────────────────────────────────────────
     # Section 8: Moneyline
     model_away_ml = prob_to_ml(probs["away_win"])
     model_home_ml = prob_to_ml(probs["home_win"])
 
-    # Section 9: Puck line
-    model_away_pl_odds = prob_to_ml(probs["away_pl_cover"])
-    model_home_pl_odds = prob_to_ml(probs["home_pl_cover"])
+    # Section 9: Puck line (dynamic spread from origination engine)
+    model_away_pl_spread = probs["away_pl_spread"]   # e.g. +1.5 or -2.5
+    model_home_pl_spread = probs["home_pl_spread"]   # e.g. -1.5 or +2.5
+    model_away_pl_odds   = prob_to_ml(probs["away_pl_cover"])
+    model_home_pl_odds   = prob_to_ml(probs["home_pl_cover"])
+
+    # Validation: spread must be ±1.5 or ±2.5 (Section 8 of spec)
+    allowed_spreads = {-2.5, -1.5, 1.5, 2.5}
+    if model_away_pl_spread not in allowed_spreads or model_home_pl_spread not in allowed_spreads:
+        raise ValueError(f"PUCK LINE VALIDATION FAILED: away={model_away_pl_spread} home={model_home_pl_spread} — must be in {allowed_spreads}")
+    if abs(model_away_pl_spread) != abs(model_home_pl_spread):
+        raise ValueError(f"PUCK LINE VALIDATION FAILED: |away|={abs(model_away_pl_spread)} != |home|={abs(model_home_pl_spread)}")
+    if model_away_pl_spread != -model_home_pl_spread:
+        raise ValueError(f"PUCK LINE VALIDATION FAILED: away={model_away_pl_spread} != -home={model_home_pl_spread}")
 
     # Section 10: Total
     model_total_line  = probs["best_total_line"]
@@ -1004,10 +1063,10 @@ def originate_game(inp: dict) -> dict:
     model_under_odds  = prob_to_ml(probs["under_prob"])
 
     print(f"[NHLModel]   ML:    {format_ml(model_away_ml)} / {format_ml(model_home_ml)}", file=sys.stderr)
-    print(f"[NHLModel]   PL:    {format_ml(model_away_pl_odds)} / {format_ml(model_home_pl_odds)}", file=sys.stderr)
+    print(f"[NHLModel]   PL:    {model_away_pl_spread:+.1f} {format_ml(model_away_pl_odds)} / {model_home_pl_spread:+.1f} {format_ml(model_home_pl_odds)}", file=sys.stderr)
     print(f"[NHLModel]   Total: {model_total_line} ({format_ml(model_over_odds)} / {format_ml(model_under_odds)})", file=sys.stderr)
 
-    # ── Step 8: Consistency validation ───────────────────────────────────────
+    # ── Step 8: Consistency validation ───────────────────────────────────────────
     violations = validate_consistency(probs, mu_away, mu_home)
     if violations:
         for v in violations:
@@ -1042,11 +1101,12 @@ def originate_game(inp: dict) -> dict:
         # Projected goals (Section 4)
         "proj_away_goals":      round(mu_away, 2),
         "proj_home_goals":      round(mu_home, 2),
-        # Puck line (Section 9) — always ±1.5 in NHL
-        "away_puck_line":       "+1.5",
+        # Puck line (Section 9) — ±1.5 or ±2.5 based on distribution
+        "away_puck_line":       f"{model_away_pl_spread:+.1f}",
         "away_puck_line_odds":  model_away_pl_odds,
-        "home_puck_line":       "-1.5",
+        "home_puck_line":       f"{model_home_pl_spread:+.1f}",
         "home_puck_line_odds":  model_home_pl_odds,
+        "puck_line_spread":     probs["puck_line_spread"],  # 1.5 or 2.5 (absolute)
         # Moneylines (Section 8)
         "away_ml":              model_away_ml,
         "home_ml":              model_home_ml,

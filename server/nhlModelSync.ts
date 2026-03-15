@@ -99,7 +99,7 @@ function fmtML(ml: number): string {
  * Run the NHL model for all unmodeled games today.
  * Called by the scheduler and by the manual triggerRefresh tRPC procedure.
  */
-export async function syncNhlModelForToday(source: "auto" | "manual" = "auto"): Promise<NhlModelSyncResult> {
+export async function syncNhlModelForToday(source: "auto" | "manual" = "auto", forceRerun = false): Promise<NhlModelSyncResult> {
   const gameDate = getTodayDate();
   const tag = source === "manual" ? "[MANUAL]" : "[AUTO]";
 
@@ -115,6 +115,21 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto"): 
   console.log(`[NhlModelSync]${tag} Step 1: Querying DB for unmodeled NHL games on ${gameDate}...`);
 
   const db = await getDb();
+
+  // If forceRerun, clear modelRunAt for all today's upcoming NHL games first
+  if (forceRerun) {
+    console.log(`[NhlModelSync]${tag}   forceRerun=true — clearing modelRunAt for all upcoming NHL games today`);
+    await db
+      .update(games)
+      .set({ modelRunAt: null })
+      .where(
+        and(
+          eq(games.gameDate, gameDate),
+          eq(games.sport, "NHL"),
+          eq(games.gameStatus, "upcoming")
+        )
+      );
+  }
 
   const unmodeled = await db
     .select()
@@ -163,17 +178,28 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto"): 
   let teamStatsMap = new Map<string, import("./nhlNaturalStatScraper.js").NhlTeamStats>();
   let goalieStatsMap = new Map<string, import("./nhlNaturalStatScraper.js").NhlGoalieStats>();
 
-  try {
-    [teamStatsMap, goalieStatsMap] = await Promise.all([
-      scrapeNhlTeamStats(),
-      scrapeNhlGoalieStats(),
-    ]);
-    console.log(`[NhlModelSync]${tag}   ✅ Team stats: ${teamStatsMap.size} teams | Goalie stats: ${goalieStatsMap.size / 2} goalies`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[NhlModelSync]${tag}   ⚠ NaturalStatTrick scrape failed: ${msg}`);
-    console.error(`[NhlModelSync]${tag}   Proceeding with default/fallback stats`);
-    result.errors.push(`NaturalStatTrick scrape failed: ${msg}`);
+  // Fetch team stats and goalie stats independently so one failure doesn't block the other
+  const [teamStatsResult, goalieStatsResult] = await Promise.allSettled([
+    scrapeNhlTeamStats(),
+    scrapeNhlGoalieStats(),
+  ]);
+
+  if (teamStatsResult.status === "fulfilled") {
+    teamStatsMap = teamStatsResult.value;
+    console.log(`[NhlModelSync]${tag}   ✅ Team stats: ${teamStatsMap.size} teams`);
+  } else {
+    const msg = teamStatsResult.reason instanceof Error ? teamStatsResult.reason.message : String(teamStatsResult.reason);
+    console.error(`[NhlModelSync]${tag}   ⚠ Team stats scrape failed: ${msg} — using defaults`);
+    result.errors.push(`Team stats scrape failed: ${msg}`);
+  }
+
+  if (goalieStatsResult.status === "fulfilled") {
+    goalieStatsMap = goalieStatsResult.value;
+    console.log(`[NhlModelSync]${tag}   ✅ Goalie stats: ${Math.floor(goalieStatsMap.size / 2)} goalies`);
+  } else {
+    const msg = goalieStatsResult.reason instanceof Error ? goalieStatsResult.reason.message : String(goalieStatsResult.reason);
+    console.error(`[NhlModelSync]${tag}   ⚠ Goalie stats scrape failed: ${msg} — using defaults`);
+    result.errors.push(`Goalie stats scrape failed: ${msg}`);
   }
 
   // ── Step 3: Scrape RotoWire starting goalies ──────────────────────────────
@@ -391,6 +417,13 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto"): 
           modelUnderRate:      String(modelResult.under_pct),
           modelAwayPLCoverPct: String(modelResult.away_pl_cover_pct),
           modelHomePLCoverPct: String(modelResult.home_pl_cover_pct),
+          // Puck line spread and fair value odds from model
+          modelAwayPuckLine:   modelResult.away_puck_line,        // e.g. "+1.5" or "-2.5"
+          modelHomePuckLine:   modelResult.home_puck_line,        // e.g. "-1.5" or "+2.5"
+          modelAwayPLOdds:     fmtML(modelResult.away_puck_line_odds),
+          modelHomePLOdds:     fmtML(modelResult.home_puck_line_odds),
+          modelOverOdds:       fmtML(modelResult.over_odds),
+          modelUnderOdds:      fmtML(modelResult.under_odds),
           // Goalie info
           awayGoalie:          awayGoalieName ?? undefined,
           homeGoalie:          homeGoalieName ?? undefined,

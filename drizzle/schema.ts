@@ -220,6 +220,18 @@ export const games = mysqlTable("games", {
   modelAwayPLCoverPct: decimal("modelAwayPLCoverPct", { precision: 5, scale: 2 }),
   /** Model puck line cover probability for the home team (0-100) */
   modelHomePLCoverPct: decimal("modelHomePLCoverPct", { precision: 5, scale: 2 }),
+  /** Model puck line spread for the away team, e.g. "+1.5" or "-2.5" */
+  modelAwayPuckLine: varchar("modelAwayPuckLine", { length: 8 }),
+  /** Model puck line spread for the home team, e.g. "-1.5" or "+2.5" */
+  modelHomePuckLine: varchar("modelHomePuckLine", { length: 8 }),
+  /** Model fair value odds for the away puck line, e.g. "-133" or "+115" */
+  modelAwayPLOdds: varchar("modelAwayPLOdds", { length: 16 }),
+  /** Model fair value odds for the home puck line, e.g. "+133" or "-115" */
+  modelHomePLOdds: varchar("modelHomePLOdds", { length: 16 }),
+  /** Model fair value odds for the Over, e.g. "+131" or "-108" */
+  modelOverOdds: varchar("modelOverOdds", { length: 16 }),
+  /** Model fair value odds for the Under, e.g. "-131" or "+108" */
+  modelUnderOdds: varchar("modelUnderOdds", { length: 16 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   /** Prevent duplicate rows for the same matchup on the same date */

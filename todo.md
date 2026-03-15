@@ -1464,3 +1464,30 @@
 - [x] Add Goalie Watcher last-check timestamp + change count + model re-run indicator to NHL stats bar
 - [x] Trigger goalie watcher check when "Refresh Now" is clicked while NHL tab is active
 - [x] Write 30 unit tests for all new NHL features (rest days, abbrev resolution, Utah alias, americanOddsToBreakEven, matchGameToDb) — all passing
+
+## Sprint Mar 15, 2026 — Part 3 (NHL Auto-Model + Goalie Fix)
+
+- [ ] Fix nhlRotoWireScraper.ts: use .lineup__player-highlight selector, extract full goalie name from .lineup__player-highlight-name a, status from .is-confirmed/.is-expected class
+- [ ] Fix RotoWire team abbrev extraction: use .lineup__abbr (is-visit = away, is-home = home) not the advanced-lineups approach
+- [ ] Auto-trigger NHL model immediately when both goalies are populated for a game (in goalie watcher + on server startup)
+- [ ] nhlModelSync.ts: on startup, run model for all today's NHL games that have both goalies but no modelRunAt
+- [ ] Ensure every game card in Publish Projections shows goalie name + confirmed/expected status
+- [ ] Fix goalie watcher to use correct HTML selectors matching pasted_content_21.txt structure
+
+## NHL Pipeline Fixes (2026-03-15)
+- [x] Fix NST goalie stats URL: goaliestats.php (404) → playerteams.php?stdoi=g
+- [x] Fix NST team name normalization: full names ("Chicago Blackhawks") → 3-letter abbrevs ("CHI")
+- [x] Fix NST dot-notation codes: N.J → NJD, S.J → SJS, T.B → TBL, L.A → LAK
+- [x] Add vitest tests for normalizeAbbrev (8 tests, all passing)
+- [x] Implement new puck line origination engine in Python model (Sections 1-9 of spec)
+- [x] Implement new Total Origination Engine (compute_pace_factor, fix NoneType SA_60 bug)
+- [x] Fix NoneType + NoneType bug in compute_pace_factor (SA_60 None handling)
+- [x] Fix RotoWire goalie watcher: ensure all current-day NHL games show goalie names with confirmed/expected status
+- [x] Verify full NHL model pipeline: real NST stats used, valid puck lines produced, goalie data populated
+- [x] Display model puck line odds on Publish Projections page (e.g., -1.5 (-115) / +1.5 (+105))
+- [x] Display model total odds on Publish Projections page (e.g., 6.5 O(-110) / U(-110))
+- [x] Fix GoalieWatcher to process ALL games on RotoWire (live + final + upcoming), not just upcoming
+- [x] Add schema columns: modelAwayPLOdds, modelHomePLOdds, modelOverOdds, modelUnderOdds, modelPuckLineSpread
+- [x] Add vitest tests for GoalieWatcher (12 tests passing)
+- [ ] Display model puck line odds on public feed GameCard for NHL games
+- [ ] Display model total odds on public feed GameCard for NHL games

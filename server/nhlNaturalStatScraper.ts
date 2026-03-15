@@ -18,6 +18,7 @@
  */
 
 import * as cheerio from "cheerio";
+import { NHL_TEAMS } from "../shared/nhlTeams";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -67,13 +68,15 @@ export interface NhlGoalieStats {
 const CURRENT_SEASON = "20252026";
 
 // Counts table (rate=n): GF, GA, xGF%, CF%, SCF%, HDCF%, SH%, SV%
-const TEAM_STATS_COUNT_URL = `https://www.naturalstattrick.com/teamtable.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&rate=n&team=all&loc=B&gpf=410&gpt=&fd=&td=`;
+// gpf=1 = include all teams with 1+ games played (no minimum game filter)
+const TEAM_STATS_COUNT_URL = `https://www.naturalstattrick.com/teamtable.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&rate=n&team=all&loc=B&gpf=1&gpt=&fd=&td=`;
 
 // Rate table (rate=y): xGF/60, HDCF/60, Rush/60, Rebound/60, SA/60, xGA/60, HDCA/60
-const TEAM_STATS_RATE_URL  = `https://www.naturalstattrick.com/teamtable.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&rate=y&team=all&loc=B&gpf=410&gpt=&fd=&td=`;
+const TEAM_STATS_RATE_URL  = `https://www.naturalstattrick.com/teamtable.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&rate=y&team=all&loc=B&gpf=1&gpt=&fd=&td=`;
 
-// Goalie stats
-const GOALIE_STATS_URL = `https://www.naturalstattrick.com/goaliestats.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&rate=n&pos=G&loc=B&toi=0&gpfilt=GP&fd=&td=&tgp=410&lines=single&draftteam=ALL`;
+// Goalie stats — uses playerteams.php with stdoi=g (goalie mode), gpfilt=none (no minimum GP filter)
+// NOTE: goaliestats.php is a 404; the correct endpoint is playerteams.php?stdoi=g
+const GOALIE_STATS_URL = `https://www.naturalstattrick.com/playerteams.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&stdoi=g&rate=n&team=ALL&pos=S&loc=B&toi=0&gpfilt=none&fd=&td=&tgp=410&lines=single&draftteam=ALL`;
 
 const FETCH_HEADERS = {
   "User-Agent":      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -83,7 +86,15 @@ const FETCH_HEADERS = {
 };
 
 // ─── Team Abbreviation Normalization ─────────────────────────────────────────
-const NST_ABBREV_MAP: Record<string, string> = {
+
+// Build a lookup map: full name (uppercase) → 3-letter abbreviation
+// e.g. "CHICAGO BLACKHAWKS" → "CHI", "UTAH MAMMOTH" → "UTA"
+const NST_NAME_TO_ABBREV: Map<string, string> = new Map(
+  NHL_TEAMS.map(t => [t.name.toUpperCase(), t.abbrev])
+);
+
+// Additional 3-letter overrides for legacy/variant codes used by NST
+const NST_ABBREV_OVERRIDES: Record<string, string> = {
   "VGK": "VGK",
   "NJD": "NJD",
   "SJS": "SJS",
@@ -94,11 +105,34 @@ const NST_ABBREV_MAP: Record<string, string> = {
   "ARI": "ARI",
   "SEA": "SEA",
   "UTA": "UTA",
+  // NST uses "N.J" for New Jersey Devils
+  "N.J": "NJD",
+  // NST uses "S.J" for San Jose Sharks
+  "S.J": "SJS",
+  // NST uses "T.B" for Tampa Bay Lightning
+  "T.B": "TBL",
+  // NST uses "L.A" for Los Angeles Kings
+  "L.A": "LAK",
 };
 
+/**
+ * Normalize a raw team identifier from NaturalStatTrick to a 3-letter abbreviation.
+ * Handles both full names ("Chicago Blackhawks") and short codes ("CHI", "N.J", etc.).
+ */
 function normalizeAbbrev(raw: string): string {
-  const upper = raw.trim().toUpperCase();
-  return NST_ABBREV_MAP[upper] ?? upper;
+  const trimmed = raw.trim();
+  const upper   = trimmed.toUpperCase();
+
+  // 1. Check full-name lookup first (handles "Chicago Blackhawks" → "CHI")
+  const byName = NST_NAME_TO_ABBREV.get(upper);
+  if (byName) return byName;
+
+  // 2. Check override map (handles "N.J" → "NJD", "PHX" → "ARI", etc.)
+  const override = NST_ABBREV_OVERRIDES[upper];
+  if (override) return override;
+
+  // 3. Fall back to uppercased raw value (already a valid 3-letter code)
+  return upper;
 }
 
 // ─── Helper: parse a NaturalStatTrick table ───────────────────────────────────
@@ -311,7 +345,8 @@ export async function scrapeNhlGoalieStats(): Promise<Map<string, NhlGoalieStats
   const $ = cheerio.load(html);
   const results = new Map<string, NhlGoalieStats>();
 
-  const table = $("table#goalies, table.tablesorter").first();
+  // playerteams.php?stdoi=g uses table#players (not table#goalies)
+  const table = $("table#players, table#goalies, table.tablesorter").first();
   if (!table.length) {
     console.warn("[NSTScraper] ⚠ Could not find goalie stats table");
     return results;
@@ -323,14 +358,18 @@ export async function scrapeNhlGoalieStats(): Promise<Map<string, NhlGoalieStats
   });
   console.log(`[NSTScraper]   Goalie headers: ${headers.join(", ")}`);
 
+  // playerteams.php?stdoi=g column names (lowercased):
+  //   "player", "team", "gp", "toi", "shots against", "saves", "goals against",
+  //   "sv%", "gaa", "gsaa", "xg against", ...
+  // Note: GSAA on this page = Goals Saved Above Average (same concept as GSAx for our purposes)
   const idxName  = headers.findIndex(h => h === "player" || h === "name");
   const idxTeam  = headers.findIndex(h => h === "team");
   const idxGP    = headers.findIndex(h => h === "gp");
   const idxSV    = headers.findIndex(h => h === "sv%");
-  const idxGSAX  = headers.findIndex(h => h.includes("gsax") || h.includes("goals saved above"));
-  const idxXGA   = headers.findIndex(h => h === "xga");
-  const idxGA    = headers.findIndex(h => h === "ga");
-  const idxShots = headers.findIndex(h => h === "sa" || h === "shots against" || h === "shots");
+  const idxGSAX  = headers.findIndex(h => h === "gsaa" || h.includes("gsax") || h.includes("goals saved above"));
+  const idxXGA   = headers.findIndex(h => h === "xg against" || h === "xga");
+  const idxGA    = headers.findIndex(h => h === "goals against" || h === "ga");
+  const idxShots = headers.findIndex(h => h === "shots against" || h === "sa" || h === "shots");
 
   console.log(`[NSTScraper]   Goalie cols — Name:${idxName} Team:${idxTeam} GP:${idxGP} SV%:${idxSV} GSAx:${idxGSAX} xGA:${idxXGA} GA:${idxGA} SA:${idxShots}`);
 
