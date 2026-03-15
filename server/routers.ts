@@ -28,6 +28,8 @@ import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, de
 import { getLastRefreshResult, runVsinRefresh, runVsinRefreshManual, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
 import { triggerModelWatcherForDate } from "./ncaamModelWatcher";
+import { syncNhlModelForToday, getLastNhlSyncResult } from "./nhlModelSync";
+import { checkGoalieChanges, getLastGoalieWatchResult } from "./nhlGoalieWatcher";
 import { VALID_DB_SLUGS, NCAAM_TEAMS, BY_AN_SLUG as NCAAM_BY_AN_SLUG } from "@shared/ncaamTeams";
 import { parseAnAllMarketsHtml, type AnSport } from "./anHtmlParser";
 import { NBA_VALID_DB_SLUGS, NBA_TEAMS } from "@shared/nbaTeams";
@@ -220,6 +222,11 @@ export const appRouter = router({
           spreadDiff: z.string().nullable().optional(),
           totalEdge: z.string().nullable().optional(),
           totalDiff: z.string().nullable().optional(),
+          // NHL-specific odds fields
+          awaySpreadOdds: z.string().nullable().optional(),
+          homeSpreadOdds: z.string().nullable().optional(),
+          overOdds: z.string().nullable().optional(),
+          underOdds: z.string().nullable().optional(),
         })
       )
       .mutation(async ({ input }) => {
@@ -678,6 +685,41 @@ export const appRouter = router({
           forceRerun: input.forceRerun,
         });
         return result;
+      }),
+  }),
+  // ─── NHL Model Sync ─────────────────────────────────────────────────────────
+  nhlModel: router({
+    /**
+     * Manually trigger the NHL model sync for today's games.
+     * Owner-only — re-runs the model for all unmodeled games.
+     */
+    triggerSync: ownerProcedure
+      .mutation(async () => {
+        const result = await syncNhlModelForToday("manual");
+        return result;
+      }),
+    /**
+     * Get the last NHL model sync result.
+     */
+    getLastSyncResult: ownerProcedure
+      .query(() => {
+        return getLastNhlSyncResult();
+      }),
+    /**
+     * Manually trigger the goalie change watcher.
+     * Owner-only — checks RotoWire for goalie changes and re-runs model if needed.
+     */
+    checkGoalies: ownerProcedure
+      .mutation(async () => {
+        const result = await checkGoalieChanges("manual");
+        return result;
+      }),
+    /**
+     * Get the last goalie watch result.
+     */
+    getLastGoalieCheck: ownerProcedure
+      .query(() => {
+        return getLastGoalieWatchResult();
       }),
   }),
   // ─── Odds History ────────────────────────────────────────────────────────────────────────────

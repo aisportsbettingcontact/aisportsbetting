@@ -12,6 +12,7 @@ import { startVsinAutoRefresh } from "../vsinAutoRefresh";
 import { startNbaModelSyncScheduler } from "../nbaModelSync";
 import { startModelWatcher } from "../ncaamModelWatcher";
 import { startNhlModelSyncScheduler } from "../nhlModelSync";
+import { startNhlGoalieWatcher } from "../nhlGoalieWatcher";
 
 // ─── Global crash protection ─────────────────────────────────────────────────
 // Prevent unhandled promise rejections and uncaught exceptions from killing the
@@ -121,6 +122,8 @@ async function startServer() {
     startModelWatcher();
     // NHL model sync — runs every 30 min (9AM–9PM PST), models unmodeled NHL games
     startNhlModelSyncScheduler();
+    // NHL goalie watcher — checks RotoWire every 10 min for goalie changes, re-runs model on scratch
+    startNhlGoalieWatcher();
   });
 }
 

@@ -1435,3 +1435,20 @@
 - [ ] Update nhlModelSync.ts to pass new scraped fields to model
 - [ ] Verify model output consistency constraints (Section 11)
 - [ ] Run tests, verify engine produces correct output, save checkpoint
+
+## NHL Improvements (Mar 15 2026 - Round 2)
+- [ ] Add Puck Line odds input (awayPLOdds, homePLOdds) and Over/Under odds inputs (overOdds, underOdds) to NHL game cards in Publish Projections
+- [ ] Upgrade edge detection in nhl_model_engine.py to full probability-space engine (Sections 1-12 pseudocode): implied prob → no-vig → model prob → EV → edge classification for ML, PL, Total
+- [ ] Wire real rest-days from last game date into fatigue multiplier in nhlModelSync.ts
+- [ ] Add RotoWire injury feed check: poll for goalie scratches every 30 min, auto-update DB goalie fields, re-run model if starter is scratched
+
+## Current Sprint (Mar 15, 2026)
+- [x] Add awayPLOdds/homePLOdds state + input fields to EditableGameCard PUCK LINE section (NHL only)
+- [x] Add overOdds/underOdds state + input fields to EditableGameCard TOTAL section (NHL only)
+- [x] Wire NHL odds inputs into handleSave, handleReset, computeEdges
+- [x] Implement industry-grade Sharp Edge Detection Engine in nhl_model_engine.py (distribution-translated, vig-removed, EV + classification)
+- [x] Build 10-minute RotoWire goalie auto-check cron (nhlGoalieWatcher.ts)
+- [x] Parse RotoWire lineups page for goalie name + status (Confirmed/Expected)
+- [x] Compare scraped goalies vs DB; if confirmed starter changed, update DB + re-run NHL model
+- [x] Register goalie watcher in server startup + add tRPC procedures for manual trigger
+- [ ] Wire real rest days into fatigue multiplier (days since last game from schedule)

@@ -70,6 +70,16 @@ function isWithinSyncWindow(): boolean {
   return h >= 9 && h < 21;
 }
 
+/** Convert American odds to break-even probability (0–1). */
+const americanOddsToBreakEven = (odds: number | null): number | null => {
+  if (odds === null) return null;
+  if (odds < 0) return Math.abs(odds) / (Math.abs(odds) + 100);
+  return 100 / (odds + 100);
+};
+
+/** Minimum edge (probability points above break-even) to flag a bet. */
+const EDGE_THRESHOLD = 0.03;
+
 /** Round a spread to nearest 0.5 */
 function roundToHalf(n: number): number {
   return Math.round(n * 2) / 2;
@@ -279,40 +289,70 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto"): 
         continue;
       }
 
-      // ── Compute spread edge ──────────────────────────────────────────────
-      const modelSpread = roundToHalf(modelResult.proj_away_goals - modelResult.proj_home_goals);
-      const bookSpread  = game.awayBookSpread ? parseFloat(String(game.awayBookSpread)) : null;
+      // ── Extract edges from Python Sharp Edge Detection Engine ───────────────────────────
+      // The Python model already implements the full Sharp Edge Detection spec:
+      //   - Distribution-translated probabilities at market threshold
+      //   - Vig removal (true no-vig market probabilities)
+      //   - EV calculation, price edge, edge classification
+      // We read the results directly instead of re-computing in TypeScript.
+
+      const modelSpread   = roundToHalf(modelResult.proj_away_goals - modelResult.proj_home_goals);
+      const modelTotalVal = modelResult.total_line;
+
+      // Find the best puck line edge from model output
+      const plEdges = modelResult.edges.filter(e => e.type === "PUCK_LINE");
+      const bestPLEdge = plEdges.sort((a, b) => b.edge_vs_be - a.edge_vs_be)[0] ?? null;
 
       let spreadEdge: string | null = null;
       let spreadDiff: string | null = null;
 
-      if (bookSpread !== null) {
-        const diff = modelSpread - bookSpread;
-        spreadDiff = String(roundToHalf(diff));
-        if (Math.abs(diff) >= 0.5) {
-          spreadEdge = diff < 0 ? awayAbbrev : homeAbbrev;
+      if (bestPLEdge && bestPLEdge.classification !== "NO EDGE") {
+        // Use the side label from the model (e.g. "AWAY +1.5" or "HOME -1.5")
+        const sideLabel = bestPLEdge.side.startsWith("AWAY") ? `${awayAbbrev} +1.5` : `${homeAbbrev} -1.5`;
+        spreadEdge = `${sideLabel} [${bestPLEdge.classification}]`;
+        spreadDiff = String(bestPLEdge.edge_vs_be);  // probability edge in pp
+      } else {
+        // Fallback: raw spread diff if no odds available
+        const bookSpread = game.awayBookSpread ? parseFloat(String(game.awayBookSpread)) : null;
+        if (bookSpread !== null) {
+          const diff = modelSpread - bookSpread;
+          spreadDiff = String(roundToHalf(diff));
+          if (Math.abs(diff) >= 0.5) {
+            spreadEdge = diff < 0 ? `${awayAbbrev} +1.5` : `${homeAbbrev} -1.5`;
+          }
         }
       }
 
-      // ── Compute total edge ───────────────────────────────────────────────
-      const modelTotalVal = modelResult.total_line;
-      const bookTotalVal  = mktTotal;
+      // Find the best total edge from model output
+      const totalEdges = modelResult.edges.filter(e => e.type === "TOTAL");
+      const bestTotalEdge = totalEdges.sort((a, b) => b.edge_vs_be - a.edge_vs_be)[0] ?? null;
 
       let totalEdge: string | null = null;
       let totalDiff: string | null = null;
 
-      if (bookTotalVal !== null) {
-        const diff = modelTotalVal - bookTotalVal;
-        totalDiff = String(roundToHalf(diff));
-        if (Math.abs(diff) >= 0.5) {
-          totalEdge = diff > 0 ? "OVER" : "UNDER";
+      if (bestTotalEdge && bestTotalEdge.classification !== "NO EDGE") {
+        totalEdge = `${bestTotalEdge.side} [${bestTotalEdge.classification}]`;
+        totalDiff = String(bestTotalEdge.edge_vs_be);
+      } else {
+        // Fallback: raw total diff if no odds available
+        const bookTotalVal = mktTotal;
+        if (bookTotalVal !== null) {
+          const diff = modelTotalVal - bookTotalVal;
+          totalDiff = String(roundToHalf(diff));
+          if (Math.abs(diff) >= 0.5) {
+            totalEdge = diff > 0 ? `OVER ${roundToHalf(modelTotalVal)}` : `UNDER ${roundToHalf(modelTotalVal)}`;
+          }
         }
       }
 
-      console.log(`[NhlModelSync]${tag}   Model result: Goals=${modelResult.proj_away_goals}/${modelResult.proj_home_goals} | Spread=${modelSpread} (edge=${spreadEdge ?? "NONE"} diff=${spreadDiff ?? "0"}) | Total=${modelTotalVal} (edge=${totalEdge ?? "NONE"} diff=${totalDiff ?? "0"})`);
+      console.log(`[NhlModelSync]${tag}   Model result: Goals=${modelResult.proj_away_goals}/${modelResult.proj_home_goals} | Spread=${modelSpread} (edge=${spreadEdge ?? "NONE"}) | Total=${modelTotalVal} (edge=${totalEdge ?? "NONE"})`);
       console.log(`[NhlModelSync]${tag}   PL odds: ${modelResult.away_puck_line_odds}/${modelResult.home_puck_line_odds} | ML: ${modelResult.away_ml}/${modelResult.home_ml} | O/U odds: ${modelResult.over_odds}/${modelResult.under_odds}`);
       console.log(`[NhlModelSync]${tag}   Win%: away=${modelResult.away_win_pct}% home=${modelResult.home_win_pct}% | PL cover%: away=${modelResult.away_pl_cover_pct}% home=${modelResult.home_pl_cover_pct}%`);
-      console.log(`[NhlModelSync]${tag}   Edges detected: ${modelResult.edges.length > 0 ? modelResult.edges.map(e => `${e.type}:${e.side}(${e.conf})`).join(", ") : "none"}`);
+      if (modelResult.edges.length > 0) {
+        console.log(`[NhlModelSync]${tag}   Edges: ${modelResult.edges.map(e => `${e.type}:${e.side}(${e.classification}, EV=${e.ev?.toFixed(1)}%, edge=${e.edge_vs_be}pp)`).join(" | ")}`);
+      } else {
+        console.log(`[NhlModelSync]${tag}   Edges: none`);
+      }
 
       // ── Write to DB ──────────────────────────────────────────────────────
       await db

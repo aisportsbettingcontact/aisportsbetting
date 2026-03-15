@@ -427,6 +427,11 @@ export async function updateGameProjections(
     modelTotalClamped?: boolean | null;
     modelCoverDirection?: string | null;
     modelRunAt?: number | null;
+    // NHL-specific odds fields (editable in PublishProjections)
+    awaySpreadOdds?: string | null;
+    homeSpreadOdds?: string | null;
+    overOdds?: string | null;
+    underOdds?: string | null;
   }
 ) {
   const db = await getDb();

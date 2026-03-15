@@ -58,12 +58,17 @@ export interface NhlModelEngineInput {
 }
 
 export interface NhlModelEdge {
-  type:       "PUCK_LINE" | "TOTAL" | "ML";
-  side:       string;
-  model_prob: number;
-  mkt_prob:   number;
-  edge_vs_be: number;
-  conf:       "HIGH" | "MOD" | "LOW";
+  type:           "PUCK_LINE" | "TOTAL" | "ML";
+  side:           string;
+  model_prob:     number;   // Model probability at market threshold (0–100)
+  mkt_prob:       number;   // Vig-free market probability (0–100)
+  mkt_prob_raw:   number;   // Raw implied probability before vig removal (0–100)
+  edge_vs_be:     number;   // Probability edge in percentage points
+  ev:             number;   // Expected value per $100 wagered
+  fair_odds:      number;   // Model fair price in American odds
+  price_edge:     number;   // fair_odds − market_odds (positive = favorable)
+  classification: "ELITE EDGE" | "STRONG EDGE" | "PLAYABLE EDGE" | "SMALL EDGE" | "NO EDGE";
+  conf:           "HIGH" | "MOD" | "LOW";
 }
 
 export interface NhlModelResult {

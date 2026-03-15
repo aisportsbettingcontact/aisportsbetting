@@ -451,6 +451,8 @@ type GameRow = {
   homeGoalieConfirmed: boolean | null;
   awaySpreadOdds: string | null;   // puck line odds for NHL
   homeSpreadOdds: string | null;
+  overOdds: string | null;          // O/U odds for NHL
+  underOdds: string | null;
   modelAwayPLCoverPct: string | null;
   modelHomePLCoverPct: string | null;
   modelAwayScore: string | null;   // projected goals for NHL
@@ -467,6 +469,11 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
   const [modelTotal, setModelTotal] = useState(game.modelTotal ?? "");
   const [awayML, setAwayML] = useState(game.modelAwayML ?? "");
   const [homeML, setHomeML] = useState(game.modelHomeML ?? "");
+  // NHL-specific odds inputs
+  const [awayPLOdds, setAwayPLOdds] = useState(game.awaySpreadOdds ?? "");
+  const [homePLOdds, setHomePLOdds] = useState(game.homeSpreadOdds ?? "");
+  const [overOddsInput, setOverOddsInput] = useState(game.overOdds ?? "");
+  const [underOddsInput, setUnderOddsInput] = useState(game.underOdds ?? "");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   // Track whether this game has ever been submitted in this session
@@ -497,9 +504,13 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
       setModelTotal(game.modelTotal ?? "");
       setAwayML(game.modelAwayML ?? "");
       setHomeML(game.modelHomeML ?? "");
+      setAwayPLOdds(game.awaySpreadOdds ?? "");
+      setHomePLOdds(game.homeSpreadOdds ?? "");
+      setOverOddsInput(game.overOdds ?? "");
+      setUnderOddsInput(game.underOdds ?? "");
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [game.awayModelSpread, game.homeModelSpread, game.modelTotal, game.modelAwayML, game.modelHomeML]);
+  }, [game.awayModelSpread, game.homeModelSpread, game.modelTotal, game.modelAwayML, game.modelHomeML, game.awaySpreadOdds, game.homeSpreadOdds, game.overOdds, game.underOdds]);
 
   // Away spread change → auto-compute home spread as inverse
   const handleAwaySpreadChange = (val: string) => {
@@ -544,6 +555,12 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
     setDirty(true);
   };
 
+  // NHL odds change handlers
+  const handleAwayPLOddsChange = (val: string) => { setAwayPLOdds(val); setDirty(true); };
+  const handleHomePLOddsChange = (val: string) => { setHomePLOdds(val); setDirty(true); };
+  const handleOverOddsChange   = (val: string) => { setOverOddsInput(val); setDirty(true); };
+  const handleUnderOddsChange  = (val: string) => { setUnderOddsInput(val); setDirty(true); };
+
   // Reset all model projections and auto-save
   const handleReset = async () => {
     setAwaySpread("");
@@ -551,6 +568,10 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
     setModelTotal("");
     setAwayML("");
     setHomeML("");
+    setAwayPLOdds("");
+    setHomePLOdds("");
+    setOverOddsInput("");
+    setUnderOddsInput("");
     setDirty(false);
     setSaving(true);
     try {
@@ -565,6 +586,10 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
         spreadDiff: null,
         totalEdge: null,
         totalDiff: null,
+        awaySpreadOdds: null,
+        homeSpreadOdds: null,
+        overOdds: null,
+        underOdds: null,
       });
       setHasBeenSubmitted(false);
       toast.success("Projections reset");
@@ -638,6 +663,13 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
         modelAwayML: awayML || null,
         modelHomeML: homeML || null,
         ...edges,
+        // NHL-specific odds (only send if NHL game)
+        ...(game.sport === 'NHL' ? {
+          awaySpreadOdds: awayPLOdds || null,
+          homeSpreadOdds: homePLOdds || null,
+          overOdds: overOddsInput || null,
+          underOdds: underOddsInput || null,
+        } : {}),
       });
       setDirty(false);
       setHasBeenSubmitted(true);
@@ -907,7 +939,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                   <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>O/U</span>
                 </div>
                 <div className="flex-shrink-0 text-center" style={{ width: "clamp(52px, 13vw, 76px)" }}>
-                  <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model ML</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: isNHL ? "#FFB800" : "#39FF14" }}>{isNHL ? 'O/U Odds' : 'Model ML'}</span>
                 </div>
               </div>
               {/* Team rows */}
@@ -940,13 +972,11 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                     isNHL={isNHL}
                   />
                 </div>
-                {/* Book ML column — for NHL shows puck line odds instead of ML */}
+                {/* Book ML column — for NHL shows editable puck line odds instead of static ML */}
                 <div className="flex-shrink-0 flex flex-col justify-around" style={{ width: "clamp(48px, 12vw, 60px)", gap: 4 }}>
                   <div className="flex flex-col items-center justify-center" style={{ flex: 1 }}>
                     {isNHL ? (
-                      <span className="font-bold tabular-nums" style={{ fontSize: "clamp(11px, 2.8vw, 13px)", color: "#D3D3D3", lineHeight: 1.1 }}>
-                        {game.awaySpreadOdds ?? "—"}
-                      </span>
+                      <EditablePill value={awayPLOdds} onChange={handleAwayPLOddsChange} placeholder="Odds" allowNegative />
                     ) : (
                       <span className="font-bold tabular-nums" style={{ fontSize: "clamp(12px, 3vw, 15px)", color: "#D3D3D3" }}>
                         {game.awayML ?? "—"}
@@ -956,9 +986,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                   <div style={{ height: 1, background: "hsl(var(--border))" }} />
                   <div className="flex flex-col items-center justify-center" style={{ flex: 1 }}>
                     {isNHL ? (
-                      <span className="font-bold tabular-nums" style={{ fontSize: "clamp(11px, 2.8vw, 13px)", color: "#D3D3D3", lineHeight: 1.1 }}>
-                        {game.homeSpreadOdds ?? "—"}
-                      </span>
+                      <EditablePill value={homePLOdds} onChange={handleHomePLOddsChange} placeholder="Odds" allowNegative />
                     ) : (
                       <span className="font-bold tabular-nums" style={{ fontSize: "clamp(12px, 3vw, 15px)", color: "#D3D3D3" }}>
                         {game.homeML ?? "—"}
@@ -970,15 +998,29 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                 <div className="flex-shrink-0 flex items-center justify-center" style={{ width: "clamp(48px, 12vw, 72px)" }}>
                   <EditablePill value={modelTotal} onChange={handleTotalChange} placeholder="—" />
                 </div>
-                {/* Model ML pills */}
+                {/* Model ML pills — for NHL shows Over/Under odds instead */}
                 <div className="flex-shrink-0 flex flex-col justify-around" style={{ width: "clamp(60px, 14vw, 80px)", gap: 4 }}>
-                  <div className="flex items-center justify-center" style={{ flex: 1 }}>
-                    <EditablePill value={awayML} onChange={handleAwayMLChange} placeholder="—" allowNegative />
-                  </div>
-                  <div style={{ height: 1, background: "hsl(var(--border))" }} />
-                  <div className="flex items-center justify-center" style={{ flex: 1 }}>
-                    <EditablePill value={homeML} onChange={handleHomeMLChange} placeholder="—" allowNegative />
-                  </div>
+                  {isNHL ? (
+                    <>
+                      <div className="flex items-center justify-center" style={{ flex: 1 }}>
+                        <EditablePill value={overOddsInput} onChange={handleOverOddsChange} placeholder="O Odds" allowNegative />
+                      </div>
+                      <div style={{ height: 1, background: "hsl(var(--border))" }} />
+                      <div className="flex items-center justify-center" style={{ flex: 1 }}>
+                        <EditablePill value={underOddsInput} onChange={handleUnderOddsChange} placeholder="U Odds" allowNegative />
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-center" style={{ flex: 1 }}>
+                        <EditablePill value={awayML} onChange={handleAwayMLChange} placeholder="—" allowNegative />
+                      </div>
+                      <div style={{ height: 1, background: "hsl(var(--border))" }} />
+                      <div className="flex items-center justify-center" style={{ flex: 1 }}>
+                        <EditablePill value={homeML} onChange={handleHomeMLChange} placeholder="—" allowNegative />
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -1051,6 +1093,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
               <div className="flex items-center gap-3">
                 <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>BOOK</span>
                 <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14", minWidth: 64, textAlign: 'center' }}>MODEL</span>
+                {isNHL && <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#FFB800", minWidth: 64, textAlign: 'center' }}>PL ODDS</span>}
               </div>
             </div>
 
@@ -1116,6 +1159,17 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                   inputRef={awaySpreadRef}
                 />
               </div>
+              {/* NHL PL odds input */}
+              {isNHL && (
+                <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 64 }}>
+                  <EditablePill
+                    value={awayPLOdds}
+                    onChange={handleAwayPLOddsChange}
+                    placeholder="Odds"
+                    allowNegative
+                  />
+                </div>
+              )}
             </div>
 
             {/* Divider */}
@@ -1179,6 +1233,17 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                   placeholder="—"
                 />
               </div>
+              {/* NHL PL odds input */}
+              {isNHL && (
+                <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 64 }}>
+                  <EditablePill
+                    value={homePLOdds}
+                    onChange={handleHomePLOddsChange}
+                    placeholder="Odds"
+                    allowNegative
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -1195,6 +1260,8 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
               <div className="flex items-center gap-3">
                 <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>BOOK O/U</span>
                 <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14", minWidth: 64, textAlign: 'center' }}>MODEL O/U</span>
+                {isNHL && <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#FFB800", minWidth: 64, textAlign: 'center' }}>O ODDS</span>}
+                {isNHL && <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#FFB800", minWidth: 64, textAlign: 'center' }}>U ODDS</span>}
               </div>
             </div>
             {/* Single row: OVER / UNDER label + book total + model input */}
@@ -1218,6 +1285,17 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
               <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 64 }}>
                 <EditablePill value={modelTotal} onChange={handleTotalChange} placeholder="—" />
               </div>
+              {/* NHL Over/Under odds inputs */}
+              {isNHL && (
+                <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 64 }}>
+                  <EditablePill value={overOddsInput} onChange={handleOverOddsChange} placeholder="O Odds" allowNegative />
+                </div>
+              )}
+              {isNHL && (
+                <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 64 }}>
+                  <EditablePill value={underOddsInput} onChange={handleUnderOddsChange} placeholder="U Odds" allowNegative />
+                </div>
+              )}
             </div>
           </div>
 

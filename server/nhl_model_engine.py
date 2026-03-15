@@ -544,110 +544,311 @@ def format_ml(ml: int) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# EDGE DETECTION
+# SHARP EDGE DETECTION ENGINE
+# Industry-grade method per spec: distribution-translated, vig-removed, EV+price
 # ─────────────────────────────────────────────────────────────────────────────
+
+def build_total_distribution(
+    away_scores: np.ndarray,
+    home_scores: np.ndarray,
+) -> dict[int, int]:
+    """
+    Build a score_counts dict from simulation arrays.
+    Keys are total goals (0..N), values are simulation counts.
+    Used to compute P(total > line) for ANY threshold line.
+    """
+    totals = (away_scores + home_scores).astype(int)
+    unique, counts = np.unique(totals, return_counts=True)
+    return {int(k): int(v) for k, v in zip(unique, counts)}
+
+
+def build_margin_distribution(
+    away_scores: np.ndarray,
+    home_scores: np.ndarray,
+) -> dict[int, int]:
+    """
+    Build a margin_counts dict from simulation arrays.
+    margin = home_goals - away_goals
+    Positive = home winning, negative = away winning.
+    Used to compute P(home margin >= 2) and P(away margin >= -1) for ANY line.
+    """
+    margins = (home_scores.astype(int) - away_scores.astype(int))
+    unique, counts = np.unique(margins, return_counts=True)
+    return {int(k): int(v) for k, v in zip(unique, counts)}
+
+
+def prob_total_over(score_counts: dict[int, int], line: float, n: int) -> float:
+    """P(total > line) from score distribution. Section 2 of spec."""
+    wins = sum(count for score, count in score_counts.items() if score > line)
+    return wins / n
+
+
+def prob_total_under(score_counts: dict[int, int], line: float, n: int) -> float:
+    """P(total < line) from score distribution. Section 2 of spec."""
+    wins = sum(count for score, count in score_counts.items() if score < line)
+    return wins / n
+
+
+def remove_vig(prob_a: float, prob_b: float) -> tuple[float, float]:
+    """
+    Remove vig from raw implied probabilities. Section 4 of spec.
+    true_A = prob_A / (prob_A + prob_B)
+    """
+    total = prob_a + prob_b
+    if total <= 0:
+        return 0.5, 0.5
+    return prob_a / total, prob_b / total
+
+
+def payout_from_odds(odds: int) -> float:
+    """Payout per $1 wagered. Section 9 of spec."""
+    if odds < 0:
+        return 100.0 / abs(odds)
+    else:
+        return odds / 100.0
+
+
+def expected_value(probability: float, odds: int) -> float:
+    """EV = p * payout - (1 - p). Section 10 of spec."""
+    payout = payout_from_odds(odds)
+    return probability * payout - (1.0 - probability)
+
+
+def classify_edge(prob_edge: float) -> str:
+    """Edge classification. Section 12 of spec."""
+    if prob_edge >= 0.08:
+        return "ELITE EDGE"
+    if prob_edge >= 0.05:
+        return "STRONG EDGE"
+    if prob_edge >= 0.03:
+        return "PLAYABLE EDGE"
+    if prob_edge >= 0.015:
+        return "SMALL EDGE"
+    return "NO EDGE"
+
 
 def detect_edges(
     probs: dict,
+    away_scores: np.ndarray,
+    home_scores: np.ndarray,
     mkt_away_pl_odds: int | None,
     mkt_home_pl_odds: int | None,
     mkt_over_odds: int | None,
     mkt_under_odds: int | None,
     mkt_away_ml: int | None,
     mkt_home_ml: int | None,
+    mkt_total: float | None,
 ) -> list[dict]:
     """
-    Detect edges by comparing model probabilities to market implied probabilities.
-    An edge exists when model probability exceeds market implied probability by
-    more than the threshold.
+    Industry-grade Sharp Edge Detection Engine.
+
+    Key improvements over naive approach:
+    1. Distribution-translated probabilities: compute P(event at MARKET threshold)
+       from the score distribution, not at the model's own line.
+    2. Vig removal: normalize raw implied probabilities to get true no-vig market probs.
+    3. EV calculation: p_model * payout - (1 - p_model)
+    4. Price edge: fair_odds - market_odds
+    5. Edge classification: ELITE/STRONG/PLAYABLE/SMALL/NO EDGE
     """
+    n = len(away_scores)
     edges = []
 
-    # ── Puck Line Edges ──────────────────────────────────────────────────────
-    if mkt_away_pl_odds is not None:
-        mkt_away_pl_prob = ml_to_prob(mkt_away_pl_odds)
-        model_away_pl_prob = probs["away_pl_cover"]
-        edge_vs_be = model_away_pl_prob - mkt_away_pl_prob
-        if edge_vs_be >= PUCK_LINE_EDGE_THRESHOLD:
+    # Build score and margin distributions
+    total_dist   = build_total_distribution(away_scores, home_scores)
+    margin_dist  = build_margin_distribution(away_scores, home_scores)
+
+    # ── TOTAL MARKET ─────────────────────────────────────────────────────────
+    if mkt_over_odds is not None and mkt_under_odds is not None and mkt_total is not None:
+        # Step 1: Raw implied probabilities from market odds
+        p_over_raw  = ml_to_prob(mkt_over_odds)
+        p_under_raw = ml_to_prob(mkt_under_odds)
+
+        # Step 2: Remove vig → true no-vig market probabilities
+        p_over_market, p_under_market = remove_vig(p_over_raw, p_under_raw)
+
+        # Step 3: Distribution-translated model probabilities at MARKET threshold
+        # This is the key improvement: use P(total > mkt_total) not P(total > model_line)
+        p_over_model  = prob_total_over(total_dist, mkt_total, n)
+        p_under_model = prob_total_under(total_dist, mkt_total, n)
+
+        # Step 4: Fair odds from model probabilities
+        fair_over_odds  = prob_to_ml(p_over_model)
+        fair_under_odds = prob_to_ml(p_under_model)
+
+        # Step 5: Probability edge (model vs vig-free market)
+        edge_over  = p_over_model  - p_over_market
+        edge_under = p_under_model - p_under_market
+
+        # Step 6: EV calculation
+        ev_over  = expected_value(p_over_model,  mkt_over_odds)
+        ev_under = expected_value(p_under_model, mkt_under_odds)
+
+        # Step 7: Price edge
+        price_edge_over  = fair_over_odds  - mkt_over_odds
+        price_edge_under = fair_under_odds - mkt_under_odds
+
+        # Step 8: Classify and emit edges
+        classification_over  = classify_edge(edge_over)
+        classification_under = classify_edge(edge_under)
+
+        if edge_over >= 0.015:  # SMALL EDGE or better
             edges.append({
-                "type":       "PUCK_LINE",
-                "side":       "AWAY +1.5",
-                "model_prob": round(model_away_pl_prob * 100, 2),
-                "mkt_prob":   round(mkt_away_pl_prob * 100, 2),
-                "edge_vs_be": round(edge_vs_be * 100, 2),
-                "conf":       "HIGH" if edge_vs_be >= 0.10 else ("MOD" if edge_vs_be >= 0.07 else "LOW"),
+                "type":           "TOTAL",
+                "side":           f"OVER {mkt_total}",
+                "model_prob":     round(p_over_model * 100, 2),
+                "mkt_prob":       round(p_over_market * 100, 2),
+                "mkt_prob_raw":   round(p_over_raw * 100, 2),
+                "edge_vs_be":     round(edge_over * 100, 2),
+                "ev":             round(ev_over * 100, 2),
+                "fair_odds":      fair_over_odds,
+                "price_edge":     round(price_edge_over, 0),
+                "classification": classification_over,
+                "conf":           "HIGH" if edge_over >= 0.08 else ("MOD" if edge_over >= 0.05 else "LOW"),
             })
 
-    if mkt_home_pl_odds is not None:
-        mkt_home_pl_prob = ml_to_prob(mkt_home_pl_odds)
-        model_home_pl_prob = probs["home_pl_cover"]
-        edge_vs_be = model_home_pl_prob - mkt_home_pl_prob
-        if edge_vs_be >= PUCK_LINE_EDGE_THRESHOLD:
+        if edge_under >= 0.015:
             edges.append({
-                "type":       "PUCK_LINE",
-                "side":       "HOME -1.5",
-                "model_prob": round(model_home_pl_prob * 100, 2),
-                "mkt_prob":   round(mkt_home_pl_prob * 100, 2),
-                "edge_vs_be": round(edge_vs_be * 100, 2),
-                "conf":       "HIGH" if edge_vs_be >= 0.10 else ("MOD" if edge_vs_be >= 0.07 else "LOW"),
+                "type":           "TOTAL",
+                "side":           f"UNDER {mkt_total}",
+                "model_prob":     round(p_under_model * 100, 2),
+                "mkt_prob":       round(p_under_market * 100, 2),
+                "mkt_prob_raw":   round(p_under_raw * 100, 2),
+                "edge_vs_be":     round(edge_under * 100, 2),
+                "ev":             round(ev_under * 100, 2),
+                "fair_odds":      fair_under_odds,
+                "price_edge":     round(price_edge_under, 0),
+                "classification": classification_under,
+                "conf":           "HIGH" if edge_under >= 0.08 else ("MOD" if edge_under >= 0.05 else "LOW"),
             })
 
-    # ── Total Edges ──────────────────────────────────────────────────────────
-    if mkt_over_odds is not None:
-        mkt_over_prob = ml_to_prob(mkt_over_odds)
-        model_over_prob = probs["over_prob"]
-        edge_vs_be = model_over_prob - mkt_over_prob
-        if edge_vs_be >= TOTAL_EDGE_THRESHOLD:
+    # ── PUCK LINE MARKET ─────────────────────────────────────────────────────
+    if mkt_away_pl_odds is not None and mkt_home_pl_odds is not None:
+        # Raw implied probabilities
+        p_away_pl_raw = ml_to_prob(mkt_away_pl_odds)
+        p_home_pl_raw = ml_to_prob(mkt_home_pl_odds)
+
+        # Remove vig
+        p_away_pl_market, p_home_pl_market = remove_vig(p_away_pl_raw, p_home_pl_raw)
+
+        # Distribution-translated model probabilities
+        # P(away +1.5 covers) = P(margin < 2) = P(home margin < 2)
+        # P(home -1.5 covers) = P(margin >= 2)
+        p_home_pl_model = sum(
+            count for margin, count in margin_dist.items() if margin >= 2
+        ) / n
+        p_away_pl_model = 1.0 - p_home_pl_model
+
+        # Fair odds
+        fair_away_pl_odds = prob_to_ml(p_away_pl_model)
+        fair_home_pl_odds = prob_to_ml(p_home_pl_model)
+
+        # Probability edges
+        edge_away_pl = p_away_pl_model - p_away_pl_market
+        edge_home_pl = p_home_pl_model - p_home_pl_market
+
+        # EV
+        ev_away_pl = expected_value(p_away_pl_model, mkt_away_pl_odds)
+        ev_home_pl = expected_value(p_home_pl_model, mkt_home_pl_odds)
+
+        # Price edge
+        price_edge_away_pl = fair_away_pl_odds - mkt_away_pl_odds
+        price_edge_home_pl = fair_home_pl_odds - mkt_home_pl_odds
+
+        # Classify
+        class_away_pl = classify_edge(edge_away_pl)
+        class_home_pl = classify_edge(edge_home_pl)
+
+        if edge_away_pl >= 0.015:
             edges.append({
-                "type":       "TOTAL",
-                "side":       f"OVER {probs['best_total_line']}",
-                "model_prob": round(model_over_prob * 100, 2),
-                "mkt_prob":   round(mkt_over_prob * 100, 2),
-                "edge_vs_be": round(edge_vs_be * 100, 2),
-                "conf":       "HIGH" if edge_vs_be >= 0.10 else ("MOD" if edge_vs_be >= 0.07 else "LOW"),
+                "type":           "PUCK_LINE",
+                "side":           "AWAY +1.5",
+                "model_prob":     round(p_away_pl_model * 100, 2),
+                "mkt_prob":       round(p_away_pl_market * 100, 2),
+                "mkt_prob_raw":   round(p_away_pl_raw * 100, 2),
+                "edge_vs_be":     round(edge_away_pl * 100, 2),
+                "ev":             round(ev_away_pl * 100, 2),
+                "fair_odds":      fair_away_pl_odds,
+                "price_edge":     round(price_edge_away_pl, 0),
+                "classification": class_away_pl,
+                "conf":           "HIGH" if edge_away_pl >= 0.08 else ("MOD" if edge_away_pl >= 0.05 else "LOW"),
             })
 
-    if mkt_under_odds is not None:
-        mkt_under_prob = ml_to_prob(mkt_under_odds)
-        model_under_prob = probs["under_prob"]
-        edge_vs_be = model_under_prob - mkt_under_prob
-        if edge_vs_be >= TOTAL_EDGE_THRESHOLD:
+        if edge_home_pl >= 0.015:
             edges.append({
-                "type":       "TOTAL",
-                "side":       f"UNDER {probs['best_total_line']}",
-                "model_prob": round(model_under_prob * 100, 2),
-                "mkt_prob":   round(mkt_under_prob * 100, 2),
-                "edge_vs_be": round(edge_vs_be * 100, 2),
-                "conf":       "HIGH" if edge_vs_be >= 0.10 else ("MOD" if edge_vs_be >= 0.07 else "LOW"),
+                "type":           "PUCK_LINE",
+                "side":           "HOME -1.5",
+                "model_prob":     round(p_home_pl_model * 100, 2),
+                "mkt_prob":       round(p_home_pl_market * 100, 2),
+                "mkt_prob_raw":   round(p_home_pl_raw * 100, 2),
+                "edge_vs_be":     round(edge_home_pl * 100, 2),
+                "ev":             round(ev_home_pl * 100, 2),
+                "fair_odds":      fair_home_pl_odds,
+                "price_edge":     round(price_edge_home_pl, 0),
+                "classification": class_home_pl,
+                "conf":           "HIGH" if edge_home_pl >= 0.08 else ("MOD" if edge_home_pl >= 0.05 else "LOW"),
             })
 
-    # ── Moneyline Edges ──────────────────────────────────────────────────────
-    if mkt_away_ml is not None:
-        mkt_away_prob = ml_to_prob(mkt_away_ml)
-        model_away_prob = probs["away_win"]
-        edge_vs_be = model_away_prob - mkt_away_prob
-        if edge_vs_be >= ML_EDGE_THRESHOLD:
+    # ── MONEYLINE MARKET ─────────────────────────────────────────────────────
+    if mkt_away_ml is not None and mkt_home_ml is not None:
+        # Raw implied probabilities
+        p_away_ml_raw = ml_to_prob(mkt_away_ml)
+        p_home_ml_raw = ml_to_prob(mkt_home_ml)
+
+        # Remove vig
+        p_away_ml_market, p_home_ml_market = remove_vig(p_away_ml_raw, p_home_ml_raw)
+
+        # Model probabilities (from simulation)
+        p_away_ml_model = probs["away_win"]
+        p_home_ml_model = probs["home_win"]
+
+        # Fair odds
+        fair_away_ml_odds = prob_to_ml(p_away_ml_model)
+        fair_home_ml_odds = prob_to_ml(p_home_ml_model)
+
+        # Probability edges
+        edge_away_ml = p_away_ml_model - p_away_ml_market
+        edge_home_ml = p_home_ml_model - p_home_ml_market
+
+        # EV
+        ev_away_ml = expected_value(p_away_ml_model, mkt_away_ml)
+        ev_home_ml = expected_value(p_home_ml_model, mkt_home_ml)
+
+        # Price edge
+        price_edge_away_ml = fair_away_ml_odds - mkt_away_ml
+        price_edge_home_ml = fair_home_ml_odds - mkt_home_ml
+
+        # Classify
+        class_away_ml = classify_edge(edge_away_ml)
+        class_home_ml = classify_edge(edge_home_ml)
+
+        if edge_away_ml >= 0.015:
             edges.append({
-                "type":       "ML",
-                "side":       "AWAY ML",
-                "model_prob": round(model_away_prob * 100, 2),
-                "mkt_prob":   round(mkt_away_prob * 100, 2),
-                "edge_vs_be": round(edge_vs_be * 100, 2),
-                "conf":       "HIGH" if edge_vs_be >= 0.08 else ("MOD" if edge_vs_be >= 0.06 else "LOW"),
+                "type":           "ML",
+                "side":           "AWAY ML",
+                "model_prob":     round(p_away_ml_model * 100, 2),
+                "mkt_prob":       round(p_away_ml_market * 100, 2),
+                "mkt_prob_raw":   round(p_away_ml_raw * 100, 2),
+                "edge_vs_be":     round(edge_away_ml * 100, 2),
+                "ev":             round(ev_away_ml * 100, 2),
+                "fair_odds":      fair_away_ml_odds,
+                "price_edge":     round(price_edge_away_ml, 0),
+                "classification": class_away_ml,
+                "conf":           "HIGH" if edge_away_ml >= 0.08 else ("MOD" if edge_away_ml >= 0.05 else "LOW"),
             })
 
-    if mkt_home_ml is not None:
-        mkt_home_prob = ml_to_prob(mkt_home_ml)
-        model_home_prob = probs["home_win"]
-        edge_vs_be = model_home_prob - mkt_home_prob
-        if edge_vs_be >= ML_EDGE_THRESHOLD:
+        if edge_home_ml >= 0.015:
             edges.append({
-                "type":       "ML",
-                "side":       "HOME ML",
-                "model_prob": round(model_home_prob * 100, 2),
-                "mkt_prob":   round(mkt_home_prob * 100, 2),
-                "edge_vs_be": round(edge_vs_be * 100, 2),
-                "conf":       "HIGH" if edge_vs_be >= 0.08 else ("MOD" if edge_vs_be >= 0.06 else "LOW"),
+                "type":           "ML",
+                "side":           "HOME ML",
+                "model_prob":     round(p_home_ml_model * 100, 2),
+                "mkt_prob":       round(p_home_ml_market * 100, 2),
+                "mkt_prob_raw":   round(p_home_ml_raw * 100, 2),
+                "edge_vs_be":     round(edge_home_ml * 100, 2),
+                "ev":             round(ev_home_ml * 100, 2),
+                "fair_odds":      fair_home_ml_odds,
+                "price_edge":     round(price_edge_home_ml, 0),
+                "classification": class_home_ml,
+                "conf":           "HIGH" if edge_home_ml >= 0.08 else ("MOD" if edge_home_ml >= 0.05 else "LOW"),
             })
 
     return edges
@@ -814,12 +1015,14 @@ def originate_game(inp: dict) -> dict:
     else:
         print(f"[NHLModel]   ✓ All Section 11 consistency constraints satisfied", file=sys.stderr)
 
-    # ── Step 9: Edge detection ────────────────────────────────────────────────
+    # ── Step 9: Sharp Edge Detection (distribution-translated, vig-removed, EV+price) ──
     edges = detect_edges(
         probs,
+        away_scores, home_scores,
         mkt_away_pl_odds, mkt_home_pl_odds,
         mkt_over_odds, mkt_under_odds,
         mkt_away_ml, mkt_home_ml,
+        mkt_total,
     )
 
     elapsed = time.time() - t0
