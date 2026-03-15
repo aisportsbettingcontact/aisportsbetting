@@ -795,8 +795,20 @@ function DesktopMergedPanel({
   const mdlHomeMlStr     = hasModelData ? (modelHomeML ?? '—') : '—';
 
   // ── Edge detection ────────────────────────────────────────────────────────
+  // For NHL: puck line is always ±1.5 or ±2.5 from the simulation.
+  // Comparing mdlAwaySpread < awaySpread is meaningless (both are ±1.5).
+  // Edge direction is determined by the Python engine and stored in computedSpreadEdge.
   const spreadEdgeIsAway = (() => {
     if (isNaN(spreadDiff) || spreadDiff <= 0) return null;
+    if (isNhlGame) {
+      // For NHL: parse edge direction from computedSpreadEdge string (e.g. "MTL +1.5 [LEAN]")
+      // The Python engine sets spreadEdge to the team that has the probability edge.
+      // We detect away by checking if the edge string contains the away team name.
+      if (!computedSpreadEdge || computedSpreadEdge === 'PASS') return null;
+      // computedSpreadEdge format: "TEAM_NAME +1.5 [CLASS]" or "TEAM_NAME -1.5 [CLASS]"
+      // Away edge = contains "+1.5" (away is always the underdog getting +1.5)
+      return computedSpreadEdge.includes('+1.5') || computedSpreadEdge.includes('+2.5');
+    }
     if (!isNaN(mdlAwaySpread) && !isNaN(awaySpread)) return mdlAwaySpread < awaySpread;
     return null;
   })();
@@ -1810,9 +1822,16 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const bookTotal = toNum(game.bookTotal);
   const modelTotal = toNum(game.modelTotal);
 
-  const spreadDiff = (!isNaN(awayModelSpread) && !isNaN(awayBookSpread))
-    ? Math.round(Math.abs(awayModelSpread - awayBookSpread) * 10) / 10
-    : toNum(game.spreadDiff);
+  const isNhlGame = game.sport === 'NHL';
+  // For NHL: awayModelSpread is always ±1.5 or ±2.5 (puck line from simulation).
+  // Arithmetic comparison of line values is meaningless — both model and book are ±1.5.
+  // Use game.spreadDiff (probability edge in pp, set by Python engine) for NHL.
+  // For NCAAM/NBA: compute diff from line values as before.
+  const spreadDiff = isNhlGame
+    ? toNum(game.spreadDiff)
+    : (!isNaN(awayModelSpread) && !isNaN(awayBookSpread))
+      ? Math.round(Math.abs(awayModelSpread - awayBookSpread) * 10) / 10
+      : toNum(game.spreadDiff);
   const totalDiff = (!isNaN(modelTotal) && !isNaN(bookTotal))
     ? Math.round(Math.abs(modelTotal - bookTotal) * 10) / 10
     : toNum(game.totalDiff);
@@ -1972,6 +1991,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
 
   const computedSpreadEdge: string | null = (() => {
     if (isNaN(spreadDiff) || spreadDiff <= 0) return "PASS";
+    // For NHL: edge direction comes from game.spreadEdge (set by Python engine from P(margin>=2)).
+    // Line arithmetic is invalid for NHL since both model and book always have ±1.5.
+    if (isNhlGame) return game.spreadEdge ?? null;
     if (isNaN(awayModelSpread) || isNaN(awayBookSpread)) return game.spreadEdge;
     if (awayModelSpread < awayBookSpread) {
       return `${awayDisplayName} ${spreadSign(awayBookSpread)}`;
@@ -2790,6 +2812,12 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                // ── Edge direction helpers ────────────────────────────────────
             const spreadEdgeIsAway = (() => {
               if (isNaN(spreadDiff) || spreadDiff <= 0) return null;
+              // For NHL: puck line is always ±1.5/±2.5 from simulation.
+              // Line arithmetic is invalid — use computedSpreadEdge (from Python engine P(margin>=2)).
+              if (isNhlGame) {
+                if (!computedSpreadEdge || computedSpreadEdge === 'PASS') return null;
+                return computedSpreadEdge.includes('+1.5') || computedSpreadEdge.includes('+2.5');
+              }
               if (!isNaN(awayModelSpread) && !isNaN(awayBookSpread)) return awayModelSpread < awayBookSpread;
               return null;
             })();

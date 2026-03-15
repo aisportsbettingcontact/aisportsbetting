@@ -337,8 +337,14 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto", f
       //   - EV calculation, price edge, edge classification
       // We read the results directly instead of re-computing in TypeScript.
 
-      const modelSpread   = roundToHalf(modelResult.proj_away_goals - modelResult.proj_home_goals);
-      const modelTotalVal = modelResult.total_line;
+      // ── Market values from simulation distribution (NOT goal differential) ──
+      // modelResult.away_puck_line / home_puck_line = "+1.5" / "-1.5" (or ±2.5)
+      // derived from P(margin >= 2) and P(margin >= 3) in the simulation.
+      // modelResult.total_line = mean of total distribution, rounded to nearest 0.5.
+      // NEVER use proj_away_goals - proj_home_goals as the spread.
+      const modelAwayPL  = modelResult.away_puck_line;   // e.g. "+1.5" or "-2.5"
+      const modelHomePL  = modelResult.home_puck_line;   // e.g. "-1.5" or "+2.5"
+      const modelTotalVal = modelResult.total_line;       // from simulation distribution
 
       // Find the best puck line edge from model output
       const plEdges = modelResult.edges.filter(e => e.type === "PUCK_LINE");
@@ -348,19 +354,19 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto", f
       let spreadDiff: string | null = null;
 
       if (bestPLEdge && bestPLEdge.classification !== "NO EDGE") {
-        // Use the side label from the model (e.g. "AWAY +1.5" or "HOME -1.5")
-        const sideLabel = bestPLEdge.side.startsWith("AWAY") ? `${awayAbbrev} +1.5` : `${homeAbbrev} -1.5`;
+        // Use the simulation-derived puck line side label
+        const sideLabel = bestPLEdge.side.startsWith("AWAY")
+          ? `${awayAbbrev} ${modelAwayPL}`
+          : `${homeAbbrev} ${modelHomePL}`;
         spreadEdge = `${sideLabel} [${bestPLEdge.classification}]`;
         spreadDiff = String(bestPLEdge.edge_vs_be);  // probability edge in pp
-      } else {
-        // Fallback: raw spread diff if no odds available
-        const bookSpread = game.awayBookSpread ? parseFloat(String(game.awayBookSpread)) : null;
-        if (bookSpread !== null) {
-          const diff = modelSpread - bookSpread;
-          spreadDiff = String(roundToHalf(diff));
-          if (Math.abs(diff) >= 0.5) {
-            spreadEdge = diff < 0 ? `${awayAbbrev} +1.5` : `${homeAbbrev} -1.5`;
-          }
+      } else if (mktAwayPLOdds !== null) {
+        // No edge but market odds exist — compute raw probability diff for display
+        const awayPLCoverPct = modelResult.away_pl_cover_pct / 100;
+        const mktAwayBreakEven = americanOddsToBreakEven(mktAwayPLOdds);
+        if (mktAwayBreakEven !== null) {
+          const diff = awayPLCoverPct - mktAwayBreakEven;
+          spreadDiff = String(roundToHalf(diff * 100));  // in probability points
         }
       }
 
@@ -374,19 +380,16 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto", f
       if (bestTotalEdge && bestTotalEdge.classification !== "NO EDGE") {
         totalEdge = `${bestTotalEdge.side} [${bestTotalEdge.classification}]`;
         totalDiff = String(bestTotalEdge.edge_vs_be);
-      } else {
-        // Fallback: raw total diff if no odds available
-        const bookTotalVal = mktTotal;
-        if (bookTotalVal !== null) {
-          const diff = modelTotalVal - bookTotalVal;
-          totalDiff = String(roundToHalf(diff));
-          if (Math.abs(diff) >= 0.5) {
-            totalEdge = diff > 0 ? `OVER ${roundToHalf(modelTotalVal)}` : `UNDER ${roundToHalf(modelTotalVal)}`;
-          }
+      } else if (mktTotal !== null) {
+        // No edge but market total exists — compute raw diff between model and market line
+        const diff = modelTotalVal - mktTotal;
+        totalDiff = String(roundToHalf(diff));
+        if (Math.abs(diff) >= 0.5) {
+          totalEdge = diff > 0 ? `OVER ${roundToHalf(modelTotalVal)}` : `UNDER ${roundToHalf(modelTotalVal)}`;
         }
       }
 
-      console.log(`[NhlModelSync]${tag}   Model result: Goals=${modelResult.proj_away_goals}/${modelResult.proj_home_goals} | Spread=${modelSpread} (edge=${spreadEdge ?? "NONE"}) | Total=${modelTotalVal} (edge=${totalEdge ?? "NONE"})`);
+      console.log(`[NhlModelSync]${tag}   Model result: Goals=${modelResult.proj_away_goals}/${modelResult.proj_home_goals} | PL=${modelAwayPL}/${modelHomePL} (edge=${spreadEdge ?? "NONE"}) | Total=${modelTotalVal} (edge=${totalEdge ?? "NONE"})`);
       console.log(`[NhlModelSync]${tag}   PL odds: ${modelResult.away_puck_line_odds}/${modelResult.home_puck_line_odds} | ML: ${modelResult.away_ml}/${modelResult.home_ml} | O/U odds: ${modelResult.over_odds}/${modelResult.under_odds}`);
       console.log(`[NhlModelSync]${tag}   Win%: away=${modelResult.away_win_pct}% home=${modelResult.home_win_pct}% | PL cover%: away=${modelResult.away_pl_cover_pct}% home=${modelResult.home_pl_cover_pct}%`);
       if (modelResult.edges.length > 0) {
@@ -399,9 +402,10 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto", f
       await db
         .update(games)
         .set({
-          // Spread (puck line)
-          awayModelSpread:     String(modelSpread),
-          homeModelSpread:     String(-modelSpread),
+          // Spread (puck line) — derived from simulation P(margin >= 2), NOT goal differential
+          // modelAwayPL / modelHomePL are "+1.5"/"-1.5" (or "±2.5") from the Python engine
+          awayModelSpread:     modelAwayPL,
+          homeModelSpread:     modelHomePL,
           spreadEdge:          spreadEdge ?? undefined,
           spreadDiff:          spreadDiff ?? undefined,
           // Total
