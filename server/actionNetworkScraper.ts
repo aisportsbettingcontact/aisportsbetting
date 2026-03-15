@@ -1,33 +1,40 @@
 /**
  * actionNetworkScraper.ts
  *
- * Fetches DraftKings spread, O/U, and moneyline odds from the Action Network
- * v1 scoreboard API for NCAAB, NBA, and NHL.
+ * Fetches DraftKings NJ (book_id=68) and Opening line (book_id=30) odds from
+ * the Action Network v2 scoreboard API for NCAAB, NBA, and NHL.
  *
- * API endpoint:
- *   https://api.actionnetwork.com/web/v1/scoreboard/<league>
- *     ?bookIds=79
+ * ─── Why v2 (not v1)? ────────────────────────────────────────────────────────
+ * The v1 API only returns games that AN considers "major" — it silently drops
+ * Ivy League, AAC conference tournament, and other smaller-conference NCAAB
+ * games.  The v2 endpoint is the same one the AN website itself uses and
+ * returns the full slate for every date.
+ *
+ * ─── API endpoint ────────────────────────────────────────────────────────────
+ *   https://api.actionnetwork.com/web/v2/scoreboard/<league>
+ *     ?bookIds=15,30,68,69,71,75,79
  *     &date=YYYYMMDD
+ *     &periods=event
+ *     [&division=D1&tournament=0]   ← NCAAB only
  *
- * DraftKings book_id = 79
+ * ─── Confirmed book IDs ──────────────────────────────────────────────────────
+ *   30  = Open (opening line)
+ *   68  = DK NJ  ← DraftKings New Jersey  ★ primary target
+ *   69  = FanDuel NJ
+ *   71  = BetRivers NJ
+ *   75  = BetMGM NJ
+ *   79  = bet365 NJ
+ *   15  = Consensus
  *
- * Response structure per game:
- *   game.odds[] — array of book entries, one per book per period type
- *     { book_id: 79, type: "game",
- *       spread_away, spread_home,
- *       spread_away_line, spread_home_line,  ← American format (e.g. -110, -225)
- *       total, over, under,                  ← American format
- *       ml_away, ml_home }                   ← American format
+ * ─── v2 response structure per game ─────────────────────────────────────────
+ *   game.markets[bookId].event.spread[]   → [{side:"away"|"home", value, odds}]
+ *   game.markets[bookId].event.total[]    → [{side:"over"|"under", value, odds}]
+ *   game.markets[bookId].event.moneyline[] → [{team_id, odds}]
+ *   game.teams[]                          → [{id, url_slug, full_name, abbr}]
+ *   game.away_team_id / game.home_team_id → identify away/home
  *
- *   game.teams[] — array of team objects with url_slug
- *   game.away_team_id, game.home_team_id — identify away/home teams
- *
- * Note: Opening lines are NOT available via the public AN API. The "Open"
- * column on the AN website requires authentication or a different internal
- * endpoint. Opening line fields are therefore not populated by this scraper.
- *
- * Supported sports:
- *   "ncaab" = NCAAB (College Basketball)
+ * ─── Supported sports ────────────────────────────────────────────────────────
+ *   "ncaab" = NCAAB (College Basketball) — includes all D1 games
  *   "nba"   = NBA
  *   "nhl"   = NHL
  */
@@ -54,42 +61,41 @@ export interface AnGameOdds {
   /** Game status: "scheduled" | "in-progress" | "final" */
   status: string;
 
-  // ── Opening line ──────────────────────────────────────────────────────────
-  // NOTE: Not available via public AN API — all null for now.
-  openAwaySpread: null;
-  openAwaySpreadOdds: null;
-  openHomeSpread: null;
-  openHomeSpreadOdds: null;
-  openTotal: null;
-  openOverOdds: null;
-  openUnderOdds: null;
-  openAwayML: null;
-  openHomeML: null;
+  // ── Opening line (book_id=30) ─────────────────────────────────────────────
+  openAwaySpread: number | null;
+  openAwaySpreadOdds: string | null;
+  openHomeSpread: number | null;
+  openHomeSpreadOdds: string | null;
+  openTotal: number | null;
+  openOverOdds: string | null;
+  openUnderOdds: string | null;
+  openAwayML: string | null;
+  openHomeML: string | null;
 
-  // ── Current DraftKings line ────────────────────────────────────────────────
-  /** Current DK away spread, e.g. 12.5 (positive = underdog) */
+  // ── Current DraftKings NJ line (book_id=68) ───────────────────────────────
+  /** Current DK NJ away spread, e.g. 12.5 (positive = underdog) */
   dkAwaySpread: number | null;
-  /** Current DK away spread juice in American format, e.g. "-110" or "-225" */
+  /** Current DK NJ away spread juice in American format, e.g. "-110" or "-225" */
   dkAwaySpreadOdds: string | null;
-  /** Current DK home spread, e.g. -12.5 */
+  /** Current DK NJ home spread, e.g. -12.5 */
   dkHomeSpread: number | null;
-  /** Current DK home spread juice in American format */
+  /** Current DK NJ home spread juice in American format */
   dkHomeSpreadOdds: string | null;
-  /** Current DK total, e.g. 155.5 */
+  /** Current DK NJ total, e.g. 155.5 */
   dkTotal: number | null;
-  /** Current DK over juice in American format, e.g. "-110" */
+  /** Current DK NJ over juice in American format, e.g. "-110" */
   dkOverOdds: string | null;
-  /** Current DK under juice in American format, e.g. "-110" */
+  /** Current DK NJ under juice in American format, e.g. "-110" */
   dkUnderOdds: string | null;
-  /** Current DK away moneyline in American format, e.g. "+650" */
+  /** Current DK NJ away moneyline in American format, e.g. "+650" */
   dkAwayML: string | null;
-  /** Current DK home moneyline in American format, e.g. "-1000" */
+  /** Current DK NJ home moneyline in American format, e.g. "-1000" */
   dkHomeML: string | null;
 }
 
-// ─── Raw API types ─────────────────────────────────────────────────────────────
+// ─── Raw v2 API types ──────────────────────────────────────────────────────────
 
-interface AnTeam {
+interface AnV2Team {
   id: number;
   full_name: string;
   display_name?: string;
@@ -99,33 +105,41 @@ interface AnTeam {
   url_slug: string;
 }
 
-interface AnOddsEntry {
+/** A single outcome entry in a v2 market array */
+interface AnV2Outcome {
   book_id: number;
-  type: string; // "game" | "firsthalf" | "secondhalf" | "live" | etc.
-  ml_away: number | null;
-  ml_home: number | null;
-  spread_away: number | null;
-  spread_home: number | null;
-  spread_away_line: number | null;
-  spread_home_line: number | null;
-  total: number | null;
-  over: number | null;
-  under: number | null;
+  side?: "away" | "home" | "over" | "under";
+  team_id?: number;
+  value?: number;
+  odds: number;
+  period: string;
+  type: string;
 }
 
-interface AnGame {
+/** v2 market object: markets[bookId].event.spread[] / .total[] / .moneyline[] */
+interface AnV2BookMarkets {
+  event?: {
+    spread?: AnV2Outcome[];
+    total?: AnV2Outcome[];
+    moneyline?: AnV2Outcome[];
+    [key: string]: AnV2Outcome[] | undefined;
+  };
+}
+
+interface AnV2Game {
   id: number;
   status: string;
   real_status?: string;
   start_time: string;
   away_team_id: number;
   home_team_id: number;
-  teams: AnTeam[];
-  odds: AnOddsEntry[];
+  teams: AnV2Team[];
+  /** markets[bookId] → AnV2BookMarkets */
+  markets?: Record<string | number, AnV2BookMarkets>;
 }
 
-interface AnApiResponse {
-  games: AnGame[];
+interface AnV2ApiResponse {
+  games: AnV2Game[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -145,14 +159,43 @@ function roundHalf(v: number | null | undefined): number | null {
   return Math.round(v * 2) / 2;
 }
 
+/**
+ * Extracts a single outcome from a v2 market array by side or team_id.
+ */
+function findOutcome(
+  arr: AnV2Outcome[] | undefined,
+  matcher: { side?: string; teamId?: number }
+): AnV2Outcome | undefined {
+  if (!arr) return undefined;
+  if (matcher.side) return arr.find(o => o.side === matcher.side);
+  if (matcher.teamId != null) return arr.find(o => o.team_id === matcher.teamId);
+  return undefined;
+}
+
 // ─── API constants ─────────────────────────────────────────────────────────────
 
-const AN_BASE = "https://api.actionnetwork.com/web/v1/scoreboard";
-const DK_BOOK_ID = 79; // DraftKings national
+const AN_V2_BASE = "https://api.actionnetwork.com/web/v2/scoreboard";
+
+/**
+ * Book IDs requested in every API call.
+ * Including consensus (15) and all major NJ books so the response is complete.
+ */
+const BOOK_IDS = "15,30,68,69,71,75,79";
+
+/**
+ * DK NJ book_id = 68 (confirmed via browser network intercept on actionnetwork.com/ncaab/odds)
+ * NOTE: book_id=79 is bet365 NJ — do NOT use that for DK.
+ */
+const DK_NJ_BOOK_ID = 68;
+
+/**
+ * Open line book_id = 30 (confirmed via browser network intercept)
+ */
+const OPEN_BOOK_ID = 30;
 
 const AN_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
   Accept: "application/json",
   Referer: "https://www.actionnetwork.com/",
   Origin: "https://www.actionnetwork.com",
@@ -161,11 +204,18 @@ const AN_HEADERS = {
 // ─── Main scraper ──────────────────────────────────────────────────────────────
 
 /**
- * Fetches Action Network DraftKings odds for a given sport and date.
+ * Fetches Action Network DraftKings NJ odds (and Opening lines) for a given sport and date.
+ *
+ * Uses the v2 scoreboard API which returns the FULL slate including:
+ *   - All NCAAB D1 games (Ivy League, conference tournaments, etc.)
+ *   - All NBA games
+ *   - All NHL games
+ *
+ * Unlike the v1 API, v2 never silently drops games.
  *
  * @param sport  - "ncaab", "nba", or "nhl"
- * @param date   - Date string in YYYY-MM-DD format (e.g. "2026-03-13")
- * @returns Array of AnGameOdds, one per game that has DK odds.
+ * @param date   - Date string in YYYY-MM-DD format (e.g. "2026-03-15")
+ * @returns Array of AnGameOdds for ALL games that day (Open + DK NJ fields populated where available).
  */
 export async function fetchActionNetworkOdds(
   sport: AnSport,
@@ -174,47 +224,95 @@ export async function fetchActionNetworkOdds(
   // Convert YYYY-MM-DD → YYYYMMDD for the API
   const dateParam = date.replace(/-/g, "");
 
-  const url = `${AN_BASE}/${sport}?bookIds=${DK_BOOK_ID}&date=${dateParam}`;
+  // Build URL — NCAAB needs division=D1 to get all D1 games
+  const extraParams =
+    sport === "ncaab" ? "&division=D1&tournament=0" : "";
+  const url = `${AN_V2_BASE}/${sport}?bookIds=${BOOK_IDS}&date=${dateParam}&periods=event${extraParams}`;
 
-  console.log(`[ActionNetwork] Fetching ${sport.toUpperCase()} DK odds for ${date}...`);
+  console.log(
+    `[ActionNetwork][v2] Fetching ${sport.toUpperCase()} Open + DK NJ odds for ${date} ...`
+  );
+  console.log(`[ActionNetwork][v2] URL: ${url}`);
 
   const resp = await fetch(url, { headers: AN_HEADERS });
   if (!resp.ok) {
     throw new Error(
-      `[ActionNetwork] API request failed for ${sport} ${date}: HTTP ${resp.status}`
+      `[ActionNetwork][v2] API request failed for ${sport} ${date}: HTTP ${resp.status}`
     );
   }
 
-  const data = (await resp.json()) as AnApiResponse;
+  const data = (await resp.json()) as AnV2ApiResponse;
   const games = data?.games ?? [];
 
   console.log(
-    `[ActionNetwork] ${sport.toUpperCase()} ${date}: ${games.length} games from API`
+    `[ActionNetwork][v2] ${sport.toUpperCase()} ${date}: ${games.length} total games from API`
   );
 
   const results: AnGameOdds[] = [];
+  let skippedNoDk = 0;
+  let skippedNoTeam = 0;
 
   for (const game of games) {
-    // Find DK game-level odds entry
-    const dk = game.odds?.find(
-      o => o.book_id === DK_BOOK_ID && o.type === "game"
-    );
-
-    // Skip games without DK odds
-    if (!dk) continue;
-
     // Build team map
-    const teamMap = new Map<number, AnTeam>();
-    for (const t of game.teams ?? []) {
-      teamMap.set(t.id, t);
-    }
+    const teamMap = new Map<number, AnV2Team>();
+    for (const t of game.teams ?? []) teamMap.set(t.id, t);
 
     const awayTeam = teamMap.get(game.away_team_id);
     const homeTeam = teamMap.get(game.home_team_id);
 
     if (!awayTeam || !homeTeam) {
-      console.warn(`[ActionNetwork] Skipping game ${game.id}: missing team data`);
+      console.warn(
+        `[ActionNetwork][v2] SKIP game ${game.id}: missing team data ` +
+        `(awayId=${game.away_team_id}, homeId=${game.home_team_id})`
+      );
+      skippedNoTeam++;
       continue;
+    }
+
+    const gameLabel = `${awayTeam.abbr} @ ${homeTeam.abbr} (id=${game.id})`;
+
+    // Extract v2 market data for Open (30) and DK NJ (68)
+    const openBook = game.markets?.[OPEN_BOOK_ID];
+    const dkBook = game.markets?.[DK_NJ_BOOK_ID];
+
+    const openEvent = openBook?.event;
+    const dkEvent = dkBook?.event;
+
+    // ── Open line extraction ────────────────────────────────────────────────
+    const openSpreadAway = findOutcome(openEvent?.spread, { side: "away" });
+    const openSpreadHome = findOutcome(openEvent?.spread, { side: "home" });
+    const openTotalOver  = findOutcome(openEvent?.total,  { side: "over" });
+    const openTotalUnder = findOutcome(openEvent?.total,  { side: "under" });
+    const openMlAway     = findOutcome(openEvent?.moneyline, { teamId: game.away_team_id });
+    const openMlHome     = findOutcome(openEvent?.moneyline, { teamId: game.home_team_id });
+
+    // ── DK NJ line extraction ───────────────────────────────────────────────
+    const dkSpreadAway = findOutcome(dkEvent?.spread, { side: "away" });
+    const dkSpreadHome = findOutcome(dkEvent?.spread, { side: "home" });
+    const dkTotalOver  = findOutcome(dkEvent?.total,  { side: "over" });
+    const dkTotalUnder = findOutcome(dkEvent?.total,  { side: "under" });
+    const dkMlAway     = findOutcome(dkEvent?.moneyline, { teamId: game.away_team_id });
+    const dkMlHome     = findOutcome(dkEvent?.moneyline, { teamId: game.home_team_id });
+
+    // Log every game with full detail — no noise, no filtering
+    const hasDk = !!(dkSpreadAway || dkTotalOver || dkMlAway);
+    const hasOpen = !!(openSpreadAway || openTotalOver || openMlAway);
+
+    console.log(
+      `[ActionNetwork][v2] ${sport.toUpperCase()} ${hasDk ? "✓DK" : "✗DK"} ${hasOpen ? "✓OPEN" : "✗OPEN"} | ` +
+      `${gameLabel} | ` +
+      `Open: spread=${openSpreadAway?.value ?? "null"}(${openSpreadAway?.odds ?? "null"}) ` +
+      `total=o${openTotalOver?.value ?? "null"}(${openTotalOver?.odds ?? "null"}) ` +
+      `ml=${openMlAway?.odds ?? "null"}/${openMlHome?.odds ?? "null"} | ` +
+      `DK: spread=${dkSpreadAway?.value ?? "null"}(${dkSpreadAway?.odds ?? "null"}) ` +
+      `total=o${dkTotalOver?.value ?? "null"}(${dkTotalOver?.odds ?? "null"}) ` +
+      `ml=${dkMlAway?.odds ?? "null"}/${dkMlHome?.odds ?? "null"}`
+    );
+
+    if (!hasDk) {
+      skippedNoDk++;
+      // Still include the game in results so Open lines can be stored
+      // even when DK hasn't posted odds yet
     }
 
     results.push({
@@ -228,32 +326,37 @@ export async function fetchActionNetworkOdds(
       startTime: game.start_time,
       status: game.status,
 
-      // Opening lines not available via public API
-      openAwaySpread: null,
-      openAwaySpreadOdds: null,
-      openHomeSpread: null,
-      openHomeSpreadOdds: null,
-      openTotal: null,
-      openOverOdds: null,
-      openUnderOdds: null,
-      openAwayML: null,
-      openHomeML: null,
+      // Opening line (book_id=30)
+      openAwaySpread:     roundHalf(openSpreadAway?.value),
+      openAwaySpreadOdds: fmtOdds(openSpreadAway?.odds),
+      openHomeSpread:     roundHalf(openSpreadHome?.value),
+      openHomeSpreadOdds: fmtOdds(openSpreadHome?.odds),
+      openTotal:          roundHalf(openTotalOver?.value),
+      openOverOdds:       fmtOdds(openTotalOver?.odds),
+      openUnderOdds:      fmtOdds(openTotalUnder?.odds),
+      openAwayML:         fmtOdds(openMlAway?.odds),
+      openHomeML:         fmtOdds(openMlHome?.odds),
 
-      // DraftKings current line
-      dkAwaySpread: roundHalf(dk.spread_away),
-      dkAwaySpreadOdds: fmtOdds(dk.spread_away_line),
-      dkHomeSpread: roundHalf(dk.spread_home),
-      dkHomeSpreadOdds: fmtOdds(dk.spread_home_line),
-      dkTotal: roundHalf(dk.total),
-      dkOverOdds: fmtOdds(dk.over),
-      dkUnderOdds: fmtOdds(dk.under),
-      dkAwayML: fmtOdds(dk.ml_away),
-      dkHomeML: fmtOdds(dk.ml_home),
+      // DraftKings NJ current line (book_id=68)
+      dkAwaySpread:     roundHalf(dkSpreadAway?.value),
+      dkAwaySpreadOdds: fmtOdds(dkSpreadAway?.odds),
+      dkHomeSpread:     roundHalf(dkSpreadHome?.value),
+      dkHomeSpreadOdds: fmtOdds(dkSpreadHome?.odds),
+      dkTotal:          roundHalf(dkTotalOver?.value),
+      dkOverOdds:       fmtOdds(dkTotalOver?.odds),
+      dkUnderOdds:      fmtOdds(dkTotalUnder?.odds),
+      dkAwayML:         fmtOdds(dkMlAway?.odds),
+      dkHomeML:         fmtOdds(dkMlHome?.odds),
     });
   }
 
   console.log(
-    `[ActionNetwork] ${sport.toUpperCase()} ${date}: ${results.length} games with DK odds`
+    `[ActionNetwork][v2] ${sport.toUpperCase()} ${date}: ` +
+    `${results.length} games returned | ` +
+    `${results.filter(g => g.dkAwaySpread != null || g.dkTotal != null || g.dkAwayML != null).length} with DK NJ odds | ` +
+    `${results.filter(g => g.openAwaySpread != null || g.openTotal != null || g.openAwayML != null).length} with Open odds | ` +
+    `${skippedNoDk} without DK (included for Open) | ` +
+    `${skippedNoTeam} skipped (no team data)`
   );
 
   return results;

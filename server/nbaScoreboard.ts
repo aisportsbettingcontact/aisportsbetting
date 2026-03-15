@@ -13,7 +13,7 @@
  * actual ET start time (the 1900-01-01 date is a placeholder).
  */
 
-import { NBA_BY_NBA_SLUG, NBA_BY_TEAM_ID } from "../shared/nbaTeams";
+import { NBA_BY_NBA_SLUG, NBA_BY_TEAM_ID, getNbaTeamByNbaSlug } from "../shared/nbaTeams";
 
 const NBA_SCHEDULE_URL =
   "https://cdn.nba.com/static/json/staticData/scheduleLeagueV2_1.json";
@@ -94,9 +94,9 @@ async function fetchNbaSchedule(): Promise<NbaGame[]> {
       const awaySlug: string = g.awayTeam?.teamSlug ?? "";
       const homeSlug: string = g.homeTeam?.teamSlug ?? "";
 
-      // Resolve to DB slugs via registry
-      const awayTeam = NBA_BY_NBA_SLUG.get(awaySlug);
-      const homeTeam = NBA_BY_NBA_SLUG.get(homeSlug);
+      // Resolve to DB slugs via registry (with alias resolution for NBA.com slug variants)
+      const awayTeam = getNbaTeamByNbaSlug(awaySlug);
+      const homeTeam = getNbaTeamByNbaSlug(homeSlug);
 
       // Skip if either team is not in the 30-team registry
       if (!awayTeam || !homeTeam) continue;

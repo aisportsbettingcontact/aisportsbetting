@@ -5527,6 +5527,25 @@ export const BY_AN_SLUG = new Map<string, NcaamTeam>(
   NCAAM_TEAMS.map(t => [t.anSlug, t])
 );
 
+/**
+ * AN v2 scoreboard API uses full team-name slugs that differ from the v1 slugs
+ * stored in each team's `anSlug` field.  Map v2 slugs → v1 slugs so both
+ * API versions resolve to the same team entry.
+ *
+ * Format: "v2-api-slug" → "existing-anSlug-in-registry"
+ *
+ * To add a new alias: verify the v2 slug from the AN v2 scoreboard API response
+ * (game.teams[i].url_slug), then map it to the matching anSlug in NCAAM_TEAMS.
+ */
+export const NCAAM_AN_SLUG_ALIASES = new Map<string, string>([
+  // Wichita State: v1 anSlug="wichita-st-shockers", v2 url_slug="wichita-state-shockers"
+  ["wichita-state-shockers", "wichita-st-shockers"],
+  // South Florida: v1 anSlug="south-fla-bulls", v2 url_slug="south-florida-bulls"
+  ["south-florida-bulls", "south-fla-bulls"],
+  // Penn (Pennsylvania Quakers): v1 anSlug="penn-quakers", v2 url_slug="pennsylvania-quakers"
+  ["pennsylvania-quakers", "penn-quakers"],
+]);
+
 /** Set of all valid DB slugs — used for server-side filtering */
 export const VALID_DB_SLUGS = new Set<string>(NCAAM_TEAMS.map(t => t.dbSlug));
 
@@ -5550,7 +5569,12 @@ export function getTeamByVsinSlug(vsinSlug: string): NcaamTeam | undefined {
   return BY_VSIN_SLUG.get(vsinSlug);
 }
 
-/** Get team by Action Network url_slug (from AN API) */
+/** Get team by Action Network url_slug (from AN API).
+ * Applies NCAAM_AN_SLUG_ALIASES so both v1 and v2 API slugs resolve correctly.
+ * v2 scoreboard API (used by the AN website) uses full team-name slugs;
+ * v1 public API uses abbreviated slugs.  Both are handled transparently.
+ */
 export function getTeamByAnSlug(anSlug: string): NcaamTeam | undefined {
-  return BY_AN_SLUG.get(anSlug);
+  const resolved = NCAAM_AN_SLUG_ALIASES.get(anSlug) ?? anSlug;
+  return BY_AN_SLUG.get(resolved);
 }

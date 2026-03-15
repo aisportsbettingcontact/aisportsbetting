@@ -15,12 +15,13 @@
  * `trpc.games.lastRefresh` so the UI can show "Last updated HH:MM".
  */
 
-import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime } from "./db";
+import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime, updateAnOdds } from "./db";
+import { fetchActionNetworkOdds, type AnSport } from "./actionNetworkScraper";
 import { scrapeVsinBettingSplits, type VsinSplitsGame } from "./vsinBettingSplitsScraper";
 import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
 import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "./nbaScoreboard";
 import { fetchNhlGamesForRange, buildNhlStartTimeMap, buildNhlGameMap, fetchNhlLiveScores, type NhlScheduleGame } from "./nhlSchedule";
-import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG, BY_AN_SLUG as NCAAM_BY_AN } from "../shared/ncaamTeams";
+import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG, BY_AN_SLUG as NCAAM_BY_AN, getTeamByAnSlug as getNcaamTeamByAnSlug } from "../shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG, getNbaTeamByVsinSlug } from "../shared/nbaTeams";
 import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG } from "../shared/nhlTeams";
 import { NBA_BY_DB_SLUG } from "../shared/nbaTeams";
@@ -680,6 +681,127 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
   return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: vsinSplits.length };
 }
 
+// ─── AN API DK Odds Auto-Population ──────────────────────────────────────────
+
+/**
+ * Fetches DraftKings odds from the Action Network public API for a given date
+ * and populates the awayBookSpread/homeBookSpread/bookTotal/ML columns for all
+ * matched games in the DB. This replaces the manual HTML paste workflow for
+ * current DK NJ lines.
+ *
+ * Matching strategy:
+ *   - NBA:  awayUrlSlug / homeUrlSlug → NBA_BY_AN_SLUG (e.g. "portland-trail-blazers")
+ *   - NHL:  awayUrlSlug / homeUrlSlug → NHL_BY_AN_SLUG (e.g. "boston-bruins")
+ *   - NCAAM: awayUrlSlug / homeUrlSlug → NCAAM_BY_AN (e.g. "vanderbilt-commodores")
+ *
+ * Non-fatal: errors are caught and logged.
+ */
+async function refreshAnApiOdds(
+  dateStr: string,
+  sports: AnSport[] = ["ncaab", "nba", "nhl"]
+): Promise<{ updated: number; skipped: number; errors: string[] }> {
+  let totalUpdated = 0;
+  let totalSkipped = 0;
+  const allErrors: string[] = [];
+
+  for (const sport of sports) {
+    try {
+      const dbSport = sport === "nba" ? "NBA" : sport === "nhl" ? "NHL" : "NCAAM";
+      const anGames = await fetchActionNetworkOdds(sport, dateStr);
+
+      if (anGames.length === 0) {
+        console.log(`[ANApiOdds][${dbSport}] No games with DK odds for ${dateStr}`);
+        continue;
+      }
+
+      const existingGames = await listGamesByDate(dateStr, dbSport);
+      let updated = 0;
+      let skipped = 0;
+
+      for (const anGame of anGames) {
+        // Resolve away team dbSlug via AN url_slug
+        let awayDbSlug: string | undefined;
+        let homeDbSlug: string | undefined;
+
+        if (sport === "nba") {
+          awayDbSlug = NBA_BY_AN_SLUG.get(anGame.awayUrlSlug)?.dbSlug;
+          homeDbSlug = NBA_BY_AN_SLUG.get(anGame.homeUrlSlug)?.dbSlug;
+        } else if (sport === "nhl") {
+          awayDbSlug = NHL_BY_AN_SLUG.get(anGame.awayUrlSlug)?.dbSlug;
+          homeDbSlug = NHL_BY_AN_SLUG.get(anGame.homeUrlSlug)?.dbSlug;
+        } else {
+          // NCAAM — use alias-aware helper so v2 slugs (e.g. "wichita-state-shockers",
+          // "south-florida-bulls", "pennsylvania-quakers") resolve correctly
+          awayDbSlug = getNcaamTeamByAnSlug(anGame.awayUrlSlug)?.dbSlug;
+          homeDbSlug = getNcaamTeamByAnSlug(anGame.homeUrlSlug)?.dbSlug;
+        }
+
+        if (!awayDbSlug || !homeDbSlug) {
+          const msg = `[ANApiOdds][${dbSport}] NO_SLUG: ${anGame.awayUrlSlug} @ ${anGame.homeUrlSlug} (anId=${anGame.gameId})`;
+          console.warn(msg);
+          allErrors.push(msg);
+          skipped++;
+          continue;
+        }
+
+        const dbGame = existingGames.find(
+          e => e.awayTeam === awayDbSlug && e.homeTeam === homeDbSlug
+        );
+
+        if (!dbGame) {
+          const msg = `[ANApiOdds][${dbSport}] NO_MATCH: ${awayDbSlug} @ ${homeDbSlug} on ${dateStr} (anId=${anGame.gameId})`;
+          console.warn(msg);
+          allErrors.push(msg);
+          skipped++;
+          continue;
+        }
+
+        // Populate DK NJ current lines + Open lines
+        await updateAnOdds(dbGame.id, {
+          // DK NJ current line
+          awayBookSpread: anGame.dkAwaySpread !== null ? String(anGame.dkAwaySpread) : null,
+          awaySpreadOdds: anGame.dkAwaySpreadOdds,
+          homeBookSpread: anGame.dkHomeSpread !== null ? String(anGame.dkHomeSpread) : null,
+          homeSpreadOdds: anGame.dkHomeSpreadOdds,
+          bookTotal: anGame.dkTotal !== null ? String(anGame.dkTotal) : null,
+          overOdds: anGame.dkOverOdds,
+          underOdds: anGame.dkUnderOdds,
+          awayML: anGame.dkAwayML,
+          homeML: anGame.dkHomeML,
+          // Open line (only update if AN has open data)
+          ...(anGame.openAwaySpread !== null ? {
+            openAwaySpread: anGame.openAwaySpread !== null ? String(anGame.openAwaySpread) : null,
+            openAwaySpreadOdds: anGame.openAwaySpreadOdds,
+            openHomeSpread: anGame.openHomeSpread !== null ? String(anGame.openHomeSpread) : null,
+            openHomeSpreadOdds: anGame.openHomeSpreadOdds,
+            openTotal: anGame.openTotal !== null ? String(anGame.openTotal) : null,
+            openAwayML: anGame.openAwayML,
+            openHomeML: anGame.openHomeML,
+          } : {}),
+        });
+
+        updated++;
+        console.log(
+          `[ANApiOdds][${dbSport}] Updated: ${awayDbSlug} @ ${homeDbSlug} (${dateStr}) | ` +
+          `spread=${anGame.dkAwaySpread}/${anGame.dkHomeSpread} ` +
+          `total=${anGame.dkTotal} ` +
+          `ml=${anGame.dkAwayML}/${anGame.dkHomeML}`
+        );
+      }
+
+      console.log(`[ANApiOdds][${dbSport}] ${dateStr}: updated=${updated} skipped=${skipped} total=${anGames.length}`);
+      totalUpdated += updated;
+      totalSkipped += skipped;
+    } catch (err) {
+      const msg = `[ANApiOdds][${sport.toUpperCase()}] Failed for ${dateStr}: ${err instanceof Error ? err.message : String(err)}`;
+      console.warn(msg);
+      allErrors.push(msg);
+    }
+  }
+
+  return { updated: totalUpdated, skipped: totalSkipped, errors: allErrors };
+}
+
 // ─── Main refresh orchestrator ─────────────────────────────────────────────────
 
 /**
@@ -706,12 +828,23 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
       `total=${nhlResult.total}`
     );
 
-    // AN odds are ingested exclusively via the ingestAnHtml tRPC procedure (paste AN HTML)
-    // VSiN is used only for betting splits.
+    // Auto-populate DK NJ current lines from Action Network API for today
+    // (non-fatal — errors are logged but do not block the refresh)
+    const anOddsResult = await refreshAnApiOdds(todayStr);
+    console.log(
+      `[VSiNAutoRefresh] AN API DK odds: updated=${anOddsResult.updated} ` +
+      `skipped=${anOddsResult.skipped} errors=${anOddsResult.errors.length}`
+    );
 
-    // Pre-populate tomorrow's splits and odds (non-fatal)
+    // Pre-populate tomorrow's splits and DK odds (non-fatal)
     const tomorrowStr = datePst(1);
     await runTomorrowSplitsUpdate(tomorrowStr);
+    // Also populate tomorrow's DK odds from AN API
+    const anOddsTomorrow = await refreshAnApiOdds(tomorrowStr);
+    console.log(
+      `[VSiNAutoRefresh] AN API DK odds (tomorrow): updated=${anOddsTomorrow.updated} ` +
+      `skipped=${anOddsTomorrow.skipped} errors=${anOddsTomorrow.errors.length}`
+    );
 
     const result: RefreshResult = {
       refreshedAt: new Date().toISOString(),

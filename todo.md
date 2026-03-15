@@ -1336,3 +1336,21 @@
 - [x] Fix Kings vs Clippers missing splits from VSiN HTML provided by user (getNbaTeamByVsinSlug alias resolution fix)
 - [x] Fix GameCard height/overflow/truncation - replaced fixed height+overflow:hidden with minHeight so content never clips
 - [x] Ensure dynamic scaling for all GameCard content across all leagues and screen sizes (removed all overflow:hidden from desktop layout columns)
+
+- [x] Audit VSiN scraper for March 15 NCAAM/NBA/NHL slate completeness (18/18 games resolved, 0 slug failures)
+- [x] Audit Action Network scraper for March 15 Open/DK NJ odds mapping (7/7 NBA resolved, NCAAM/NHL DK not yet posted by DK)
+- [x] Run live diagnostic against VSiN tomorrow endpoint for all leagues (5 NCAAM + 7 NBA + 6 NHL = 18 games, all matched)
+- [x] Run live diagnostic against Action Network for March 15 odds (7 NBA games with DK odds, all matched)
+- [x] Fix Portland Trail Blazers slug mismatch: NBA.com CDN uses "blazers" but registry had "trailblazers" — added NBA_SCHEDULE_SLUG_ALIASES and updated getNbaTeamByNbaSlug()
+- [x] Fix Kings vs Clippers missing splits: VSiNAutoRefresh was using NBA_BY_VSIN_SLUG.get() directly instead of getNbaTeamByVsinSlug() — fixed to use alias-aware helper
+- [x] Build refreshAnApiOdds() function: auto-populates DK NJ current lines from AN API for all leagues (NBA/NHL/NCAAM) without manual HTML paste
+- [x] Wire refreshAnApiOdds() into runVsinRefresh() for both today and tomorrow dates
+- [x] Verify all March 15 games have correct splits and odds in DB (5 NCAAM + 7 NBA + 6 NHL all present with splits and DK odds where available)
+- [x] Fix DK NJ book ID: was 79 (bet365 NJ), correct is 68 (DK NJ) — fixed in actionNetworkScraper.ts
+- [x] Fix Open line book ID: was missing, correct is 30 — added to actionNetworkScraper.ts
+- [x] Upgrade actionNetworkScraper.ts to AN v2 scoreboard API (returns ALL games including conference tournament games not in v1 API)
+- [x] Add NCAAM_AN_SLUG_ALIASES for v2 API slug differences: wichita-state-shockers, south-florida-bulls, pennsylvania-quakers
+- [x] Update getNcaamTeamByAnSlug() to apply NCAAM_AN_SLUG_ALIASES for transparent v1/v2 resolution
+- [x] Update refreshAnApiOdds() to use alias-aware getNcaamTeamByAnSlug() for NCAAM slug resolution
+- [x] Update refreshAnApiOdds() to pass Open line data (spread, total, ML) through to updateAnOdds()
+- [x] FINAL DIAGNOSTIC: 18/18 March 15 games — ALL slugs resolved, ALL DB matched, ALL DK populated, ALL Open populated

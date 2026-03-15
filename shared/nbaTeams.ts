@@ -470,14 +470,26 @@ export const VSIN_HREF_ALIASES: Record<string, string> = {
   "la-lakers": "los-angeles-lakers",
 };
 
+/**
+ * NBA.com schedule API slug aliases.
+ * The NBA.com CDN schedule JSON uses shortened teamSlug values for some teams
+ * that differ from the canonical nbaSlug in the master sheet.
+ * Maps the NBA.com schedule slug → canonical nbaSlug.
+ */
+export const NBA_SCHEDULE_SLUG_ALIASES: Record<string, string> = {
+  // NBA.com CDN schedule uses "blazers" but canonical nbaSlug is "trailblazers"
+  "blazers": "trailblazers",
+};
+
 // ─── Helper functions ─────────────────────────────────────────────────────────
 /** Get team by DB slug (the key stored in the games table) */
 export function getNbaTeamByDbSlug(dbSlug: string): NbaTeam | undefined {
   return NBA_BY_DB_SLUG.get(dbSlug);
 }
-/** Get team by NBA.com slug */
+/** Get team by NBA.com slug (with alias resolution for NBA.com CDN schedule slug variants) */
 export function getNbaTeamByNbaSlug(nbaSlug: string): NbaTeam | undefined {
-  return NBA_BY_NBA_SLUG.get(nbaSlug);
+  const canonical = NBA_SCHEDULE_SLUG_ALIASES[nbaSlug] ?? nbaSlug;
+  return NBA_BY_NBA_SLUG.get(canonical);
 }
 /** Get team by VSiN slug (from VSiN href), with alias resolution */
 export function getNbaTeamByVsinSlug(vsinSlug: string): NbaTeam | undefined {
