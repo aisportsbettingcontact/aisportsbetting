@@ -207,6 +207,19 @@ export const games = mysqlTable("games", {
   homeScore: int("homeScore"),
   /** Game clock string for live games, e.g. "15:07 1st" or "HALF" (null = not live) */
   gameClock: varchar("gameClock", { length: 32 }),
+  // ─── NHL-specific fields ──────────────────────────────────────────────────
+  /** Starting goalie for the away team (NHL only), e.g. "Jeremy Swayman" */
+  awayGoalie: varchar("awayGoalie", { length: 128 }),
+  /** Starting goalie for the home team (NHL only), e.g. "Andrei Vasilevskiy" */
+  homeGoalie: varchar("homeGoalie", { length: 128 }),
+  /** Whether the away goalie is confirmed (true) or projected (false) */
+  awayGoalieConfirmed: boolean("awayGoalieConfirmed").default(false),
+  /** Whether the home goalie is confirmed (true) or projected (false) */
+  homeGoalieConfirmed: boolean("homeGoalieConfirmed").default(false),
+  /** Model puck line cover probability for the away team (0-100) */
+  modelAwayPLCoverPct: decimal("modelAwayPLCoverPct", { precision: 5, scale: 2 }),
+  /** Model puck line cover probability for the home team (0-100) */
+  modelHomePLCoverPct: decimal("modelHomePLCoverPct", { precision: 5, scale: 2 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   /** Prevent duplicate rows for the same matchup on the same date */

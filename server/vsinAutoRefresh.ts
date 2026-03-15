@@ -1183,6 +1183,22 @@ export async function runVsinRefreshManual(
       );
     }
 
+    // ── NHL model sync (runs after odds refresh so book lines are fresh) ────────
+    if (doNhl) {
+      console.log(`[VSiNAutoRefresh][MANUAL][NHL] ── Running NHL model sync (manual trigger)…`);
+      try {
+        const { syncNhlModelForToday } = await import("./nhlModelSync");
+        const nhlModelResult = await syncNhlModelForToday("manual");
+        console.log(
+          `[VSiNAutoRefresh][MANUAL][NHL] ✓ NHL model sync done — ` +
+          `synced=${nhlModelResult.synced} skipped=${nhlModelResult.skipped} errors=${nhlModelResult.errors.length}`
+        );
+      } catch (nhlModelErr) {
+        const msg = nhlModelErr instanceof Error ? nhlModelErr.message : String(nhlModelErr);
+        console.error(`[VSiNAutoRefresh][MANUAL][NHL] ⚠ NHL model sync failed (non-fatal): ${msg}`);
+      }
+    }
+
     // ── Tomorrow's splits + DK odds (scoped) ─────────────────────────────────
     const tomorrowStr = datePst(1);
     console.log(

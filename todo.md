@@ -1387,3 +1387,36 @@
 - [x] Add deep server-side logging to refresh pipeline (sport-scoped, per-game, freeze detection)
 - [x] Add deep server-side logging to publish pipeline (sport-scoped, per-game publish confirmation)
 - [x] Add deep client-side logging for Refresh Now and Publish All button actions
+
+## NHL Model Pipeline
+- [ ] Write nhl_model_engine.py: Monte Carlo model with NaturalStatTrick + goalie factor
+- [ ] Write nhlNaturalStatScraper.ts: scrape team stats from NaturalStatTrick
+- [ ] Write nhlGoalieScraper.ts: scrape goalie stats from NaturalStatTrick
+- [ ] Write nhlRotoWireScraper.ts: scrape starting goalies from RotoWire
+- [ ] Add NHL-specific DB columns: awayPuckLineOdds, homePuckLineOdds, awayStartingGoalie, homeStartingGoalie, modelAwayGoals, modelHomeGoals
+- [ ] Run db:push to migrate new NHL columns
+- [ ] Write nhlModelEngine.ts: TypeScript wrapper that spawns nhl_model_engine.py
+- [ ] Write nhlModelSync.ts: auto-detect new NHL games, run model, store unpublished projections
+- [ ] Wire nhlModelSync into vsinAutoRefresh.ts cron (hourly, 3am-midnight PST)
+- [ ] Wire nhlModelSync into runVsinRefreshManual (sport-scoped)
+- [ ] Extend Publish Projections page to show puck line odds for NHL game cards
+- [ ] Ensure Refresh Now and Publish All on NHL tab only trigger NHL pipeline
+- [ ] Write vitest tests for NHL model engine and scraper
+- [ ] Save checkpoint
+
+## NHL Model Pipeline (Mar 15, 2026)
+- [x] Write NHL Monte Carlo model engine Python script (nhl_model_engine.py) — NaturalStatTrick + MoneyPuck + RotoWire data sources
+- [x] Build NaturalStatTrick team/player/goalie stats scraper (nhlNaturalStatScraper.ts)
+- [x] Build RotoWire starting goalie scraper (nhlRotoWireScraper.ts)
+- [x] Build NHL model engine TypeScript wrapper (nhlModelEngine.ts) — stdin/stdout JSON bridge
+- [x] Extend DB schema with NHL-specific fields (awayGoalie, homeGoalie, awayGoalieConfirmed, homeGoalieConfirmed, modelAwayPLCoverPct, modelHomePLCoverPct)
+- [x] Run db:push to migrate NHL-specific columns
+- [x] Build nhlModelSync.ts: auto-detect new games, run model, store unpublished projections
+- [x] Wire nhlModelSync into server startup (_core/index.ts)
+- [x] Wire runVsinRefreshManual to call syncNhlModelForToday when NHL is in scope
+- [x] Update Publish Projections: show PUCK LINE label instead of SPREAD for NHL
+- [x] Update Publish Projections: show goalie names (confirmed=green, projected=amber) below team names for NHL
+- [x] Update Publish Projections: show puck line odds in Book column for NHL
+- [x] Update Publish Projections: show PL Odds column header instead of Book ML for NHL
+- [x] Ensure Refresh Now and Publish All on NHL tab only operate on NHL data
+- [x] Write 24 vitest tests for NHL model pipeline (puck line odds, goalie adj, cover pct, sport-scoping, freeze detection)

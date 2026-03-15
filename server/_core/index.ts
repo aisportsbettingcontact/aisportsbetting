@@ -11,6 +11,7 @@ import { startDailyPurgeSchedule } from "../dailyPurge";
 import { startVsinAutoRefresh } from "../vsinAutoRefresh";
 import { startNbaModelSyncScheduler } from "../nbaModelSync";
 import { startModelWatcher } from "../ncaamModelWatcher";
+import { startNhlModelSyncScheduler } from "../nhlModelSync";
 
 // ─── Global crash protection ─────────────────────────────────────────────────
 // Prevent unhandled promise rejections and uncaught exceptions from killing the
@@ -118,6 +119,8 @@ async function startServer() {
     startNbaModelSyncScheduler();
     // NCAAM model v9 watcher — polls every 60s, fires v9 on any game with lines but no projections
     startModelWatcher();
+    // NHL model sync — runs every 30 min (9AM–9PM PST), models unmodeled NHL games
+    startNhlModelSyncScheduler();
   });
 }
 

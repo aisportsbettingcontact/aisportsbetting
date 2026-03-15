@@ -237,12 +237,16 @@ function EditablePill({
 function EditableTeamRow({
   slug, name, nickname, consensus, modelSpread,
   logoUrl, onSpreadChange, spreadInputRef,
+  goalie, goalieConfirmed, isNHL: isNHLRow,
 }: {
   slug: string; name: string; nickname?: string;
   consensus: string; modelSpread: string;
   logoUrl?: string;
   onSpreadChange: (v: string) => void;
   spreadInputRef?: React.RefObject<HTMLInputElement | null>;
+  goalie?: string | null;
+  goalieConfirmed?: boolean | null;
+  isNHL?: boolean;
 }) {
 
   return (
@@ -282,6 +286,20 @@ function EditableTeamRow({
             }}
           >
             {nickname}
+          </div>
+        )}
+        {isNHLRow && goalie && (
+          <div
+            className="font-medium leading-none mt-0.5 flex items-center gap-0.5"
+            style={{
+              fontSize: "clamp(8px, 2vw, 10px)",
+              color: goalieConfirmed ? "#39FF14" : "#FFB800",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            🥅 {goalie}{goalieConfirmed ? " ✓" : " (proj)"}
           </div>
         )}
       </div>
@@ -426,6 +444,19 @@ type GameRow = {
   homeML: string | null;
   modelAwayML: string | null;
   modelHomeML: string | null;
+  // NHL-specific
+  awayGoalie: string | null;
+  homeGoalie: string | null;
+  awayGoalieConfirmed: boolean | null;
+  homeGoalieConfirmed: boolean | null;
+  awaySpreadOdds: string | null;   // puck line odds for NHL
+  homeSpreadOdds: string | null;
+  modelAwayPLCoverPct: string | null;
+  modelHomePLCoverPct: string | null;
+  modelAwayScore: string | null;   // projected goals for NHL
+  modelHomeScore: string | null;
+  modelAwayWinPct: string | null;
+  modelHomeWinPct: string | null;
 };
 
 // ─── EditableGameCard ─────────────────────────────────────────────────────────
@@ -664,6 +695,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
       ? getEdgeColor(maxDiff)
       : "hsl(var(--border))";
 
+  const isNHL = game.sport === 'NHL';
   const awayNcaa = getTeamByDbSlug(game.awayTeam);
   const homeNcaa = getTeamByDbSlug(game.homeTeam);
   const awayNba  = !awayNcaa ? getNbaTeamByDbSlug(game.awayTeam) : null;
@@ -869,7 +901,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                   <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>Model Line</span>
                 </div>
                 <div className="flex-shrink-0 text-center" style={{ width: "clamp(48px, 12vw, 60px)" }}>
-                  <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>Book ML</span>
+                  <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>{isNHL ? 'PL Odds' : 'Book ML'}</span>
                 </div>
                 <div className="flex-shrink-0 text-center" style={{ width: "clamp(48px, 12vw, 72px)" }}>
                   <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#39FF14" }}>O/U</span>
@@ -885,35 +917,53 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                     slug={game.awayTeam}
                     name={awayName}
                     nickname={awayNickname}
-                    consensus={awayConsensus}
+                    consensus={isNHL ? (game.awayBookSpread ? '+1.5' : '—') : awayConsensus}
                     modelSpread={awaySpread}
                     logoUrl={awayLogoUrl}
                     onSpreadChange={handleAwaySpreadChange}
                     spreadInputRef={awaySpreadRef}
+                    goalie={game.awayGoalie}
+                    goalieConfirmed={game.awayGoalieConfirmed}
+                    isNHL={isNHL}
                   />
                   <div className="my-0.5" style={{ height: 1, background: "hsl(var(--border))" }} />
                   <EditableTeamRow
                     slug={game.homeTeam}
                     name={homeName}
                     nickname={homeNickname}
-                    consensus={homeConsensus}
+                    consensus={isNHL ? (game.homeBookSpread ? '-1.5' : '—') : homeConsensus}
                     modelSpread={homeSpread}
                     logoUrl={homeLogoUrl}
                     onSpreadChange={handleHomeSpreadChange}
+                    goalie={game.homeGoalie}
+                    goalieConfirmed={game.homeGoalieConfirmed}
+                    isNHL={isNHL}
                   />
                 </div>
-                {/* Book ML column */}
+                {/* Book ML column — for NHL shows puck line odds instead of ML */}
                 <div className="flex-shrink-0 flex flex-col justify-around" style={{ width: "clamp(48px, 12vw, 60px)", gap: 4 }}>
-                  <div className="flex items-center justify-center" style={{ flex: 1 }}>
-                    <span className="font-bold tabular-nums" style={{ fontSize: "clamp(12px, 3vw, 15px)", color: "#D3D3D3" }}>
-                      {game.awayML ?? "—"}
-                    </span>
+                  <div className="flex flex-col items-center justify-center" style={{ flex: 1 }}>
+                    {isNHL ? (
+                      <span className="font-bold tabular-nums" style={{ fontSize: "clamp(11px, 2.8vw, 13px)", color: "#D3D3D3", lineHeight: 1.1 }}>
+                        {game.awaySpreadOdds ?? "—"}
+                      </span>
+                    ) : (
+                      <span className="font-bold tabular-nums" style={{ fontSize: "clamp(12px, 3vw, 15px)", color: "#D3D3D3" }}>
+                        {game.awayML ?? "—"}
+                      </span>
+                    )}
                   </div>
                   <div style={{ height: 1, background: "hsl(var(--border))" }} />
-                  <div className="flex items-center justify-center" style={{ flex: 1 }}>
-                    <span className="font-bold tabular-nums" style={{ fontSize: "clamp(12px, 3vw, 15px)", color: "#D3D3D3" }}>
-                      {game.homeML ?? "—"}
-                    </span>
+                  <div className="flex flex-col items-center justify-center" style={{ flex: 1 }}>
+                    {isNHL ? (
+                      <span className="font-bold tabular-nums" style={{ fontSize: "clamp(11px, 2.8vw, 13px)", color: "#D3D3D3", lineHeight: 1.1 }}>
+                        {game.homeSpreadOdds ?? "—"}
+                      </span>
+                    ) : (
+                      <span className="font-bold tabular-nums" style={{ fontSize: "clamp(12px, 3vw, 15px)", color: "#D3D3D3" }}>
+                        {game.homeML ?? "—"}
+                      </span>
+                    )}
                   </div>
                 </div>
                 {/* O/U pill */}
@@ -996,7 +1046,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                 className="text-[10px] font-black uppercase tracking-[0.18em]"
                 style={{ color: "#39FF14" }}
               >
-                SPREAD
+                {isNHL ? 'PUCK LINE' : 'SPREAD'}
               </span>
               <div className="flex items-center gap-3">
                 <span className="text-[10px] uppercase tracking-widest" style={{ color: "#D3D3D3" }}>BOOK</span>
@@ -1026,15 +1076,36 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                     {awayNickname}
                   </span>
                 )}
+                {isNHL && game.awayGoalie && (
+                  <span
+                    className="font-medium leading-tight flex items-center gap-0.5"
+                    style={{ fontSize: "clamp(9px, 2.2vw, 11px)", color: game.awayGoalieConfirmed ? "#39FF14" : "#FFB800" }}
+                  >
+                    🥅 {game.awayGoalie}{game.awayGoalieConfirmed ? " ✓" : " (proj)"}
+                  </span>
+                )}
               </div>
-              {/* Book value */}
-              <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 44 }}>
-                <span
-                  className="font-bold tabular-nums"
-                  style={{ fontSize: "clamp(15px, 4vw, 18px)", color: "#D3D3D3" }}
-                >
-                  {awayConsensus}
-                </span>
+              {/* Book value: for NHL show puck line + odds */}
+              <div className="flex-shrink-0 flex flex-col items-center justify-center" style={{ minWidth: 52 }}>
+                {isNHL ? (
+                  <>
+                    <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 3.5vw, 15px)", color: "#D3D3D3", lineHeight: 1.1 }}>
+                      {game.awayBookSpread ? `+1.5` : '—'}
+                    </span>
+                    {game.awaySpreadOdds && (
+                      <span className="tabular-nums" style={{ fontSize: "clamp(10px, 2.5vw, 12px)", color: "rgba(211,211,211,0.7)", lineHeight: 1.1 }}>
+                        ({game.awaySpreadOdds})
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span
+                    className="font-bold tabular-nums"
+                    style={{ fontSize: "clamp(15px, 4vw, 18px)", color: "#D3D3D3" }}
+                  >
+                    {awayConsensus}
+                  </span>
+                )}
               </div>
               {/* Model input */}
               <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 64 }}>
@@ -1070,14 +1141,36 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                     {homeNickname}
                   </span>
                 )}
+                {isNHL && game.homeGoalie && (
+                  <span
+                    className="font-medium leading-tight flex items-center gap-0.5"
+                    style={{ fontSize: "clamp(9px, 2.2vw, 11px)", color: game.homeGoalieConfirmed ? "#39FF14" : "#FFB800" }}
+                  >
+                    🥅 {game.homeGoalie}{game.homeGoalieConfirmed ? " ✓" : " (proj)"}
+                  </span>
+                )}
               </div>
-              <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 44 }}>
-                <span
-                  className="font-bold tabular-nums"
-                  style={{ fontSize: "clamp(15px, 4vw, 18px)", color: "#D3D3D3" }}
-                >
-                  {homeConsensus}
-                </span>
+              {/* Book value: for NHL show puck line + odds */}
+              <div className="flex-shrink-0 flex flex-col items-center justify-center" style={{ minWidth: 52 }}>
+                {isNHL ? (
+                  <>
+                    <span className="font-bold tabular-nums" style={{ fontSize: "clamp(13px, 3.5vw, 15px)", color: "#D3D3D3", lineHeight: 1.1 }}>
+                      {game.homeBookSpread ? `-1.5` : '—'}
+                    </span>
+                    {game.homeSpreadOdds && (
+                      <span className="tabular-nums" style={{ fontSize: "clamp(10px, 2.5vw, 12px)", color: "rgba(211,211,211,0.7)", lineHeight: 1.1 }}>
+                        ({game.homeSpreadOdds})
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span
+                    className="font-bold tabular-nums"
+                    style={{ fontSize: "clamp(15px, 4vw, 18px)", color: "#D3D3D3" }}
+                  >
+                    {homeConsensus}
+                  </span>
+                )}
               </div>
               <div className="flex-shrink-0 flex items-center justify-center" style={{ minWidth: 64 }}>
                 <EditablePill
