@@ -21,7 +21,7 @@ import { and, eq, isNull, or } from "drizzle-orm";
 import { getDb } from "./db.js";
 import { games } from "../drizzle/schema.js";
 import type { Game } from "../drizzle/schema.js";
-import { scrapeNhlTeamStats, scrapeNhlGoalieStats, getDefaultTeamStats, getDefaultGoalieStats } from "./nhlNaturalStatScraper.js";
+import { scrapeNhlTeamStats, scrapeNhlGoalieStats, getDefaultGoalieStats } from "./nhlNaturalStatScraper.js";
 import { scrapeNhlStartingGoalies, matchGoalieName } from "./nhlRotoWireScraper.js";
 import { runNhlModelForGame, buildTeamStatsDict, formatNhlML } from "./nhlModelEngine.js";
 import type { NhlModelEngineInput } from "./nhlModelEngine.js";
@@ -246,12 +246,16 @@ export async function syncNhlModelForToday(source: "auto" | "manual" = "auto", f
     console.log(`\n[NhlModelSync]${tag} ── Game ${i + 1}/${unmodeled.length}: ${gameLabel} (${game.awayTeam} @ ${game.homeTeam}) ──`);
 
     try {
-      // Resolve team stats (with fallback)
-      const awayStats = teamStatsMap.get(awayAbbrev) ?? getDefaultTeamStats(awayAbbrev);
-      const homeStats = teamStatsMap.get(homeAbbrev) ?? getDefaultTeamStats(homeAbbrev);
+      // Resolve team stats — required, no fallback
+      const awayStats = teamStatsMap.get(awayAbbrev);
+      const homeStats = teamStatsMap.get(homeAbbrev);
+      if (!awayStats || !homeStats) {
+        const missing = [!awayStats && awayAbbrev, !homeStats && homeAbbrev].filter(Boolean).join(", ");
+        throw new Error(`Team stats not available for: ${missing}. NST scrape may have failed or team abbreviation mismatch.`);
+      }
 
-      console.log(`[NhlModelSync]${tag}   Away (${awayAbbrev}): xGF%=${awayStats.xGF_pct} CF%=${awayStats.CF_pct} SH%=${awayStats.SH_pct} SV%=${awayStats.SV_pct}`);
-      console.log(`[NhlModelSync]${tag}   Home (${homeAbbrev}): xGF%=${homeStats.xGF_pct} CF%=${homeStats.CF_pct} SH%=${homeStats.SH_pct} SV%=${homeStats.SV_pct}`);
+      console.log(`[NhlModelSync]${tag}   Away (${awayAbbrev}): xGF%=${awayStats.xGF_pct} xGF/60=${awayStats.xGF_60} HDCF/60=${awayStats.HDCF_60} SCF/60=${awayStats.SCF_60} CF/60=${awayStats.CF_60}`);
+      console.log(`[NhlModelSync]${tag}   Home (${homeAbbrev}): xGF%=${homeStats.xGF_pct} xGF/60=${homeStats.xGF_60} HDCF/60=${homeStats.HDCF_60} SCF/60=${homeStats.SCF_60} CF/60=${homeStats.CF_60}`);
 
       // Resolve starting goalies (keyed by 3-letter abbrev from RotoWire scraper)
       const awayGoalieInfo = goalieByTeam.get(awayAbbrev) ?? null;

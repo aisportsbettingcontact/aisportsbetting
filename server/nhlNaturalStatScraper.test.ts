@@ -7,22 +7,21 @@
  *  1. normalizeAbbrev correctly converts full team names → 3-letter abbreviations
  *  2. normalizeAbbrev handles NST dot-notation codes (N.J, S.J, T.B, L.A)
  *  3. GOALIE_STATS_URL uses playerteams.php (not the 404 goaliestats.php)
+ *  4. getDefaultGoalieStats returns league-average goalie stats
+ *  5. NhlTeamStats type includes all required per-60 fields (SCF_60, SCA_60, CF_60, CA_60)
+ *     and does NOT include Rush_60, Reb_60, SA_60, SlotShots (not in NST team table)
  */
 
 import { describe, it, expect } from "vitest";
 import { NHL_TEAMS } from "../shared/nhlTeams";
 
-// ─── Re-export the private normalizeAbbrev for testing ────────────────────────
-// We test it indirectly by checking the exported functions produce correct keys.
-// But we can also test the URL constant by importing it.
-
 // Import the module to verify it loads without errors and exports the right shapes
 import {
   scrapeNhlTeamStats,
   scrapeNhlGoalieStats,
-  getDefaultTeamStats,
   getDefaultGoalieStats,
 } from "./nhlNaturalStatScraper";
+import type { NhlTeamStats } from "./nhlNaturalStatScraper";
 
 // ─── normalizeAbbrev logic tests (via inline reimplementation) ────────────────
 
@@ -93,12 +92,60 @@ describe("normalizeAbbrev", () => {
   });
 });
 
-describe("getDefaultTeamStats", () => {
-  it("returns league-average stats for unknown teams", () => {
-    const stats = getDefaultTeamStats("TST");
-    expect(stats.xGF_pct).toBe(50.0);
-    expect(stats.CF_pct).toBe(50.0);
-    expect(stats.abbrev).toBe("TST");
+describe("NhlTeamStats type", () => {
+  it("includes all required per-60 fields from NST rate=y table", () => {
+    // Verify the type has the correct fields by constructing a valid object
+    // This is a compile-time check — if the type is wrong, TypeScript will error
+    const stats: NhlTeamStats = {
+      abbrev: "BOS",
+      name: "Boston Bruins",
+      gp: 60,
+      xGF_pct: 52.3,
+      xGA_pct: 47.7,
+      CF_pct: 53.1,
+      SCF_pct: 51.8,
+      HDCF_pct: 54.2,
+      SH_pct: 10.2,
+      SV_pct: 91.8,
+      GF: 180,
+      GA: 155,
+      // Per-60 rate stats (all required, from NST rate=y table)
+      xGF_60: 2.85,
+      xGA_60: 2.41,
+      HDCF_60: 1.12,
+      HDCA_60: 0.91,
+      SCF_60: 26.4,
+      SCA_60: 23.8,
+      CF_60: 57.2,
+      CA_60: 51.3,
+    };
+
+    expect(stats.xGF_60).toBe(2.85);
+    expect(stats.xGA_60).toBe(2.41);
+    expect(stats.HDCF_60).toBe(1.12);
+    expect(stats.HDCA_60).toBe(0.91);
+    expect(stats.SCF_60).toBe(26.4);
+    expect(stats.SCA_60).toBe(23.8);
+    expect(stats.CF_60).toBe(57.2);
+    expect(stats.CA_60).toBe(51.3);
+  });
+
+  it("does NOT have Rush_60, Reb_60, SA_60, SlotShots fields (not in NST team table)", () => {
+    // These fields should not exist on NhlTeamStats
+    // TypeScript enforces this at compile time; this runtime check documents the intent
+    const stats = {
+      abbrev: "BOS", name: "BOS", gp: 60,
+      xGF_pct: 52.3, xGA_pct: 47.7, CF_pct: 53.1, SCF_pct: 51.8, HDCF_pct: 54.2,
+      SH_pct: 10.2, SV_pct: 91.8, GF: 180, GA: 155,
+      xGF_60: 2.85, xGA_60: 2.41, HDCF_60: 1.12, HDCA_60: 0.91,
+      SCF_60: 26.4, SCA_60: 23.8, CF_60: 57.2, CA_60: 51.3,
+    } as NhlTeamStats;
+
+    // These should be undefined (not in the type)
+    expect((stats as any).Rush_60).toBeUndefined();
+    expect((stats as any).Reb_60).toBeUndefined();
+    expect((stats as any).SA_60).toBeUndefined();
+    expect((stats as any).SlotShots).toBeUndefined();
   });
 });
 
@@ -107,6 +154,19 @@ describe("getDefaultGoalieStats", () => {
     const stats = getDefaultGoalieStats("Unknown Goalie", "TST");
     expect(stats.sv_pct).toBeGreaterThan(0.88);
     expect(stats.gp).toBeGreaterThanOrEqual(1);
+    expect(stats.gsax).toBe(0.0);
+    expect(stats.name).toBe("Unknown Goalie");
+    expect(stats.team).toBe("TST");
+  });
+
+  it("returns a goalie object with all required fields", () => {
+    const stats = getDefaultGoalieStats("TBD", "BOS");
+    expect(typeof stats.sv_pct).toBe("number");
+    expect(typeof stats.gsax).toBe("number");
+    expect(typeof stats.gp).toBe("number");
+    expect(typeof stats.shots).toBe("number");
+    expect(typeof stats.xga).toBe("number");
+    expect(typeof stats.ga).toBe("number");
   });
 });
 

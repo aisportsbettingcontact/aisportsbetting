@@ -4,13 +4,25 @@
  * Scrapes NHL team stats and goalie stats from NaturalStatTrick.com.
  *
  * Data sources:
- *   Team stats (counts):  teamtable.php?...rate=n  — GF, GA, xGF%, CF%, etc.
- *   Team stats (per-60):  teamtable.php?...rate=y  — xGF/60, HDCF/60, Rush/60, etc.
- *   Goalie stats:         goaliestats.php           — GP, SV%, GSAx, xGA, GA, SA
+ *   Team stats (counts):  teamtable.php?...rate=n  — GF, GA, xGF%, CF%, HDCF%, SCF%
+ *   Team stats (per-60):  teamtable.php?...rate=y  — xGF/60, xGA/60, HDCF/60, HDCA/60,
+ *                                                     SCF/60, SCA/60, CF/60, CA/60
+ *   Goalie stats:         playerteams.php?stdoi=g   — GP, SV%, GSAx, xGA, GA, SA
  *
- * The Sharp Line Origination Engine (nhl_model_engine.py) requires BOTH:
- *   - Percentage-based stats (xGF_pct, CF_pct, HDCF_pct) — for fallback
- *   - Per-60 rate stats (xGF_60, HDCF_60, Rush_60, Reb_60, SA_60) — for full model
+ * NaturalStatTrick column naming convention:
+ *   - rate=n (counts) table: bare names — "xgf", "xga", "hdcf", "hdca", "cf", "ca", "scf", "sca"
+ *   - rate=y (per-60) table: suffixed names — "xgf/60", "xga/60", "hdcf/60", "hdca/60",
+ *                                              "cf/60", "ca/60", "scf/60", "sca/60"
+ *
+ * NOTE: Rush/60 and Reb/60 do NOT exist in the NST team table.
+ *       The engine uses SCF/60 and SCA/60 (scoring chances per 60) instead.
+ *
+ * The Sharp Line Origination Engine (nhl_model_engine.py) requires:
+ *   - xGF_60, xGA_60       — Expected Goals For/Against per 60
+ *   - HDCF_60, HDCA_60     — High-Danger Corsi For/Against per 60
+ *   - SCF_60, SCA_60       — Scoring Chances For/Against per 60
+ *   - CF_60, CA_60         — Corsi For/Against per 60 (pace proxy)
+ *   - xGF_pct, HDCF_pct, SCF_pct, CF_pct — percentage-based stats from count table
  *
  * Outputs:
  *   NhlTeamStats   — keyed by NHL abbreviation (e.g. "BOS", "TOR")
@@ -40,16 +52,15 @@ export interface NhlTeamStats {
 
   // Per-60 rate stats (from rate table, rate=y) — used by Sharp Line Engine
   // Offensive
-  xGF_60:    number | null;   // Expected Goals For per 60
-  HDCF_60:   number | null;   // High-Danger Corsi For per 60
-  Rush_60:   number | null;   // Rush shots per 60
-  Reb_60:    number | null;   // Rebound shots per 60
-  SA_60:     number | null;   // Shot Attempts per 60 (pace proxy)
+  xGF_60:    number;   // Expected Goals For per 60
+  HDCF_60:   number;   // High-Danger Corsi For per 60
+  SCF_60:    number;   // Scoring Chances For per 60
+  CF_60:     number;   // Corsi For per 60 (pace proxy)
   // Defensive
-  xGA_60:    number | null;   // Expected Goals Against per 60
-  HDCA_60:   number | null;   // High-Danger Corsi Against per 60
-  RushA_60:  number | null;   // Rush shots against per 60
-  SlotShots: number | null;   // Slot shots against per 60 (proxy for dangerous scoring chances against)
+  xGA_60:    number;   // Expected Goals Against per 60
+  HDCA_60:   number;   // High-Danger Corsi Against per 60
+  SCA_60:    number;   // Scoring Chances Against per 60
+  CA_60:     number;   // Corsi Against per 60 (pace proxy)
 }
 
 export interface NhlGoalieStats {
@@ -71,7 +82,7 @@ const CURRENT_SEASON = "20252026";
 // gpf=1 = include all teams with 1+ games played (no minimum game filter)
 const TEAM_STATS_COUNT_URL = `https://www.naturalstattrick.com/teamtable.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&rate=n&team=all&loc=B&gpf=1&gpt=&fd=&td=`;
 
-// Rate table (rate=y): xGF/60, HDCF/60, Rush/60, Rebound/60, SA/60, xGA/60, HDCA/60
+// Rate table (rate=y): xGF/60, xGA/60, HDCF/60, HDCA/60, SCF/60, SCA/60, CF/60, CA/60
 const TEAM_STATS_RATE_URL  = `https://www.naturalstattrick.com/teamtable.php?fromseason=${CURRENT_SEASON}&thruseason=${CURRENT_SEASON}&stype=2&sit=5v5&score=all&rate=y&team=all&loc=B&gpf=1&gpt=&fd=&td=`;
 
 // Goalie stats — uses playerteams.php with stdoi=g (goalie mode), gpfilt=none (no minimum GP filter)
@@ -168,7 +179,8 @@ function parseNstTable(html: string, tableLabel: string): { headers: string[]; r
     const abbrev  = normalizeAbbrev(rawTeam);
     if (!abbrev) return;
     rows.push({ abbrev, cells, headers });
-  });return { headers, rows };
+  });
+  return { headers, rows };
 }
 
 // ─── Team Stats Scraper (counts) ─────────────────────────────────────────────
@@ -183,31 +195,40 @@ async function scrapeTeamCountStats(): Promise<Map<string, Partial<NhlTeamStats>
   const { headers, rows } = parseNstTable(html, "COUNT");
   const results = new Map<string, Partial<NhlTeamStats>>();
 
+  // COUNT table column names (rate=n, no /60 suffix):
+  // [0]='', [1]='team', [2]='gp', [3]='toi', [4]='w', [5]='l', [6]='otl', [7]='row',
+  // [8]='points', [9]='point %', [10]='cf', [11]='ca', [12]='cf%', [13]='ff', [14]='fa',
+  // [15]='ff%', [16]='sf', [17]='sa', [18]='sf%', [19]='gf', [20]='ga', [21]='gf%',
+  // [22]='xgf', [23]='xga', [24]='xgf%', [25]='scf', [26]='sca', [27]='scf%',
+  // [36]='hdcf', [37]='hdca', [38]='hdcf%', [69]='sh%', [70]='sv%'
   const col = (name: string) => headers.indexOf(name);
   const idxGP    = col("gp");
   const idxCF    = headers.findIndex(h => h === "cf%");
   const idxSCF   = headers.findIndex(h => h === "scf%");
   const idxHDCF  = headers.findIndex(h => h === "hdcf%");
   const idxXGF   = headers.findIndex(h => h === "xgf%");
-  const idxXGA   = headers.findIndex(h => h === "xga%");
   const idxGF    = col("gf");
   const idxGA    = col("ga");
   const idxSH    = headers.findIndex(h => h === "sh%");
   const idxSV    = headers.findIndex(h => h === "sv%");
 
-  console.log(`[NSTScraper]   COUNT cols — GP:${idxGP} CF%:${idxCF} SCF%:${idxSCF} HDCF%:${idxHDCF} xGF%:${idxXGF} xGA%:${idxXGA} GF:${idxGF} GA:${idxGA} SH%:${idxSH} SV%:${idxSV}`);
+  console.log(`[NSTScraper]   COUNT cols — GP:${idxGP} CF%:${idxCF} SCF%:${idxSCF} HDCF%:${idxHDCF} xGF%:${idxXGF} GF:${idxGF} GA:${idxGA} SH%:${idxSH} SV%:${idxSV}`);
 
   for (const { abbrev, cells } of rows) {
     const g = (i: number) => i >= 0 ? parseFloat(cells[i]) || 0 : 0;
     const gp = g(idxGP);
     if (!abbrev || gp === 0) continue;
 
+    const xGF_pct = g(idxXGF);
+    // xGA_pct is derived: 100 - xGF_pct (NST doesn't have a separate xGA% column)
+    const xGA_pct = xGF_pct > 0 ? 100 - xGF_pct : 50;
+
     results.set(abbrev, {
       abbrev,
       name:      abbrev,
       gp,
-      xGF_pct:   g(idxXGF),
-      xGA_pct:   g(idxXGA),
+      xGF_pct,
+      xGA_pct,
       CF_pct:    g(idxCF),
       SCF_pct:   g(idxSCF),
       HDCF_pct:  g(idxHDCF),
@@ -234,35 +255,62 @@ async function scrapeTeamRateStats(): Promise<Map<string, Partial<NhlTeamStats>>
   const { headers, rows } = parseNstTable(html, "RATE");
   const results = new Map<string, Partial<NhlTeamStats>>();
 
-  // NaturalStatTrick rate table column names (per-60):
-  // "xgf", "xga", "hdcf", "hdca", "cf", "ca", "scf", "sca", "rush", "rusha", "reb", "reba", "sa", "saa"
-  // Note: in rate table, these are per-60 values
+  // RATE table column names (rate=y, with /60 suffix):
+  // [0]='', [1]='team', [2]='gp', [3]='toi/gp', [4]='w', [5]='l', [6]='otl', [7]='row',
+  // [8]='points', [9]='point %',
+  // [10]='cf/60', [11]='ca/60', [12]='cf%',
+  // [13]='ff/60', [14]='fa/60', [15]='ff%',
+  // [16]='sf/60', [17]='sa/60', [18]='sf%',
+  // [19]='gf/60', [20]='ga/60', [21]='gf%',
+  // [22]='xgf/60', [23]='xga/60', [24]='xgf%',
+  // [25]='scf/60', [26]='sca/60', [27]='scf%',
+  // [36]='hdcf/60', [37]='hdca/60', [38]='hdcf%',
+  // [69]='sh%', [70]='sv%', [71]='pdo'
   const col = (name: string) => headers.indexOf(name);
-  const idxXGF60   = col("xgf");
-  const idxXGA60   = col("xga");
-  const idxHDCF60  = col("hdcf");
-  const idxHDCA60  = col("hdca");
-  const idxRush60  = col("rush");
-  const idxRushA60 = col("rusha");
-  const idxReb60   = col("reb");
-  const idxSA60    = col("cf");   // In rate table, CF/60 ≈ shot attempts per 60 (pace proxy)
-  const idxSAA60   = col("ca");   // Corsi Against per 60 (slot shots proxy)
 
-  console.log(`[NSTScraper]   RATE cols — xGF/60:${idxXGF60} xGA/60:${idxXGA60} HDCF/60:${idxHDCF60} HDCA/60:${idxHDCA60} Rush/60:${idxRush60} RushA/60:${idxRushA60} Reb/60:${idxReb60} CF/60:${idxSA60} CA/60:${idxSAA60}`);
+  const idxXGF60  = col("xgf/60");   // index 22
+  const idxXGA60  = col("xga/60");   // index 23
+  const idxHDCF60 = col("hdcf/60");  // index 36
+  const idxHDCA60 = col("hdca/60");  // index 37
+  const idxSCF60  = col("scf/60");   // index 25
+  const idxSCA60  = col("sca/60");   // index 26
+  const idxCF60   = col("cf/60");    // index 10
+  const idxCA60   = col("ca/60");    // index 11
+
+  console.log(`[NSTScraper]   RATE cols — xGF/60:${idxXGF60} xGA/60:${idxXGA60} HDCF/60:${idxHDCF60} HDCA/60:${idxHDCA60} SCF/60:${idxSCF60} SCA/60:${idxSCA60} CF/60:${idxCF60} CA/60:${idxCA60}`);
+
+  // Validate that we found all required columns
+  const missing: string[] = [];
+  if (idxXGF60 < 0)  missing.push("xgf/60");
+  if (idxXGA60 < 0)  missing.push("xga/60");
+  if (idxHDCF60 < 0) missing.push("hdcf/60");
+  if (idxHDCA60 < 0) missing.push("hdca/60");
+  if (idxSCF60 < 0)  missing.push("scf/60");
+  if (idxSCA60 < 0)  missing.push("sca/60");
+  if (idxCF60 < 0)   missing.push("cf/60");
+  if (idxCA60 < 0)   missing.push("ca/60");
+
+  if (missing.length > 0) {
+    throw new Error(`[NSTScraper] RATE table missing required columns: ${missing.join(", ")}. Full headers: ${headers.join(", ")}`);
+  }
 
   for (const { abbrev, cells } of rows) {
-    const g = (i: number) => i >= 0 ? parseFloat(cells[i]) || null : null;
+    const g = (i: number): number => {
+      if (i < 0 || i >= cells.length) throw new Error(`[NSTScraper] Column index ${i} out of range for team ${abbrev}`);
+      const v = parseFloat(cells[i]);
+      if (isNaN(v)) throw new Error(`[NSTScraper] Non-numeric value "${cells[i]}" at column ${i} for team ${abbrev}`);
+      return v;
+    };
 
     results.set(abbrev, {
-      xGF_60:    g(idxXGF60),
-      xGA_60:    g(idxXGA60),
-      HDCF_60:   g(idxHDCF60),
-      HDCA_60:   g(idxHDCA60),
-      Rush_60:   g(idxRush60),
-      RushA_60:  g(idxRushA60),
-      Reb_60:    g(idxReb60),
-      SA_60:     g(idxSA60),    // CF/60 as shot attempts proxy
-      SlotShots: g(idxSAA60),   // CA/60 as slot shots against proxy
+      xGF_60:  g(idxXGF60),
+      xGA_60:  g(idxXGA60),
+      HDCF_60: g(idxHDCF60),
+      HDCA_60: g(idxHDCA60),
+      SCF_60:  g(idxSCF60),
+      SCA_60:  g(idxSCA60),
+      CF_60:   g(idxCF60),
+      CA_60:   g(idxCA60),
     });
   }
 
@@ -275,6 +323,7 @@ async function scrapeTeamRateStats(): Promise<Map<string, Partial<NhlTeamStats>>
 /**
  * Scrape both count and rate tables from NaturalStatTrick and merge them.
  * Returns a map keyed by NHL abbreviation with all fields populated.
+ * Throws if any required per-60 stat is missing for any team.
  */
 export async function scrapeNhlTeamStats(): Promise<Map<string, NhlTeamStats>> {
   console.log("[NSTScraper] ════════════════════════════════════════════════════");
@@ -288,7 +337,22 @@ export async function scrapeNhlTeamStats(): Promise<Map<string, NhlTeamStats>> {
   const merged = new Map<string, NhlTeamStats>();
 
   for (const [abbrev, count] of Array.from(countStats)) {
-    const rate = rateStats.get(abbrev) ?? {};
+    const rate = rateStats.get(abbrev);
+
+    if (!rate) {
+      console.warn(`[NSTScraper] ⚠ No rate stats found for team ${abbrev} — skipping`);
+      continue;
+    }
+
+    // Validate all required per-60 fields are present and non-null
+    const requiredRateFields: (keyof typeof rate)[] = [
+      "xGF_60", "xGA_60", "HDCF_60", "HDCA_60", "SCF_60", "SCA_60", "CF_60", "CA_60"
+    ];
+    const missingFields = requiredRateFields.filter(f => rate[f] === undefined || rate[f] === null);
+    if (missingFields.length > 0) {
+      throw new Error(`[NSTScraper] Team ${abbrev} missing required rate stats: ${missingFields.join(", ")}`);
+    }
+
     const stats: NhlTeamStats = {
       abbrev:    count.abbrev!,
       name:      count.name!,
@@ -302,16 +366,15 @@ export async function scrapeNhlTeamStats(): Promise<Map<string, NhlTeamStats>> {
       SV_pct:    count.SV_pct!,
       GF:        count.GF!,
       GA:        count.GA!,
-      // Per-60 from rate table (null if not available)
-      xGF_60:    rate.xGF_60   ?? null,
-      xGA_60:    rate.xGA_60   ?? null,
-      HDCF_60:   rate.HDCF_60  ?? null,
-      HDCA_60:   rate.HDCA_60  ?? null,
-      Rush_60:   rate.Rush_60  ?? null,
-      RushA_60:  rate.RushA_60 ?? null,
-      Reb_60:    rate.Reb_60   ?? null,
-      SA_60:     rate.SA_60    ?? null,
-      SlotShots: rate.SlotShots ?? null,
+      // Per-60 from rate table (required — no nulls allowed)
+      xGF_60:    rate.xGF_60!,
+      xGA_60:    rate.xGA_60!,
+      HDCF_60:   rate.HDCF_60!,
+      HDCA_60:   rate.HDCA_60!,
+      SCF_60:    rate.SCF_60!,
+      SCA_60:    rate.SCA_60!,
+      CF_60:     rate.CF_60!,
+      CA_60:     rate.CA_60!,
     };
     merged.set(abbrev, stats);
   }
@@ -319,7 +382,7 @@ export async function scrapeNhlTeamStats(): Promise<Map<string, NhlTeamStats>> {
   // Log sample
   const sample = Array.from(merged.entries()).slice(0, 3);
   for (const [abbrev, s] of sample) {
-    console.log(`[NSTScraper]   ${abbrev}: xGF%=${s.xGF_pct} xGF/60=${s.xGF_60} HDCF/60=${s.HDCF_60} Rush/60=${s.Rush_60} SA/60=${s.SA_60}`);
+    console.log(`[NSTScraper]   ${abbrev}: xGF%=${s.xGF_pct} xGF/60=${s.xGF_60} HDCF/60=${s.HDCF_60} SCF/60=${s.SCF_60} CF/60=${s.CF_60}`);
   }
 
   console.log(`[NSTScraper] ✅ Merged team stats: ${merged.size} teams (${Array.from(merged.keys()).join(", ")})`);
@@ -399,40 +462,26 @@ export async function scrapeNhlGoalieStats(): Promise<Map<string, NhlGoalieStats
     }
   });
 
-  console.log(`[NSTScraper] ✅ Goalie stats scraped: ${results.size / 2} goalies`);
+  console.log(`[NSTScraper] ✅ Goalie stats: ${results.size / 2} goalies`);
   return results;
 }
 
-// ─── Fallback / Default Stats ─────────────────────────────────────────────────
+// ─── Default Goalie Stats ─────────────────────────────────────────────────────
 
 /**
- * Returns league-average team stats for teams not found in NaturalStatTrick.
- * Per-60 values use 2025-26 NHL league averages.
- */
-export function getDefaultTeamStats(abbrev: string): NhlTeamStats {
-  console.warn(`[NSTScraper] ⚠ Using default stats for team: ${abbrev}`);
-  return {
-    abbrev, name: abbrev, gp: 1,
-    // Percentage-based (league average = 50%)
-    xGF_pct: 50.0, xGA_pct: 50.0,
-    CF_pct: 50.0, SCF_pct: 50.0, HDCF_pct: 50.0,
-    SH_pct: 9.5, SV_pct: 90.5,
-    GF: 100, GA: 100,
-    // Per-60 (league averages)
-    xGF_60: 2.65, xGA_60: 2.65,
-    HDCF_60: 1.05, HDCA_60: 1.05,
-    Rush_60: 0.45, RushA_60: 0.45,
-    Reb_60: 0.28, SA_60: 30.5, SlotShots: 17.0,
-  };
-}
-
-/**
- * Returns average goalie stats for goalies not found in NaturalStatTrick.
+ * Returns league-average goalie stats for a goalie not found in NaturalStatTrick.
+ * Used when a backup goalie or newly called-up goalie has no NST data.
+ * League averages: SV% ≈ 0.900, GSAx ≈ 0.0 (average), ~30 GP, ~850 shots.
  */
 export function getDefaultGoalieStats(name: string, team: string): NhlGoalieStats {
-  console.warn(`[NSTScraper] ⚠ Using default goalie stats for: ${name} (${team})`);
   return {
-    name, team, gp: 1,
-    sv_pct: 90.5, gsax: 0.0, xga: 50.0, ga: 50.0, shots: 500,
+    name,
+    team,
+    gp:     30,
+    sv_pct: 0.900,
+    gsax:   0.0,
+    xga:    75.0,
+    ga:     75.0,
+    shots:  850,
   };
 }

@@ -9,13 +9,21 @@
  *   3. Writes the input as JSON to the process's stdin
  *   4. Reads the result JSON from stdout (last line)
  *   5. Returns a typed NhlModelResult
+ *
+ * Stats used by the Sharp Line Engine (all from NaturalStatTrick):
+ *   Per-60 (from rate=y table):
+ *     xGF_60, xGA_60     — Expected Goals For/Against per 60
+ *     HDCF_60, HDCA_60   — High-Danger Corsi For/Against per 60
+ *     SCF_60, SCA_60     — Scoring Chances For/Against per 60
+ *     CF_60, CA_60       — Corsi For/Against per 60 (pace proxy)
+ *   Percentage-based (from rate=n table):
+ *     xGF_pct, HDCF_pct, SCF_pct, CF_pct
  */
 
 import { spawn } from "child_process";
-import { getDefaultTeamStats } from "./nhlNaturalStatScraper.js";
 import path from "path";
 import { fileURLToPath } from "url";
-import type { NhlTeamStats, NhlGoalieStats } from "./nhlNaturalStatScraper.js";
+import type { NhlTeamStats } from "./nhlNaturalStatScraper.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -23,7 +31,7 @@ const __dirname  = path.dirname(__filename);
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface NhlModelEngineInput {
-  away_team:         string;   // Full team name
+  away_team:         string;   // Full team name or abbreviation
   home_team:         string;
   away_abbrev:       string;   // NHL abbreviation
   home_abbrev:       string;
@@ -45,16 +53,16 @@ export interface NhlModelEngineInput {
   home_goalie_shots_faced?: number;
   away_rest_days?:  number;           // days since last game (fatigue)
   home_rest_days?:  number;
-  team_stats:        Record<string, {
-    // Percentage-based
+  team_stats: Record<string, {
+    // Percentage-based (from count table)
     xGF_pct: number; xGA_pct: number;
     CF_pct: number; SCF_pct: number; HDCF_pct: number;
     SH_pct: number; SV_pct: number; GF: number; GA: number;
-    // Per-60 rate stats (Sharp Line Engine)
-    xGF_60?: number | null; xGA_60?: number | null;
-    HDCF_60?: number | null; HDCA_60?: number | null;
-    Rush_60?: number | null; RushA_60?: number | null;
-    Reb_60?: number | null; SA_60?: number | null; SlotShots?: number | null;
+    // Per-60 rate stats (from rate table) — ALL REQUIRED, no nulls
+    xGF_60: number; xGA_60: number;
+    HDCF_60: number; HDCA_60: number;
+    SCF_60: number; SCA_60: number;
+    CF_60: number; CA_60: number;
   }>;
 }
 
@@ -84,7 +92,7 @@ export interface NhlModelResult {
   // Projected goals
   proj_away_goals:     number;
   proj_home_goals:     number;
-  // Puck line (always ±1.5)
+  // Puck line (±1.5 or ±2.5 based on win probability distribution)
   away_puck_line:      string;
   away_puck_line_odds: number;
   home_puck_line:      string;
@@ -282,7 +290,11 @@ export function formatNhlML(ml: number): string {
   return ml > 0 ? `+${ml}` : String(ml);
 }
 
-/** Build team_stats dict for Python engine from NhlTeamStats map (full per-60 + percentage fields) */
+/**
+ * Build team_stats dict for Python engine from NhlTeamStats map.
+ * All per-60 stats are required — no nulls, no defaults.
+ * Throws if any team is missing from the map.
+ */
 export function buildTeamStatsDict(
   awayAbbrev: string,
   homeAbbrev: string,
@@ -291,47 +303,48 @@ export function buildTeamStatsDict(
   xGF_pct: number; xGA_pct: number;
   CF_pct: number; SCF_pct: number; HDCF_pct: number;
   SH_pct: number; SV_pct: number; GF: number; GA: number;
-  xGF_60?: number | null; xGA_60?: number | null;
-  HDCF_60?: number | null; HDCA_60?: number | null;
-  Rush_60?: number | null; RushA_60?: number | null;
-  Reb_60?: number | null; SA_60?: number | null; SlotShots?: number | null;
+  xGF_60: number; xGA_60: number;
+  HDCF_60: number; HDCA_60: number;
+  SCF_60: number; SCA_60: number;
+  CF_60: number; CA_60: number;
 }> {
   const result: Record<string, {
     xGF_pct: number; xGA_pct: number;
     CF_pct: number; SCF_pct: number; HDCF_pct: number;
     SH_pct: number; SV_pct: number; GF: number; GA: number;
-    xGF_60?: number | null; xGA_60?: number | null;
-    HDCF_60?: number | null; HDCA_60?: number | null;
-    Rush_60?: number | null; RushA_60?: number | null;
-    Reb_60?: number | null; SA_60?: number | null; SlotShots?: number | null;
+    xGF_60: number; xGA_60: number;
+    HDCF_60: number; HDCA_60: number;
+    SCF_60: number; SCA_60: number;
+    CF_60: number; CA_60: number;
   }> = {};
 
   for (const abbrev of [awayAbbrev, homeAbbrev]) {
-    const stats = teamStatsMap.get(abbrev) ?? getDefaultTeamStats(abbrev);
-    if (stats) {
-      result[abbrev] = {
-        // Percentage-based
-        xGF_pct:  stats.xGF_pct,
-        xGA_pct:  stats.xGA_pct,
-        CF_pct:   stats.CF_pct,
-        SCF_pct:  stats.SCF_pct,
-        HDCF_pct: stats.HDCF_pct,
-        SH_pct:   stats.SH_pct,
-        SV_pct:   stats.SV_pct,
-        GF:       stats.GF,
-        GA:       stats.GA,
-        // Per-60 rate stats (Sharp Line Engine)
-        xGF_60:    stats.xGF_60,
-        xGA_60:    stats.xGA_60,
-        HDCF_60:   stats.HDCF_60,
-        HDCA_60:   stats.HDCA_60,
-        Rush_60:   stats.Rush_60,
-        RushA_60:  stats.RushA_60,
-        Reb_60:    stats.Reb_60,
-        SA_60:     stats.SA_60,
-        SlotShots: stats.SlotShots,
-      };
+    const stats = teamStatsMap.get(abbrev);
+    if (!stats) {
+      throw new Error(`[NhlModelEngine] No stats found for team ${abbrev} — cannot run model without complete data`);
     }
+
+    result[abbrev] = {
+      // Percentage-based
+      xGF_pct:  stats.xGF_pct,
+      xGA_pct:  stats.xGA_pct,
+      CF_pct:   stats.CF_pct,
+      SCF_pct:  stats.SCF_pct,
+      HDCF_pct: stats.HDCF_pct,
+      SH_pct:   stats.SH_pct,
+      SV_pct:   stats.SV_pct,
+      GF:       stats.GF,
+      GA:       stats.GA,
+      // Per-60 rate stats (all required)
+      xGF_60:   stats.xGF_60,
+      xGA_60:   stats.xGA_60,
+      HDCF_60:  stats.HDCF_60,
+      HDCA_60:  stats.HDCA_60,
+      SCF_60:   stats.SCF_60,
+      SCA_60:   stats.SCA_60,
+      CF_60:    stats.CF_60,
+      CA_60:    stats.CA_60,
+    };
   }
 
   return result;

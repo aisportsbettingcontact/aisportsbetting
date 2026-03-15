@@ -1497,3 +1497,11 @@
 - [x] Display model total odds on public feed GameCard for NHL games (MODEL LINES column)
 - [ ] Auto-trigger model run when both goalies are populated (GoalieWatcher + server startup)
 - [ ] Add goalie confirmed/expected status badges to Publish Projections NHL game cards
+- [ ] Rewrite NHL model engine: single Monte Carlo simulation core (N=50000 trials)
+- [ ] All markets (ML, PL, O/U) derived from same simulation distribution
+- [ ] Remove all separate calculation paths (no spread = expected_home - expected_away)
+- [ ] Verify mathematically consistent outputs: ML/PL/total all from same sim
+- [ ] Expand NST scraper to pull HDCF%, SCF%, HDCF/60, HDCA/60, Rush/60, RushA/60, Reb/60, Slot Shots for all teams
+- [ ] Update NhlTeamStats type and DB schema with all new columns
+- [ ] Remove fallback paths in compute_off_rating and compute_def_rating - require all fields
+- [ ] Run DB migration and force model re-run with complete data

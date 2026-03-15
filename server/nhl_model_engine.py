@@ -43,17 +43,15 @@ Input schema:
     "mkt_home_ml":        -155,
     "team_stats": {
       "BOS": {
-        "xGF_60":    2.85,   "xGA_60":    2.41,
-        "HDCF_60":   1.12,   "HDCA_60":   0.91,
-        "Rush_60":   0.48,   "RushA_60":  0.39,
-        "Reb_60":    0.31,   "SlotShots": 18.2,
-        "SA_60":     32.1,   "NZEntry_60": 14.5,
-        "PP_xGF":    0.82,   "PK_xGA":    0.61,
-        "SH_pct":    10.2,   "SV_pct":    91.8,
-        "CF_pct":    53.1,   "SCF_pct":   51.8,
-        "HDCF_pct":  54.2,   "xGF_pct":   52.3,
-        "xGA_pct":   47.7,   "GF":        180,
-        "GA":        155
+        "xGF_60":   2.85,   "xGA_60":   2.41,   // Expected Goals For/Against per 60
+        "HDCF_60":  1.12,   "HDCA_60":  0.91,   // High-Danger Corsi For/Against per 60
+        "SCF_60":   26.4,   "SCA_60":   23.8,   // Scoring Chances For/Against per 60
+        "CF_60":    57.2,   "CA_60":    51.3,   // Corsi For/Against per 60
+        "SH_pct":   10.2,   "SV_pct":   91.8,
+        "CF_pct":   53.1,   "SCF_pct":  51.8,
+        "HDCF_pct": 54.2,   "xGF_pct":  52.3,
+        "xGA_pct":  47.7,   "GF":       180,
+        "GA":       155
       },
       "TBL": { ... }
     }
@@ -113,15 +111,17 @@ FATIGUE_ONE_DAY     = 0.97      # 1 day rest
 FATIGUE_B2B         = 0.94      # Back-to-back (0 days rest)
 
 # League averages for normalization (NaturalStatTrick 2025-26 season)
-LEAGUE_XGF_60       = 2.65
-LEAGUE_HDCF_60      = 1.05
-LEAGUE_RUSH_60      = 0.45
-LEAGUE_REB_60       = 0.28
-LEAGUE_SA_60        = 30.5
-LEAGUE_XGA_60       = 2.65
-LEAGUE_HDCA_60      = 1.05
-LEAGUE_RUSH_A_60    = 0.45
-LEAGUE_SLOT_SHOTS   = 17.0
+# Stats available in NST team table (rate=y): xGF/60, xGA/60, HDCF/60, HDCA/60,
+#   SCF/60, SCA/60, CF/60, CA/60
+# Rush/60, Reb/60, SA/60, SlotShots do NOT exist in the NST team table.
+LEAGUE_XGF_60       = 2.65   # Expected Goals For per 60
+LEAGUE_XGA_60       = 2.65   # Expected Goals Against per 60
+LEAGUE_HDCF_60      = 1.05   # High-Danger Corsi For per 60
+LEAGUE_HDCA_60      = 1.05   # High-Danger Corsi Against per 60
+LEAGUE_SCF_60       = 25.0   # Scoring Chances For per 60
+LEAGUE_SCA_60       = 25.0   # Scoring Chances Against per 60
+LEAGUE_CF_60        = 55.0   # Corsi For per 60 (pace proxy)
+LEAGUE_CA_60        = 55.0   # Corsi Against per 60 (pace proxy)
 
 # Edge detection thresholds
 PUCK_LINE_EDGE_THRESHOLD = 0.05   # 5% probability edge
@@ -142,43 +142,30 @@ def compute_off_rating(stats: dict) -> float:
     """
     Section 2 — OFFENSE MODEL:
       OFF_rating =
-          0.40 * (xGF60 / league_xGF60)
-        + 0.20 * (HDCF60 / league_HDCF60)
-        + 0.15 * (Rush60 / league_Rush60)
-        + 0.10 * (Rebounds60 / league_Rebounds60)
-        + 0.15 * (ShotAttempts60 / league_ShotAttempts60)
+          0.40 * (xGF_60  / LEAGUE_XGF_60)    — expected goals quality
+        + 0.25 * (HDCF_60 / LEAGUE_HDCF_60)   — high-danger volume
+        + 0.20 * (SCF_60  / LEAGUE_SCF_60)    — scoring chance volume
+        + 0.15 * (CF_60   / LEAGUE_CF_60)     — overall shot attempt pace
 
+    All stats from NaturalStatTrick rate=y table (per-60 format).
     Values > 1 = stronger offense, < 1 = weaker offense.
-    Falls back to xGF_pct-based estimate if per-60 stats are unavailable.
+    Raises ValueError if any required stat is missing.
     """
-    xgf_60   = stats.get("xGF_60")
-    hdcf_60  = stats.get("HDCF_60")
-    rush_60  = stats.get("Rush_60")
-    reb_60   = stats.get("Reb_60")
-    sa_60    = stats.get("SA_60")
+    xgf_60  = stats.get("xGF_60")
+    hdcf_60 = stats.get("HDCF_60")
+    scf_60  = stats.get("SCF_60")
+    cf_60   = stats.get("CF_60")
 
-    if all(v is not None for v in [xgf_60, hdcf_60, rush_60, reb_60, sa_60]):
-        # Full spec formula
-        rating = (
-            0.40 * (xgf_60  / LEAGUE_XGF_60)  +
-            0.20 * (hdcf_60 / LEAGUE_HDCF_60) +
-            0.15 * (rush_60 / LEAGUE_RUSH_60)  +
-            0.10 * (reb_60  / LEAGUE_REB_60)   +
-            0.15 * (sa_60   / LEAGUE_SA_60)
-        )
-    else:
-        # Fallback: use percentage-based stats (xGF_pct, HDCF_pct, CF_pct, SCF_pct)
-        xgf_pct  = float(stats.get("xGF_pct",  50.0))
-        hdcf_pct = float(stats.get("HDCF_pct", 50.0))
-        scf_pct  = float(stats.get("SCF_pct",  50.0))
-        cf_pct   = float(stats.get("CF_pct",   50.0))
-        raw = (
-            0.40 * xgf_pct  +
-            0.25 * scf_pct  +
-            0.20 * hdcf_pct +
-            0.15 * cf_pct
-        )
-        rating = raw / 50.0
+    missing = [k for k, v in [("xGF_60", xgf_60), ("HDCF_60", hdcf_60), ("SCF_60", scf_60), ("CF_60", cf_60)] if v is None]
+    if missing:
+        raise ValueError(f"compute_off_rating: missing required stats: {missing}. No fallback — all per-60 stats must be present.")
+
+    rating = (
+        0.40 * (float(xgf_60)  / LEAGUE_XGF_60)  +
+        0.25 * (float(hdcf_60) / LEAGUE_HDCF_60) +
+        0.20 * (float(scf_60)  / LEAGUE_SCF_60)  +
+        0.15 * (float(cf_60)   / LEAGUE_CF_60)
+    )
 
     return max(0.50, min(2.00, rating))
 
@@ -187,54 +174,49 @@ def compute_def_rating(stats: dict) -> float:
     """
     Section 2 — DEFENSE MODEL:
       DEF_rating =
-          0.40 * (league_xGA60 / xGA60)
-        + 0.25 * (league_HDCA60 / HDCA60)
-        + 0.20 * (league_RushAllowed / RushAllowed)
-        + 0.15 * (league_SlotShots / SlotShotsAllowed)
+          0.40 * (LEAGUE_XGA_60  / xGA_60)    — expected goals suppression
+        + 0.30 * (LEAGUE_HDCA_60 / HDCA_60)   — high-danger suppression
+        + 0.30 * (LEAGUE_SCA_60  / SCA_60)    — scoring chance suppression
 
+    All stats from NaturalStatTrick rate=y table (per-60 format).
     Values > 1 = stronger defense (suppresses more), < 1 = weaker defense.
-    Falls back to xGA_pct-based estimate if per-60 stats are unavailable.
+    Raises ValueError if any required stat is missing.
     """
-    xga_60     = stats.get("xGA_60")
-    hdca_60    = stats.get("HDCA_60")
-    rush_a_60  = stats.get("RushA_60")
-    slot_shots = stats.get("SlotShots")
+    xga_60  = stats.get("xGA_60")
+    hdca_60 = stats.get("HDCA_60")
+    sca_60  = stats.get("SCA_60")
 
-    if all(v is not None and v > 0 for v in [xga_60, hdca_60, rush_a_60, slot_shots]):
-        # Full spec formula
-        rating = (
-            0.40 * (LEAGUE_XGA_60     / xga_60)     +
-            0.25 * (LEAGUE_HDCA_60    / hdca_60)    +
-            0.20 * (LEAGUE_RUSH_A_60  / rush_a_60)  +
-            0.15 * (LEAGUE_SLOT_SHOTS / slot_shots)
-        )
-    else:
-        # Fallback: use percentage-based stats
-        xga_pct  = float(stats.get("xGA_pct",  50.0))
-        sca_pct  = 100.0 - float(stats.get("SCF_pct",  50.0))
-        hdca_pct = 100.0 - float(stats.get("HDCF_pct", 50.0))
-        ca_pct   = 100.0 - float(stats.get("CF_pct",   50.0))
-        raw = (
-            0.45 * xga_pct  +
-            0.25 * sca_pct  +
-            0.20 * hdca_pct +
-            0.10 * ca_pct
-        )
-        rating = 50.0 / (raw / 1.0)   # invert: lower xGA% = better defense
+    missing = [k for k, v in [("xGA_60", xga_60), ("HDCA_60", hdca_60), ("SCA_60", sca_60)] if v is None]
+    if missing:
+        raise ValueError(f"compute_def_rating: missing required stats: {missing}. No fallback — all per-60 stats must be present.")
+
+    # Guard against division by zero (a team with 0 xGA/60 is impossible but protect anyway)
+    xga_60  = max(float(xga_60),  0.01)
+    hdca_60 = max(float(hdca_60), 0.01)
+    sca_60  = max(float(sca_60),  0.01)
+
+    rating = (
+        0.40 * (LEAGUE_XGA_60  / xga_60)  +
+        0.30 * (LEAGUE_HDCA_60 / hdca_60) +
+        0.30 * (LEAGUE_SCA_60  / sca_60)
+    )
 
     return max(0.50, min(2.00, rating))
 
 
 def compute_pace_factor(away_stats: dict, home_stats: dict) -> float:
     """
-    Section 4: Pace adjustment derived from combined shot rate.
-    pace_factor = combined_SA60 / (2 * league_SA60)
+    Section 4: Pace adjustment derived from combined Corsi For per 60.
+    CF_60 is the total shot attempt rate (shots on goal + missed + blocked).
+    pace_factor = combined_CF60 / (2 * LEAGUE_CF_60)
     Clamped to [0.85, 1.15] to prevent extreme outliers.
+
+    Uses CF_60 (available in NST rate=y table) instead of SA_60 (not available).
     """
-    away_sa = away_stats.get("SA_60") or LEAGUE_SA_60
-    home_sa = home_stats.get("SA_60") or LEAGUE_SA_60
-    combined = (float(away_sa) + float(home_sa)) / 2.0
-    factor = combined / LEAGUE_SA_60
+    away_cf = away_stats.get("CF_60") or LEAGUE_CF_60
+    home_cf = home_stats.get("CF_60") or LEAGUE_CF_60
+    combined = (float(away_cf) + float(home_cf)) / 2.0
+    factor = combined / LEAGUE_CF_60
     return max(0.85, min(1.15, factor))
 
 
@@ -637,6 +619,20 @@ def prob_total_under(score_counts: dict[int, int], line: float, n: int) -> float
     return wins / n
 
 
+def prob_margin_cover(margin_dist: dict[int, int], threshold: int, n: int, home_covers: bool) -> float:
+    """
+    P(home covers puck line at threshold) from margin distribution.
+    margin = home_goals - away_goals
+    home_covers=True:  P(margin >= threshold)  e.g. home -1.5 → threshold=2
+    home_covers=False: P(margin <= -threshold) e.g. away +1.5 → threshold=2 → P(margin <= -2)
+    """
+    if home_covers:
+        wins = sum(count for margin, count in margin_dist.items() if margin >= threshold)
+    else:
+        wins = sum(count for margin, count in margin_dist.items() if margin <= -threshold)
+    return wins / n
+
+
 def remove_vig(prob_a: float, prob_b: float) -> tuple[float, float]:
     """
     Remove vig from raw implied probabilities. Section 4 of spec.
@@ -778,11 +774,14 @@ def detect_edges(
         # Remove vig
         p_away_pl_market, p_home_pl_market = remove_vig(p_away_pl_raw, p_home_pl_raw)
 
-        # Distribution-translated model probabilities using the DYNAMIC spread
-        # from the puck line origination engine (could be ±1.5 or ±2.5)
-        # Use the cover probabilities already computed in calculate_probs
-        p_home_pl_model = probs["home_pl_cover"]
-        p_away_pl_model = probs["away_pl_cover"]
+        # Distribution-translated model probabilities at the MARKET's puck line threshold.
+        # The market always prices ±1.5 (threshold=2 goals), so we evaluate
+        # P(margin >= 2) and P(margin <= -2) from the simulation margin distribution.
+        # This is correct even if the model originated ±2.5 — the edge comparison
+        # must be at the SAME threshold the market is pricing.
+        mkt_pl_threshold = 2  # market ±1.5 → need to win by 2+ goals to cover
+        p_home_pl_model = prob_margin_cover(margin_dist, mkt_pl_threshold, n, home_covers=True)
+        p_away_pl_model = prob_margin_cover(margin_dist, mkt_pl_threshold, n, home_covers=False)
 
         # Fair odds
         fair_away_pl_odds = prob_to_ml(p_away_pl_model)
@@ -804,10 +803,14 @@ def detect_edges(
         class_away_pl = classify_edge(edge_away_pl)
         class_home_pl = classify_edge(edge_home_pl)
 
+        # Use the model's puck line spread for the edge label (±1.5 or ±2.5)
+        away_pl_label = f"AWAY {probs['away_pl_spread']:+.1f}"
+        home_pl_label = f"HOME {probs['home_pl_spread']:+.1f}"
+
         if edge_away_pl >= 0.015:
             edges.append({
                 "type":           "PUCK_LINE",
-                "side":           "AWAY +1.5",
+                "side":           away_pl_label,
                 "model_prob":     round(p_away_pl_model * 100, 2),
                 "mkt_prob":       round(p_away_pl_market * 100, 2),
                 "mkt_prob_raw":   round(p_away_pl_raw * 100, 2),
@@ -822,7 +825,7 @@ def detect_edges(
         if edge_home_pl >= 0.015:
             edges.append({
                 "type":           "PUCK_LINE",
-                "side":           "HOME -1.5",
+                "side":           home_pl_label,
                 "model_prob":     round(p_home_pl_model * 100, 2),
                 "mkt_prob":       round(p_home_pl_market * 100, 2),
                 "mkt_prob_raw":   round(p_home_pl_raw * 100, 2),
