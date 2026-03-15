@@ -289,17 +289,45 @@ function EditableTeamRow({
           </div>
         )}
         {isNHLRow && goalie && (
-          <div
-            className="font-medium leading-none mt-0.5 flex items-center gap-0.5"
-            style={{
-              fontSize: "clamp(8px, 2vw, 10px)",
-              color: goalieConfirmed ? "#39FF14" : "#FFB800",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-            }}
-          >
-            🥅 {goalie}{goalieConfirmed ? " ✓" : " (proj)"}
+          <div className="flex flex-col gap-0" style={{ marginTop: "2px" }}>
+            {/* Goalie name */}
+            <div
+              className="font-medium leading-none flex items-center gap-0.5"
+              style={{
+                fontSize: "clamp(8px, 2vw, 10px)",
+                color: "hsl(var(--foreground))",
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              🥅 {goalie}
+            </div>
+            {/* RotoWire-style status badge: colored dot + Confirmed/Expected */}
+            <div
+              className="flex items-center gap-0.5 leading-none"
+              style={{ marginTop: "1px" }}
+            >
+              <div
+                style={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  backgroundColor: goalieConfirmed ? "#22c55e" : "#eab308",
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  fontSize: "clamp(7px, 1.8vw, 9px)",
+                  color: goalieConfirmed ? "#22c55e" : "#eab308",
+                  fontWeight: 500,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {goalieConfirmed ? "Confirmed" : "Expected"}
+              </span>
+            </div>
           </div>
         )}
       </div>
@@ -1127,12 +1155,20 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                   </span>
                 )}
                 {isNHL && game.awayGoalie && (
-                  <span
-                    className="font-medium leading-tight flex items-center gap-0.5"
-                    style={{ fontSize: "clamp(9px, 2.2vw, 11px)", color: game.awayGoalieConfirmed ? "#39FF14" : "#FFB800" }}
-                  >
-                    🥅 {game.awayGoalie}{game.awayGoalieConfirmed ? " ✓" : " (proj)"}
-                  </span>
+                  <div className="flex flex-col gap-0" style={{ marginTop: "1px" }}>
+                    <span
+                      className="font-medium leading-tight"
+                      style={{ fontSize: "clamp(9px, 2.2vw, 11px)", color: "hsl(var(--foreground))" }}
+                    >
+                      🥅 {game.awayGoalie}
+                    </span>
+                    <div className="flex items-center gap-0.5">
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: game.awayGoalieConfirmed ? "#22c55e" : "#eab308", flexShrink: 0 }} />
+                      <span style={{ fontSize: "clamp(7px, 1.8vw, 9px)", color: game.awayGoalieConfirmed ? "#22c55e" : "#eab308", fontWeight: 500, whiteSpace: "nowrap" }}>
+                        {game.awayGoalieConfirmed ? "Confirmed" : "Expected"}
+                      </span>
+                    </div>
+                  </div>
                 )}
               </div>
               {/* Book value: for NHL show puck line + odds */}
@@ -1203,12 +1239,20 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
                   </span>
                 )}
                 {isNHL && game.homeGoalie && (
-                  <span
-                    className="font-medium leading-tight flex items-center gap-0.5"
-                    style={{ fontSize: "clamp(9px, 2.2vw, 11px)", color: game.homeGoalieConfirmed ? "#39FF14" : "#FFB800" }}
-                  >
-                    🥅 {game.homeGoalie}{game.homeGoalieConfirmed ? " ✓" : " (proj)"}
-                  </span>
+                  <div className="flex flex-col gap-0" style={{ marginTop: "1px" }}>
+                    <span
+                      className="font-medium leading-tight"
+                      style={{ fontSize: "clamp(9px, 2.2vw, 11px)", color: "hsl(var(--foreground))" }}
+                    >
+                      🥅 {game.homeGoalie}
+                    </span>
+                    <div className="flex items-center gap-0.5">
+                      <div style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: game.homeGoalieConfirmed ? "#22c55e" : "#eab308", flexShrink: 0 }} />
+                      <span style={{ fontSize: "clamp(7px, 1.8vw, 9px)", color: game.homeGoalieConfirmed ? "#22c55e" : "#eab308", fontWeight: 500, whiteSpace: "nowrap" }}>
+                        {game.homeGoalieConfirmed ? "Confirmed" : "Expected"}
+                      </span>
+                    </div>
+                  </div>
                 )}
               </div>
               {/* Book value: for NHL show puck line + odds */}

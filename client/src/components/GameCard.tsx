@@ -643,6 +643,11 @@ interface DesktopMergedPanelProps {
     openHomeML?: string | null;
     // Note: DK NJ current lines are in awayBookSpread/homeBookSpread/bookTotal/awayML/homeML
     // (populated by ingestAnHtml from AN HTML best-odds table).
+    // NHL model puck line and total odds (from nhl_model_engine.py)
+    modelAwayPLOdds?: string | null;
+    modelHomePLOdds?: string | null;
+    modelOverOdds?: string | null;
+    modelUnderOdds?: string | null;
   };
 }
 
@@ -767,10 +772,25 @@ function DesktopMergedPanel({
   const displayAwayML     = game.awayML ?? '—';
   const displayHomeML     = game.homeML ?? '—';
 
-  const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread) ? spreadSign(mdlAwaySpread) : '—';
-  const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread) ? spreadSign(mdlHomeSpread) : '—';
-  const mdlOver          = hasModelData && !isNaN(mdlTotal) ? String(mdlTotal) : '—';
-  const mdlUnder         = hasModelData && !isNaN(mdlTotal) ? String(mdlTotal) : '—';
+  // For NHL games, append model puck line odds and model over/under odds in parentheses
+  const isNhlGame = game.sport === 'NHL';
+  const mdlAwayPLOdds = game.modelAwayPLOdds ?? null;
+  const mdlHomePLOdds = game.modelHomePLOdds ?? null;
+  const mdlOverOdds   = game.modelOverOdds ?? null;
+  const mdlUnderOdds  = game.modelUnderOdds ?? null;
+
+  const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread)
+    ? (isNhlGame && mdlAwayPLOdds ? `${spreadSign(mdlAwaySpread)} (${mdlAwayPLOdds})` : spreadSign(mdlAwaySpread))
+    : '—';
+  const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread)
+    ? (isNhlGame && mdlHomePLOdds ? `${spreadSign(mdlHomeSpread)} (${mdlHomePLOdds})` : spreadSign(mdlHomeSpread))
+    : '—';
+  const mdlOver = hasModelData && !isNaN(mdlTotal)
+    ? (isNhlGame && mdlOverOdds ? `${String(mdlTotal)} (${mdlOverOdds})` : String(mdlTotal))
+    : '—';
+  const mdlUnder = hasModelData && !isNaN(mdlTotal)
+    ? (isNhlGame && mdlUnderOdds ? `${String(mdlTotal)} (${mdlUnderOdds})` : String(mdlTotal))
+    : '—';
   const mdlAwayMlStr     = hasModelData ? (modelAwayML ?? '—') : '—';
   const mdlHomeMlStr     = hasModelData ? (modelHomeML ?? '—') : '—';
 
@@ -1423,6 +1443,13 @@ interface OddsLinesPanelProps {
   // Controlled model toggle (lifted to parent)
   showModel: boolean;
   onToggleModel: () => void;
+  // Sport identifier (for NHL puck line odds display)
+  sport?: string | null;
+  // NHL model puck line and total odds
+  modelAwayPLOdds?: string | null;
+  modelHomePLOdds?: string | null;
+  modelOverOdds?: string | null;
+  modelUnderOdds?: string | null;
 }
 
 function OddsLinesPanel({
@@ -1464,6 +1491,11 @@ function OddsLinesPanel({
   homeDisplayName,
   showModel,
   onToggleModel,
+  sport,
+  modelAwayPLOdds,
+  modelHomePLOdds,
+  modelOverOdds,
+  modelUnderOdds,
 }: OddsLinesPanelProps) {
 
   const mdlAwayMl = modelAwayML ?? '—';
@@ -1492,11 +1524,20 @@ function OddsLinesPanel({
   const awayMlDisplay = dkAwayMlProp ?? awayMl;
   const homeMlDisplay = dkHomeMlProp ?? homeMl;
 
-  // Model values
-  const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread) ? spreadSign(mdlAwaySpread) : '—';
-  const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread) ? spreadSign(mdlHomeSpread) : '—';
-  const mdlOverTotal     = hasModelData && !isNaN(mdlTotal) ? String(mdlTotal) : '—';
-  const mdlUnderTotal    = hasModelData && !isNaN(mdlTotal) ? String(mdlTotal) : '—';
+  // Model values — for NHL games, append puck line and total odds in parentheses
+  const isNhlGame = sport === 'NHL';
+  const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread)
+    ? (isNhlGame && modelAwayPLOdds ? `${spreadSign(mdlAwaySpread)} (${modelAwayPLOdds})` : spreadSign(mdlAwaySpread))
+    : '—';
+  const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread)
+    ? (isNhlGame && modelHomePLOdds ? `${spreadSign(mdlHomeSpread)} (${modelHomePLOdds})` : spreadSign(mdlHomeSpread))
+    : '—';
+  const mdlOverTotal = hasModelData && !isNaN(mdlTotal)
+    ? (isNhlGame && modelOverOdds ? `${String(mdlTotal)} (${modelOverOdds})` : String(mdlTotal))
+    : '—';
+  const mdlUnderTotal = hasModelData && !isNaN(mdlTotal)
+    ? (isNhlGame && modelUnderOdds ? `${String(mdlTotal)} (${modelUnderOdds})` : String(mdlTotal))
+    : '—';
   const mdlAwayMlStr     = hasModelData ? mdlAwayMl : '—';
   const mdlHomeMlStr     = hasModelData ? mdlHomeMl : '—';
 
@@ -2414,6 +2455,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 homeDisplayName={homeDisplayName}
                 showModel={showModel}
                 onToggleModel={toggleModel}
+                sport={game.sport}
+                modelAwayPLOdds={game.modelAwayPLOdds}
+                modelHomePLOdds={game.modelHomePLOdds}
+                modelOverOdds={game.modelOverOdds}
+                modelUnderOdds={game.modelUnderOdds}
               />
             </div>
           )}
@@ -2523,6 +2569,11 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       homeDisplayName={homeDisplayName}
                       showModel={showModel}
                       onToggleModel={toggleModel}
+                      sport={game.sport}
+                      modelAwayPLOdds={game.modelAwayPLOdds}
+                      modelHomePLOdds={game.modelHomePLOdds}
+                      modelOverOdds={game.modelOverOdds}
+                      modelUnderOdds={game.modelUnderOdds}
                     />
                   </div>
                 </div>

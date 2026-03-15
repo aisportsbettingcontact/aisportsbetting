@@ -1489,5 +1489,11 @@
 - [x] Fix GoalieWatcher to process ALL games on RotoWire (live + final + upcoming), not just upcoming
 - [x] Add schema columns: modelAwayPLOdds, modelHomePLOdds, modelOverOdds, modelUnderOdds, modelPuckLineSpread
 - [x] Add vitest tests for GoalieWatcher (12 tests passing)
-- [ ] Display model puck line odds on public feed GameCard for NHL games
-- [ ] Display model total odds on public feed GameCard for NHL games
+- [x] Display model puck line odds on public feed GameCard for NHL games
+- [x] Display model total odds on public feed GameCard for NHL games
+
+## NHL Model Improvements (2026-03-15 Session 2)
+- [x] Display model puck line odds on public feed GameCard for NHL games (MODEL LINES column)
+- [x] Display model total odds on public feed GameCard for NHL games (MODEL LINES column)
+- [ ] Auto-trigger model run when both goalies are populated (GoalieWatcher + server startup)
+- [ ] Add goalie confirmed/expected status badges to Publish Projections NHL game cards
