@@ -1360,3 +1360,7 @@
 - [x] Integrate OddsCell into mobile OddsTable BOOK cells (full mode)
 - [x] Integrate OddsCell MODEL cells with pill style (neon green edge / white non-edge)
 - [x] Ensure OddsCell scales seamlessly across all breakpoints (clamp-based sizing)
+- [x] DEBUG: Diagnose why DK NJ spread shows wrong value (user reports Dayton +3.5 -118 on DK NJ but app shows different)
+- [x] DEBUG: Diagnose why book odds update constantly/dynamically (possibly pulling live-betting lines from AN instead of pre-game)
+- [x] FIX: Ensure AN scraper targets only pre-game DK NJ lines, not live/in-game lines
+- [x] FIX: Ensure correct book (DK NJ) and correct line type (spread, not live) is being stored and displayed

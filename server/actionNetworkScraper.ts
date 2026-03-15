@@ -114,6 +114,8 @@ interface AnV2Outcome {
   odds: number;
   period: string;
   type: string;
+  /** True when this outcome is a live in-game (not pre-game) line */
+  is_live?: boolean;
 }
 
 /** v2 market object: markets[bookId].event.spread[] / .total[] / .moneyline[] */
@@ -161,15 +163,51 @@ function roundHalf(v: number | null | undefined): number | null {
 
 /**
  * Extracts a single outcome from a v2 market array by side or team_id.
+ *
+ * CRITICAL: The AN v2 API mixes pre-game and live in-game lines in the same
+ * array when a game is in progress. Live lines have `is_live: true` and reflect
+ * the current in-game spread/total (e.g. +8.5 with 10 min left), NOT the
+ * original pre-game line (e.g. +3.5 at tip-off). We ALWAYS want the pre-game
+ * line, so we filter out `is_live=true` outcomes first.
+ *
+ * Strategy:
+ *   1. Try to find a matching outcome with is_live=false (pre-game line).
+ *   2. If none found (game not yet started, no live lines), fall back to any
+ *      matching outcome regardless of is_live flag.
+ *
+ * This ensures that for live games we show the original pre-game DK NJ line
+ * (e.g. Dayton +3.5 -118) rather than the live in-game line (e.g. +8.5 -110).
  */
 function findOutcome(
   arr: AnV2Outcome[] | undefined,
   matcher: { side?: string; teamId?: number }
 ): AnV2Outcome | undefined {
   if (!arr) return undefined;
-  if (matcher.side) return arr.find(o => o.side === matcher.side);
-  if (matcher.teamId != null) return arr.find(o => o.team_id === matcher.teamId);
-  return undefined;
+
+  // Filter to pre-game (non-live) outcomes first
+  const preGame = arr.filter(o => o.is_live !== true);
+  const liveGame = arr.filter(o => o.is_live === true);
+
+  const searchIn = (pool: AnV2Outcome[]) => {
+    if (matcher.side) return pool.find(o => o.side === matcher.side);
+    if (matcher.teamId != null) return pool.find(o => o.team_id === matcher.teamId);
+    return undefined;
+  };
+
+  // Prefer pre-game; fall back to live only if no pre-game line exists
+  const result = searchIn(preGame) ?? searchIn(liveGame);
+
+  // Debug log when a live line is being used as fallback (indicates game is in-progress
+  // but DK has not yet posted a pre-game line — should be rare)
+  if (result?.is_live === true) {
+    console.warn(
+      `[ActionNetwork][findOutcome] WARNING: Using live in-game line as fallback ` +
+      `(no pre-game line found) — side=${matcher.side ?? 'teamId=' + matcher.teamId} ` +
+      `value=${result.value} odds=${result.odds} is_live=true`
+    );
+  }
+
+  return result;
 }
 
 // ─── API constants ─────────────────────────────────────────────────────────────
