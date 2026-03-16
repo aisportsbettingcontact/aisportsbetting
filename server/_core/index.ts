@@ -13,6 +13,7 @@ import { startNbaModelSyncScheduler } from "../nbaModelSync";
 import { startModelWatcher } from "../ncaamModelWatcher";
 import { startNhlModelSyncScheduler } from "../nhlModelSync";
 import { startNhlGoalieWatcher } from "../nhlGoalieWatcher";
+import { validateDiscordConfig } from "./env";
 
 // ─── Global crash protection ─────────────────────────────────────────────────
 // Prevent unhandled promise rejections and uncaught exceptions from killing the
@@ -45,6 +46,11 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 }
 
 async function startServer() {
+  // ─── Discord configuration validation ──────────────────────────────────────
+  // Runs before any server setup. Throws and halts startup if any required
+  // Discord secret is missing. Never prints secret values.
+  validateDiscordConfig();
+
   const app = express();
   const server = createServer(app);
 
