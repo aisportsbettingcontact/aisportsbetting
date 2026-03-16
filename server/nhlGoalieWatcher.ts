@@ -213,8 +213,8 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
       )
     );
 
-  const todayGames    = allGames.filter(g => g.gameDate === todayDate);
-  const tomorrowGames = allGames.filter(g => g.gameDate === tomorrowDate);
+  const todayGames    = allGames.filter((g: Game) => g.gameDate === todayDate);
+  const tomorrowGames = allGames.filter((g: Game) => g.gameDate === tomorrowDate);
 
   result.gamesChecked = allGames.length;
 
