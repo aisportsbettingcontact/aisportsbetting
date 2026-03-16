@@ -1526,3 +1526,7 @@
 - [x] Fix ML vs puck line mathematical inconsistency: WPG ML=+106 (48.6% win) but WPG -1.5 puck line=-273 (73% cover) — impossible, team with 48.6% win rate cannot be 73% to win by 2+
 - [x] Fix puck line favorite assignment: team with more negative ML should always be at -1.5; derive book spread from ML odds not spread field (STL -112 ML = STL is -1.5 favorite, not WPG)
 - [x] NHL puck line fallback: when DK gives ML favorite a +1.5 spread, use FanDuel spread instead (if both DK and FD give +1.5 to ML fav, keep DK as-is)
+- [ ] NHL puck line consensus: use DK + Open majority vote to determine -1.5 favorite (not ML-based); FD is outlier for STL@WPG
+- [ ] NHL puck line best odds: display best available odds between DK NJ and FD NJ for each side of the puck line
+- [ ] Revert NHL puck line to DK NJ only — remove FD fallback and ML-based override, use DK spread as-is
+- [x] Fix STL@WPG spread: DK NJ has WPG Jets -1.5 (+235), STL Blues +1.5 (-290) — DB corrected + model re-run + edge label fix

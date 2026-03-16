@@ -357,10 +357,18 @@ export async function syncNhlModelForToday(
       let spreadDiff: string | null = null;
 
       if (bestPLEdge && bestPLEdge.classification !== "NO EDGE") {
-        // Use the simulation-derived puck line side label
+        // Use the BOOK's puck line for the edge label — must mirror what DK actually offers.
+        // e.g. if DK has STL +1.5 (away underdog), label must say "STL +1.5", not "STL -1.5".
+        const fmtSpread = (v: number | string | null | undefined): string => {
+          if (v == null) return "±1.5";
+          const n = parseFloat(String(v));
+          return isNaN(n) ? "±1.5" : (n >= 0 ? `+${n}` : String(n));
+        };
+        const bookAwayPLLabel = fmtSpread(game.awayBookSpread);
+        const bookHomePLLabel = fmtSpread(game.homeBookSpread);
         const sideLabel = bestPLEdge.side.startsWith("AWAY")
-          ? `${awayAbbrev} ${modelAwayPL}`
-          : `${homeAbbrev} ${modelHomePL}`;
+          ? `${awayAbbrev} ${bookAwayPLLabel}`
+          : `${homeAbbrev} ${bookHomePLLabel}`;
         spreadEdge = `${sideLabel} [${bestPLEdge.classification}]`;
         spreadDiff = String(bestPLEdge.edge_vs_be);  // probability edge in pp
       } else if (mktAwayPLOdds !== null) {
