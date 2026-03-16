@@ -63,17 +63,55 @@ function formatDate(dateStr: string): string {
   }
 }
 
-// ── Edge color scale ──────────────────────────────────────────────────────────
-function getEdgeColor(diff: number): string {
-  if (diff <= 0)  return "hsl(var(--muted-foreground))";
-  if (diff < 1.5) return "#FF3131";
-  if (diff < 2.0) return "#FF6B00";
-  if (diff < 2.5) return "#FF9500";
-  if (diff < 3.0) return "#FFB800";
-  if (diff < 3.5) return "#FFD700";
-  if (diff < 4.0) return "#FFFF33";
-  if (diff < 4.5) return "#AAFF1A";
-  return "#39FF14";
+// ── Edge Calculation Engine (spec-compliant) ─────────────────────────────────
+//
+// RULE: Edge lives in the juice, not the line.
+// The line tells you what you're betting. The juice tells you what you're paying.
+// Edge = modelImplied - bookImplied (expressed as percentage points)
+//
+// Each market (spread, total, ML) is independent — never averaged, never combined.
+// Recalculate on every render (derived state, not stored state).
+
+/** Convert American odds to implied probability (raw, with vig). */
+function americanToImplied(odds: number): number {
+  if (isNaN(odds)) return NaN;
+  if (odds < 0) return (-odds) / (-odds + 100);
+  return 100 / (odds + 100);
+}
+
+/**
+ * Calculate edge in percentage points.
+ * Positive = model likes this bet over book price.
+ * Negative = book is more efficient than model here.
+ * Returns NaN if either input is NaN (missing data).
+ */
+function calculateEdge(bookOdds: number, modelOdds: number): number {
+  const bookImplied  = americanToImplied(bookOdds);
+  const modelImplied = americanToImplied(modelOdds);
+  if (isNaN(bookImplied) || isNaN(modelImplied)) return NaN;
+  return (modelImplied - bookImplied) * 100;
+}
+
+/** 6-tier verdict from edge pp value. */
+function getVerdict(edge: number): string {
+  if (isNaN(edge)) return '—';
+  if (edge >= 8)    return 'ELITE';
+  if (edge >= 5)    return 'STRONG';
+  if (edge >= 2.5)  return 'PLAYABLE';
+  if (edge >= 0.5)  return 'SMALL';
+  if (edge >= -1)   return 'NEUTRAL';
+  return 'FADE';
+}
+
+/** Color for a given edge pp value (spec-compliant 6-tier scale). */
+function getEdgeColor(edge: number): string {
+  if (isNaN(edge))  return 'rgba(255,255,255,0.30)';
+  if (edge >= 8)    return '#39FF14';   // ELITE   — full neon green
+  if (edge >= 5)    return '#7FFF00';   // STRONG  — chartreuse
+  if (edge >= 2.5)  return '#ADFF2F';   // PLAYABLE — yellow-green
+  if (edge >= 0.5)  return 'rgba(255,255,255,0.60)';  // SMALL — white/60
+  if (edge >= -1)   return 'rgba(255,255,255,0.30)';  // NEUTRAL — white/30
+  return '#FF2244';                     // FADE    — red
 }
 
 
@@ -3106,6 +3144,86 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const awayMlIsEdge      = awayMlEdgeDetected;
             const homeMlIsEdge      = homeMlEdgeDetected;
 
+            // ── Spec-compliant edge pp calculations (juice-only math, per market) ────────
+            // RULE: Edge lives in the juice, not the line.
+            // Each market is independent — never averaged, never combined.
+            // Recalculate on every render (derived state, not stored state).
+            // AWAY spread edge: book juice vs model juice
+            const awaySpreadEdgePP: number = (() => {
+              const bkOdds  = toNum(game.awaySpreadOdds);
+              const mdlOdds = toNum(game.modelAwayPLOdds);
+              return calculateEdge(bkOdds, mdlOdds);
+            })();
+            // HOME spread edge
+            const homeSpreadEdgePP: number = (() => {
+              const bkOdds  = toNum(game.homeSpreadOdds);
+              const mdlOdds = toNum(game.modelHomePLOdds);
+              return calculateEdge(bkOdds, mdlOdds);
+            })();
+            // OVER total edge
+            const overEdgePP: number = (() => {
+              const bkOdds  = toNum(game.overOdds);
+              const mdlOdds = toNum(game.modelOverOdds);
+              return calculateEdge(bkOdds, mdlOdds);
+            })();
+            // UNDER total edge
+            const underEdgePP: number = (() => {
+              const bkOdds  = toNum(game.underOdds);
+              const mdlOdds = toNum(game.modelUnderOdds);
+              return calculateEdge(bkOdds, mdlOdds);
+            })();
+            // AWAY ML edge
+            const awayMlEdgePP: number = (() => {
+              const bkOdds  = toNum(game.awayML);
+              const mdlOdds = toNum(game.modelAwayML);
+              return calculateEdge(bkOdds, mdlOdds);
+            })();
+            // HOME ML edge
+            const homeMlEdgePP: number = (() => {
+              const bkOdds  = toNum(game.homeML);
+              const mdlOdds = toNum(game.modelHomeML);
+              return calculateEdge(bkOdds, mdlOdds);
+            })();
+            // Best spread edge (away or home, whichever is higher)
+            const spreadEdgePP: number = (() => {
+              const a = isNaN(awaySpreadEdgePP) ? -Infinity : awaySpreadEdgePP;
+              const h = isNaN(homeSpreadEdgePP) ? -Infinity : homeSpreadEdgePP;
+              const best = Math.max(a, h);
+              return best === -Infinity ? NaN : best;
+            })();
+            // Best total edge (over or under, whichever is higher)
+            const totalEdgePP: number = (() => {
+              const o = isNaN(overEdgePP) ? -Infinity : overEdgePP;
+              const u = isNaN(underEdgePP) ? -Infinity : underEdgePP;
+              const best = Math.max(o, u);
+              return best === -Infinity ? NaN : best;
+            })();
+            // Best ML edge (away or home, whichever is higher)
+            const mlEdgePP: number = (() => {
+              const a = isNaN(awayMlEdgePP) ? -Infinity : awayMlEdgePP;
+              const h = isNaN(homeMlEdgePP) ? -Infinity : homeMlEdgePP;
+              const best = Math.max(a, h);
+              return best === -Infinity ? NaN : best;
+            })();
+            // Best edge across all 3 markets (for EdgeBadge container styling)
+            const bestEdgePP: number = (() => {
+              const vals = [spreadEdgePP, totalEdgePP, mlEdgePP].filter(v => !isNaN(v));
+              return vals.length > 0 ? Math.max(...vals) : NaN;
+            })();
+            if (process.env.NODE_ENV === 'development') {
+              console.log(
+                `%c[GameCard:EdgePP] game=${game.id}` +
+                ` spr=${isNaN(spreadEdgePP)?'NaN':spreadEdgePP.toFixed(2)}pp` +
+                ` (away=${isNaN(awaySpreadEdgePP)?'NaN':awaySpreadEdgePP.toFixed(2)} home=${isNaN(homeSpreadEdgePP)?'NaN':homeSpreadEdgePP.toFixed(2)})` +
+                ` | tot=${isNaN(totalEdgePP)?'NaN':totalEdgePP.toFixed(2)}pp` +
+                ` (over=${isNaN(overEdgePP)?'NaN':overEdgePP.toFixed(2)} under=${isNaN(underEdgePP)?'NaN':underEdgePP.toFixed(2)})` +
+                ` | ml=${isNaN(mlEdgePP)?'NaN':mlEdgePP.toFixed(2)}pp` +
+                ` (away=${isNaN(awayMlEdgePP)?'NaN':awayMlEdgePP.toFixed(2)} home=${isNaN(homeMlEdgePP)?'NaN':homeMlEdgePP.toFixed(2)})` +
+                ` | best=${isNaN(bestEdgePP)?'NaN':bestEdgePP.toFixed(2)}pp → ${getVerdict(bestEdgePP)}`,
+                'color:#39FF14;font-size:9px'
+              );
+            }
+
             // ── Tab bar config ────────────────────────────────────────────────
             const TABS: { id: MobileTab; label: string }[] = [
               { id: 'book',   label: 'BOOK LINES' },
@@ -3138,18 +3256,34 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               const bkLabelColor = (isDualTab || isBookTab) ? 'rgba(255,255,255,0.85)' : isModelTab ? 'rgba(255,255,255,0.50)' : 'rgba(255,255,255,0.30)';
               const mdlLabelColor = (isDualTab || isModelTab) ? '#39FF14' : isBookTab ? 'rgba(255,255,255,0.50)' : 'rgba(255,255,255,0.30)';
 
-              // Cell renderer: line on top (white), odds below (neon green for model / muted for book)
-              const Cell = ({ line, odds, isEdgeCell, isBook: cellIsBook }: { line: string; odds: string | null; isEdgeCell: boolean; isBook: boolean }) => {
-                const lineColor = isEdgeCell && (isDualTab || (cellIsBook ? isBookTab : isModelTab)) ? '#39FF14' : '#FFFFFF';
-                const oddsColor = cellIsBook
-                  ? (isEdgeCell ? 'rgba(57,255,20,0.80)' : 'rgba(180,180,180,0.70)')
-                  : (isEdgeCell ? '#39FF14' : 'rgba(57,255,20,0.65)');
-                const lineFs = 'clamp(11px, 2.8vw, 13.5px)';
-                const oddsFs = 'clamp(9.5px, 2.3vw, 11px)';
+              // BettingCell color grammar (spec-compliant):
+              // Line: white/75% weight-400 11px (unbold — the line tells you WHAT you're betting)
+              // Juice: white/90% (book) or #39FF14 (model) weight-700 18px (bold — the juice tells you WHAT YOU'RE PAYING)
+              // Cell bg: #2a2a2e, border-radius: 14px, border: 1px solid rgba(255,255,255,0.06)
+              // THE ONLY DIFFERENCE BETWEEN BOOK AND MODEL: juice color. White → Neon green.
+              // BettingCell spec:
+              // - When odds is provided (spread/total): line on top (white/75% 400 11px), juice below (colored 700 18px)
+              // - When odds is null (ML market): ML value IS the juice — show only the bold colored value (no line row)
+              const Cell = ({ line, odds, isBook: cellIsBook }: { line: string; odds: string | null; isBook: boolean }) => {
+                const juiceColor = cellIsBook
+                  ? 'rgba(255,255,255,0.90)'   // BOOK: white/90%
+                  : '#39FF14';                  // MODEL: neon green
+                const hasLine = odds !== null;  // spread/total have separate line + juice; ML does not
                 return (
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1px', padding: '4px 2px', minWidth: 0 }}>
-                    <span style={{ fontSize: lineFs, fontWeight: 700, color: lineColor, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{line}</span>
-                    {odds && <span style={{ fontSize: oddsFs, fontWeight: 500, color: oddsColor, lineHeight: 1.1, whiteSpace: 'nowrap' }}>{odds}</span>}
+                  <div style={{
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                    background: '#2a2a2e', borderRadius: '14px', padding: hasLine ? '5px 4px' : '8px 4px',
+                    border: '1px solid rgba(255,255,255,0.06)', flex: 1, minWidth: 0,
+                    gap: '1px',
+                  }}>
+                    {hasLine && (
+                      // Line value: white/75% weight-400 11px — unbold, what you're betting
+                      <span style={{ fontSize: '11px', fontWeight: 400, color: 'rgba(255,255,255,0.75)', lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%' }}>{line}</span>
+                    )}
+                    {/* Juice / ML: bold 18px — what you're paying */}
+                    <span style={{ fontSize: 'clamp(13px, 3.5vw, 18px)', fontWeight: 700, color: juiceColor, lineHeight: 1.1, whiteSpace: 'nowrap' }}>
+                      {hasLine ? odds : line}
+                    </span>
                   </div>
                 );
               };
@@ -3166,18 +3300,14 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     <span style={{ fontSize: '7.5px', fontWeight: 700, color: mdlLabelColor, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>MODEL</span>
                   </div>
                   {/* Away row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-                    <Cell line={awayBook} odds={awayBookOdds} isEdgeCell={awayEdge} isBook={true} />
-                    <div style={{ borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
-                      <Cell line={awayModel} odds={awayModelOdds} isEdgeCell={awayEdge && isModelTab} isBook={false} />
-                    </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px', padding: '3px 3px 1.5px' }}>
+                    <Cell line={awayBook} odds={awayBookOdds} isBook={true} />
+                    <Cell line={awayModel} odds={awayModelOdds} isBook={false} />
                   </div>
                   {/* Home row */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-                    <Cell line={homeBook} odds={homeBookOdds} isEdgeCell={homeEdge} isBook={true} />
-                    <div style={{ borderLeft: '1px solid rgba(255,255,255,0.06)' }}>
-                      <Cell line={homeModel} odds={homeModelOdds} isEdgeCell={homeEdge && isModelTab} isBook={false} />
-                    </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '3px', padding: '1.5px 3px 3px' }}>
+                    <Cell line={homeBook} odds={homeBookOdds} isBook={true} />
+                    <Cell line={homeModel} odds={homeModelOdds} isBook={false} />
                   </div>
                 </div>
               );
@@ -3227,44 +3357,55 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     homeEdge={homeMlIsEdge}
                   />
                 </div>
-                {/* EdgeBadge: rightmost column — compact neon pill showing best edge, or muted dash */}
+                {/* EdgeBadge: spec-compliant — 3 independent market rows (SPR/TOT/ML), verdict tier + pp value */}
                 {(() => {
-                  const hasAnyEdge = awaySpreadIsEdge || homeSpreadIsEdge || overTotalIsEdge || underTotalIsEdge || awayMlIsEdge || homeMlIsEdge;
-                  const rawSpreadEdge = computedSpreadEdge && computedSpreadEdge !== 'PASS' ? computedSpreadEdge : null;
-                  const rawTotalEdge  = computedTotalEdge  && computedTotalEdge  !== 'PASS' ? computedTotalEdge  : null;
-                  const bestRaw = rawSpreadEdge ?? rawTotalEdge;
-                  const parseEdgeLabel = (raw: string | null): { team: string; line: string; tier: string } | null => {
-                    if (!raw) return null;
-                    const m = raw.match(/^(.+?)\s+([+-][\d.]+)\s+\[([^\]]+)\]/);
-                    if (m) return { team: m[1].trim(), line: m[2], tier: m[3].replace(' EDGE', '').replace(' LEAN', '') };
-                    const t = raw.match(/^(OVER|UNDER)\s+([\d.]+)\s+\[([^\]]+)\]/);
-                    if (t) return { team: t[1], line: t[2], tier: t[3].replace(' EDGE', '').replace(' LEAN', '') };
-                    return null;
+                  // Three markets, three independent edges. Never combined, never averaged.
+                  // Each row: market label | verdict tier | pp value
+                  // Container bg/border driven by bestEdgePP across all 3 markets
+                  const containerBg = isNaN(bestEdgePP) || bestEdgePP < 1.5
+                    ? 'rgba(255,255,255,0.03)'
+                    : 'rgba(57,255,20,0.07)';  // neon green tint for any edge
+                  const containerBorder = isNaN(bestEdgePP) || bestEdgePP < 1.5
+                    ? '1px solid rgba(255,255,255,0.07)'
+                    : `1px solid ${getEdgeColor(bestEdgePP)}`;
+
+                  // Per-market row renderer
+                  const EdgeRow = ({ mkt, edgePP }: { mkt: string; edgePP: number }) => {
+                    const verdict = getVerdict(edgePP);
+                    const color = getEdgeColor(edgePP);
+                    const hasEdge = !isNaN(edgePP) && edgePP >= 1.5;
+                    const ppStr = isNaN(edgePP) ? '—' : (edgePP >= 0 ? `+${edgePP.toFixed(1)}` : edgePP.toFixed(1));
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2px 2px', borderBottom: '1px solid rgba(255,255,255,0.05)', width: '100%' }}>
+                        {/* Market label */}
+                        <span style={{ fontSize: '7px', fontWeight: 700, color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', letterSpacing: '0.06em', lineHeight: 1 }}>{mkt}</span>
+                        {/* Verdict tier */}
+                        <span style={{ fontSize: 'clamp(6.5px, 1.6vw, 8px)', fontWeight: 800, color: hasEdge ? color : 'rgba(255,255,255,0.20)', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.1, textAlign: 'center' }}>
+                          {hasEdge ? verdict : 'PASS'}
+                        </span>
+                        {/* pp value */}
+                        <span style={{ fontSize: 'clamp(8px, 2vw, 10px)', fontWeight: 700, color: hasEdge ? color : 'rgba(255,255,255,0.18)', lineHeight: 1.1 }}>
+                          {ppStr}
+                        </span>
+                      </div>
+                    );
                   };
-                  const parsed = parseEdgeLabel(bestRaw);
-                  const tierColor = (tier: string) => {
-                    const t = tier.toUpperCase();
-                    if (t.includes('ELITE') || t.includes('STRONG')) return '#39FF14';
-                    if (t.includes('PLAYABLE')) return 'rgba(57,255,20,0.85)';
-                    return 'rgba(57,255,20,0.60)';
-                  };
+
                   return (
                     <div style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-                      background: hasAnyEdge ? 'rgba(57,255,20,0.07)' : 'rgba(255,255,255,0.04)',
-                      border: hasAnyEdge ? '1px solid rgba(57,255,20,0.30)' : '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: '10px', padding: '5px 4px', minWidth: '48px', maxWidth: '60px', flexShrink: 0,
-                      gap: '2px', alignSelf: 'stretch',
+                      display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'space-evenly',
+                      background: containerBg,
+                      border: containerBorder,
+                      borderRadius: '10px', minWidth: '46px', maxWidth: '58px', flexShrink: 0,
+                      alignSelf: 'stretch', overflow: 'hidden',
                     }}>
-                      {parsed ? (
-                        <>
-                          <span style={{ fontSize: 'clamp(7.5px, 1.9vw, 9px)', fontWeight: 800, color: tierColor(parsed.tier), textAlign: 'center', lineHeight: 1.1, letterSpacing: '0.05em', textTransform: 'uppercase' }}>{parsed.tier}</span>
-                          <span style={{ fontSize: 'clamp(8.5px, 2.1vw, 10px)', fontWeight: 700, color: '#FFFFFF', textAlign: 'center', lineHeight: 1.15 }}>{parsed.team}</span>
-                          <span style={{ fontSize: 'clamp(8.5px, 2.1vw, 10px)', fontWeight: 700, color: tierColor(parsed.tier), textAlign: 'center', lineHeight: 1.15 }}>{parsed.line}</span>
-                        </>
-                      ) : (
-                        <span style={{ fontSize: 'clamp(9px, 2.2vw, 11px)', fontWeight: 500, color: 'rgba(255,255,255,0.22)', textAlign: 'center' }}>—</span>
-                      )}
+                      {/* EDGE header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px 2px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+                        <span style={{ fontSize: '7px', fontWeight: 800, color: isNaN(bestEdgePP) || bestEdgePP < 1.5 ? 'rgba(255,255,255,0.35)' : getEdgeColor(bestEdgePP), textTransform: 'uppercase', letterSpacing: '0.08em' }}>EDGE</span>
+                      </div>
+                      <EdgeRow mkt="SPR" edgePP={spreadEdgePP} />
+                      <EdgeRow mkt="TOT" edgePP={totalEdgePP} />
+                      <EdgeRow mkt="ML" edgePP={mlEdgePP} />
                     </div>
                   );
                 })()}
