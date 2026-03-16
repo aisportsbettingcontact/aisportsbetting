@@ -1544,3 +1544,9 @@
 - [x] Redesign EdgeBadge: 3 stacked rows (SPR/O/U/ML) with verdict label + pp value, dynamic bg/border from bestEdge
 - [x] Apply BettingCell color grammar: line=white/75% 400 11px, juice=white/90% or neon green 700 18px
 - [x] Wire all three market edges from juice numbers (not string parsing), recalculate on every render
+- [x] Shrink left panel to 80px — keep logo (20px) and star button (compact 10px)
+- [x] Show abbreviation-only team name (e.g. "STL") + score on same row in left panel
+- [x] Replace circular sub-cells with flat 2-column BettingCell grid (BK/MDL headers, line, juice rows)
+- [x] Equalize all 3 market columns to flex-1 (SPREAD/TOTAL/ML identical width)
+- [x] EdgeBadge fixed at 60px (w-[60px] shrink-0)
+- [x] Outer row: gap-[4px] to fit 375px screen budget
