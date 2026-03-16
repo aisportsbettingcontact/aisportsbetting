@@ -427,10 +427,14 @@ export async function syncNhlModelForToday(
           // Puck line spread and fair value odds from model
           modelAwayPuckLine:   modelResult.away_puck_line,        // e.g. "+1.5" or "-2.5"
           modelHomePuckLine:   modelResult.home_puck_line,        // e.g. "-1.5" or "+2.5"
-          modelAwayPLOdds:     fmtML(modelResult.away_puck_line_odds),
-          modelHomePLOdds:     fmtML(modelResult.home_puck_line_odds),
-          modelOverOdds:       fmtML(modelResult.over_odds),
-          modelUnderOdds:      fmtML(modelResult.under_odds),
+          // Model fair odds AT the BOOK's ±1.5 puck line (for side-by-side display)
+          // e.g. book shows +1.5 (-198), model shows +1.5 (-143) → edge detected
+          modelAwayPLOdds:     fmtML(modelResult.mkt_pl_away_odds ?? modelResult.away_puck_line_odds),
+          modelHomePLOdds:     fmtML(modelResult.mkt_pl_home_odds ?? modelResult.home_puck_line_odds),
+          // Model fair odds AT the BOOK's total line (for side-by-side display)
+          // e.g. book shows O/U 6.5 (-115/-105), model shows O/U 6.5 (+138/-138) → edge detected
+          modelOverOdds:       fmtML(modelResult.mkt_total_over_odds ?? modelResult.over_odds),
+          modelUnderOdds:      fmtML(modelResult.mkt_total_under_odds ?? modelResult.under_odds),
           // Goalie info
           awayGoalie:          awayGoalieName ?? undefined,
           homeGoalie:          homeGoalieName ?? undefined,

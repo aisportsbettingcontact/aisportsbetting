@@ -785,11 +785,14 @@ function DesktopMergedPanel({
   const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread)
     ? (isNhlGame && mdlHomePLOdds ? `${spreadSign(mdlHomeSpread)} (${mdlHomePLOdds})` : spreadSign(mdlHomeSpread))
     : '—';
-  const mdlOver = hasModelData && !isNaN(mdlTotal)
-    ? (isNhlGame && mdlOverOdds ? `${String(mdlTotal)} (${mdlOverOdds})` : String(mdlTotal))
+  // For NHL: display the BOOK's total line with the model's fair odds at that line
+  // e.g. book O/U 6.5 → model shows "6.5 (+138)" not "6.0 (+141)"
+  const mdlDisplayTotal = isNhlGame && !isNaN(bkTotal) ? bkTotal : mdlTotal;
+  const mdlOver = hasModelData && !isNaN(mdlDisplayTotal)
+    ? (isNhlGame && mdlOverOdds ? `${String(mdlDisplayTotal)} (${mdlOverOdds})` : String(mdlDisplayTotal))
     : '—';
-  const mdlUnder = hasModelData && !isNaN(mdlTotal)
-    ? (isNhlGame && mdlUnderOdds ? `${String(mdlTotal)} (${mdlUnderOdds})` : String(mdlTotal))
+  const mdlUnder = hasModelData && !isNaN(mdlDisplayTotal)
+    ? (isNhlGame && mdlUnderOdds ? `${String(mdlDisplayTotal)} (${mdlUnderOdds})` : String(mdlDisplayTotal))
     : '—';
   const mdlAwayMlStr     = hasModelData ? (modelAwayML ?? '—') : '—';
   const mdlHomeMlStr     = hasModelData ? (modelHomeML ?? '—') : '—';
@@ -1544,11 +1547,14 @@ function OddsLinesPanel({
   const mdlHomeSpreadStr = hasModelData && !isNaN(mdlHomeSpread)
     ? (isNhlGame && modelHomePLOdds ? `${spreadSign(mdlHomeSpread)} (${modelHomePLOdds})` : spreadSign(mdlHomeSpread))
     : '—';
-  const mdlOverTotal = hasModelData && !isNaN(mdlTotal)
-    ? (isNhlGame && modelOverOdds ? `${String(mdlTotal)} (${modelOverOdds})` : String(mdlTotal))
+  // For NHL: display the BOOK's total line with the model's fair odds at that line
+  // e.g. book O/U 6.5 → model shows "6.5 (+138)" not "6.0 (+141)"
+  const mdlDisplayTotal = isNhlGame && !isNaN(bkTotal) ? bkTotal : mdlTotal;
+  const mdlOverTotal = hasModelData && !isNaN(mdlDisplayTotal)
+    ? (isNhlGame && modelOverOdds ? `${String(mdlDisplayTotal)} (${modelOverOdds})` : String(mdlDisplayTotal))
     : '—';
-  const mdlUnderTotal = hasModelData && !isNaN(mdlTotal)
-    ? (isNhlGame && modelUnderOdds ? `${String(mdlTotal)} (${modelUnderOdds})` : String(mdlTotal))
+  const mdlUnderTotal = hasModelData && !isNaN(mdlDisplayTotal)
+    ? (isNhlGame && modelUnderOdds ? `${String(mdlDisplayTotal)} (${modelUnderOdds})` : String(mdlDisplayTotal))
     : '—';
   const mdlAwayMlStr     = hasModelData ? mdlAwayMl : '—';
   const mdlHomeMlStr     = hasModelData ? mdlHomeMl : '—';
@@ -2798,12 +2804,14 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const mdlHomeSpreadStr = !isNaN(homeModelSpread)
               ? (isNhlGame && game.modelHomePLOdds ? `${spreadSign(homeModelSpread)} (${game.modelHomePLOdds})` : spreadSign(homeModelSpread))
               : '—';
-            const mdlTotalStr = !isNaN(modelTotal) ? String(modelTotal) : '—';
-            // For NHL: total display strings include O/U odds
-            const mdlOverTotalStr  = !isNaN(modelTotal)
+            // For NHL: display the BOOK's total line with the model's fair odds at that line
+            const mdlDisplayTotal = isNhlGame && !isNaN(bookTotal) ? bookTotal : modelTotal;
+            const mdlTotalStr = !isNaN(mdlDisplayTotal) ? String(mdlDisplayTotal) : '—';
+            // For NHL: total display strings include O/U odds at the BOOK's line
+            const mdlOverTotalStr  = !isNaN(mdlDisplayTotal)
               ? (isNhlGame && game.modelOverOdds  ? `${mdlTotalStr} (${game.modelOverOdds})`  : mdlTotalStr)
               : '—';
-            const mdlUnderTotalStr = !isNaN(modelTotal)
+            const mdlUnderTotalStr = !isNaN(mdlDisplayTotal)
               ? (isNhlGame && game.modelUnderOdds ? `${mdlTotalStr} (${game.modelUnderOdds})` : mdlTotalStr)
               : '—';
             // ML values — always show + prefix for positive (underdog) values

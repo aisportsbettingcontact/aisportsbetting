@@ -100,10 +100,16 @@ export interface NhlModelResult {
   // Moneylines
   away_ml:             number;
   home_ml:             number;
-  // Total
+  // Total (model's own derived line)
   total_line:          number;
   over_odds:           number;
   under_odds:          number;
+  // Model fair odds AT the BOOK's lines (for side-by-side display)
+  // These are the key fields for edge detection: same line, different odds
+  mkt_pl_away_odds:    number;   // model fair odds at book's +1.5 puck line
+  mkt_pl_home_odds:    number;   // model fair odds at book's -1.5 puck line
+  mkt_total_over_odds: number;   // model fair odds at book's total line (over)
+  mkt_total_under_odds: number;  // model fair odds at book's total line (under)
   // Probabilities
   away_win_pct:        number;
   home_win_pct:        number;
@@ -170,6 +176,8 @@ export async function runNhlModelForGame(input: NhlModelEngineInput): Promise<Nh
         home_puck_line: "-1.5", home_puck_line_odds: 0,
         away_ml: 0, home_ml: 0,
         total_line: 0, over_odds: 0, under_odds: 0,
+        mkt_pl_away_odds: 0, mkt_pl_home_odds: 0,
+        mkt_total_over_odds: 0, mkt_total_under_odds: 0,
         away_win_pct: 0, home_win_pct: 0,
         away_pl_cover_pct: 0, home_pl_cover_pct: 0,
         over_pct: 0, under_pct: 0,
@@ -194,15 +202,17 @@ export async function runNhlModelForGame(input: NhlModelEngineInput): Promise<Nh
           away_goalie: input.away_goalie,
           home_goalie: input.home_goalie,
           proj_away_goals: 0, proj_home_goals: 0,
-          away_puck_line: "+1.5", away_puck_line_odds: 0,
-          home_puck_line: "-1.5", home_puck_line_odds: 0,
-          away_ml: 0, home_ml: 0,
-          total_line: 0, over_odds: 0, under_odds: 0,
-          away_win_pct: 0, home_win_pct: 0,
-          away_pl_cover_pct: 0, home_pl_cover_pct: 0,
-          over_pct: 0, under_pct: 0,
-          edges: [],
-          error: `Python exited with code ${code}: ${stderr.slice(-200)}`,
+        away_puck_line: "+1.5", away_puck_line_odds: 0,
+        home_puck_line: "-1.5", home_puck_line_odds: 0,
+        away_ml: 0, home_ml: 0,
+        total_line: 0, over_odds: 0, under_odds: 0,
+        mkt_pl_away_odds: 0, mkt_pl_home_odds: 0,
+        mkt_total_over_odds: 0, mkt_total_under_odds: 0,
+        away_win_pct: 0, home_win_pct: 0,
+        away_pl_cover_pct: 0, home_pl_cover_pct: 0,
+        over_pct: 0, under_pct: 0,
+        edges: [],
+        error: `Python exited with code ${code}: ${stderr.slice(-200)}`,
         });
         return;
       }
@@ -239,15 +249,17 @@ export async function runNhlModelForGame(input: NhlModelEngineInput): Promise<Nh
           away_goalie: input.away_goalie,
           home_goalie: input.home_goalie,
           proj_away_goals: 0, proj_home_goals: 0,
-          away_puck_line: "+1.5", away_puck_line_odds: 0,
-          home_puck_line: "-1.5", home_puck_line_odds: 0,
-          away_ml: 0, home_ml: 0,
-          total_line: 0, over_odds: 0, under_odds: 0,
-          away_win_pct: 0, home_win_pct: 0,
-          away_pl_cover_pct: 0, home_pl_cover_pct: 0,
-          over_pct: 0, under_pct: 0,
-          edges: [],
-          error: `JSON parse error: ${parseErr}`,
+        away_puck_line: "+1.5", away_puck_line_odds: 0,
+        home_puck_line: "-1.5", home_puck_line_odds: 0,
+        away_ml: 0, home_ml: 0,
+        total_line: 0, over_odds: 0, under_odds: 0,
+        mkt_pl_away_odds: 0, mkt_pl_home_odds: 0,
+        mkt_total_over_odds: 0, mkt_total_under_odds: 0,
+        away_win_pct: 0, home_win_pct: 0,
+        away_pl_cover_pct: 0, home_pl_cover_pct: 0,
+        over_pct: 0, under_pct: 0,
+        edges: [],
+        error: `JSON parse error: ${parseErr}`,
         });
       }
     });
@@ -269,6 +281,8 @@ export async function runNhlModelForGame(input: NhlModelEngineInput): Promise<Nh
         home_puck_line: "-1.5", home_puck_line_odds: 0,
         away_ml: 0, home_ml: 0,
         total_line: 0, over_odds: 0, under_odds: 0,
+        mkt_pl_away_odds: 0, mkt_pl_home_odds: 0,
+        mkt_total_over_odds: 0, mkt_total_under_odds: 0,
         away_win_pct: 0, home_win_pct: 0,
         away_pl_cover_pct: 0, home_pl_cover_pct: 0,
         over_pct: 0, under_pct: 0,

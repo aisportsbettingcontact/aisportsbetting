@@ -1088,6 +1088,37 @@ def originate_game(inp: dict) -> dict:
         mkt_total,
     )
 
+    # ── Step 10: Compute model fair odds AT the BOOK's lines ─────────────────
+    # This is the core of the edge-finding framework:
+    # Display model odds at the SAME line as the book, not the model's derived line.
+    # e.g. if book has O/U 6.5, show model's fair odds at 6.5 (not at model's 6.0)
+    n_sim = len(away_scores)
+    total_dist  = build_total_distribution(away_scores, home_scores)
+    margin_dist = build_margin_distribution(away_scores, home_scores)
+
+    # Model fair odds at BOOK total line
+    if mkt_total is not None:
+        p_over_at_mkt  = prob_total_over(total_dist, mkt_total, n_sim)
+        p_under_at_mkt = prob_total_under(total_dist, mkt_total, n_sim)
+        # Redistribute push probability
+        push_at_mkt = 1.0 - p_over_at_mkt - p_under_at_mkt
+        p_over_at_mkt  += push_at_mkt * 0.5
+        p_under_at_mkt += push_at_mkt * 0.5
+        mkt_total_model_over_odds  = prob_to_ml(p_over_at_mkt)
+        mkt_total_model_under_odds = prob_to_ml(p_under_at_mkt)
+        print(f"[NHLModel]   Model odds @ book total {mkt_total}: O={format_ml(mkt_total_model_over_odds)} U={format_ml(mkt_total_model_under_odds)}", file=sys.stderr)
+    else:
+        mkt_total_model_over_odds  = model_over_odds
+        mkt_total_model_under_odds = model_under_odds
+
+    # Model fair odds at BOOK puck line (always ±1.5 in NHL)
+    # threshold=2 means: home must win by 2+ to cover -1.5
+    p_home_pl_at_mkt = prob_margin_cover(margin_dist, 2, n_sim, home_covers=True)
+    p_away_pl_at_mkt = prob_margin_cover(margin_dist, 2, n_sim, home_covers=False)
+    mkt_pl_model_home_odds = prob_to_ml(p_home_pl_at_mkt)
+    mkt_pl_model_away_odds = prob_to_ml(p_away_pl_at_mkt)
+    print(f"[NHLModel]   Model odds @ book PL ±1.5: away={format_ml(mkt_pl_model_away_odds)} home={format_ml(mkt_pl_model_home_odds)}", file=sys.stderr)
+
     elapsed = time.time() - t0
     print(f"[NHLModel]   ✓ Done in {elapsed:.3f}s | Edges detected: {len(edges)}", file=sys.stderr)
     print(f"[NHLModel] ════════════════════════════════════════════════════\n", file=sys.stderr)
@@ -1111,13 +1142,21 @@ def originate_game(inp: dict) -> dict:
         "home_puck_line":       f"{model_home_pl_spread:+.1f}",
         "home_puck_line_odds":  model_home_pl_odds,
         "puck_line_spread":     probs["puck_line_spread"],  # 1.5 or 2.5 (absolute)
+        # Model fair odds AT the BOOK's ±1.5 puck line (for side-by-side display)
+        # These are the odds to show next to the book's +1.5/-1.5 line
+        "mkt_pl_away_odds":     mkt_pl_model_away_odds,
+        "mkt_pl_home_odds":     mkt_pl_model_home_odds,
         # Moneylines (Section 8)
         "away_ml":              model_away_ml,
         "home_ml":              model_home_ml,
-        # Total (Section 10)
+        # Total (Section 10) — model's own derived line
         "total_line":           model_total_line,
         "over_odds":            model_over_odds,
         "under_odds":           model_under_odds,
+        # Model fair odds AT the BOOK's total line (for side-by-side display)
+        # e.g. if book has 6.5, these are model's fair odds at 6.5
+        "mkt_total_over_odds":  mkt_total_model_over_odds,
+        "mkt_total_under_odds": mkt_total_model_under_odds,
         # Probabilities (Section 7)
         "away_win_pct":         round(probs["away_win"] * 100, 2),
         "home_win_pct":         round(probs["home_win"] * 100, 2),
