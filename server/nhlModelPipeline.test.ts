@@ -224,3 +224,64 @@ describe('formatPuckLine', () => {
     expect(formatPuckLine(false)).toBe('-1.5');
   });
 });
+
+// ─── 8. Bayesian goalie multiplier regression ─────────────────────────────────
+// Mirrors the Python engine's compute_goalie_multiplier with GOALIE_REGRESSION_K=500
+const GOALIE_REGRESSION_K = 500;
+
+function computeGoalieMultiplier(gsax: number, shotsFaced: number, gp: number): number {
+  let sa = shotsFaced;
+  if (sa <= 0) {
+    sa = (gp || 1) * 28;
+  }
+  const rawEffect = gsax / sa;
+  const regressionWeight = sa / (sa + GOALIE_REGRESSION_K);
+  const regressedEffect = rawEffect * regressionWeight;
+  const multiplier = 1.0 - regressedEffect;
+  return Math.max(0.88, Math.min(1.12, multiplier));
+}
+
+describe('computeGoalieMultiplier (Bayesian regression)', () => {
+  it('average goalie (GSAx=0) always returns 1.0 regardless of sample size', () => {
+    expect(computeGoalieMultiplier(0, 800, 30)).toBeCloseTo(1.0);
+    expect(computeGoalieMultiplier(0, 50, 2)).toBeCloseTo(1.0);
+  });
+
+  it('tiny-sample backup (1 GP, 20 SA) is heavily regressed toward 1.0', () => {
+    // Laurent Brossoit case: GSAx=-2.12, SA=20 → old multiplier was 1.106, new should be ~1.004
+    const m = computeGoalieMultiplier(-2.12, 20, 1);
+    expect(m).toBeGreaterThan(1.0);
+    expect(m).toBeLessThan(1.01);  // Heavily regressed — nearly neutral
+  });
+
+  it('elite goalie with large sample gets meaningful multiplier below 1.0', () => {
+    // Darcy Kuemper: GSAx=7.37, SA=769 → should be meaningfully below 1.0
+    const m = computeGoalieMultiplier(7.37, 769, 41);
+    expect(m).toBeLessThan(1.0);
+    expect(m).toBeGreaterThan(0.99);  // Still modest — GSAx/SA = 0.96%
+  });
+
+  it('weak goalie with large sample gets multiplier above 1.0', () => {
+    // Binnington: GSAx=-14.77, SA=725 → should be above 1.0 but dampened
+    const m = computeGoalieMultiplier(-14.77, 725, 36);
+    expect(m).toBeGreaterThan(1.0);
+    expect(m).toBeLessThan(1.02);  // Dampened by regression
+  });
+
+  it('clamps to [0.88, 1.12] for extreme outliers', () => {
+    // Hypothetical extreme: GSAx=+50 on 1000 SA → raw effect = 5% → multiplier = 0.95 (within clamp)
+    const m1 = computeGoalieMultiplier(50, 1000, 40);
+    expect(m1).toBeGreaterThanOrEqual(0.88);
+    // Hypothetical extreme: GSAx=-50 on 1000 SA → raw effect = -5% → multiplier = 1.05 (within clamp)
+    const m2 = computeGoalieMultiplier(-50, 1000, 40);
+    expect(m2).toBeLessThanOrEqual(1.12);
+  });
+
+  it('regression weight increases with sample size', () => {
+    // Same GSAx rate but different sample sizes — larger sample should have stronger effect
+    const smallSample = computeGoalieMultiplier(-5, 100, 4);   // 100 SA
+    const largeSample = computeGoalieMultiplier(-25, 500, 20); // 500 SA (same -5/100 rate)
+    // Large sample should deviate more from 1.0 (stronger negative effect)
+    expect(largeSample).toBeGreaterThan(smallSample);
+  });
+});

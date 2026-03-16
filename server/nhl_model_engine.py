@@ -95,7 +95,7 @@ import time
 # ─────────────────────────────────────────────────────────────────────────────
 
 SIMULATIONS         = 200_000   # Section 6: N = 200,000 games
-LEAGUE_GOAL_RATE    = 3.05      # Section 4: league_goal_rate ≈ 3.05
+LEAGUE_GOAL_RATE    = 3.10      # Section 4: all-sit goals/team/game (2025-26 calibrated with corrected DEF formula)
 HOME_ICE            = 1.04      # Section 4: home_ice = 1.04
 
 # Negative Binomial dispersion (Section 5: k ≈ 7–10)
@@ -124,14 +124,16 @@ LEAGUE_SCA_60       = 26.952  # Scoring Chances Against per 60
 LEAGUE_CF_60        = 57.171  # Corsi For per 60 (pace proxy)
 LEAGUE_CA_60        = 57.132  # Corsi Against per 60 (pace proxy)
 
-# Edge detection thresholds
-PUCK_LINE_EDGE_THRESHOLD = 0.05   # 5% probability edge
-ML_EDGE_THRESHOLD        = 0.04   # 4% probability edge
-TOTAL_EDGE_THRESHOLD     = 0.05   # 5% probability edge
+# Edge detection thresholds — only flag genuine disagreements with the book
+# Raised from 5pp to reduce noise; model must meaningfully disagree to flag an edge
+PUCK_LINE_EDGE_THRESHOLD = 0.06   # 6pp probability edge for puck line
+ML_EDGE_THRESHOLD        = 0.05   # 5pp probability edge for moneyline
+TOTAL_EDGE_THRESHOLD     = 0.08   # 8pp probability edge for totals (half-point lines need more separation)
 
 # Market blend (anchor model to market to reduce clamping)
-MARKET_WEIGHT       = 0.30
-MODEL_WEIGHT        = 0.70
+# 25% market weight keeps totals realistic while preserving model signal (max 0.30 per spec)
+MARKET_WEIGHT       = 0.25
+MODEL_WEIGHT        = 0.75
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -175,12 +177,19 @@ def compute_def_rating(stats: dict) -> float:
     """
     Section 2 — DEFENSE MODEL:
       DEF_rating =
-          0.40 * (LEAGUE_XGA_60  / xGA_60)    — expected goals suppression
-        + 0.30 * (LEAGUE_HDCA_60 / HDCA_60)   — high-danger suppression
-        + 0.30 * (LEAGUE_SCA_60  / SCA_60)    — scoring chance suppression
+          0.40 * (xGA_60  / LEAGUE_XGA_60)    — expected goals allowed ratio
+        + 0.30 * (HDCA_60 / LEAGUE_HDCA_60)   — high-danger chances allowed ratio
+        + 0.30 * (SCA_60  / LEAGUE_SCA_60)    — scoring chances allowed ratio
+
+    Used as a MULTIPLIER on opponent expected goals:
+      mu_opponent = LEAGUE_GOAL_RATE * OFF_opponent * DEF_defending_team
+
+    Correct direction:
+      DEF > 1.0 = weak defense (allows more than avg) → opponent scores MORE
+      DEF < 1.0 = strong defense (allows less than avg) → opponent scores LESS
+      DEF = 1.0 = league-average defense
 
     All stats from NaturalStatTrick rate=y table (per-60 format).
-    Values > 1 = stronger defense (suppresses more), < 1 = weaker defense.
     Raises ValueError if any required stat is missing.
     """
     xga_60  = stats.get("xGA_60")
@@ -196,10 +205,12 @@ def compute_def_rating(stats: dict) -> float:
     hdca_60 = max(float(hdca_60), 0.01)
     sca_60  = max(float(sca_60),  0.01)
 
+    # stat/league: > 1.0 when team allows MORE than average (weak defense)
+    # This is the correct direction: mu_opponent = LEAGUE_GOAL_RATE * OFF_opponent * DEF_defending
     rating = (
-        0.40 * (LEAGUE_XGA_60  / xga_60)  +
-        0.30 * (LEAGUE_HDCA_60 / hdca_60) +
-        0.30 * (LEAGUE_SCA_60  / sca_60)
+        0.40 * (xga_60  / LEAGUE_XGA_60)  +
+        0.30 * (hdca_60 / LEAGUE_HDCA_60) +
+        0.30 * (sca_60  / LEAGUE_SCA_60)
     )
 
     return max(0.50, min(2.00, rating))
@@ -223,23 +234,32 @@ def compute_pace_factor(away_stats: dict, home_stats: dict) -> float:
 
 # ─────────────────────────────────────────────────────────────────────────────
 # SECTION 3 — GOALIE MODEL
-# goalie_effect = GSAX / shots_faced
+# goalie_effect = GSAX / shots_faced  (Bayesian-regressed toward 0)
 # goalie_multiplier = 1 − goalie_effect
-# Typical values: elite=0.92, average=1.00, weak=1.08
+# Typical values: elite=0.94, average=1.00, weak=1.06
 # ─────────────────────────────────────────────────────────────────────────────
+
+# Bayesian regression constant for goalie GSAx.
+# A goalie's observed GSAx/SA rate is blended with the league mean (0.0) using:
+#   regressed_effect = raw_effect * (SA / (SA + GOALIE_REGRESSION_K))
+# With K=500, a goalie with 500 SA gets 50% weight, 1000 SA gets 67%, 100 SA gets 17%.
+# This prevents tiny-sample outliers (e.g. 1 GP backup) from dominating.
+GOALIE_REGRESSION_K = 500   # shots-against prior equivalent
 
 def compute_goalie_multiplier(gsax: float, shots_faced: int, gp: int) -> float:
     """
-    Section 3 — GOALIE MODEL:
-      goalie_effect    = GSAX / shots_faced
-      goalie_multiplier = 1 − goalie_effect
+    Section 3 — GOALIE MODEL (Bayesian-regressed):
+      raw_effect       = GSAX / shots_faced
+      regressed_effect = raw_effect × (SA / (SA + K))   ← shrinks small samples toward 0
+      goalie_multiplier = 1 − regressed_effect
 
     Typical values:
-      Elite goalie  → multiplier ≈ 0.92  (saves ~8% more than expected)
-      Average goalie → multiplier ≈ 1.00
-      Weak goalie   → multiplier ≈ 1.08
+      Elite goalie (1000+ SA)  → multiplier ≈ 0.94  (saves ~6% more than expected)
+      Average goalie           → multiplier ≈ 1.00
+      Weak goalie (1000+ SA)   → multiplier ≈ 1.06
+      Backup (< 200 SA)        → multiplier ≈ 1.00  (regressed heavily to mean)
 
-    Clamped to [0.80, 1.20] to prevent extreme outliers.
+    Clamped to [0.88, 1.12] — tighter range since regression already handles outliers.
     """
     if shots_faced is None or shots_faced <= 0:
         # Fall back to per-game normalization if shots_faced not available
@@ -251,11 +271,16 @@ def compute_goalie_multiplier(gsax: float, shots_faced: int, gp: int) -> float:
     gsax = float(gsax or 0.0)
     shots_faced = float(shots_faced)
 
-    goalie_effect = gsax / shots_faced
-    multiplier = 1.0 - goalie_effect
+    raw_effect = gsax / shots_faced
 
-    # Clamp to realistic range
-    return max(0.80, min(1.20, multiplier))
+    # Bayesian regression: weight raw signal by sample size relative to prior
+    regression_weight = shots_faced / (shots_faced + GOALIE_REGRESSION_K)
+    regressed_effect = raw_effect * regression_weight
+
+    multiplier = 1.0 - regressed_effect
+
+    # Tighter clamp since regression already handles outliers
+    return max(0.88, min(1.12, multiplier))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

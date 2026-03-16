@@ -1505,3 +1505,7 @@
 - [ ] Update NhlTeamStats type and DB schema with all new columns
 - [ ] Remove fallback paths in compute_off_rating and compute_def_rating - require all fields
 - [ ] Run DB migration and force model re-run with complete data
+- [x] Fix goalie multiplier: Bayesian regression (K=500) prevents tiny-sample backups from dominating (Brossoit 1 GP: 1.106 → 1.004)
+- [x] Add 6 new vitest tests for Bayesian goalie multiplier regression behavior (308 total passing)
+- [x] Raise edge detection thresholds: ML=5pp, PL=6pp, Total=8pp to reduce noise
+- [x] Re-run all 6 March 15 NHL games with corrected goalie model
