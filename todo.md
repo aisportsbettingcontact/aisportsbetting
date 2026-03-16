@@ -1565,3 +1565,9 @@
 - [x] Implement bulletproof team name matching: refreshNhl now uses authenticated scraper (alias-resolved) with public DK page + alias map as fallback
 - [x] Add retry logic + validation alerts: primary/fallback dual-scraper with WARN/ERROR logs on any miss
 - [x] Verify all 5 March 16 NHL games have splits populated: 5/5 matched including LAK @ NYR (spreadBets 22%, mlBets 52%)
+- [x] Build EdgeEngine module (shared/edgeEngine.ts): americanToProbability, payoutFromOdds, probabilityToAmerican, calculateEdgeResult, classifyEdge, verdictLabel/verdictColor, runEdgeEngineForGame, edgeFromOddsAndProb
+- [x] Replace GameCard.tsx heuristic calculateEdge/getVerdict with ROI-based EdgeEngine verdicts (getMarketEdge, getVerdictFromPP, getEdgeColorFromPP)
+- [x] Wire EdgeEngine into NHL model engine (nhlModelEngine.ts) for per-market logging
+- [ ] Wire EdgeEngine into NBA model engine for per-market logging (pending NBA model build)
+- [ ] Wire EdgeEngine into NCAAM model engine for per-market logging (pending NCAAM model rebuild)
+- [x] Write vitest tests for EdgeEngine: 53 tests covering americanToProbability, payoutFromOdds, calculateEdgeResult, classifyEdge, NSH vs EDM worked examples, validation — 361/362 passing

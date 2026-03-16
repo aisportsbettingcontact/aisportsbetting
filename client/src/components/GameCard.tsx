@@ -28,6 +28,13 @@ import type { AppRouter } from "@/lib/trpc";
 import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
 import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
+import {
+  americanToProbability,
+  probabilityToAmerican,
+  classifyEdge,
+  verdictLabel,
+  verdictColor,
+} from "@shared/edgeEngine";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
@@ -63,55 +70,76 @@ function formatDate(dateStr: string): string {
   }
 }
 
-// ── Edge Calculation Engine (spec-compliant) ─────────────────────────────────
+// ── Edge Calculation Engine (EdgeEngine-backed) ──────────────────────────────
 //
-// RULE: Edge lives in the juice, not the line.
-// The line tells you what you're betting. The juice tells you what you're paying.
-// Edge = modelImplied - bookImplied (expressed as percentage points)
-//
+// All edge math is delegated to shared/edgeEngine.ts.
+// RULE: Edge lives in the juice. The line is what you bet. The juice is what you pay.
 // Each market (spread, total, ML) is independent — never averaged, never combined.
-// Recalculate on every render (derived state, not stored state).
+// Model probability is derived from model odds (americanToProbability).
+// ROI-based verdict thresholds: PASS<1%, SMALL 1-3%, PLAYABLE 3-6%, STRONG 6-10%, ELITE≥10%
 
-/** Convert American odds to implied probability (raw, with vig). */
-function americanToImplied(odds: number): number {
-  if (isNaN(odds)) return NaN;
-  if (odds < 0) return (-odds) / (-odds + 100);
-  return 100 / (odds + 100);
+/**
+ * Calculate ROI-based edge for a single market side.
+ * Uses model odds to derive model probability, then computes EV/ROI via EdgeEngine.
+ * Returns { roiPercent, verdict, verdictStr, color, edgePts } or null if inputs invalid.
+ */
+function getMarketEdge(bookOdds: number, modelOdds: number): {
+  roiPercent: number;
+  verdict: string;
+  color: string;
+  edgePts: number;
+} | null {
+  if (!isFinite(bookOdds) || !isFinite(modelOdds)) return null;
+  try {
+    const modelProbability = americanToProbability(modelOdds);
+    const breakEven = americanToProbability(bookOdds);
+    const payout = bookOdds < 0 ? 100 / Math.abs(bookOdds) : bookOdds / 100;
+    const ev = (modelProbability * payout) - (1 - modelProbability);
+    const roiPercent = ev * 100;
+    const edgePts = (modelProbability - breakEven) * 100;
+    const verdict = classifyEdge(roiPercent);
+    const color = verdictColor(verdict);
+    return { roiPercent, verdict: verdictLabel(verdict), color, edgePts };
+  } catch {
+    return null;
+  }
+}
+
+/** Legacy shim: edge in probability points (for EdgeBadge display). */
+function calculateEdge(bookOdds: number, modelOdds: number): number {
+  const r = getMarketEdge(bookOdds, modelOdds);
+  return r ? r.edgePts : NaN;
+}
+
+/** ROI-based verdict string from book + model odds. */
+function getVerdict(bookOdds: number, modelOdds: number): string {
+  const r = getMarketEdge(bookOdds, modelOdds);
+  return r ? r.verdict : '—';
+}
+
+/** ROI-based color from book + model odds. */
+function getEdgeColor(bookOdds: number, modelOdds: number): string {
+  const r = getMarketEdge(bookOdds, modelOdds);
+  return r ? r.color : 'rgba(255,255,255,0.30)';
 }
 
 /**
- * Calculate edge in percentage points.
- * Positive = model likes this bet over book price.
- * Negative = book is more efficient than model here.
- * Returns NaN if either input is NaN (missing data).
+ * Display-only verdict from a pre-computed edge pp value.
+ * Used by EdgeBadge which already has the pp value calculated.
+ * Approximates ROI from pp using a linear model (pp * 1.5 ≈ ROI for typical juice).
  */
-function calculateEdge(bookOdds: number, modelOdds: number): number {
-  const bookImplied  = americanToImplied(bookOdds);
-  const modelImplied = americanToImplied(modelOdds);
-  if (isNaN(bookImplied) || isNaN(modelImplied)) return NaN;
-  return (modelImplied - bookImplied) * 100;
+function getVerdictFromPP(edgePP: number): string {
+  if (isNaN(edgePP)) return '—';
+  // Convert pp to approximate ROI: at -110 juice, 1pp ≈ 1.1% ROI
+  const approxROI = edgePP * 1.1;
+  return verdictLabel(classifyEdge(approxROI));
 }
 
-/** 6-tier verdict from edge pp value. */
-function getVerdict(edge: number): string {
-  if (isNaN(edge)) return '—';
-  if (edge >= 8)    return 'ELITE';
-  if (edge >= 5)    return 'STRONG';
-  if (edge >= 2.5)  return 'PLAYABLE';
-  if (edge >= 0.5)  return 'SMALL';
-  if (edge >= -1)   return 'NEUTRAL';
-  return 'FADE';
-}
-
-/** Color for a given edge pp value (spec-compliant 6-tier scale). */
-function getEdgeColor(edge: number): string {
-  if (isNaN(edge))  return 'rgba(255,255,255,0.30)';
-  if (edge >= 8)    return '#39FF14';   // ELITE   — full neon green
-  if (edge >= 5)    return '#7FFF00';   // STRONG  — chartreuse
-  if (edge >= 2.5)  return '#ADFF2F';   // PLAYABLE — yellow-green
-  if (edge >= 0.5)  return 'rgba(255,255,255,0.60)';  // SMALL — white/60
-  if (edge >= -1)   return 'rgba(255,255,255,0.30)';  // NEUTRAL — white/30
-  return '#FF2244';                     // FADE    — red
+/** Display-only color from a pre-computed edge pp value. */
+function getEdgeColorFromPP(edgePP: number): string {
+  if (isNaN(edgePP)) return 'rgba(255,255,255,0.30)';
+  const approxROI = edgePP * 1.1;
+  return verdictColor(classifyEdge(approxROI));
 }
 
 
@@ -347,7 +375,7 @@ function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName, compa
 }) {
   const normalized = normalizeEdgeLabel(label);
   const isPass = normalized === "PASS" || (diff ?? 0) <= 0;
-  const color = getEdgeColor(diff ?? 0);
+  const color = getEdgeColorFromPP(diff ?? 0);
 
   if (isPass) {
     return (
@@ -1185,7 +1213,7 @@ function DesktopMergedPanel({
             <div className="flex flex-col w-full" style={{ gap: 6 }}>
               {!spreadPass && (() => {
                 const diff = isNaN(spreadDiff) ? null : spreadDiff;
-                const edgeColor = getEdgeColor(diff ?? 0);
+                const edgeColor = getEdgeColorFromPP(diff ?? 0);
                 const normalized = normalizeEdgeLabel(computedSpreadEdge);
                 const showArrow = (diff ?? 0) >= 3;
                 return (
@@ -1208,7 +1236,7 @@ function DesktopMergedPanel({
               })()}
               {!totalPass && (() => {
                 const diff = isNaN(totalDiff) ? null : totalDiff;
-                const edgeColor = getEdgeColor(diff ?? 0);
+                const edgeColor = getEdgeColorFromPP(diff ?? 0);
                 const normalized = normalizeEdgeLabel(computedTotalEdge);
                 const showArrow = (diff ?? 0) >= 3;
                 return (
@@ -2081,7 +2109,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   }, []);
 
   const maxDiff = Math.max(isNaN(spreadDiff) ? 0 : spreadDiff, isNaN(totalDiff) ? 0 : totalDiff);
-  const borderColor = getEdgeColor(maxDiff);
+  const borderColor = getEdgeColorFromPP(maxDiff);
 
   const awayDisplayName = awayNickname || awayName;
   const homeDisplayName = homeNickname || homeName;
@@ -3234,7 +3262,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 ` (over=${isNaN(overEdgePP)?'NaN':overEdgePP.toFixed(2)} under=${isNaN(underEdgePP)?'NaN':underEdgePP.toFixed(2)})` +
                 ` | ml=${isNaN(mlEdgePP)?'NaN':mlEdgePP.toFixed(2)}pp` +
                 ` (away=${isNaN(awayMlEdgePP)?'NaN':awayMlEdgePP.toFixed(2)} home=${isNaN(homeMlEdgePP)?'NaN':homeMlEdgePP.toFixed(2)})` +
-                ` | best=${isNaN(bestEdgePP)?'NaN':bestEdgePP.toFixed(2)}pp → ${getVerdict(bestEdgePP)}`,
+                ` | best=${isNaN(bestEdgePP)?'NaN':bestEdgePP.toFixed(2)}pp → ${getVerdictFromPP(bestEdgePP)}`,
                 'color:#39FF14;font-size:9px'
               );
             }
@@ -3366,12 +3394,12 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     : 'rgba(57,255,20,0.07)';  // neon green tint for any edge
                   const containerBorder = isNaN(bestEdgePP) || bestEdgePP < 1.5
                     ? '1px solid rgba(255,255,255,0.07)'
-                    : `1px solid ${getEdgeColor(bestEdgePP)}`;
+                    : `1px solid ${getEdgeColorFromPP(bestEdgePP)}`;
 
                   // Per-market row renderer
                   const EdgeRow = ({ mkt, edgePP }: { mkt: string; edgePP: number }) => {
-                    const verdict = getVerdict(edgePP);
-                    const color = getEdgeColor(edgePP);
+                    const verdict = getVerdictFromPP(edgePP);
+                    const color = getEdgeColorFromPP(edgePP);
                     const hasEdge = !isNaN(edgePP) && edgePP >= 1.5;
                     const ppStr = isNaN(edgePP) ? '—' : (edgePP >= 0 ? `+${edgePP.toFixed(1)}` : edgePP.toFixed(1));
                     return (
@@ -3400,7 +3428,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     }}>
                       {/* EDGE header */}
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px 2px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                        <span style={{ fontSize: '7px', fontWeight: 800, color: isNaN(bestEdgePP) || bestEdgePP < 1.5 ? 'rgba(255,255,255,0.35)' : getEdgeColor(bestEdgePP), textTransform: 'uppercase', letterSpacing: '0.08em' }}>EDGE</span>
+                        <span style={{ fontSize: '7px', fontWeight: 800, color: isNaN(bestEdgePP) || bestEdgePP < 1.5 ? 'rgba(255,255,255,0.35)' : getEdgeColorFromPP(bestEdgePP), textTransform: 'uppercase', letterSpacing: '0.08em' }}>EDGE</span>
                       </div>
                       <EdgeRow mkt="SPR" edgePP={spreadEdgePP} />
                       <EdgeRow mkt="TOT" edgePP={totalEdgePP} />
