@@ -10,7 +10,8 @@
  *   3. Scrape RotoWire starting goalies
  *   4. For each unmodeled game, build the engine input and run the Python model
  *   5. Write model output back to the games table (model fields only)
- *   6. Store unpublished projection (publishedModel = false) — owner must approve
+ *   6. Auto-approve projection (publishedModel = true) — owner has approved NHL model output
+ *      Projections go live on the feed immediately after each successful model run.
  *
  * Schedule: runs every 30 minutes, 9AM–9PM PST (same window as NBA model sync)
  *
@@ -19,6 +20,7 @@
 
 import { and, eq, isNull, or } from "drizzle-orm";
 import { getDb } from "./db.js";
+import { bulkApproveModels } from "./db.js";
 import { games } from "../drizzle/schema.js";
 import type { Game } from "../drizzle/schema.js";
 import { scrapeNhlTeamStats, scrapeNhlGoalieStats, getDefaultGoalieStats } from "./nhlNaturalStatScraper.js";
@@ -480,7 +482,7 @@ export async function syncNhlModelForToday(
     }
   }
 
-  // ── Summary ───────────────────────────────────────────────────────────────
+  // ── Summary ───────────────────────────────────────────────────────────────────────────────────────
   console.log(`\n${"=".repeat(70)}`);
   console.log(`[NhlModelSync]${tag} ✅ DONE — Synced: ${result.synced} | Skipped: ${result.skipped} | Errors: ${result.errors.length}`);
   if (result.errors.length > 0) {
@@ -488,11 +490,26 @@ export async function syncNhlModelForToday(
   }
   console.log(`${"=".repeat(70)}\n`);
 
+  // ── Auto-approve: publish all newly modeled NHL games immediately ───────────
+  // Owner has approved the NHL model output — projections go live automatically.
+  // This runs even if result.synced === 0 (idempotent: approves any still-pending games).
+  try {
+    const approved = await bulkApproveModels(gameDate, "NHL");
+    if (approved > 0) {
+      console.log(`[NhlModelSync]${tag} ✅ Auto-approved ${approved} NHL projection(s) for ${gameDate} — live on feed`);
+    } else {
+      console.log(`[NhlModelSync]${tag}   Auto-approve: 0 pending projections (all already published or no model data)`);
+    }
+  } catch (approveErr) {
+    const msg = approveErr instanceof Error ? approveErr.message : String(approveErr);
+    console.error(`[NhlModelSync]${tag} ⚠ Auto-approve failed: ${msg}`);
+    result.errors.push(`Auto-approve failed: ${msg}`);
+  }
+
   result.syncedAt = new Date().toISOString();
   lastSyncResult = result;
   return result;
 }
-
 // ─── Scheduler ───────────────────────────────────────────────────────────────
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;

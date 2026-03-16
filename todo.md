@@ -1555,3 +1555,6 @@
 - [x] Spell out BOOK and MODEL in BettingCell header (not BK/MDL)
 - [x] Edge-conditional neon green: only MODEL juice is green when that side has an edge; both white if no edge
 - [x] Add empty spacer row above ML odds to align with SPREAD/TOTAL line row height
+- [x] Run NHL model for all 5 March 16 2026 games manually
+- [x] Post all 5 NHL model projections to the main feed (publishedModel=1 for all 5 games)
+- [x] Wire automatic daily NHL model execution (scheduler every 30min 9AM-9PM PST, auto-approve after each run)
