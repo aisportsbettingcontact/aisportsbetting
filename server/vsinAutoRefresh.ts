@@ -783,13 +783,67 @@ async function refreshAnApiOdds(
           continue;
         }
 
+        // ── NHL PUCK LINE FAVORITE CORRECTION ──────────────────────────────────
+        // Rule: the team with the more negative ML is always the -1.5 puck line favorite.
+        // DK sometimes gives the ML favorite a +1.5 spread in near-even games (e.g. Blues
+        // -112 ML but listed at +1.5). In that case, fall back to FanDuel NJ spread (book_id=69)
+        // which correctly assigns -1.5 to the ML favorite.
+        let dkAwaySpread = anGame.dkAwaySpread;
+        let dkAwaySpreadOdds = anGame.dkAwaySpreadOdds;
+        let dkHomeSpread = anGame.dkHomeSpread;
+        let dkHomeSpreadOdds = anGame.dkHomeSpreadOdds;
+
+        if (sport === "nhl" && dkAwaySpread !== null && dkHomeSpread !== null &&
+            anGame.dkAwayML !== null && anGame.dkHomeML !== null) {
+          const awayML = parseInt(anGame.dkAwayML);
+          const homeML = parseInt(anGame.dkHomeML);
+          // ML favorite = team with more negative ML (lower value)
+          const mlFavIsHome = homeML < awayML;
+          // Spread favorite = team at -1.5 (negative spread)
+          const spreadFavIsHome = dkAwaySpread > 0; // away at +1.5 → home is -1.5 fav
+          if (mlFavIsHome !== spreadFavIsHome) {
+            // Mismatch: DK gives ML favorite a +1.5 spread
+            // Try FanDuel NJ as fallback
+            const fdAway = anGame.fdAwaySpread;
+            const fdHome = anGame.fdHomeSpread;
+            if (fdAway !== null && fdHome !== null) {
+              const fdSpreadFavIsHome = fdAway > 0; // FanDuel away at +1.5 → home is fav
+              if (fdSpreadFavIsHome === mlFavIsHome) {
+                // FanDuel agrees with ML favorite — use FanDuel spread
+                console.log(
+                  `[ANApiOdds][NHL] FANDUEL_FALLBACK: ${awayDbSlug} @ ${homeDbSlug} — ` +
+                  `DK gives ML fav (${mlFavIsHome ? homeDbSlug : awayDbSlug}) a +1.5 spread. ` +
+                  `Using FanDuel spread instead: away=${fdAway}(${anGame.fdAwaySpreadOdds}), home=${fdHome}(${anGame.fdHomeSpreadOdds})`
+                );
+                dkAwaySpread = fdAway;
+                dkAwaySpreadOdds = anGame.fdAwaySpreadOdds;
+                dkHomeSpread = fdHome;
+                dkHomeSpreadOdds = anGame.fdHomeSpreadOdds;
+              } else {
+                // FanDuel also disagrees with ML — log warning, keep DK as-is
+                console.warn(
+                  `[ANApiOdds][NHL] SPREAD_CONFLICT: ${awayDbSlug} @ ${homeDbSlug} — ` +
+                  `Both DK and FanDuel give ML fav (${mlFavIsHome ? homeDbSlug : awayDbSlug}) a +1.5 spread. ` +
+                  `Keeping DK spread as-is (DK: away=${dkAwaySpread}, FD: away=${fdAway})`
+                );
+              }
+            } else {
+              // FanDuel spread unavailable — log warning, keep DK as-is
+              console.warn(
+                `[ANApiOdds][NHL] NO_FD_FALLBACK: ${awayDbSlug} @ ${homeDbSlug} — ` +
+                `DK gives ML fav a +1.5 spread but FanDuel spread is unavailable. Keeping DK.`
+              );
+            }
+          }
+        }
+
         // Populate DK NJ current lines + Open lines
         await updateAnOdds(dbGame.id, {
           // DK NJ current line
-          awayBookSpread: anGame.dkAwaySpread !== null ? String(anGame.dkAwaySpread) : null,
-          awaySpreadOdds: anGame.dkAwaySpreadOdds,
-          homeBookSpread: anGame.dkHomeSpread !== null ? String(anGame.dkHomeSpread) : null,
-          homeSpreadOdds: anGame.dkHomeSpreadOdds,
+          awayBookSpread: dkAwaySpread !== null ? String(dkAwaySpread) : null,
+          awaySpreadOdds: dkAwaySpreadOdds,
+          homeBookSpread: dkHomeSpread !== null ? String(dkHomeSpread) : null,
+          homeSpreadOdds: dkHomeSpreadOdds,
           bookTotal: anGame.dkTotal !== null ? String(anGame.dkTotal) : null,
           overOdds: anGame.dkOverOdds,
           underOdds: anGame.dkUnderOdds,

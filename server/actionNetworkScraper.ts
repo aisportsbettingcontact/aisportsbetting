@@ -91,6 +91,16 @@ export interface AnGameOdds {
   dkAwayML: string | null;
   /** Current DK NJ home moneyline in American format, e.g. "-1000" */
   dkHomeML: string | null;
+
+  // ── FanDuel NJ spread (book_id=69) — used as NHL puck line fallback ─────────
+  /** FanDuel NJ away spread, e.g. 1.5 or -1.5 */
+  fdAwaySpread: number | null;
+  /** FanDuel NJ away spread juice in American format */
+  fdAwaySpreadOdds: string | null;
+  /** FanDuel NJ home spread */
+  fdHomeSpread: number | null;
+  /** FanDuel NJ home spread juice in American format */
+  fdHomeSpreadOdds: string | null;
 }
 
 // ─── Raw v2 API types ──────────────────────────────────────────────────────────
@@ -227,6 +237,11 @@ const BOOK_IDS = "15,30,68,69,71,75,79";
 const DK_NJ_BOOK_ID = 68;
 
 /**
+ * FanDuel NJ book_id = 69 — used as fallback for NHL puck line when DK gives ML favorite +1.5
+ */
+const FANDUEL_NJ_BOOK_ID = 69;
+
+/**
  * Open line book_id = 30 (confirmed via browser network intercept)
  */
 const OPEN_BOOK_ID = 30;
@@ -309,12 +324,14 @@ export async function fetchActionNetworkOdds(
 
     const gameLabel = `${awayTeam.abbr} @ ${homeTeam.abbr} (id=${game.id})`;
 
-    // Extract v2 market data for Open (30) and DK NJ (68)
+    // Extract v2 market data for Open (30), DK NJ (68), and FanDuel NJ (69)
     const openBook = game.markets?.[OPEN_BOOK_ID];
     const dkBook = game.markets?.[DK_NJ_BOOK_ID];
+    const fdBook = game.markets?.[FANDUEL_NJ_BOOK_ID];
 
     const openEvent = openBook?.event;
     const dkEvent = dkBook?.event;
+    const fdEvent = fdBook?.event;
 
     // ── Open line extraction ────────────────────────────────────────────────
     const openSpreadAway = findOutcome(openEvent?.spread, { side: "away" });
@@ -327,6 +344,10 @@ export async function fetchActionNetworkOdds(
     // ── DK NJ line extraction ───────────────────────────────────────────────
     const dkSpreadAway = findOutcome(dkEvent?.spread, { side: "away" });
     const dkSpreadHome = findOutcome(dkEvent?.spread, { side: "home" });
+
+    // ── FanDuel NJ spread extraction (for NHL puck line fallback) ───────────
+    const fdSpreadAway = findOutcome(fdEvent?.spread, { side: "away" });
+    const fdSpreadHome = findOutcome(fdEvent?.spread, { side: "home" });
     const dkTotalOver  = findOutcome(dkEvent?.total,  { side: "over" });
     const dkTotalUnder = findOutcome(dkEvent?.total,  { side: "under" });
     const dkMlAway     = findOutcome(dkEvent?.moneyline, { teamId: game.away_team_id });
@@ -385,6 +406,12 @@ export async function fetchActionNetworkOdds(
       dkUnderOdds:      fmtOdds(dkTotalUnder?.odds),
       dkAwayML:         fmtOdds(dkMlAway?.odds),
       dkHomeML:         fmtOdds(dkMlHome?.odds),
+
+      // FanDuel NJ spread (NHL puck line fallback)
+      fdAwaySpread:     roundHalf(fdSpreadAway?.value),
+      fdAwaySpreadOdds: fmtOdds(fdSpreadAway?.odds),
+      fdHomeSpread:     roundHalf(fdSpreadHome?.value),
+      fdHomeSpreadOdds: fmtOdds(fdSpreadHome?.odds),
     });
   }
 

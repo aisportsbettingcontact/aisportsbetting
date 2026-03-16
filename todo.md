@@ -1524,3 +1524,5 @@
 - [x] Fix NHL model spread display: modelAwayPuckLine/modelHomePuckLine now mirrors book spread (not model origination)
 - [x] Fix NHL total edge direction: GameCard now uses model odds at book line to determine over/under edge direction
 - [x] Fix ML vs puck line mathematical inconsistency: WPG ML=+106 (48.6% win) but WPG -1.5 puck line=-273 (73% cover) — impossible, team with 48.6% win rate cannot be 73% to win by 2+
+- [x] Fix puck line favorite assignment: team with more negative ML should always be at -1.5; derive book spread from ML odds not spread field (STL -112 ML = STL is -1.5 favorite, not WPG)
+- [x] NHL puck line fallback: when DK gives ML favorite a +1.5 spread, use FanDuel spread instead (if both DK and FD give +1.5 to ML fav, keep DK as-is)
