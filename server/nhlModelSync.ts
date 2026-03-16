@@ -104,9 +104,10 @@ function fmtML(ml: number): string {
 export async function syncNhlModelForToday(
   source: "auto" | "manual" = "auto",
   forceRerun = false,
-  runAllStatuses = false
+  runAllStatuses = false,
+  targetDate?: string
 ): Promise<NhlModelSyncResult> {
-  const gameDate = getTodayDate();
+  const gameDate = targetDate ?? getTodayDate();
   const tag = source === "manual" ? "[MANUAL]" : "[AUTO]";
 
   console.log(`\n${"=".repeat(70)}`);

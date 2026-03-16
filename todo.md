@@ -1558,41 +1558,11 @@
 - [x] Run NHL model for all 5 March 16 2026 games manually
 - [x] Post all 5 NHL model projections to the main feed (publishedModel=1 for all 5 games)
 - [x] Wire automatic daily NHL model execution (scheduler every 30min 9AM-9PM PST, auto-approve after each run)
-- [x] Fix edge tab: away team edge rows showing home team logo — fixed by checking abbr (e.g. "CGY") before display name
-- [x] Fix LAK vs NYR splits: confirmed data gap (VSiN hasn’t published splits yet), not a display bug — will auto-populate on next refresh
-- [x] Reorder sports to NHL → NBA → NCAAM, NHL is now the default landing sport
-- [x] Deep-debug VSiN splits scraper: verbose logging to find LAK vs NYR mismatch root cause
-- [x] Implement bulletproof team name matching: refreshNhl now uses authenticated scraper (alias-resolved) with public DK page + alias map as fallback
-- [x] Add retry logic + validation alerts: primary/fallback dual-scraper with WARN/ERROR logs on any miss
-- [x] Verify all 5 March 16 NHL games have splits populated: 5/5 matched including LAK @ NYR (spreadBets 22%, mlBets 52%)
-- [x] Build EdgeEngine module (shared/edgeEngine.ts): americanToProbability, payoutFromOdds, probabilityToAmerican, calculateEdgeResult, classifyEdge, verdictLabel/verdictColor, runEdgeEngineForGame, edgeFromOddsAndProb
-- [x] Replace GameCard.tsx heuristic calculateEdge/getVerdict with ROI-based EdgeEngine verdicts (getMarketEdge, getVerdictFromPP, getEdgeColorFromPP)
-- [x] Wire EdgeEngine into NHL model engine (nhlModelEngine.ts) for per-market logging
-- [ ] Wire EdgeEngine into NBA model engine for per-market logging (pending NBA model build)
-- [ ] Wire EdgeEngine into NCAAM model engine for per-market logging (pending NCAAM model rebuild)
-- [x] Write vitest tests for EdgeEngine: 53 tests covering americanToProbability, payoutFromOdds, calculateEdgeResult, classifyEdge, NSH vs EDM worked examples, validation — 361/362 passing
-- [x] Remove Edge tab from mobile tab bar (BOOK LINES / MODEL LINES / SPLITS only)
-- [x] Remove Edge column (60px EdgeBadge) from mobile GameCard OddsTable row
-- [x] Add ROI% display inline inside each BettingCell beneath model odds (format: "TEAM LINE X.XX% ROI" or "NO EDGE")
-- [x] Apply 5-tier ROI color gradient: ≤0 gray/50%, 0.01-2% soft gray-green, 2-5% medium green, 5-8% bright green, 8%+ neon #39FF14
-- [x] Remove Edge tab from desktop/compact GameCard view (tab removed from TABS array)
-- [x] Remove Edge column from desktop/compact GameCard view (EdgeBadge removed from OddsTable)
-- [x] Add ROI% inline to desktop BettingCell beneath model odds
-- [x] Verify ROI display works for all sports (NHL, NBA, NCAAM) — EdgeEngine is sport-agnostic
-
-## UI Refactor — Single Projection Interface (Spec pasted_content_7)
-- [x] Reduce tab bar to 2 tabs: MODEL PROJECTIONS and BETTING SPLITS (remove BOOK LINES tab)
-- [x] Add PUCK LINE (NHL) or SPREAD (NBA/NCAAM) / TOTAL / ML column headers above game cards
-- [x] Simplify MktCard: BOOK value (bold white) stacked above MODEL value (bold neon #39FF14 always)
-- [x] ROI footer: show "LABEL +X.XX% ROI" or "NO EDGE" — never show negative ROI
-- [ ] Move ROI computation server-side: store roiSpread/roiTotal/roiMl in DB, serve pre-computed values
-- [ ] Add structured ROI_ENGINE_LOG per market per game on server
-- [ ] Remove frontend edge math (getMarketEdge calls) — use server-provided ROI values only
-
-## Spec render_game_card (Pasted_content_04)
-- [ ] Only the best-edge outcome renders neon green — all other odds values neutral gray (#A0A0A0)
-- [ ] ROI bar shows: "LABEL ROI%" in neon green when edge exists, "NO EDGE" in neutral gray when not
-- [ ] Add MATCHUP as first column header (left panel header label)
-- [ ] Non-edge MODEL juice values: neutral gray (not neon green)
-- [ ] Non-edge BOOK juice values: neutral gray (not white)
-- [ ] Add server-side ROI_ENGINE_LOG per market per game (debug logging per spec)
+- [x] Extend syncNhlModelForToday() to accept targetDate param (model any date, not just today)
+- [x] Add next-day NHL auto-model trigger in vsinAutoRefresh hourly cron (after odds populated)
+- [x] Extend goalie watcher to watch both today AND tomorrow's NHL games
+- [x] Goalie watcher: re-model on ANY goalie change (expected OR confirmed) per game per date
+- [x] Goalie watcher: log full goalie status snapshot every run (who is in net, confirmed vs projected)
+- [x] Goalie watcher: cross-reference current vs previous run memory snapshot to detect changes precisely
+- [x] Goalie watcher: detect deconfirmation changes (confirmed→projected) in addition to confirmation
+- [x] Add advanced logging throughout: slate detection, goalie state snapshots, change diffs, model triggers

@@ -23,10 +23,10 @@ import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "
 import { fetchNhlGamesForRange, buildNhlStartTimeMap, buildNhlGameMap, fetchNhlLiveScores, type NhlScheduleGame } from "./nhlSchedule";
 import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG, BY_AN_SLUG as NCAAM_BY_AN, getTeamByAnSlug as getNcaamTeamByAnSlug } from "../shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG, getNbaTeamByVsinSlug } from "../shared/nbaTeams";
-import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG, getNhlTeamByAnSlug, VSIN_NHL_HREF_ALIASES } from "../shared/nhlTeams";
-import { scrapeNhlVsinOdds, type NhlScrapedOdds } from "./nhlVsinScraper";
+import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG, getNhlTeamByAnSlug } from "../shared/nhlTeams";
 import { NBA_BY_DB_SLUG } from "../shared/nbaTeams";
 import type { InsertGame } from "../drizzle/schema";
+import { syncNhlModelForToday } from "./nhlModelSync";
 
 const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -556,80 +556,28 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
   inserted: number;
   scheduleInserted: number;
   total: number;
+  newlyInsertedDates: string[];
 }> {
   console.log(`[refreshNhl] ► START — today: ${todayStr} | dates: [${allDates.join(", ")}]`);
-
-  // ── Strategy: Use authenticated NHL-specific scraper as primary source.
-  // It already resolves all VSiN href aliases (e.g. "ny-rangers" → "new_york_rangers").
-  // Fall back to the public DK splits page with manual alias resolution if auth fails.
-  // Build a unified map: dbSlug pair → splits data for fast lookup.
-  interface NhlSplitsEntry {
-    spreadAwayBetsPct: number | null;
-    spreadAwayMoneyPct: number | null;
-    totalOverBetsPct: number | null;
-    totalOverMoneyPct: number | null;
-    mlAwayBetsPct: number | null;
-    mlAwayMoneyPct: number | null;
-  }
-  const vsinSplitsMap = new Map<string, NhlSplitsEntry>();
-  let totalScraped = 0;
-
-  // ── Primary: authenticated NHL VSiN page (nhlVsinScraper.ts) ────────────────
+  // Scrape VSiN NHL betting splits (today only)
+  let vsinSplits: VsinSplitsGame[] = [];
   try {
-    const todayLabel = todayStr.replace(/-/g, ""); // "2026-03-16" → "20260316"
-    const nhlGames = await scrapeNhlVsinOdds(todayLabel);
-    totalScraped = nhlGames.length;
-    console.log(`[refreshNhl] Authenticated NHL scraper: ${nhlGames.length} games`);
-    for (const g of nhlGames) {
-      // awaySlug/homeSlug are already resolved DB slugs from nhlVsinScraper
-      const key = `${g.awaySlug}@${g.homeSlug}`;
-      vsinSplitsMap.set(key, {
-        spreadAwayBetsPct: g.spreadAwayBetsPct,
-        spreadAwayMoneyPct: g.spreadAwayMoneyPct,
-        totalOverBetsPct: g.totalOverBetsPct,
-        totalOverMoneyPct: g.totalOverMoneyPct,
-        mlAwayBetsPct: g.mlAwayBetsPct,
-        mlAwayMoneyPct: g.mlAwayMoneyPct,
-      });
-      console.log(`[refreshNhl]   ✓ Mapped: ${g.awaySlug} @ ${g.homeSlug} | spreadBets=${g.spreadAwayBetsPct}% mlBets=${g.mlAwayBetsPct}%`);
-    }
+    const allSplits = await scrapeVsinBettingSplits("front");
+    vsinSplits = allSplits.filter(g => g.sport === "NHL");
+    console.log(`[refreshNhl] VSiN NHL splits fetched: ${vsinSplits.length} games`);
   } catch (err) {
-    console.warn("[refreshNhl] Authenticated NHL scraper failed — falling back to public DK page:", err);
+    console.warn("[VSiNAutoRefresh] VSiN NHL splits scrape failed (non-fatal):", err);
+  }
 
-    // ── Fallback: public DK splits page with alias resolution ─────────────────
-    try {
-      const allPublic = await scrapeVsinBettingSplits("front");
-      const nhlPublic = allPublic.filter(g => g.sport === "NHL");
-      totalScraped = nhlPublic.length;
-      console.log(`[refreshNhl] Public DK page fallback: ${nhlPublic.length} NHL games`);
-      let fallbackMissed = 0;
-      for (const g of nhlPublic) {
-        // Apply alias resolution before registry lookup
-        const awaySlugRaw = VSIN_NHL_HREF_ALIASES[g.awayVsinSlug] ?? g.awayVsinSlug;
-        const homeSlugRaw = VSIN_NHL_HREF_ALIASES[g.homeVsinSlug] ?? g.homeVsinSlug;
-        const awayTeam = NHL_BY_VSIN_SLUG.get(awaySlugRaw) ?? NHL_BY_VSIN_SLUG.get(g.awayVsinSlug);
-        const homeTeam = NHL_BY_VSIN_SLUG.get(homeSlugRaw) ?? NHL_BY_VSIN_SLUG.get(g.homeVsinSlug);
-        if (!awayTeam || !homeTeam) {
-          console.warn(`[refreshNhl] FALLBACK MISS: away="${g.awayVsinSlug}" (alias: ${awaySlugRaw}) → ${awayTeam?.dbSlug ?? 'UNRESOLVED'}, home="${g.homeVsinSlug}" (alias: ${homeSlugRaw}) → ${homeTeam?.dbSlug ?? 'UNRESOLVED'}`);
-          fallbackMissed++;
-          continue;
-        }
-        const key = `${awayTeam.dbSlug}@${homeTeam.dbSlug}`;
-        vsinSplitsMap.set(key, {
-          spreadAwayBetsPct: g.spreadAwayBetsPct,
-          spreadAwayMoneyPct: g.spreadAwayMoneyPct,
-          totalOverBetsPct: g.totalOverBetsPct,
-          totalOverMoneyPct: g.totalOverMoneyPct,
-          mlAwayBetsPct: g.mlAwayBetsPct,
-          mlAwayMoneyPct: g.mlAwayMoneyPct,
-        });
-        console.log(`[refreshNhl]   ✓ Fallback mapped: ${awayTeam.dbSlug} @ ${homeTeam.dbSlug}`);
-      }
-      if (fallbackMissed > 0) {
-        console.error(`[refreshNhl] ⚠ FALLBACK: ${fallbackMissed}/${nhlPublic.length} NHL games could not be resolved — splits will be missing`);
-      }
-    } catch (err2) {
-      console.error("[refreshNhl] BOTH NHL scrapers failed — no splits will be updated:", err2);
+  // Build a map: dbSlug pair → VsinSplitsGame for fast lookup
+  const vsinSplitsMap = new Map<string, VsinSplitsGame>();
+  for (const g of vsinSplits) {
+    const awayTeam = NHL_BY_VSIN_SLUG.get(g.awayVsinSlug);
+    const homeTeam = NHL_BY_VSIN_SLUG.get(g.homeVsinSlug);
+    if (awayTeam && homeTeam) {
+      vsinSplitsMap.set(`${awayTeam.dbSlug}@${homeTeam.dbSlug}`, g);
+    } else {
+      console.log(`[VSiNAutoRefresh][NHL] Unknown VSiN slug: ${g.awayVsinSlug} @ ${g.homeVsinSlug}`);
     }
   }
 
@@ -743,9 +691,9 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
   }
 
   console.log(
-    `[refreshNhl] ✅ DONE — updated=${totalUpdated} inserted=${totalInserted} scheduleInserted=${scheduleInserted} total=${totalScraped}`
+    `[refreshNhl] ✅ DONE — updated=${totalUpdated} inserted=${totalInserted} scheduleInserted=${scheduleInserted} total=${vsinSplits.length}`
   );
-  return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: totalScraped };
+  return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: vsinSplits.length };
 }
 
 // ─── AN API DK Odds Auto-Population ──────────────────────────────────────────
@@ -951,6 +899,58 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
       `[VSiNAutoRefresh] AN API DK odds (tomorrow): updated=${anOddsTomorrow.updated} ` +
       `skipped=${anOddsTomorrow.skipped} frozen=${anOddsTomorrow.frozen} errors=${anOddsTomorrow.errors.length}`
     );
+
+    // ── Next-day NHL auto-model trigger ─────────────────────────────────────────
+    // After tomorrow's games are inserted and DK odds are populated, check if any
+    // future-date NHL games need to be modeled (book odds are now available).
+    // This runs for ALL future dates that had new games inserted this cycle.
+    // We also check tomorrow specifically in case games existed before but now have odds.
+    const futureDatesToModel = new Set<string>(nhlResult.newlyInsertedDates);
+    // Always include tomorrow if it has unmodeled NHL games with book odds
+    futureDatesToModel.add(tomorrowStr);
+
+    for (const futureDate of Array.from(futureDatesToModel)) {
+      try {
+        const { getDb } = await import("./db.js");
+        const { games: gamesTable } = await import("../drizzle/schema.js");
+        const { and, eq, isNull } = await import("drizzle-orm");
+
+        const db = await getDb();
+        // Check if there are any unmodeled NHL games with book odds for this date
+        const unmodeledFuture = await db
+          .select({ id: gamesTable.id, awayTeam: gamesTable.awayTeam, homeTeam: gamesTable.homeTeam,
+                    awayML: gamesTable.awayML, bookTotal: gamesTable.bookTotal, modelRunAt: gamesTable.modelRunAt })
+          .from(gamesTable)
+          .where(and(
+            eq(gamesTable.gameDate, futureDate),
+            eq(gamesTable.sport, "NHL"),
+            eq(gamesTable.gameStatus, "upcoming"),
+            isNull(gamesTable.modelRunAt)
+          ));
+
+        const withOdds = unmodeledFuture.filter((g: { awayML: string | null; bookTotal: string | null | number; modelRunAt: number | null }) => g.awayML != null || g.bookTotal != null);
+
+        console.log(
+          `[VSiNAutoRefresh][NextDayModel] ${futureDate}: ` +
+          `${unmodeledFuture.length} unmodeled NHL games, ` +
+          `${withOdds.length} have book odds — ` +
+          (withOdds.length > 0 ? "TRIGGERING MODEL" : "skipping (no odds yet)")
+        );
+
+        if (withOdds.length > 0) {
+          console.log(`[VSiNAutoRefresh][NextDayModel] Running NHL model for ${futureDate}...`);
+          // syncNhlModelForToday(source, forceRerun, runAllStatuses, targetDate)
+          const modelResult = await syncNhlModelForToday("auto", false, false, futureDate);
+          console.log(
+            `[VSiNAutoRefresh][NextDayModel] ✅ NHL model for ${futureDate}: ` +
+            `synced=${modelResult.synced} skipped=${modelResult.skipped} errors=${modelResult.errors.length}`
+          );
+        }
+      } catch (nextDayErr) {
+        const msg = nextDayErr instanceof Error ? nextDayErr.message : String(nextDayErr);
+        console.warn(`[VSiNAutoRefresh][NextDayModel] ⚠ Failed for ${futureDate} (non-fatal): ${msg}`);
+      }
+    }
 
     const result: RefreshResult = {
       refreshedAt: new Date().toISOString(),
@@ -1184,7 +1184,7 @@ export async function runVsinRefreshManual(
 
     let ncaamResult = { updated: 0, inserted: 0, ncaaInserted: 0, total: 0 };
     let nbaResult   = { updated: 0, inserted: 0, scheduleInserted: 0, total: 0 };
-    let nhlResult   = { updated: 0, inserted: 0, scheduleInserted: 0, total: 0 };
+    let nhlResult   = { updated: 0, inserted: 0, scheduleInserted: 0, total: 0, newlyInsertedDates: [] as string[] };
 
     if (doNcaam) {
       console.log(`[VSiNAutoRefresh][MANUAL][NCAAM] ── Refreshing NCAAM VSiN splits + schedule…`);
