@@ -2115,16 +2115,17 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const compactAwayLabel = isNba ? (awayNickname || awayName) : awayName;
   const compactHomeLabel = isNba ? (homeNickname || homeName) : homeName;
 
-  // Mobile abbreviations: 3-4 char uppercase label for frozen score panel
-  // Derived from nickname (first word, max 4 chars) — no DB migration needed
-  const makeAbbr = (nickname: string, name: string): string => {
-    const src = nickname || name;
-    // Use first word of nickname/name, uppercase, max 4 chars
-    const word = src.split(/\s+/)[0] ?? src;
+  // Mobile abbreviations: city-based 3-char uppercase label for frozen score panel
+  // NHL: use official abbrev (e.g. "NSH", "EDM"). NBA: use abbrev if available.
+  // NCAAM: derive from city/school name (first word, max 4 chars).
+  const makeCityAbbr = (nhlEntry: typeof awayNhl, _nbaEntry: typeof awayNba, name: string): string => {
+    if (nhlEntry?.abbrev) return nhlEntry.abbrev;          // NHL: official 3-letter abbrev
+    // NCAAM / NBA fallback: first word of city/school name, max 4 chars
+    const word = (name || '').split(/\s+/)[0] ?? name;
     return word.slice(0, 4).toUpperCase();
   };
-  const awayAbbr = makeAbbr(awayNickname, awayName);
-  const homeAbbr = makeAbbr(homeNickname, homeName);
+  const awayAbbr = makeCityAbbr(awayNhl, awayNba, awayName);
+  const homeAbbr = makeCityAbbr(homeNhl, homeNba, homeName);
 
   const CompactScorePanel = () => (
     <div className="flex flex-col justify-center h-full px-2 py-3 gap-2" style={{ minWidth: 0 }}>
@@ -3235,31 +3236,45 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             // ── Shared odds table (used by both BOOK and MODEL tabs) ──────────
             // ── Mobile market card helpers ─────────────────────────────────────────
             // Spec: flat 2-column grid inside each card. No circles.
-            // BK and MDL side-by-side. Line on top (white/65% 9px unbold), juice below (white/90% book, #39FF14 model 14px bold).
-            // All 3 market columns are flex-1 (equal width). EdgeBadge is fixed 60px.
+            // BOOK and MODEL side-by-side. Line on top (9px dim), juice below (14px bold).
+            // MODEL juice is neon green ONLY when that side has an edge (edgePP >= 1.5).
+            // Both white when no edge. All 3 market columns are flex-1 (equal width).
+            // ML card has an empty spacer row above the juice to align height with SPREAD/TOTAL.
             const MktCard = ({
               awayBookLine, awayBookJuice,
-              awayModelLine, awayModelJuice,
+              awayModelLine, awayModelJuice, awayModelHasEdge,
               homeBookLine, homeBookJuice,
-              homeModelLine, homeModelJuice,
+              homeModelLine, homeModelJuice, homeModelHasEdge,
+              isML = false,
             }: {
               awayBookLine: string; awayBookJuice: string;
-              awayModelLine: string; awayModelJuice: string;
+              awayModelLine: string; awayModelJuice: string; awayModelHasEdge: boolean;
               homeBookLine: string; homeBookJuice: string;
-              homeModelLine: string; homeModelJuice: string;
+              homeModelLine: string; homeModelJuice: string; homeModelHasEdge: boolean;
+              isML?: boolean;
             }) => {
-              // Sub-column: line value (small, dim) on top, juice (large, colored) below
-              const SubCol = ({ line, juice, isBook }: { line: string; juice: string; isBook: boolean }) => (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px', minWidth: 0, flex: 1 }}>
-                  <span style={{ fontSize: '9px', fontWeight: 400, color: 'rgba(255,255,255,0.55)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{line}</span>
-                  <span style={{ fontSize: '14px', fontWeight: 700, color: isBook ? 'rgba(255,255,255,0.90)' : '#39FF14', lineHeight: 1.15, whiteSpace: 'nowrap', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{juice}</span>
-                </div>
-              );
+              // SubCol: line row (dim 9px) + juice row (bold 14px)
+              // modelJuiceColor: neon green only when this side has an edge, otherwise white
+              const SubCol = ({ line, juice, isBook, hasEdge }: { line: string; juice: string; isBook: boolean; hasEdge: boolean }) => {
+                const juiceColor = isBook
+                  ? 'rgba(255,255,255,0.90)'                      // BOOK: always white
+                  : hasEdge ? '#39FF14' : 'rgba(255,255,255,0.90)'; // MODEL: neon if edge, white if not
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1px', minWidth: 0, flex: 1 }}>
+                    {/* Spacer/line row: always rendered to keep height consistent */}
+                    {isML
+                      ? <span style={{ fontSize: '9px', lineHeight: 1, visibility: 'hidden' }}>&nbsp;</span>  // empty spacer for ML
+                      : <span style={{ fontSize: '9px', fontWeight: 400, color: 'rgba(255,255,255,0.55)', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{line}</span>
+                    }
+                    <span style={{ fontSize: '14px', fontWeight: 700, color: juiceColor, lineHeight: 1.15, whiteSpace: 'nowrap', textAlign: 'center', fontVariantNumeric: 'tabular-nums' }}>{juice}</span>
+                  </div>
+                );
+              };
 
-              const TeamRow = ({ bookLine, bookJuice, modelLine, modelJuice }: { bookLine: string; bookJuice: string; modelLine: string; modelJuice: string }) => (
+              const TeamRow = ({ bookLine, bookJuice, modelLine, modelJuice, modelHasEdge }: { bookLine: string; bookJuice: string; modelLine: string; modelJuice: string; modelHasEdge: boolean }) => (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px', padding: '4px 3px' }}>
-                  <SubCol line={bookLine} juice={bookJuice} isBook={true} />
-                  <SubCol line={modelLine} juice={modelJuice} isBook={false} />
+                  <SubCol line={bookLine} juice={bookJuice} isBook={true} hasEdge={false} />
+                  <SubCol line={modelLine} juice={modelJuice} isBook={false} hasEdge={modelHasEdge} />
                 </div>
               );
 
@@ -3269,17 +3284,17 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   background: '#2a2a2e', borderRadius: '10px',
                   overflow: 'hidden', flex: '1 1 0', minWidth: 0,
                 }}>
-                  {/* BK / MDL header */}
+                  {/* BOOK / MODEL header */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '3px 4px 2px' }}>
-                    <span style={{ fontSize: '7px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>BK</span>
-                    <span style={{ fontSize: '7px', fontWeight: 700, color: '#39FF14', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>MDL</span>
+                    <span style={{ fontSize: '6.5px', fontWeight: 700, color: 'rgba(255,255,255,0.35)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.05em' }}>BOOK</span>
+                    <span style={{ fontSize: '6.5px', fontWeight: 700, color: 'rgba(255,255,255,0.70)', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.05em' }}>MODEL</span>
                   </div>
                   {/* Away row */}
-                  <TeamRow bookLine={awayBookLine} bookJuice={awayBookJuice} modelLine={awayModelLine} modelJuice={awayModelJuice} />
+                  <TeamRow bookLine={awayBookLine} bookJuice={awayBookJuice} modelLine={awayModelLine} modelJuice={awayModelJuice} modelHasEdge={awayModelHasEdge} />
                   {/* Divider */}
                   <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '0 4px' }} />
                   {/* Home row */}
-                  <TeamRow bookLine={homeBookLine} bookJuice={homeBookJuice} modelLine={homeModelLine} modelJuice={homeModelJuice} />
+                  <TeamRow bookLine={homeBookLine} bookJuice={homeBookJuice} modelLine={homeModelLine} modelJuice={homeModelJuice} modelHasEdge={homeModelHasEdge} />
                 </div>
               );
             };
@@ -3287,16 +3302,18 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const OddsTable = () => (
               <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch', width: '100%', padding: '4px 6px 4px', gap: '4px' }}>
                 {/* Market cards row: SPREAD | TOTAL | ML | EDGE — all flex-1 equal width */}
-                {/* SPREAD card */}
+                {/* SPREAD card — edge flags drive MODEL juice color */}
                 <MktCard
                   awayBookLine={!isNaN(awayBookSpread) ? spreadSign(awayBookSpread) : '—'}
                   awayBookJuice={mbAwaySpreadOdds ? String(mbAwaySpreadOdds) : '—110'}
                   awayModelLine={mdlAwaySplit.line || '—'}
                   awayModelJuice={mdlAwaySplit.odds || '—'}
+                  awayModelHasEdge={!isNaN(awaySpreadEdgePP) && awaySpreadEdgePP >= 1.5}
                   homeBookLine={!isNaN(homeBookSpread) ? spreadSign(homeBookSpread) : '—'}
                   homeBookJuice={mbHomeSpreadOdds ? String(mbHomeSpreadOdds) : '—110'}
                   homeModelLine={mdlHomeSplit.line || '—'}
                   homeModelJuice={mdlHomeSplit.odds || '—'}
+                  homeModelHasEdge={!isNaN(homeSpreadEdgePP) && homeSpreadEdgePP >= 1.5}
                 />
                 {/* TOTAL card */}
                 <MktCard
@@ -3304,21 +3321,26 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   awayBookJuice={mbOverOdds ? String(mbOverOdds) : '—110'}
                   awayModelLine={`o${mdlOverSplit.line || '—'}`}
                   awayModelJuice={mdlOverSplit.odds || '—'}
+                  awayModelHasEdge={!isNaN(overEdgePP) && overEdgePP >= 1.5}
                   homeBookLine={!isNaN(bookTotal) ? `u${bkTotalStr}` : 'u—'}
                   homeBookJuice={mbUnderOdds ? String(mbUnderOdds) : '—110'}
                   homeModelLine={`u${mdlUnderSplit.line || '—'}`}
                   homeModelJuice={mdlUnderSplit.odds || '—'}
+                  homeModelHasEdge={!isNaN(underEdgePP) && underEdgePP >= 1.5}
                 />
-                {/* ML card — no line value, juice IS the value */}
+                {/* ML card — juice IS the value; empty spacer row keeps height aligned */}
                 <MktCard
                   awayBookLine={''}
                   awayBookJuice={bkAwayMl || '—'}
                   awayModelLine={''}
                   awayModelJuice={mdlAwayMl || '—'}
+                  awayModelHasEdge={!isNaN(awayMlEdgePP) && awayMlEdgePP >= 1.5}
                   homeBookLine={''}
                   homeBookJuice={bkHomeMl || '—'}
                   homeModelLine={''}
                   homeModelJuice={mdlHomeMl || '—'}
+                  homeModelHasEdge={!isNaN(homeMlEdgePP) && homeMlEdgePP >= 1.5}
+                  isML={true}
                 />
                 {/* EdgeBadge: spec-compliant — 3 independent market rows (SPR/TOT/ML), verdict tier + pp value */}
                 {(() => {
@@ -3433,15 +3455,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     )}
                   </div>
 
-                  {/* Away row: logo (20px) + abbr + score on same row */}
+                  {/* Away row: logo (28px) + abbr + score on same row */}
                   <div style={{ display: 'flex', alignItems: 'center', flex: '1 1 0', minHeight: '40px', gap: '4px', paddingLeft: '2px', paddingRight: '4px', overflow: 'hidden' }}>
-                    {/* Logo: 20px */}
-                    <div style={{ flexShrink: 0, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={20} />
+                    {/* Logo: 28px */}
+                    <div style={{ flexShrink: 0, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={28} />
                     </div>
                     {/* Abbreviation — fills remaining space, truncates */}
                     <span style={{ flex: '1 1 0', minWidth: 0, fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.90)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '0.03em' }}>
-                      {makeAbbr(awayNickname, awayName)}
+                      {awayAbbr}
                     </span>
                     {/* Score */}
                     {(isLive || isFinal) && hasScores && (
@@ -3456,15 +3478,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   {/* Divider */}
                   <div style={{ height: 1, background: 'hsl(var(--border) / 0.4)' }} />
 
-                  {/* Home row: logo (20px) + abbr + score on same row */}
+                  {/* Home row: logo (28px) + abbr + score on same row */}
                   <div style={{ display: 'flex', alignItems: 'center', flex: '1 1 0', minHeight: '40px', gap: '4px', paddingLeft: '2px', paddingRight: '4px', overflow: 'hidden' }}>
-                    {/* Logo: 20px */}
-                    <div style={{ flexShrink: 0, width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={20} />
+                    {/* Logo: 28px */}
+                    <div style={{ flexShrink: 0, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={28} />
                     </div>
                     {/* Abbreviation — fills remaining space, truncates */}
                     <span style={{ flex: '1 1 0', minWidth: 0, fontSize: '10px', fontWeight: 600, color: 'rgba(255,255,255,0.90)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '0.03em' }}>
-                      {makeAbbr(homeNickname, homeName)}
+                      {homeAbbr}
                     </span>
                     {/* Score */}
                     {(isLive || isFinal) && hasScores && (

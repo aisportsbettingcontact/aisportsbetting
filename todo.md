@@ -1550,3 +1550,8 @@
 - [x] Equalize all 3 market columns to flex-1 (SPREAD/TOTAL/ML identical width)
 - [x] EdgeBadge fixed at 60px (w-[60px] shrink-0)
 - [x] Outer row: gap-[4px] to fit 375px screen budget
+- [x] Make team logos bigger in left panel (from 20px to 28px)
+- [x] Use city abbreviations instead of team abbreviations (NHL: official abbrev e.g. "NSH", "EDM")
+- [x] Spell out BOOK and MODEL in BettingCell header (not BK/MDL)
+- [x] Edge-conditional neon green: only MODEL juice is green when that side has an edge; both white if no edge
+- [x] Add empty spacer row above ML odds to align with SPREAD/TOTAL line row height
