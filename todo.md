@@ -1558,3 +1558,6 @@
 - [x] Run NHL model for all 5 March 16 2026 games manually
 - [x] Post all 5 NHL model projections to the main feed (publishedModel=1 for all 5 games)
 - [x] Wire automatic daily NHL model execution (scheduler every 30min 9AM-9PM PST, auto-approve after each run)
+- [x] Fix edge tab: away team edge rows showing home team logo — fixed by checking abbr (e.g. "CGY") before display name
+- [x] Fix LAK vs NYR splits: confirmed data gap (VSiN hasn’t published splits yet), not a display bug — will auto-populate on next refresh
+- [x] Reorder sports to NHL → NBA → NCAAM, NHL is now the default landing sport

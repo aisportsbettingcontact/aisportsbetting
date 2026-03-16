@@ -404,6 +404,7 @@ function VerdictSide({ diff, label, isStrong, logoUrl, teamSlug, teamName, compa
 function EdgeVerdict({
   spreadDiff, spreadEdge, totalDiff, totalEdge,
   awayLogoUrl, homeLogoUrl, awaySlug, homeSlug, awayDisplayName, homeDisplayName,
+  awayAbbr, homeAbbr,
   compact = false,
 }: {
   spreadDiff: number | null; spreadEdge: string | null;
@@ -411,6 +412,8 @@ function EdgeVerdict({
   awayLogoUrl?: string; homeLogoUrl?: string;
   awaySlug?: string; homeSlug?: string;
   awayDisplayName?: string; homeDisplayName?: string;
+  /** 3-letter abbreviation (e.g. "CGY") used to match NHL edge strings like "CGY +1.5 [STRONG EDGE]" */
+  awayAbbr?: string; homeAbbr?: string;
   compact?: boolean;
 }) {
   const spreadPass = normalizeEdgeLabel(spreadEdge) === "PASS" || (spreadDiff ?? 0) <= 0;
@@ -428,11 +431,20 @@ function EdgeVerdict({
 
   const spreadIsStronger = (spreadDiff ?? 0) >= (totalDiff ?? 0);
 
-  // Determine which team logo to show for the spread edge
-  // The spread edge label starts with the team's display name
-  const spreadEdgeIsAway = spreadEdge && awayDisplayName
-    ? normalizeEdgeLabel(spreadEdge).toLowerCase().startsWith(awayDisplayName.toLowerCase())
-    : false;
+  // Determine which team logo to show for the spread edge.
+  // NHL edge strings start with the team abbreviation (e.g. "CGY +1.5 [STRONG EDGE]"),
+  // while NCAAM/NBA strings start with the display name (e.g. "Duke +3.5").
+  // Check abbreviation first, then fall back to display name match.
+  const edgeLabelNorm = spreadEdge ? spreadEdge.trim().toUpperCase() : "";
+  const spreadEdgeIsAway = (() => {
+    if (!spreadEdge) return false;
+    // Abbreviation match (NHL): edge string starts with away abbr
+    if (awayAbbr && edgeLabelNorm.startsWith(awayAbbr.toUpperCase())) return true;
+    if (homeAbbr && edgeLabelNorm.startsWith(homeAbbr.toUpperCase())) return false;
+    // Display name match (NCAAM/NBA)
+    if (awayDisplayName && normalizeEdgeLabel(spreadEdge).toLowerCase().startsWith(awayDisplayName.toLowerCase())) return true;
+    return false;
+  })();
   const spreadLogoUrl = spreadEdgeIsAway ? awayLogoUrl : homeLogoUrl;
   const spreadSlug = spreadEdgeIsAway ? awaySlug : homeSlug;
   const spreadTeamName = spreadEdgeIsAway ? awayDisplayName : homeDisplayName;
@@ -2707,6 +2719,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     homeSlug={game.homeTeam}
                     awayDisplayName={awayDisplayName}
                     homeDisplayName={homeDisplayName}
+                    awayAbbr={awayAbbr}
+                    homeAbbr={homeAbbr}
                     compact
                   />
                 </div>
@@ -3535,6 +3549,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                         homeSlug={game.homeTeam}
                         awayDisplayName={awayDisplayName}
                         homeDisplayName={homeDisplayName}
+                        awayAbbr={awayAbbr}
+                        homeAbbr={homeAbbr}
                       />
                     </div>
                   )}

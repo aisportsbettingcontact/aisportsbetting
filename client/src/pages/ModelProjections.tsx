@@ -256,7 +256,7 @@ export default function ModelProjections() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NCAAM");
+  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NHL");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>(() => todayUTC());
   const [searchQuery, setSearchQuery] = useState("");
@@ -687,26 +687,26 @@ export default function ModelProjections() {
             isAdmin={isOwner || user?.role === "admin"}
           />
 
-          {/* NCAAM pill — always visible, even in favorites tab */}
+          {/* NHL pill — first, default sport */}
           {/* Mobile: px-1.5 py-1 text-[10px] icon-11px | sm+: px-2 py-1 var(--fs-nav) icon-14px */}
-          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-            style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={11} height={8} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
-            NCAAM
+          <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+            <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
+            NHL
           </button>
 
-          {/* NBA pill — always visible, even in favorites tab */}
+          {/* NBA pill */}
           <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
             style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
             <img src={CDN_NBA} alt="NBA" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
             NBA
           </button>
 
-          {/* NHL pill — always visible */}
-          <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-            style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-            <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
-            NHL
+          {/* NCAAM pill — last */}
+          <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={11} height={8} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
+            NCAAM
           </button>
 
           {/* Search bar — always visible, shrinks when Favorites button is present */}
