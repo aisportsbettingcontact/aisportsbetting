@@ -110,18 +110,19 @@ FATIGUE_NORMAL      = 1.00      # 2+ days rest
 FATIGUE_ONE_DAY     = 0.97      # 1 day rest
 FATIGUE_B2B         = 0.94      # Back-to-back (0 days rest)
 
-# League averages for normalization (NaturalStatTrick 2025-26 season)
-# Stats available in NST team table (rate=y): xGF/60, xGA/60, HDCF/60, HDCA/60,
-#   SCF/60, SCA/60, CF/60, CA/60
-# Rush/60, Reb/60, SA/60, SlotShots do NOT exist in the NST team table.
-LEAGUE_XGF_60       = 2.65   # Expected Goals For per 60
-LEAGUE_XGA_60       = 2.65   # Expected Goals Against per 60
-LEAGUE_HDCF_60      = 1.05   # High-Danger Corsi For per 60
-LEAGUE_HDCA_60      = 1.05   # High-Danger Corsi Against per 60
-LEAGUE_SCF_60       = 25.0   # Scoring Chances For per 60
-LEAGUE_SCA_60       = 25.0   # Scoring Chances Against per 60
-LEAGUE_CF_60        = 55.0   # Corsi For per 60 (pace proxy)
-LEAGUE_CA_60        = 55.0   # Corsi Against per 60 (pace proxy)
+# League averages for normalization (NaturalStatTrick 2025-26 season, 5v5, all situations)
+# Verified against actual scraped NST data (32 teams, March 2026):
+#   xGF/60=2.662  HDCF/60=11.457  SCF/60=26.975  CF/60=57.171
+#   xGA/60=2.660  HDCA/60=11.453  SCA/60=26.952  CA/60=57.132
+# NOTE: HDCF/60 is ~11.5 (scoring chance events), NOT ~1.05 (which was wrong by 10x)
+LEAGUE_XGF_60       = 2.662   # Expected Goals For per 60
+LEAGUE_XGA_60       = 2.660   # Expected Goals Against per 60
+LEAGUE_HDCF_60      = 11.457  # High-Danger Corsi For per 60 (NOT 1.05 — actual NST value)
+LEAGUE_HDCA_60      = 11.453  # High-Danger Corsi Against per 60
+LEAGUE_SCF_60       = 26.975  # Scoring Chances For per 60
+LEAGUE_SCA_60       = 26.952  # Scoring Chances Against per 60
+LEAGUE_CF_60        = 57.171  # Corsi For per 60 (pace proxy)
+LEAGUE_CA_60        = 57.132  # Corsi Against per 60 (pace proxy)
 
 # Edge detection thresholds
 PUCK_LINE_EDGE_THRESHOLD = 0.05   # 5% probability edge

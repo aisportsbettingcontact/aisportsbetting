@@ -2791,9 +2791,21 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const bkUnderStr = !isNaN(bookTotal)
               ? (mbUnderOdds ? `u${bkTotalStr} (${mbUnderOdds})` : `u${bkTotalStr}`)
               : 'u—';
-            const mdlAwaySpreadStr = !isNaN(awayModelSpread) ? spreadSign(awayModelSpread) : '—';
-            const mdlHomeSpreadStr = !isNaN(homeModelSpread) ? spreadSign(homeModelSpread) : '—';
-            const mdlTotalStr      = !isNaN(modelTotal) ? String(modelTotal) : '—';
+            // For NHL: include puck line odds and total odds in model display strings
+            const mdlAwaySpreadStr = !isNaN(awayModelSpread)
+              ? (isNhlGame && game.modelAwayPLOdds ? `${spreadSign(awayModelSpread)} (${game.modelAwayPLOdds})` : spreadSign(awayModelSpread))
+              : '—';
+            const mdlHomeSpreadStr = !isNaN(homeModelSpread)
+              ? (isNhlGame && game.modelHomePLOdds ? `${spreadSign(homeModelSpread)} (${game.modelHomePLOdds})` : spreadSign(homeModelSpread))
+              : '—';
+            const mdlTotalStr = !isNaN(modelTotal) ? String(modelTotal) : '—';
+            // For NHL: total display strings include O/U odds
+            const mdlOverTotalStr  = !isNaN(modelTotal)
+              ? (isNhlGame && game.modelOverOdds  ? `${mdlTotalStr} (${game.modelOverOdds})`  : mdlTotalStr)
+              : '—';
+            const mdlUnderTotalStr = !isNaN(modelTotal)
+              ? (isNhlGame && game.modelUnderOdds ? `${mdlTotalStr} (${game.modelUnderOdds})` : mdlTotalStr)
+              : '—';
             // ML values — always show + prefix for positive (underdog) values
             // +100 displays as 'EV' (even money; -100 does not exist as a valid ML)
             // LOG: [GameCard:ML] logs raw→formatted for every game in dev
@@ -3117,7 +3129,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       wrapperStyle={{ justifySelf: 'center', width: '100%' }}
                     />
                     <OddsCell
-                      mainValue={`o${mdlTotalStr}`}
+                      mainValue={`o${mdlOverTotalStr}`}
                       juiceStr={null}
                       isBook={false}
                       isEdge={overTotalIsEdge && isModelTab}
@@ -3179,7 +3191,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                       wrapperStyle={{ justifySelf: 'center', width: '100%' }}
                     />
                     <OddsCell
-                      mainValue={`u${mdlTotalStr}`}
+                      mainValue={`u${mdlUnderTotalStr}`}
                       juiceStr={null}
                       isBook={false}
                       isEdge={underTotalIsEdge && isModelTab}
