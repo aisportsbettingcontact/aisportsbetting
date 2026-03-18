@@ -843,11 +843,11 @@ export default function ModelProjections() {
             NBA
           </button>
 
-          {/* NCAAM pill — third */}
+          {/* MARCH MADNESS pill — third */}
           <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
             style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={11} height={8} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
-            NCAAM
+            <img src={CDN_MARCH_MADNESS} alt="March Madness" width={11} height={8} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
+            MARCH MADNESS
           </button>
 
           {/* Search bar — always visible, shrinks when Favorites button is present */}

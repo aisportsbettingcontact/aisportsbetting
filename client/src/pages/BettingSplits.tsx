@@ -408,11 +408,11 @@ export default function BettingSplitsPage() {
             isAdmin={isOwner || user?.role === "admin"}
           />
 
-          {/* NCAAM pill */}
+          {/* MARCH MADNESS pill */}
           <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
-            <img src={CDN_MARCH_MADNESS} alt="NCAAM" width={14} height={10} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
-            NCAAM
+            <img src={CDN_MARCH_MADNESS} alt="March Madness" width={14} height={10} style={{ objectFit: "contain", filter: selectedSport === "NCAAM" ? "invert(1)" : "invert(0.45)", flexShrink: 0 }} />
+            MARCH MADNESS
           </button>
 
           {/* NBA pill */}
