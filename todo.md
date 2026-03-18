@@ -1641,3 +1641,9 @@
 - [x] Unpublish 4 non-bracket contaminating games (navy/wake_forest, dayton/bradley, george_washington/utah_valley, sam_houston_st/new_mexico)
 - [x] isValidGame filter in routers.ts confirmed working — blocks all non-bracket NCAAM teams at API layer
 - [x] Re-run full audit — confirmed: 4 games on feed (2 FF + 2 R64), all with complete odds+splits, zero contamination
+
+## Bracket Region Verification (March 18, 2026)
+- [x] EAST region (8 games) verified against NCAA.com HTML — all 8 match DB
+- [ ] SOUTH region (8 games) verified against NCAA.com HTML
+- [ ] WEST region (8 games) verified against NCAA.com HTML
+- [ ] MIDWEST region (8 games) verified against NCAA.com HTML
