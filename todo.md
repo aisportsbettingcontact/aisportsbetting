@@ -1609,3 +1609,10 @@
 - [x] Apply GG Sans to Discord button only via inline fontFamily style (not global font change)
 - [x] Updated discordAuth.test.ts: replaced disconnect URL test with one-time-only policy invariant test
 - [x] TypeScript: 0 errors. 331/332 tests passing (1 pre-existing KenPom env var test)
+
+## Discord Button Color Fix & Uniqueness Enforcement (March 18, 2026)
+- [x] Change Discord button color from #738ADB to #3238a9 (darker, richer blue)
+- [x] Ensure mobile shows full text: CONNECT DISCORD or @DISPLAYNAME (removed hidden sm:inline, always visible)
+- [x] Server-side uniqueness check already implemented at CHECKPOINT:9 (already_linked redirect)
+- [x] Added comprehensive error messages map: already_linked shows clear "Each Discord account can only be connected to one account" message
+- [x] One-time-only connection policy intact: no user disconnect option, owner-only in User Management

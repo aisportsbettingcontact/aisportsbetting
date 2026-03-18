@@ -364,13 +364,21 @@ export default function ModelProjections() {
       window.history.replaceState({}, "", clean.pathname + (clean.search || ""));
     } else if (error) {
       const errorMessages: Record<string, string> = {
-        not_logged_in:    "You must be signed in to connect Discord.",
-        invalid_request:  "Discord OAuth request was invalid. Please try again.",
-        token_exchange:   "Discord token exchange failed. Please try again.",
-        profile_fetch:    "Could not fetch your Discord profile. Please try again.",
-        discord_conflict: "This Discord account is already linked to another user.",
-        db_error:         "Database error while saving Discord connection. Please try again.",
-        unknown:          "An unknown error occurred. Please try again.",
+        // User-facing policy errors
+        not_logged_in:       "You must be signed in to connect Discord.",
+        denied:              "Discord authorization was cancelled.",
+        already_linked:      "This Discord account is already linked to another account on this site. Each Discord account can only be connected to one account. Please use a different Discord account.",
+        // OAuth flow errors
+        invalid_request:     "Discord OAuth request was invalid. Please try again.",
+        state_mismatch:      "Discord OAuth state mismatch. Please try again.",
+        state_expired:       "Discord OAuth session expired. Please try again.",
+        token_exchange_failed: "Discord token exchange failed. Please try again.",
+        profile_fetch_failed:  "Could not fetch your Discord profile. Please try again.",
+        // Server/DB errors
+        db_unavailable:      "Database temporarily unavailable. Please try again in a moment.",
+        db_write_failed:     "Failed to save Discord connection. Please try again.",
+        server_error:        "An unexpected server error occurred. Please try again.",
+        unknown:             "An unknown error occurred. Please try again.",
       };
       const msg = errorMessages[error] ?? `Discord connection failed: ${error}`;
       console.warn(`[CHECKPOINT:DISCORD_CALLBACK_HANDLER] discord_error="${error}" detected in URL — ${msg}`);
@@ -649,17 +657,22 @@ export default function ModelProjections() {
           </div>
           <div className="flex-1" />
           {/* ─── Discord Button ─────────────────────────────────────────────────────
-           * DESIGN: Official Discord branding — solid #738ADB background, white text,
+           * DESIGN: Official Discord branding — solid #3238a9 background, white text,
            *         GG Sans font, Discord logo SVG. No opacity/transparency.
+           *         Color: #3238a9 (deep Discord blue — richer, easier to read than #738ADB)
            *
            * STATES:
            *   Connected    → read-only pill showing Discord logo + @displayName
            *                  (no click action — users CANNOT disconnect their own Discord)
            *   Not connected → clickable link to /api/auth/discord/connect
            *
+           * MOBILE: Text always visible on all screen sizes (no hidden sm:inline).
+           *         Button shrinks gracefully via min-width:0 and text truncation.
+           *
            * POLICY: One-time-only connection. Once a user links their Discord account,
            *         it is permanent from their perspective. Only @prez (owner) can
            *         disconnect accounts via the User Management admin panel.
+           *         Server enforces uniqueness: one Discord ID → one site account, ever.
            * ─────────────────────────────────────────────────────────────────────── */}
           {appUser && (
             <div className="flex-shrink-0 mr-2">
@@ -668,9 +681,9 @@ export default function ModelProjections() {
                 // Shows Discord logo + @displayName in GG Sans white on #738ADB
                 <div
                   title={`Discord connected: @${appUser.discordUsername ?? appUser.discordId}`}
-                  className="flex items-center gap-[6px] px-3 py-1.5 rounded-full select-none cursor-default"
+                  className="flex items-center gap-[6px] px-3 py-1.5 rounded-full select-none cursor-default min-w-0"
                   style={{
-                    background: "#738ADB",
+                    background: "#3238a9",
                     color: "#ffffff",
                     fontFamily: "'GG Sans', 'Noto Sans', sans-serif",
                     fontWeight: 600,
@@ -681,13 +694,15 @@ export default function ModelProjections() {
                     outline: "none",
                     boxShadow: "none",
                     opacity: 1,
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {/* Official Discord logo SVG — white fill */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="#ffffff" className="flex-shrink-0" aria-hidden="true">
                     <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057.1 18.08.11 18.1.132 18.115a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
                   </svg>
-                  <span className="hidden sm:inline whitespace-nowrap">
+                  {/* Always visible on all screen sizes including mobile */}
+                  <span style={{ whiteSpace: "nowrap" }}>
                     @{appUser.discordUsername ?? appUser.discordId}
                   </span>
                 </div>
@@ -697,9 +712,9 @@ export default function ModelProjections() {
                 <a
                   href="/api/auth/discord/connect"
                   title="Link your Discord account to verify membership"
-                  className="flex items-center gap-[6px] px-3 py-1.5 rounded-full no-underline"
+                  className="flex items-center gap-[6px] px-3 py-1.5 rounded-full no-underline min-w-0"
                   style={{
-                    background: "#738ADB",
+                    background: "#3238a9",
                     color: "#ffffff",
                     fontFamily: "'GG Sans', 'Noto Sans', sans-serif",
                     fontWeight: 600,
@@ -711,13 +726,15 @@ export default function ModelProjections() {
                     boxShadow: "none",
                     opacity: 1,
                     textDecoration: "none",
+                    whiteSpace: "nowrap",
                   }}
                 >
                   {/* Official Discord logo SVG — white fill */}
                   <svg width="16" height="16" viewBox="0 0 24 24" fill="#ffffff" className="flex-shrink-0" aria-hidden="true">
                     <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057.1 18.08.11 18.1.132 18.115a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
                   </svg>
-                  <span className="hidden sm:inline whitespace-nowrap">CONNECT DISCORD</span>
+                  {/* Always visible on all screen sizes including mobile */}
+                  <span style={{ whiteSpace: "nowrap" }}>CONNECT DISCORD</span>
                 </a>
               )}
             </div>
