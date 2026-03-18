@@ -1574,5 +1574,11 @@
 - [x] Add PUBLIC_ORIGIN invariant tests (3 new tests: value set, no trailing slash, exact callback URL match)
 - [x] Confirmed PUBLIC_ORIGIN=SET in dev server startup log
 - [ ] Test Discord OAuth end-to-end on published site after publishing
+- [x] Check callback logs to confirm DB write succeeded — DB columns exist and updateAppUser call is correct
+- [x] Add Discord Status column to User Management table (Connected/Not Connected badge with Discord logo)
+- [x] Add Discord Username column to User Management table (@username in Discord purple or —)
+- [x] Verified header button shows @discordUsername when discordId is set, Connect Discord when null
+- [x] Added discord_linked/discord_error URL param handler in ModelProjections.tsx — force-refetches appUsers.me and shows toast
+- [x] Updated colSpan from 9 to 10 for loading/empty state rows in UserManagement table
 - [x] Hard-lock EDGE ROI footer in GameCard - remove EDGE column rendering permanently
 - [x] Ensure edge footer shows for all sports (NHL, NBA, NCAAM) in MODEL PROJECTIONS

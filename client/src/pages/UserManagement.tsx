@@ -591,21 +591,22 @@ export default function UserManagement() {
                 <TableHead>
                   <ColFilterDropdown label="LAST SIGN IN" colKey="lastSignIn" options={opts.lastSignIn} state={cols.lastSignIn} onChange={(s) => updateCol("lastSignIn", s)} />
                 </TableHead>
-                <TableHead className="text-zinc-400 font-semibold tracking-wider text-xs">DISCORD</TableHead>
+                <TableHead className="text-zinc-400 font-semibold tracking-wider text-xs">DISCORD STATUS</TableHead>
+                <TableHead className="text-zinc-400 font-semibold tracking-wider text-xs">DISCORD USERNAME</TableHead>
                 <TableHead className="text-zinc-400 font-semibold tracking-wider text-xs text-right">ACTIONS</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-zinc-500">
+                  <TableCell colSpan={10} className="text-center py-12 text-zinc-500">
                     <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
                     Loading accounts...
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-12 text-zinc-500">
+                  <TableCell colSpan={10} className="text-center py-12 text-zinc-500">
                     {rawUsers.length === 0 ? "No accounts yet. Create the first one." : "No accounts match the current filters."}
                   </TableCell>
                 </TableRow>
@@ -643,22 +644,36 @@ export default function UserManagement() {
                       </span>
                     </TableCell>
                     <TableCell className="text-zinc-400 text-sm">{formatDate(user.lastSignedIn)}</TableCell>
+                    {/* DISCORD STATUS column */}
                     <TableCell>
-                      {user.discordId ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold border"
-                            style={{ background: "rgba(88,101,242,0.15)", color: "#7289da", borderColor: "rgba(88,101,242,0.4)" }}
-                            title={`Discord ID: ${user.discordId}${user.discordConnectedAt ? ` · Linked: ${new Date(user.discordConnectedAt).toLocaleString()}` : ""}`}
-                          >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0">
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold border ${
+                          user.discordId
+                            ? "bg-[rgba(88,101,242,0.15)] text-[#7289da] border-[rgba(88,101,242,0.4)]"
+                            : "bg-zinc-500/10 text-zinc-500 border-zinc-500/20"
+                        }`}
+                        title={user.discordId && user.discordConnectedAt
+                          ? `Discord ID: ${user.discordId} · Linked: ${new Date(user.discordConnectedAt).toLocaleString()}`
+                          : "Discord not connected"}
+                      >
+                        {user.discordId ? (
+                          <>
+                            <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor" className="flex-shrink-0">
                               <path d="M20.317 4.37a19.791 19.791 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.21.375-.444.864-.608 1.25a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.077.077 0 0 0-.079-.037A19.736 19.736 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.057.1 18.08.11 18.1.132 18.115a19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028c.462-.63.874-1.295 1.226-1.994a.076.076 0 0 0-.041-.106 13.107 13.107 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .077-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .078.01c.12.098.246.198.373.292a.077.077 0 0 1-.006.127 12.299 12.299 0 0 1-1.873.892.077.077 0 0 0-.041.107c.36.698.772 1.362 1.225 1.993a.076.076 0 0 0 .084.028 19.839 19.839 0 0 0 6.002-3.03.077.077 0 0 0 .032-.054c.5-5.177-.838-9.674-3.549-13.66a.061.061 0 0 0-.031-.03zM8.02 15.33c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.956-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.956 2.418-2.157 2.418zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.419 2.157-2.419 1.21 0 2.176 1.096 2.157 2.42 0 1.333-.946 2.418-2.157 2.418z"/>
                             </svg>
-                            @{user.discordUsername ?? user.discordId}
-                          </span>
-                        </div>
+                            Connected
+                          </>
+                        ) : (
+                          "Not Connected"
+                        )}
+                      </span>
+                    </TableCell>
+                    {/* DISCORD USERNAME column */}
+                    <TableCell className="text-sm">
+                      {user.discordUsername ? (
+                        <span className="text-[#7289da] font-medium">@{user.discordUsername}</span>
                       ) : (
-                        <span className="text-xs text-zinc-600">—</span>
+                        <span className="text-zinc-600">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-right">

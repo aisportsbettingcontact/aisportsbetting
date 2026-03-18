@@ -340,6 +340,49 @@ export default function ModelProjections() {
     if (!appAuthLoading && appUser && !appUser.termsAccepted) setShowAgeModal(true);
   }, [appAuthLoading, appUser]);
 
+  // ── Discord OAuth callback handler ─────────────────────────────────────────
+  // After Discord OAuth completes, the server redirects to /dashboard?discord_linked=1
+  // (or ?discord_error=<reason>). We detect these URL params, show a toast, force-
+  // refetch appUsers.me (bypassing the 5-min stale cache), and clean the URL.
+  // CHECKPOINT:DISCORD_CALLBACK_HANDLER — fires once on mount if discord_linked/error present
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const linked = params.get("discord_linked");
+    const error  = params.get("discord_error");
+
+    if (linked === "1") {
+      console.log("[CHECKPOINT:DISCORD_CALLBACK_HANDLER] discord_linked=1 detected in URL — forcing appUsers.me refetch to show connected username");
+      // Force-refetch bypasses the 5-min stale cache so the header button updates immediately
+      refetchAppUser();
+      toast.success("Discord account connected!", {
+        description: "Your Discord username will now appear in the header.",
+        duration: 5000,
+      });
+      // Clean the URL so a page refresh doesn't re-trigger the toast
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("discord_linked");
+      window.history.replaceState({}, "", clean.pathname + (clean.search || ""));
+    } else if (error) {
+      const errorMessages: Record<string, string> = {
+        not_logged_in:    "You must be signed in to connect Discord.",
+        invalid_request:  "Discord OAuth request was invalid. Please try again.",
+        token_exchange:   "Discord token exchange failed. Please try again.",
+        profile_fetch:    "Could not fetch your Discord profile. Please try again.",
+        discord_conflict: "This Discord account is already linked to another user.",
+        db_error:         "Database error while saving Discord connection. Please try again.",
+        unknown:          "An unknown error occurred. Please try again.",
+      };
+      const msg = errorMessages[error] ?? `Discord connection failed: ${error}`;
+      console.warn(`[CHECKPOINT:DISCORD_CALLBACK_HANDLER] discord_error="${error}" detected in URL — ${msg}`);
+      toast.error("Discord connection failed", { description: msg, duration: 7000 });
+      // Clean the URL
+      const clean = new URL(window.location.href);
+      clean.searchParams.delete("discord_error");
+      window.history.replaceState({}, "", clean.pathname + (clean.search || ""));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount only
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
