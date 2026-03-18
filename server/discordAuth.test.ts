@@ -225,3 +225,27 @@ describe("Discord route guards", () => {
     expect((responses[0]?.body as { error: string })?.error).toBe("Not authenticated");
   });
 });
+
+// ─── PUBLIC_ORIGIN env var validation ─────────────────────────────────────────
+// This test validates that PUBLIC_ORIGIN is set in the environment.
+// Without it, the redirect_uri will be built from x-forwarded-host which
+// resolves to the internal Cloud Run hostname (*.a.run.app) in production,
+// causing Discord to reject the OAuth request with "Invalid OAuth2 redirect_uri".
+describe("PUBLIC_ORIGIN env var", () => {
+  it("ENV.publicOrigin is set (required to prevent Cloud Run hostname in redirect_uri)", () => {
+    expect(ENV.publicOrigin).toBeTruthy();
+    expect(ENV.publicOrigin.startsWith("https://")).toBe(true);
+    expect(ENV.publicOrigin).not.toContain(".run.app");
+    expect(ENV.publicOrigin).not.toContain("localhost");
+  });
+
+  it("ENV.publicOrigin does not have a trailing slash", () => {
+    expect(ENV.publicOrigin.endsWith("/")).toBe(false);
+  });
+
+  it("redirect_uri built from PUBLIC_ORIGIN matches Discord Portal registration", () => {
+    const expectedCallbackUrl = `${ENV.publicOrigin}/api/auth/discord/callback`;
+    // This must exactly match what is registered in Discord Developer Portal
+    expect(expectedCallbackUrl).toBe("https://aisportsbettingmodels.com/api/auth/discord/callback");
+  });
+});

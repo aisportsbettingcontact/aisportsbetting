@@ -1567,6 +1567,12 @@
 - [x] Test Discord OAuth end-to-end on dev server — all 3 routes respond correctly
 - [x] Update frontend ModelProjections.tsx to use /api/auth/discord/* URLs
 - [x] Add route prefix invariant tests to discordAuth.test.ts (6 new tests, all passing)
-- [ ] Update Discord Developer Portal redirect URI to https://aisportsbettingmodels.com/api/auth/discord/callback
+- [x] Update Discord Developer Portal redirect URI to https://aisportsbettingmodels.com/api/auth/discord/callback
+- [x] Fix redirect_uri construction: x-forwarded-host resolves to internal Cloud Run hostname (*.a.run.app) not public domain
+- [x] Added PUBLIC_ORIGIN env var (set to https://aisportsbettingmodels.com) — used as canonical origin for redirect_uri
+- [x] Add deep CHECKPOINT:1-10 + A-C logging at every step of OAuth flow including all proxy headers
+- [x] Add PUBLIC_ORIGIN invariant tests (3 new tests: value set, no trailing slash, exact callback URL match)
+- [x] Confirmed PUBLIC_ORIGIN=SET in dev server startup log
+- [ ] Test Discord OAuth end-to-end on published site after publishing
 - [x] Hard-lock EDGE ROI footer in GameCard - remove EDGE column rendering permanently
 - [x] Ensure edge footer shows for all sports (NHL, NBA, NCAAM) in MODEL PROJECTIONS
