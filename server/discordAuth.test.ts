@@ -1,17 +1,94 @@
 /**
  * Tests for Discord account linking system
  *
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │  CRITICAL INVARIANT: All Discord routes MUST be under /api/ prefix.    │
+ * │                                                                         │
+ * │  The Manus production proxy only forwards /api/* to Express.           │
+ * │  Routes outside /api/* hit the static CDN and return SPA index.html   │
+ * │  (HTTP 200) instead of the Express handler — a silent 404.            │
+ * │                                                                         │
+ * │  This test suite enforces the /api/auth/discord/* prefix as a         │
+ * │  hard invariant so this regression cannot be reintroduced.            │
+ * └─────────────────────────────────────────────────────────────────────────┘
+ *
  * Covers:
+ * - ROUTE_PREFIX is /api/auth/discord (enforces production proxy compatibility)
  * - ENV has all required Discord keys
  * - Schema has all required Discord fields
- * - /auth/discord/connect rejects unauthenticated requests
- * - /auth/discord/disconnect rejects unauthenticated requests
- * - /auth/discord/callback rejects missing code/state
- * - /auth/discord/callback rejects expired/invalid state
+ * - /api/auth/discord/connect rejects unauthenticated requests
+ * - /api/auth/discord/disconnect rejects unauthenticated requests
+ * - /api/auth/discord/callback rejects missing code/state
+ * - /api/auth/discord/callback rejects expired/invalid state
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ENV } from "./_core/env";
+
+// ─── CRITICAL: Route prefix invariant ─────────────────────────────────────────
+// This test exists to prevent the regression where Discord routes were placed
+// at /auth/discord/* instead of /api/auth/discord/* — causing a silent 404 on
+// the Manus production site because the proxy only forwards /api/* to Express.
+describe("Discord route prefix invariant", () => {
+  it("ROUTE_PREFIX must start with /api/ (Manus proxy only routes /api/* to Express)", async () => {
+    // We read the ROUTE_PREFIX constant directly from the source file to ensure
+    // it hasn't been changed to a non-/api/ path.
+    const fs = await import("fs");
+    const path = await import("path");
+    const srcPath = path.resolve(__dirname, "discordAuth.ts");
+    const src = fs.readFileSync(srcPath, "utf-8");
+
+    // Extract the ROUTE_PREFIX value
+    const match = src.match(/const ROUTE_PREFIX\s*=\s*["']([^"']+)["']/);
+    expect(match).not.toBeNull();
+    const routePrefix = match![1];
+
+    expect(routePrefix).toBe("/api/auth/discord");
+    expect(routePrefix.startsWith("/api/")).toBe(true);
+  });
+
+  it("connect route is registered at /api/auth/discord/connect", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const srcPath = path.resolve(__dirname, "discordAuth.ts");
+    const src = fs.readFileSync(srcPath, "utf-8");
+    expect(src).toContain('`${ROUTE_PREFIX}/connect`');
+  });
+
+  it("callback route is registered at /api/auth/discord/callback", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const srcPath = path.resolve(__dirname, "discordAuth.ts");
+    const src = fs.readFileSync(srcPath, "utf-8");
+    expect(src).toContain('`${ROUTE_PREFIX}/callback`');
+  });
+
+  it("disconnect route is registered at /api/auth/discord/disconnect", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const srcPath = path.resolve(__dirname, "discordAuth.ts");
+    const src = fs.readFileSync(srcPath, "utf-8");
+    expect(src).toContain('`${ROUTE_PREFIX}/disconnect`');
+  });
+
+  it("frontend connect href uses /api/auth/discord/connect", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const frontendPath = path.resolve(__dirname, "../client/src/pages/ModelProjections.tsx");
+    const src = fs.readFileSync(frontendPath, "utf-8");
+    expect(src).toContain('href="/api/auth/discord/connect"');
+    expect(src).not.toContain('href="/auth/discord/connect"');
+  });
+
+  it("frontend disconnect fetch uses /api/auth/discord/disconnect", async () => {
+    const fs = await import("fs");
+    const path = await import("path");
+    const frontendPath = path.resolve(__dirname, "../client/src/pages/ModelProjections.tsx");
+    const src = fs.readFileSync(frontendPath, "utf-8");
+    expect(src).toContain('"/api/auth/discord/disconnect"');
+    expect(src).not.toContain('"/auth/discord/disconnect"');
+  });
+});
 
 // ─── ENV validation ────────────────────────────────────────────────────────────
 
@@ -65,10 +142,10 @@ describe("Discord schema fields on appUsers", () => {
   });
 });
 
-// ─── Route guard: /auth/discord/connect ────────────────────────────────────────
+// ─── Route guard logic tests ───────────────────────────────────────────────────
 
 describe("Discord route guards", () => {
-  it("/auth/discord/connect redirects without app_session cookie", async () => {
+  it("/api/auth/discord/connect redirects without app_session cookie", async () => {
     // Simulate the guard logic: no cookie → redirect to /?error=not_logged_in
     const mockReq = {
       headers: { cookie: "" },
@@ -92,7 +169,7 @@ describe("Discord route guards", () => {
     expect(redirects).toContain("/?error=not_logged_in");
   });
 
-  it("/auth/discord/callback rejects missing code", async () => {
+  it("/api/auth/discord/callback rejects missing code", async () => {
     // Simulate callback with no code → redirect to /dashboard?discord_error=invalid_request
     const redirects: string[] = [];
     const mockRes = {
@@ -109,7 +186,7 @@ describe("Discord route guards", () => {
     expect(redirects).toContain("/dashboard?discord_error=invalid_request");
   });
 
-  it("/auth/discord/callback rejects expired state", async () => {
+  it("/api/auth/discord/callback rejects expired state", async () => {
     const redirects: string[] = [];
     const mockRes = {
       redirect: (code: number, url: string) => { redirects.push(url); },
@@ -128,7 +205,7 @@ describe("Discord route guards", () => {
     expect(redirects).toContain("/dashboard?discord_error=state_mismatch");
   });
 
-  it("/auth/discord/disconnect returns 401 without app_session cookie", async () => {
+  it("/api/auth/discord/disconnect returns 401 without app_session cookie", async () => {
     const { parse: parseCookieHeader } = await import("cookie");
     const cookies = parseCookieHeader("");
     const token = cookies["app_session"];

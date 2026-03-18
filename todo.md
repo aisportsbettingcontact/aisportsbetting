@@ -1560,6 +1560,13 @@
 - [x] Wire automatic daily NHL model execution (scheduler every 30min 9AM-9PM PST, auto-approve after each run)
 
 ## UI/Discord Fixes (March 18, 2026)
-- [ ] Fix Discord /auth/discord/connect 404 on production
+- [x] Fix Discord /auth/discord/connect 404 on production — moved all routes to /api/auth/discord/* (Manus proxy only forwards /api/* to Express)
+- [x] Deep-audit route registration chain: confirmed routes registered before serveStatic catch-all
+- [x] Add granular checkpoint logging at every layer of Discord OAuth flow (CHECKPOINT:1-9, A-C)
+- [x] Verify production build includes Discord routes (confirmed in dist/index.js at line 3184)
+- [x] Test Discord OAuth end-to-end on dev server — all 3 routes respond correctly
+- [x] Update frontend ModelProjections.tsx to use /api/auth/discord/* URLs
+- [x] Add route prefix invariant tests to discordAuth.test.ts (6 new tests, all passing)
+- [ ] Update Discord Developer Portal redirect URI to https://aisportsbettingmodels.com/api/auth/discord/callback
 - [x] Hard-lock EDGE ROI footer in GameCard - remove EDGE column rendering permanently
 - [x] Ensure edge footer shows for all sports (NHL, NBA, NCAAM) in MODEL PROJECTIONS

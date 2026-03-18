@@ -615,7 +615,7 @@ export default function ModelProjections() {
                   style={{ background: "rgba(88,101,242,0.18)", color: "#7289da", border: "1px solid rgba(88,101,242,0.45)" }}
                   onClick={async () => {
                     if (confirm(`Disconnect Discord account @${appUser.discordUsername ?? appUser.discordId}?`)) {
-                      await fetch("/auth/discord/disconnect", { method: "POST", credentials: "include" });
+                      await fetch("/api/auth/discord/disconnect", { method: "POST", credentials: "include" });
                       window.location.reload();
                     }
                   }}
@@ -628,7 +628,7 @@ export default function ModelProjections() {
                 </button>
               ) : (
                 <a
-                  href="/auth/discord/connect"
+                  href="/api/auth/discord/connect"
                   title="Link your Discord account"
                   className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-bold tracking-wide transition-colors"
                   style={{ background: "rgba(88,101,242,0.12)", color: "rgba(114,137,218,0.75)", border: "1px solid rgba(88,101,242,0.3)" }}
