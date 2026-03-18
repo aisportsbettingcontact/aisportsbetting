@@ -3238,12 +3238,16 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               homeBookLine, homeBookJuice,
               homeModelLine, homeModelJuice, homeModelHasEdge,
               isML = false,
+              roiEdgePP,
+              roiLabel,
             }: {
               awayBookLine: string; awayBookJuice: string;
               awayModelLine: string; awayModelJuice: string; awayModelHasEdge: boolean;
               homeBookLine: string; homeBookJuice: string;
               homeModelLine: string; homeModelJuice: string; homeModelHasEdge: boolean;
               isML?: boolean;
+              roiEdgePP?: number;   // best edge pp for this market (used for ROI footer)
+              roiLabel?: string;    // label for the best edge side, e.g. "CGY +1.5", "U5.5"
             }) => {
               // SubCol: line row (dim 9px) + juice row (bold 14px)
               // modelJuiceColor: neon green only when this side has an edge, otherwise white
@@ -3287,103 +3291,128 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                   <div style={{ height: 1, background: 'rgba(255,255,255,0.07)', margin: '0 4px' }} />
                   {/* Home row */}
                   <TeamRow bookLine={homeBookLine} bookJuice={homeBookJuice} modelLine={homeModelLine} modelJuice={homeModelJuice} modelHasEdge={homeModelHasEdge} />
+                  {/* ROI footer — edge side label + ROI% in neon green, or NO EDGE in gray */}
+                  {(() => {
+                    const pp = roiEdgePP ?? NaN;
+                    const hasEdge = !isNaN(pp) && pp >= 1.5;
+                    const roiStr = hasEdge ? `+${pp.toFixed(2)}% ROI` : 'NO EDGE';
+                    const roiColor = hasEdge ? getEdgeColor(pp) : 'rgba(200,200,200,0.45)';
+                    const label = hasEdge && roiLabel ? roiLabel : '';
+                    return (
+                      <div style={{
+                        borderTop: '1px solid rgba(255,255,255,0.07)',
+                        padding: '3px 4px 3px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '1px',
+                        background: hasEdge ? 'rgba(57,255,20,0.04)' : 'transparent',
+                      }}>
+                        {label ? (
+                          <span style={{ fontSize: '7px', fontWeight: 700, color: roiColor, textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '100%', textAlign: 'center' }}>{label}</span>
+                        ) : null}
+                        <span style={{ fontSize: '7.5px', fontWeight: hasEdge ? 800 : 400, color: roiColor, letterSpacing: '0.03em', lineHeight: 1, whiteSpace: 'nowrap', textAlign: 'center' }}>{roiStr}</span>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             };
 
             const OddsTable = () => (
               <div style={{ display: 'flex', flexDirection: 'row', alignItems: 'stretch', width: '100%', padding: '4px 6px 4px', gap: '4px' }}>
-                {/* Market cards row: SPREAD | TOTAL | ML | EDGE — all flex-1 equal width */}
-                {/* SPREAD card — edge flags drive MODEL juice color */}
-                <MktCard
-                  awayBookLine={!isNaN(awayBookSpread) ? spreadSign(awayBookSpread) : '—'}
-                  awayBookJuice={mbAwaySpreadOdds ? String(mbAwaySpreadOdds) : '—110'}
-                  awayModelLine={mdlAwaySplit.line || '—'}
-                  awayModelJuice={mdlAwaySplit.odds || '—'}
-                  awayModelHasEdge={!isNaN(awaySpreadEdgePP) && awaySpreadEdgePP >= 1.5}
-                  homeBookLine={!isNaN(homeBookSpread) ? spreadSign(homeBookSpread) : '—'}
-                  homeBookJuice={mbHomeSpreadOdds ? String(mbHomeSpreadOdds) : '—110'}
-                  homeModelLine={mdlHomeSplit.line || '—'}
-                  homeModelJuice={mdlHomeSplit.odds || '—'}
-                  homeModelHasEdge={!isNaN(homeSpreadEdgePP) && homeSpreadEdgePP >= 1.5}
-                />
-                {/* TOTAL card */}
-                <MktCard
-                  awayBookLine={!isNaN(bookTotal) ? `o${bkTotalStr}` : 'o—'}
-                  awayBookJuice={mbOverOdds ? String(mbOverOdds) : '—110'}
-                  awayModelLine={`o${mdlOverSplit.line || '—'}`}
-                  awayModelJuice={mdlOverSplit.odds || '—'}
-                  awayModelHasEdge={!isNaN(overEdgePP) && overEdgePP >= 1.5}
-                  homeBookLine={!isNaN(bookTotal) ? `u${bkTotalStr}` : 'u—'}
-                  homeBookJuice={mbUnderOdds ? String(mbUnderOdds) : '—110'}
-                  homeModelLine={`u${mdlUnderSplit.line || '—'}`}
-                  homeModelJuice={mdlUnderSplit.odds || '—'}
-                  homeModelHasEdge={!isNaN(underEdgePP) && underEdgePP >= 1.5}
-                />
-                {/* ML card — juice IS the value; empty spacer row keeps height aligned */}
-                <MktCard
-                  awayBookLine={''}
-                  awayBookJuice={bkAwayMl || '—'}
-                  awayModelLine={''}
-                  awayModelJuice={mdlAwayMl || '—'}
-                  awayModelHasEdge={!isNaN(awayMlEdgePP) && awayMlEdgePP >= 1.5}
-                  homeBookLine={''}
-                  homeBookJuice={bkHomeMl || '—'}
-                  homeModelLine={''}
-                  homeModelJuice={mdlHomeMl || '—'}
-                  homeModelHasEdge={!isNaN(homeMlEdgePP) && homeMlEdgePP >= 1.5}
-                  isML={true}
-                />
-                {/* EdgeBadge: spec-compliant — 3 independent market rows (SPR/TOT/ML), verdict tier + pp value */}
+                {/* Market cards row: SPREAD | TOTAL | ML — all flex-1 equal width, ROI footer inside each card */}
+                {/* SPREAD card — edge flags drive MODEL juice color; ROI footer shows best-side edge */}
                 {(() => {
-                  // Three markets, three independent edges. Never combined, never averaged.
-                  // Each row: market label | verdict tier | pp value
-                  // Container bg/border driven by bestEdgePP across all 3 markets
-                  const containerBg = isNaN(bestEdgePP) || bestEdgePP < 1.5
-                    ? 'rgba(255,255,255,0.03)'
-                    : 'rgba(57,255,20,0.07)';  // neon green tint for any edge
-                  const containerBorder = isNaN(bestEdgePP) || bestEdgePP < 1.5
-                    ? '1px solid rgba(255,255,255,0.07)'
-                    : `1px solid ${getEdgeColor(bestEdgePP)}`;
-
-                  // Per-market row renderer
-                  const EdgeRow = ({ mkt, edgePP }: { mkt: string; edgePP: number }) => {
-                    const verdict = getVerdict(edgePP);
-                    const color = getEdgeColor(edgePP);
-                    const hasEdge = !isNaN(edgePP) && edgePP >= 1.5;
-                    const ppStr = isNaN(edgePP) ? '—' : (edgePP >= 0 ? `+${edgePP.toFixed(1)}` : edgePP.toFixed(1));
-                    return (
-                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '2px 2px', borderBottom: '1px solid rgba(255,255,255,0.05)', width: '100%' }}>
-                        {/* Market label */}
-                        <span style={{ fontSize: '7px', fontWeight: 700, color: 'rgba(255,255,255,0.40)', textTransform: 'uppercase', letterSpacing: '0.06em', lineHeight: 1 }}>{mkt}</span>
-                        {/* Verdict tier */}
-                        <span style={{ fontSize: 'clamp(6.5px, 1.6vw, 8px)', fontWeight: 800, color: hasEdge ? color : 'rgba(255,255,255,0.20)', textTransform: 'uppercase', letterSpacing: '0.04em', lineHeight: 1.1, textAlign: 'center' }}>
-                          {hasEdge ? verdict : 'PASS'}
-                        </span>
-                        {/* pp value */}
-                        <span style={{ fontSize: 'clamp(8px, 2vw, 10px)', fontWeight: 700, color: hasEdge ? color : 'rgba(255,255,255,0.18)', lineHeight: 1.1 }}>
-                          {ppStr}
-                        </span>
-                      </div>
-                    );
-                  };
-
+                  // Spread: best edge side label (e.g. "CGY +1.5" or "EDM -1.5")
+                  const spreadRoiPP = isNaN(awaySpreadEdgePP) && isNaN(homeSpreadEdgePP)
+                    ? NaN
+                    : (!isNaN(awaySpreadEdgePP) && (isNaN(homeSpreadEdgePP) || awaySpreadEdgePP >= homeSpreadEdgePP))
+                      ? awaySpreadEdgePP
+                      : homeSpreadEdgePP;
+                  const spreadRoiLabel = (() => {
+                    const isAway = !isNaN(awaySpreadEdgePP) && (isNaN(homeSpreadEdgePP) || awaySpreadEdgePP >= homeSpreadEdgePP);
+                    const abbr = isAway ? awayAbbr : homeAbbr;
+                    const line = isAway
+                      ? (!isNaN(awayBookSpread) ? spreadSign(awayBookSpread) : '')
+                      : (!isNaN(homeBookSpread) ? spreadSign(homeBookSpread) : '');
+                    return line ? `${abbr} ${line}` : abbr;
+                  })();
                   return (
-                    <div style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'stretch', justifyContent: 'space-evenly',
-                      background: containerBg,
-                      border: containerBorder,
-                      borderRadius: '10px', width: '60px', flexShrink: 0,
-                      alignSelf: 'stretch', overflow: 'hidden',
-                    }}>
-                      {/* EDGE header */}
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2px 2px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-                        <span style={{ fontSize: '7px', fontWeight: 800, color: isNaN(bestEdgePP) || bestEdgePP < 1.5 ? 'rgba(255,255,255,0.35)' : getEdgeColor(bestEdgePP), textTransform: 'uppercase', letterSpacing: '0.08em' }}>EDGE</span>
-                      </div>
-                      <EdgeRow mkt="SPR" edgePP={spreadEdgePP} />
-                      <EdgeRow mkt="TOT" edgePP={totalEdgePP} />
-                      <EdgeRow mkt="ML" edgePP={mlEdgePP} />
-                    </div>
+                    <MktCard
+                      awayBookLine={!isNaN(awayBookSpread) ? spreadSign(awayBookSpread) : '—'}
+                      awayBookJuice={mbAwaySpreadOdds ? String(mbAwaySpreadOdds) : '—110'}
+                      awayModelLine={mdlAwaySplit.line || '—'}
+                      awayModelJuice={mdlAwaySplit.odds || '—'}
+                      awayModelHasEdge={!isNaN(awaySpreadEdgePP) && awaySpreadEdgePP >= 1.5}
+                      homeBookLine={!isNaN(homeBookSpread) ? spreadSign(homeBookSpread) : '—'}
+                      homeBookJuice={mbHomeSpreadOdds ? String(mbHomeSpreadOdds) : '—110'}
+                      homeModelLine={mdlHomeSplit.line || '—'}
+                      homeModelJuice={mdlHomeSplit.odds || '—'}
+                      homeModelHasEdge={!isNaN(homeSpreadEdgePP) && homeSpreadEdgePP >= 1.5}
+                      roiEdgePP={spreadRoiPP}
+                      roiLabel={spreadRoiLabel}
+                    />
+                  );
+                })()}
+                {/* TOTAL card */}
+                {(() => {
+                  // Total: best edge side label (e.g. "O5.5" or "U5.5")
+                  const totalRoiPP = isNaN(overEdgePP) && isNaN(underEdgePP)
+                    ? NaN
+                    : (!isNaN(overEdgePP) && (isNaN(underEdgePP) || overEdgePP >= underEdgePP))
+                      ? overEdgePP
+                      : underEdgePP;
+                  const totalRoiLabel = (() => {
+                    const isOver = !isNaN(overEdgePP) && (isNaN(underEdgePP) || overEdgePP >= underEdgePP);
+                    const prefix = isOver ? 'O' : 'U';
+                    return !isNaN(bookTotal) ? `${prefix}${bkTotalStr}` : prefix;
+                  })();
+                  return (
+                    <MktCard
+                      awayBookLine={!isNaN(bookTotal) ? `o${bkTotalStr}` : 'o—'}
+                      awayBookJuice={mbOverOdds ? String(mbOverOdds) : '—110'}
+                      awayModelLine={`o${mdlOverSplit.line || '—'}`}
+                      awayModelJuice={mdlOverSplit.odds || '—'}
+                      awayModelHasEdge={!isNaN(overEdgePP) && overEdgePP >= 1.5}
+                      homeBookLine={!isNaN(bookTotal) ? `u${bkTotalStr}` : 'u—'}
+                      homeBookJuice={mbUnderOdds ? String(mbUnderOdds) : '—110'}
+                      homeModelLine={`u${mdlUnderSplit.line || '—'}`}
+                      homeModelJuice={mdlUnderSplit.odds || '—'}
+                      homeModelHasEdge={!isNaN(underEdgePP) && underEdgePP >= 1.5}
+                      roiEdgePP={totalRoiPP}
+                      roiLabel={totalRoiLabel}
+                    />
+                  );
+                })()}
+                {/* ML card — juice IS the value; empty spacer row keeps height aligned */}
+                {(() => {
+                  // ML: best edge side label (e.g. "CGY ML" or "EDM ML")
+                  const mlRoiPP = isNaN(awayMlEdgePP) && isNaN(homeMlEdgePP)
+                    ? NaN
+                    : (!isNaN(awayMlEdgePP) && (isNaN(homeMlEdgePP) || awayMlEdgePP >= homeMlEdgePP))
+                      ? awayMlEdgePP
+                      : homeMlEdgePP;
+                  const mlRoiLabel = (() => {
+                    const isAway = !isNaN(awayMlEdgePP) && (isNaN(homeMlEdgePP) || awayMlEdgePP >= homeMlEdgePP);
+                    return `${isAway ? awayAbbr : homeAbbr} ML`;
+                  })();
+                  return (
+                    <MktCard
+                      awayBookLine={''}
+                      awayBookJuice={bkAwayMl || '—'}
+                      awayModelLine={''}
+                      awayModelJuice={mdlAwayMl || '—'}
+                      awayModelHasEdge={!isNaN(awayMlEdgePP) && awayMlEdgePP >= 1.5}
+                      homeBookLine={''}
+                      homeBookJuice={bkHomeMl || '—'}
+                      homeModelLine={''}
+                      homeModelJuice={mdlHomeMl || '—'}
+                      homeModelHasEdge={!isNaN(homeMlEdgePP) && homeMlEdgePP >= 1.5}
+                      isML={true}
+                      roiEdgePP={mlRoiPP}
+                      roiLabel={mlRoiLabel}
+                    />
                   );
                 })()}
               </div>

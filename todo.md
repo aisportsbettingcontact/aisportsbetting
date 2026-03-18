@@ -1558,3 +1558,8 @@
 - [x] Run NHL model for all 5 March 16 2026 games manually
 - [x] Post all 5 NHL model projections to the main feed (publishedModel=1 for all 5 games)
 - [x] Wire automatic daily NHL model execution (scheduler every 30min 9AM-9PM PST, auto-approve after each run)
+
+## UI/Discord Fixes (March 18, 2026)
+- [ ] Fix Discord /auth/discord/connect 404 on production
+- [x] Hard-lock EDGE ROI footer in GameCard - remove EDGE column rendering permanently
+- [x] Ensure edge footer shows for all sports (NHL, NBA, NCAAM) in MODEL PROJECTIONS
