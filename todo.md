@@ -1616,3 +1616,10 @@
 - [x] Server-side uniqueness check already implemented at CHECKPOINT:9 (already_linked redirect)
 - [x] Added comprehensive error messages map: already_linked shows clear "Each Discord account can only be connected to one account" message
 - [x] One-time-only connection policy intact: no user disconnect option, owner-only in User Management
+
+## Mobile Header Layout Fix (March 18, 2026)
+- [x] Fix PREZ BETS title overlapping CONNECT DISCORD button on mobile
+- [x] Removed absolute centering (absolute left-1/2 -translate-x-1/2) — replaced with left-aligned flex item
+- [x] PREZ BETS left-aligned, Discord button + user icon right-aligned via flex-1 spacer
+- [x] Dynamic font scaling via clamp(12px, 3.5vw, 18px) for brand text, clamp(14px, 3.5vw, 20px) for icon
+- [x] TypeScript: 0 errors

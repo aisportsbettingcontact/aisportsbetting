@@ -649,13 +649,22 @@ export default function ModelProjections() {
       {/* ── Sticky Header ── */}
       <header ref={headerRef} className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm sticky-header-safe">
 
-        {/* Row 1: brand + user icon */}
-        <div className="relative flex items-center px-4 pt-2 pb-1">
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
-            <BarChart3 className="flex-shrink-0 text-primary" style={{ width: "clamp(14px, 2.5vw, 22px)", height: "clamp(14px, 2.5vw, 22px)" }} />
-            <span className="font-black text-white whitespace-nowrap" style={{ fontSize: "clamp(13px, 3vw, 22px)", letterSpacing: "0.08em" }}>PREZ BETS</span>
+        {/* Row 1: brand + user icon
+         * LAYOUT: flex row — brand LEFT, discord + user RIGHT.
+         * MOBILE FIX: removed absolute centering (absolute left-1/2 -translate-x-1/2)
+         * which caused PREZ BETS to physically overlap the Discord button on narrow
+         * screens. Now brand is a normal flex item on the left; Discord button and
+         * user icon are flex-shrink-0 on the right. Gap between them is handled by
+         * flex-1 spacer. This guarantees zero overlap at every viewport width.
+         */}
+        <div className="flex items-center gap-2 px-4 pt-2 pb-1 w-full min-w-0">
+          {/* ── Brand: left-aligned, shrinks gracefully on narrow screens ── */}
+          <div className="flex items-center gap-1.5 flex-shrink-0 min-w-0">
+            <BarChart3 className="flex-shrink-0 text-primary" style={{ width: "clamp(14px, 3.5vw, 20px)", height: "clamp(14px, 3.5vw, 20px)" }} />
+            <span className="font-black text-white whitespace-nowrap" style={{ fontSize: "clamp(12px, 3.5vw, 18px)", letterSpacing: "0.08em" }}>PREZ BETS</span>
           </div>
-          <div className="flex-1" />
+          {/* ── Spacer: pushes Discord + user icon to the right ── */}
+          <div className="flex-1 min-w-0" />
           {/* ─── Discord Button ─────────────────────────────────────────────────────
            * DESIGN: Official Discord branding — solid #3238a9 background, white text,
            *         GG Sans font, Discord logo SVG. No opacity/transparency.
