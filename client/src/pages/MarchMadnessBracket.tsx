@@ -257,7 +257,7 @@ function StripRow({ s, compact = false }: { s: Strip; compact?: boolean }) {
       {logoEl('left')}
 
       {/* Seed + Name */}
-      <div className="bk-center" style={{ paddingLeft: placeholder ? 8 : 36, paddingRight: placeholder ? 8 : (s.score !== null ? 58 : 36) }}>
+      <div className="bk-center" style={{ paddingLeft: placeholder ? 8 : 36, paddingRight: placeholder ? 8 : (s.score !== null ? 36 : 8) }}>
         {!placeholder && s.seed > 0 && (
           <span className="bk-seed" style={{ color: 'rgba(255,255,255,.55)' }}>{s.seed}</span>
         )}
@@ -266,7 +266,7 @@ function StripRow({ s, compact = false }: { s: Strip; compact?: boolean }) {
         )}
       </div>
 
-      {/* Score — sits between name area and right logo */}
+      {/* Score — sits at far right edge */}
       {s.score !== null && (
         <div className="bk-score">
           <span style={{ color: '#fff', fontSize:13, fontWeight:900, textShadow:'0 1px 4px rgba(0,0,0,.9)' }}>
@@ -274,9 +274,6 @@ function StripRow({ s, compact = false }: { s: Strip; compact?: boolean }) {
           </span>
         </div>
       )}
-
-      {/* Right logo circle */}
-      {logoEl('right')}
     </div>
   );
 }
@@ -777,9 +774,9 @@ export default function MarchMadnessBracket() {
           white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1;
         }
 
-        /* Score — sits just left of the right logo circle (28px wide + 4px gap = 32px from right) */
+        /* Score — sits at far right edge of the strip */
         .bk-score {
-          position: absolute; right: 32px; top: 50%; transform: translateY(-50%);
+          position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
           z-index: 4; min-width: 26px; text-align: right;
         }
 

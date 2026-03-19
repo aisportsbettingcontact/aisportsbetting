@@ -15,7 +15,7 @@
  * `trpc.games.lastRefresh` so the UI can show "Last updated HH:MM".
  */
 
-import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime, updateAnOdds, insertOddsHistory } from "./db";
+import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime, updateAnOdds, insertOddsHistory, advanceBracketWinner } from "./db";
 import { fetchActionNetworkOdds, type AnSport } from "./actionNetworkScraper";
 import { scrapeVsinBettingSplits, type VsinSplitsGame } from "./vsinBettingSplitsScraper";
 import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
@@ -993,6 +993,10 @@ async function refreshNcaamScores(): Promise<void> {
         homeScore: ncaaGame.homeScore ?? null,
         gameClock: ncaaGame.gameClock ?? null,
       });
+      // Auto-advance bracket winner when game transitions to final
+      if (ncaaGame.gameStatus === 'final' && dbGame.gameStatus !== 'final') {
+        void advanceBracketWinner(dbGame.id);
+      }
       updated++;
     }
     console.log(`[ScoreRefresh] Updated scores for ${updated} NCAAM games (${todayStr})`);

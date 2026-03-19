@@ -1089,3 +1089,127 @@ export async function getBracketGames(): Promise<BracketGameRow[]> {
     return [];
   }
 }
+
+// ─── Bracket Advancement ─────────────────────────────────────────────────────
+/**
+ * When a bracket game goes FINAL, determine the winner and write them into
+ * the awayTeam or homeTeam of the next-round game based on nextBracketSlot.
+ *
+ * nextBracketSlot="top"    → winner becomes awayTeam  of nextBracketGameId
+ * nextBracketSlot="bottom" → winner becomes homeTeam  of nextBracketGameId
+ *
+ * This is idempotent: calling it multiple times on the same final game is safe.
+ */
+export async function advanceBracketWinner(gameId: number): Promise<string> {
+  const db = await getDb();
+  if (!db) return 'error';
+  try {
+    const rows = await db
+      .select({
+        awayTeam: games.awayTeam,
+        homeTeam: games.homeTeam,
+        awayScore: games.awayScore,
+        homeScore: games.homeScore,
+        gameStatus: games.gameStatus,
+        nextBracketGameId: games.nextBracketGameId,
+        nextBracketSlot: games.nextBracketSlot,
+        bracketGameId: games.bracketGameId,
+        bracketRound: games.bracketRound,
+      })
+      .from(games)
+      .where(eq(games.id, gameId))
+      .limit(1);
+
+    if (!rows.length) {
+      console.log('[BracketAdvance] SKIP: game id=' + String(gameId) + ' not found');
+      return 'error';
+    }
+
+    const g = rows[0];
+    if (g.gameStatus !== 'final') return 'not_final';
+    if (!g.nextBracketGameId || !g.nextBracketSlot) {
+      console.log('[BracketAdvance] NO_NEXT: bracketGame=' + String(g.bracketGameId) + ' round=' + String(g.bracketRound));
+      return 'no_next_game';
+    }
+    if (g.awayScore === null || g.homeScore === null) {
+      console.log('[BracketAdvance] SKIP: game id=' + String(gameId) + ' is final but scores are null');
+      return 'skipped';
+    }
+
+    const winnerSlug = g.awayScore > g.homeScore ? g.awayTeam : g.homeTeam;
+    const loserSlug  = g.awayScore > g.homeScore ? g.homeTeam : g.awayTeam;
+    const winScore   = Math.max(g.awayScore, g.homeScore);
+    const loseScore  = Math.min(g.awayScore, g.homeScore);
+
+    console.log('[BracketAdvance] WINNER: ' + winnerSlug + ' (' + String(winScore) + ') def. ' + loserSlug + ' (' + String(loseScore) + ') -> bracketGame ' + String(g.nextBracketGameId) + ' slot=' + g.nextBracketSlot);
+
+    const nextRows = await db
+      .select({ id: games.id, awayTeam: games.awayTeam, homeTeam: games.homeTeam })
+      .from(games)
+      .where(
+        and(
+          eq(games.bracketGameId, g.nextBracketGameId),
+          eq(games.sport, 'NCAAM')
+        )
+      )
+      .limit(1);
+
+    if (!nextRows.length) {
+      console.warn('[BracketAdvance] MISSING_NEXT_GAME: bracketGameId=' + String(g.nextBracketGameId) + ' not found in DB');
+      return 'no_next_game';
+    }
+
+    const nextGame = nextRows[0];
+    const currentSlotValue = g.nextBracketSlot === 'top' ? nextGame.awayTeam : nextGame.homeTeam;
+    if (currentSlotValue === winnerSlug) {
+      console.log('[BracketAdvance] ALREADY_SET: bracketGame ' + String(g.nextBracketGameId) + ' slot=' + g.nextBracketSlot + ' already=' + winnerSlug);
+      return 'skipped';
+    }
+
+    const updatePayload = g.nextBracketSlot === 'top'
+      ? { awayTeam: winnerSlug }
+      : { homeTeam: winnerSlug };
+
+    await db.update(games).set(updatePayload).where(eq(games.id, nextGame.id));
+
+    console.log('[BracketAdvance] ADVANCED: ' + winnerSlug + ' -> bracketGame ' + String(g.nextBracketGameId) + ' (db id=' + String(nextGame.id) + ') slot=' + g.nextBracketSlot + ' OK');
+    return 'advanced';
+  } catch (err) {
+    console.error('[BracketAdvance] ERROR for game id=' + String(gameId) + ':', err);
+    return 'error';
+  }
+}
+
+/**
+ * Audit all NCAAM bracket games that are FINAL and ensure their winners
+ * have been advanced to the next round. Safe to call repeatedly.
+ */
+export async function auditAndAdvanceAllBracketWinners(): Promise<number> {
+  const db = await getDb();
+  if (!db) return 0;
+  try {
+    const finalGames = await db
+      .select({ id: games.id, bracketGameId: games.bracketGameId, bracketRound: games.bracketRound })
+      .from(games)
+      .where(
+        and(
+          eq(games.sport, 'NCAAM'),
+          eq(games.gameStatus, 'final'),
+          isNotNull(games.bracketGameId),
+          isNotNull(games.nextBracketGameId)
+        )
+      );
+
+    console.log('[BracketAdvance] AUDIT: found ' + String(finalGames.length) + ' final bracket games to check');
+    let advanced = 0;
+    for (const g of finalGames) {
+      const result = await advanceBracketWinner(g.id);
+      if (result === 'advanced') advanced++;
+    }
+    console.log('[BracketAdvance] AUDIT COMPLETE: advanced ' + String(advanced) + ' winners');
+    return advanced;
+  } catch (err) {
+    console.error('[BracketAdvance] AUDIT ERROR:', err);
+    return 0;
+  }
+}

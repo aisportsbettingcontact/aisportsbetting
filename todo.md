@@ -1647,3 +1647,9 @@
 - [ ] SOUTH region (8 games) verified against NCAA.com HTML
 - [ ] WEST region (8 games) verified against NCAA.com HTML
 - [ ] MIDWEST region (8 games) verified against NCAA.com HTML
+
+## Bracket Fixes (2026-03-19)
+- [x] Fix bracket advancement: TCU won (66 vs Ohio St. 64) but has not advanced to next round slot
+- [x] Fix team row layout: logos must only appear on the LEFT side; scores must appear on the RIGHT side (remove right-side logo circles)
+- [x] Audit all completed March 19 R64 games and auto-advance winners to R32 slots
+- [x] Ensure bracket advancement is fully automated (score refresh triggers advancement)
