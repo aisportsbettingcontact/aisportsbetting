@@ -112,7 +112,7 @@ export interface ModelGameResult {
 // ENGINE RUNNER
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ENGINE_PATH = path.join(__dirname, "model_v9_engine.py");
+const ENGINE_PATH = path.join(__dirname, "model_v10_engine.py");
 const ENGINE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes per game (KenPom fetches take ~30s)
 
 export async function runModelForGame(
