@@ -253,6 +253,13 @@
       "when": 1773864923127,
       "tag": "0035_nebulous_shocker",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "5",
+      "when": 1773879003292,
+      "tag": "0036_normal_hannibal_king",
+      "breakpoints": true
     }
   ]
 }

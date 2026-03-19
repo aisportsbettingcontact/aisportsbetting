@@ -1002,3 +1002,86 @@ export async function listOddsHistory(gameId: number): Promise<OddsHistoryRow[]>
     return [];
   }
 }
+
+// ─── March Madness Bracket ────────────────────────────────────────────────────
+
+export interface BracketGameRow {
+  id: number;
+  awayTeam: string;
+  homeTeam: string;
+  gameDate: string;
+  startTimeEst: string;
+  gameStatus: string;
+  awayScore: number | null;
+  homeScore: number | null;
+  bracketGameId: number;
+  bracketRound: string;
+  bracketRegion: string;
+  bracketSlot: number;
+  nextBracketGameId: number | null;
+  nextBracketSlot: string | null;
+  awayBookSpread: string | null;
+  homeBookSpread: string | null;
+  bookTotal: string | null;
+  awayML: string | null;
+  homeML: string | null;
+  awayModelSpread: string | null;
+  homeModelSpread: string | null;
+  modelTotal: string | null;
+  modelAwayWinPct: string | null;
+  modelHomeWinPct: string | null;
+  publishedToFeed: boolean;
+  publishedModel: boolean;
+}
+
+/**
+ * Fetch all March Madness tournament games that have bracket data assigned.
+ * Returns every game from First Four through Championship (bracketGameId IS NOT NULL).
+ */
+export async function getBracketGames(): Promise<BracketGameRow[]> {
+  const db = await getDb();
+  if (!db) return [];
+  try {
+    const rows = await db
+      .select({
+        id: games.id,
+        awayTeam: games.awayTeam,
+        homeTeam: games.homeTeam,
+        gameDate: games.gameDate,
+        startTimeEst: games.startTimeEst,
+        gameStatus: games.gameStatus,
+        awayScore: games.awayScore,
+        homeScore: games.homeScore,
+        bracketGameId: games.bracketGameId,
+        bracketRound: games.bracketRound,
+        bracketRegion: games.bracketRegion,
+        bracketSlot: games.bracketSlot,
+        nextBracketGameId: games.nextBracketGameId,
+        nextBracketSlot: games.nextBracketSlot,
+        awayBookSpread: games.awayBookSpread,
+        homeBookSpread: games.homeBookSpread,
+        bookTotal: games.bookTotal,
+        awayML: games.awayML,
+        homeML: games.homeML,
+        awayModelSpread: games.awayModelSpread,
+        homeModelSpread: games.homeModelSpread,
+        modelTotal: games.modelTotal,
+        modelAwayWinPct: games.modelAwayWinPct,
+        modelHomeWinPct: games.modelHomeWinPct,
+        publishedToFeed: games.publishedToFeed,
+        publishedModel: games.publishedModel,
+      })
+      .from(games)
+      .where(
+        and(
+          eq(games.sport, "NCAAM"),
+          isNotNull(games.bracketGameId)
+        )
+      )
+      .orderBy(games.bracketGameId);
+    return rows as BracketGameRow[];
+  } catch (err) {
+    console.error("[Bracket] Failed to fetch bracket games:", err);
+    return [];
+  }
+}

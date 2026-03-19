@@ -17,6 +17,7 @@ const CDN_MONEY_BAG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/
 const CDN_MARCH_MADNESS = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-march-madness_ecd8f481.png";
 const CDN_NBA = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-nba_3fa4f508.png";
 import { GameCard } from "@/components/GameCard";
+import { MarchMadnessBracket } from "@/pages/MarchMadnessBracket";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -256,7 +257,7 @@ export default function ModelProjections() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NHL");
+  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NCAAM");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>(() => todayUTC());
   const [searchQuery, setSearchQuery] = useState("");
@@ -271,15 +272,15 @@ export default function ModelProjections() {
   // ── Main page tab: projections | splits ───────────────────────────────────
 
   // ── Feed-wide mobile tab filter ───────────────────────────────────────────
-  // Two tabs only: MODEL PROJECTIONS (dual) | BETTING SPLITS (splits)
-  type FeedMobileTab = 'dual' | 'splits';
+  // Three tabs: MODEL PROJECTIONS (dual) | BETTING SPLITS (splits) | BRACKET (bracket, NCAAM only)
+  type FeedMobileTab = 'dual' | 'splits' | 'bracket';
   const FEED_TAB_KEY = 'prez_bets_mobile_tab_v2';
   const getPersistedFeedTab = (): FeedMobileTab => {
     try {
       const stored = localStorage.getItem(FEED_TAB_KEY);
-      if (stored === 'dual' || stored === 'splits') return stored;
+      if (stored === 'dual' || stored === 'splits' || stored === 'bracket') return stored;
     } catch { /* ignore */ }
-    return 'dual';
+    return 'bracket';
   };
   const [feedMobileTab, setFeedMobileTab] = useState<FeedMobileTab>(getPersistedFeedTab);
   const handleFeedTabChange = (next: FeedMobileTab) => {
@@ -287,11 +288,20 @@ export default function ModelProjections() {
     try { localStorage.setItem(FEED_TAB_KEY, next); } catch { /* ignore */ }
   };
   const feedIsDual = feedMobileTab === 'dual';
-  // Two tabs: MODEL PROJECTIONS and BETTING SPLITS
+  // Three tabs: MODEL PROJECTIONS | BETTING SPLITS | BRACKET (NCAAM only)
   const FEED_TABS: { id: FeedMobileTab; label: string }[] = [
+    ...(selectedSport === 'NCAAM' ? [{ id: 'bracket' as FeedMobileTab, label: 'BRACKET' }] : []),
     { id: 'dual',   label: 'MODEL PROJECTIONS' },
     { id: 'splits', label: 'BETTING SPLITS' },
   ];
+
+  // ── Reset bracket tab when switching away from NCAAM ────────────────────────
+  useEffect(() => {
+    if (selectedSport !== 'NCAAM' && feedMobileTab === 'bracket') {
+      handleFeedTabChange('dual');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSport]);
 
   // ── Favorites tab ──────────────────────────────────────────────────────────
   const [showFavoritesTab, setShowFavoritesTab] = useState(false);
@@ -850,6 +860,23 @@ export default function ModelProjections() {
             MARCH MADNESS
           </button>
 
+          {/* BRACKET pill — only shown on desktop when MARCH MADNESS is selected */}
+          {selectedSport === 'NCAAM' && (
+            <button
+              onClick={() => handleFeedTabChange(feedMobileTab === 'bracket' ? 'dual' : 'bracket')}
+              className="hidden lg:flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+              style={{
+                fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))',
+                ...(feedMobileTab === 'bracket'
+                  ? { background: 'transparent', color: '#39FF14', border: '1px solid #39FF14' }
+                  : { background: 'hsl(var(--card))', color: 'rgba(255,255,255,0.45)', border: '1px solid hsl(var(--border))' }
+                )
+              }}
+            >
+              🏆 BRACKET
+            </button>
+          )}
+
           {/* Search bar — always visible, shrinks when Favorites button is present */}
           {/* Mobile: min-w-[28px] so it always shows at least the icon; flex-1 fills remaining space */}
           <div className="flex-1 min-w-0" style={{ minWidth: 28 }}>
@@ -945,10 +972,10 @@ export default function ModelProjections() {
           </div>
         )}
 
-        {/* Row 5: Feed-wide mobile tab filter — MODEL PROJECTIONS | BETTING SPLITS */}
+        {/* Row 5: Feed-wide mobile tab filter — MODEL PROJECTIONS | BETTING SPLITS | BRACKET (NCAAM) */}
         {/* Only shown on mobile (< lg). Hidden on desktop where the full 3-panel layout is used. */}
         <div className="grid lg:hidden" style={{
-            gridTemplateColumns: 'repeat(2, 1fr)',
+            gridTemplateColumns: `repeat(${FEED_TABS.length}, 1fr)`,
             borderBottom: '2px solid hsl(var(--border) / 0.5)',
             background: 'hsl(var(--card))',
           }}>
@@ -1012,11 +1039,18 @@ export default function ModelProjections() {
         </div>
       )}
 
+      {/* ── BRACKET TAB (NCAAM only) ── */}
+      {feedMobileTab === 'bracket' && selectedSport === 'NCAAM' && (
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <MarchMadnessBracket />
+        </div>
+      )}
+
       {/* ── Main Feed ── */}
       {/* touch-action: pan-y — allows vertical scrolling while blocking horizontal
            interference from the frozen panel scroll containers inside GameCard.
            -webkit-overflow-scrolling: touch — enables iOS momentum scrolling. */}
-      <main className="w-full feed-pb-safe" style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch' } as React.CSSProperties}>
+      <main className="w-full feed-pb-safe" style={{ touchAction: 'pan-y', WebkitOverflowScrolling: 'touch', display: feedMobileTab === 'bracket' ? 'none' : 'block' } as React.CSSProperties}>
 
         {/* ── UNIFIED FEED (projections + splits always shown) ── */}
         {true && (

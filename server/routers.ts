@@ -24,7 +24,7 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
-import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory } from "./db";
+import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory, getBracketGames } from "./db";
 import { getLastRefreshResult, runVsinRefresh, runVsinRefreshManual, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
 import { triggerModelWatcherForDate } from "./ncaamModelWatcher";
@@ -754,6 +754,19 @@ export const appRouter = router({
       .query(async ({ input }) => {
         const rows = await listOddsHistory(input.gameId);
         return { history: rows };
+      }),
+  }),
+  // ─── March Madness Bracket ─────────────────────────────────────────────────────────────────────
+  bracket: router({
+    /**
+     * Fetch all tournament games with bracket metadata.
+     * Returns every game from First Four through Championship.
+     * Accessible to all authenticated app users.
+     */
+    getGames: publicProcedure
+      .query(async () => {
+        const rows = await getBracketGames();
+        return { games: rows };
       }),
   }),
 });

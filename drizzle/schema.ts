@@ -231,6 +231,19 @@ export const games = mysqlTable("games", {
   sortOrder: int("sortOrder").notNull().default(9999),
   /** NCAA contest ID (unique per game) — used to dedup NCAA-only games (e.g. TBA vs TBA) */
   ncaaContestId: varchar("ncaaContestId", { length: 20 }),
+  // ─── March Madness Bracket Progression ──────────────────────────────────────
+  /** NCAA.com bracket game ID, e.g. 101 (FF), 201-232 (R64), 301-316 (R32), etc. */
+  bracketGameId: int("bracketGameId"),
+  /** Tournament round: 'FIRST_FOUR', 'R64', 'R32', 'S16', 'E8', 'F4', 'CHAMPIONSHIP' */
+  bracketRound: varchar("bracketRound", { length: 20 }),
+  /** Tournament region: 'EAST', 'WEST', 'SOUTH', 'MIDWEST', 'FINAL_FOUR' */
+  bracketRegion: varchar("bracketRegion", { length: 20 }),
+  /** Slot within the region (1-8 for R64, 1-4 for R32, 1-2 for S16, 1 for E8) */
+  bracketSlot: int("bracketSlot"),
+  /** NCAA.com bracket game ID of the next-round game this winner advances to */
+  nextBracketGameId: int("nextBracketGameId"),
+  /** Whether the winner of this game fills the 'top' or 'bottom' slot in the next game */
+  nextBracketSlot: mysqlEnum("nextBracketSlot", ["top", "bottom"]),
   /** Game status: 'upcoming' (pre-game), 'live' (in-progress), 'final' (completed) */
   gameStatus: mysqlEnum("gameStatus", ["upcoming", "live", "final"]).notNull().default("upcoming"),
   /** Away team current/final score (null = not started) */
