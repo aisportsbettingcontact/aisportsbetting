@@ -418,6 +418,17 @@ function parseNhlGames(
  */
 export async function scrapeNhlVsinOdds(dateLabel: string): Promise<NhlScrapedOdds[]> {
   const startTime = Date.now();
+
+  // Resolve "today" → YYYYMMDD in Eastern Time (VSiN game IDs use ET dates)
+  if (dateLabel === "today") {
+    const etDate = new Date().toLocaleDateString("en-US", {
+      timeZone: "America/New_York",
+      year: "numeric", month: "2-digit", day: "2-digit",
+    }); // MM/DD/YYYY
+    const [mm, dd, yyyy] = etDate.split("/");
+    dateLabel = `${yyyy}${mm}${dd}`;
+  }
+
   console.log(`[VSiN-NHL] ═══ Starting NHL scrape for date: ${dateLabel} ═══`);
 
   const html = await fetchNhlVsinPage();

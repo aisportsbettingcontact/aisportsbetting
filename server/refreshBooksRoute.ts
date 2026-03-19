@@ -4,7 +4,7 @@
  * Server-Sent Events endpoint. Streams one JSON event per game as its
  * book odds AND betting splits are scraped from VSiN and written to the DB.
  *
- * Handles both NCAAM (scrapeVsinOdds) and NBA (scrapeNbaVsinOdds) games.
+ * Handles NCAAM (scrapeVsinOdds), NBA (scrapeNbaVsinOdds), and NHL (scrapeNhlVsinOdds) games.
  *
  * Event format:
  *   data: {"type":"start","total":40}
@@ -21,6 +21,7 @@ import { ENV } from "./_core/env";
 import { listStagingGames, updateBookOdds, getAppUserById } from "./db";
 import { scrapeVsinOdds } from "./vsinScraper";
 import { scrapeNbaVsinOdds } from "./nbaVsinScraper";
+import { scrapeNhlVsinOdds } from "./nhlVsinScraper";
 
 const APP_USER_COOKIE = "app_session";
 
@@ -68,7 +69,7 @@ export function registerRefreshBooksRoute(app: Express) {
     };
 
     try {
-      // 1. Load all games for this date (NCAAM + NBA)
+      // 1. Load all games for this date (NCAAM + NBA + NHL)
       const allGames = await listStagingGames(gameDate);
 
       if (allGames.length === 0) {
@@ -79,7 +80,7 @@ export function registerRefreshBooksRoute(app: Express) {
 
       send({ type: "start", total: allGames.length });
 
-      // 2. Scrape VSiN for both sports — keep SSE alive with a heartbeat while Puppeteer loads
+      // 2. Scrape VSiN for all three sports — keep SSE alive with a heartbeat
       send({ type: "scraping", message: "Loading VSiN betting splits… (up to 90s)" });
       const heartbeat = setInterval(() => {
         res.write(": heartbeat\n\n");
@@ -89,10 +90,11 @@ export function registerRefreshBooksRoute(app: Express) {
       const dateLabel = gameDate.replace(/-/g, "");
       let scrapedNcaam: Awaited<ReturnType<typeof scrapeVsinOdds>> = [];
       let scrapedNba: Awaited<ReturnType<typeof scrapeNbaVsinOdds>> = [];
+      let scrapedNhl: Awaited<ReturnType<typeof scrapeNhlVsinOdds>> = [];
 
       try {
-        // Scrape NCAAM and NBA in parallel for speed
-        [scrapedNcaam, scrapedNba] = await Promise.all([
+        // Scrape NCAAM, NBA, and NHL in parallel for speed
+        [scrapedNcaam, scrapedNba, scrapedNhl] = await Promise.all([
           scrapeVsinOdds(dateLabel).catch(err => {
             console.error("[RefreshBooks] NCAAM scrape failed:", err);
             return [];
@@ -101,7 +103,12 @@ export function registerRefreshBooksRoute(app: Express) {
             console.error("[RefreshBooks] NBA scrape failed:", err);
             return [];
           }),
+          scrapeNhlVsinOdds(dateLabel).catch(err => {
+            console.error("[RefreshBooks] NHL scrape failed:", err);
+            return [];
+          }),
         ]);
+        console.log(`[RefreshBooks] Scraped: ${scrapedNcaam.length} NCAAM, ${scrapedNba.length} NBA, ${scrapedNhl.length} NHL games`);
       } finally {
         clearInterval(heartbeat);
       }
@@ -111,8 +118,64 @@ export function registerRefreshBooksRoute(app: Express) {
       for (let i = 0; i < allGames.length; i++) {
         const game = allGames[i];
         const isNba = game.sport === "NBA";
+        const isNhl = game.sport === "NHL";
 
-        if (isNba) {
+        if (isNhl) {
+          // NHL: exact slug match (awayTeam/homeTeam in DB are the dbSlug values)
+          const match = scrapedNhl.find(
+            (s) => s.awaySlug === game.awayTeam && s.homeSlug === game.homeTeam
+          );
+
+          if (match) {
+            await updateBookOdds(game.id, {
+              awayBookSpread: match.awaySpread,
+              homeBookSpread: match.homeSpread,
+              bookTotal: match.total,
+              // NHL betting splits (6 fields + ML odds)
+              spreadAwayBetsPct: match.spreadAwayBetsPct,
+              spreadAwayMoneyPct: match.spreadAwayMoneyPct,
+              totalOverBetsPct: match.totalOverBetsPct,
+              totalOverMoneyPct: match.totalOverMoneyPct,
+              mlAwayBetsPct: match.mlAwayBetsPct,
+              mlAwayMoneyPct: match.mlAwayMoneyPct,
+              awayML: match.awayML,
+              homeML: match.homeML,
+            });
+            updated++;
+            send({
+              type: "game",
+              index: i + 1,
+              total: allGames.length,
+              sport: "NHL",
+              awayTeam: game.awayTeam,
+              homeTeam: game.homeTeam,
+              awaySpread: match.awaySpread,
+              homeSpread: match.homeSpread,
+              bookTotal: match.total,
+              splitsUpdated: true,
+              status: "ok",
+            });
+          } else {
+            // Log all available slugs to make debugging easy
+            console.warn(
+              `[RefreshBooks] NHL no_match: ${game.awayTeam} @ ${game.homeTeam} — ` +
+              `available: ${scrapedNhl.map(s => `${s.awaySlug}@${s.homeSlug}`).join(", ")}`
+            );
+            send({
+              type: "game",
+              index: i + 1,
+              total: allGames.length,
+              sport: "NHL",
+              awayTeam: game.awayTeam,
+              homeTeam: game.homeTeam,
+              awaySpread: null,
+              homeSpread: null,
+              bookTotal: null,
+              splitsUpdated: false,
+              status: "no_match",
+            });
+          }
+        } else if (isNba) {
           // NBA: match against NBA scraped data
           const match = scrapedNba.find(
             (s) => s.awaySlug === game.awayTeam && s.homeSlug === game.homeTeam
