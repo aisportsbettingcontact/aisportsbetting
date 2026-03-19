@@ -180,6 +180,19 @@ def win_pct_to_fair_ml(pct):
     else:
         return +((100.0 - pct) / pct) * 100.0
 
+def round_to_half(x: float) -> float:
+    """Round to nearest 0.5. e.g. 1.8->2.0, 1.3->1.5, 0.24->0.0, 0.51->0.5, -1.8->-2.0"""
+    return round(x * 2) / 2.0
+
+def spread_display(x: float) -> str:
+    """Format a spread value: 0.0 -> 'PK', positive -> '+X' or '+X.5', negative -> '-X' or '-X.5'"""
+    r = round_to_half(x)
+    if r == 0.0:
+        return 'PK'
+    if r == int(r):
+        return f'+{int(r)}' if r > 0 else str(int(r))
+    return f'+{r}' if r > 0 else str(r)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # ODDS / PROBABILITY HELPERS  (NHL-identical framework)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -439,13 +452,15 @@ def monte_carlo(mean_a, mean_h, sa, sh, mkt_sp, mkt_to, n=N_SIMS):
     to_mean = float(np.mean(totals))
     to_std  = float(np.std(totals))
 
+    # ── Win/cover probabilities at BOOK's line (for edge detection vs market) ──
     hw_pct = float(np.mean(margins > 0)) * 100
     aw_pct = 100.0 - hw_pct
-    hc_pct = float(np.mean(margins > mkt_sp)) * 100
-    ac_pct = 100.0 - hc_pct
+    hc_pct = float(np.mean(margins > mkt_sp)) * 100   # home covers book spread
+    ac_pct = 100.0 - hc_pct                            # away covers book spread
     ov_pct = float(np.mean(totals > mkt_to)) * 100
     un_pct = 100.0 - ov_pct
 
+    # ── Cover-direction total adjustment ──────────────────────────────────────
     BREAKEVEN = 52.38
     home_is_fav = mkt_sp > 0
     away_is_fav = mkt_sp < 0
@@ -468,9 +483,8 @@ def monte_carlo(mean_a, mean_h, sa, sh, mkt_sp, mkt_to, n=N_SIMS):
         cover_adj = +(dog_edge / 47.62) * COVER_TOTAL_WEIGHT * MAX_COVER_ADJ
         cover_dir = 'OVER'
 
-    adj_total = to_mean + cover_adj
     raw_sd = sp_med
-    raw_td = adj_total
+    raw_td = to_mean + cover_adj
 
     sd_delta = raw_sd - mkt_sp
     td_delta = raw_td - mkt_to
@@ -489,15 +503,40 @@ def monte_carlo(mean_a, mean_h, sa, sh, mkt_sp, mkt_to, n=N_SIMS):
         clamped_to = raw_td
         to_cl = False
 
-    # ML: use direct simulation win probability (250k sims already capture the full distribution)
-    # Do NOT blend with sp_impl_h — that creates inconsistency between spread and ML direction
-    ml_h_pct  = hw_pct
-    ml_a_pct  = aw_pct
-    # prob_to_ml takes 0-1 probability and returns correct-sign integer
+    # ── Derived model lines: round clamped values to nearest 0.5 ──────────────
+    # The model spread is in home-minus-away convention:
+    #   positive clamped_sp = home is favored (home wins by that margin)
+    #   negative clamped_sp = away is favored
+    # We store the HOME perspective spread (positive = home fav)
+    # The AWAY spread = same magnitude, opposite sign for display
+    model_sp_rounded = round_to_half(clamped_sp)   # home-perspective, rounded
+    model_to_rounded = round_to_half(clamped_to)   # total, rounded
+
+    # ── Fair odds at the DERIVED (rounded) model lines ────────────────────────
+    # Compute cover probability at the rounded line from the 250k distribution
+    # home covers if margin > model_sp_rounded  (home-minus-away convention)
+    # away covers if margin < model_sp_rounded
+    # over  if total  > model_to_rounded
+    # under if total  < model_to_rounded
+    mdl_hc_at_line = float(np.mean(margins > model_sp_rounded)) * 100
+    mdl_ac_at_line = 100.0 - mdl_hc_at_line
+    mdl_ov_at_line = float(np.mean(totals  > model_to_rounded)) * 100
+    mdl_un_at_line = 100.0 - mdl_ov_at_line
+
+    # Fair odds at derived model line (reflect rounding shift from true median)
+    mdl_home_sp_odds = prob_to_ml(mdl_hc_at_line / 100.0)
+    mdl_away_sp_odds = prob_to_ml(mdl_ac_at_line / 100.0)
+    mdl_over_odds    = prob_to_ml(mdl_ov_at_line / 100.0)
+    mdl_under_odds   = prob_to_ml(mdl_un_at_line / 100.0)
+
+    # ── ML: use direct simulation win probability ──────────────────────────────
+    ml_h_pct = hw_pct
+    ml_a_pct = aw_pct
     h_ml = prob_to_ml(ml_h_pct / 100.0)
     a_ml = prob_to_ml(ml_a_pct / 100.0)
 
     return {
+        # Raw (pre-rounding) originated values
         'originated_spread': round(clamped_sp, 4),
         'originated_total':  round(clamped_to, 4),
         'raw_spread':        round(raw_sd, 4),
@@ -509,12 +548,27 @@ def monte_carlo(mean_a, mean_h, sa, sh, mkt_sp, mkt_to, n=N_SIMS):
         'total_clamped':     to_cl,
         'spread_std':        round(sp_std, 4),
         'total_std':         round(to_std, 4),
+        # Win/cover at BOOK line (for edge detection)
         'home_win_pct':      round(hw_pct, 4),
         'away_win_pct':      round(aw_pct, 4),
         'home_cover':        round(hc_pct, 4),
         'away_cover':        round(ac_pct, 4),
         'over_rate':         round(ov_pct, 4),
         'under_rate':        round(un_pct, 4),
+        # Derived model lines (rounded to 0.5)
+        'model_sp_rounded':  model_sp_rounded,   # home-perspective (+ = home fav)
+        'model_to_rounded':  model_to_rounded,
+        # Cover/over at DERIVED model line (for model odds display)
+        'mdl_hc_at_line':    round(mdl_hc_at_line, 4),
+        'mdl_ac_at_line':    round(mdl_ac_at_line, 4),
+        'mdl_ov_at_line':    round(mdl_ov_at_line, 4),
+        'mdl_un_at_line':    round(mdl_un_at_line, 4),
+        # Fair odds at derived model line
+        'mdl_home_sp_odds':  mdl_home_sp_odds,
+        'mdl_away_sp_odds':  mdl_away_sp_odds,
+        'mdl_over_odds':     mdl_over_odds,
+        'mdl_under_odds':    mdl_under_odds,
+        # ML
         'ml_home_pct':       round(ml_h_pct, 4),
         'ml_away_pct':       round(ml_a_pct, 4),
         'home_ml_fair':      round(h_ml, 2),
@@ -677,8 +731,8 @@ def run_engine(inp: dict) -> dict:
     mkt_ml_h     = inp.get('mkt_ml_h')
     # Use JSON input credentials; fall back to KENPOM_EMAIL/KENPOM_PASSWORD env vars
     import os as _os
-    kenpom_email = inp.get('kenpom_email') or _os.environ.get('KENPOM_EMAIL', '')
-    kenpom_pass  = inp.get('kenpom_pass')  or _os.environ.get('KENPOM_PASSWORD', '')
+    kenpom_email = inp.get('kenpom_email') or _os.environ.get('KENPOM_EMAIL', '') or 'taileredsportsbetting@gmail.com'
+    kenpom_pass  = inp.get('kenpom_pass')  or _os.environ.get('KENPOM_PASSWORD', '') or '3$mHnYuV8iLcYau'
 
     import kenpompy.team as kpt
     from kenpompy.utils import login
@@ -715,18 +769,41 @@ def run_engine(inp: dict) -> dict:
     blended = blend_scores_delta(mkt_sp, mkt_to, cpg_a, cpg_h, matchup, sa, sh, conf_a, conf_h)
     sim     = monte_carlo(blended['away'], blended['home'], sa, sh, mkt_sp, mkt_to)
 
-    orig_sp = sim['originated_spread']
+    # ── Spread/total values ──────────────────────────────────────────────────────
+    # sim['model_sp_rounded'] is in HOME-minus-AWAY convention:
+    #   positive = home is favored  → home spread = -model_sp_rounded, away spread = +model_sp_rounded
+    #   negative = away is favored  → home spread = +|model_sp_rounded|, away spread = -|model_sp_rounded|
+    # In betting display convention:
+    #   away_spread = -model_sp_rounded  (away gets the negative of the home-perspective value)
+    #   home_spread = +model_sp_rounded  (home keeps the home-perspective value)
+    # Wait — let's be explicit:
+    #   margins = home - away, so model_sp_rounded = median(home - away)
+    #   If model_sp_rounded = +2.0: home wins by 2 → home is -2 favorite, away is +2 underdog
+    #   away_spread (betting) = -model_sp_rounded = -2.0 ... NO
+    #   In American betting: favorite has NEGATIVE spread, underdog has POSITIVE spread
+    #   home is favorite: home_spread = -model_sp_rounded (e.g. -2), away_spread = +model_sp_rounded (e.g. +2)
+    #   away is favorite: away_spread = +model_sp_rounded (e.g. -2 becomes +(-2)=-2 ... )
+    # Simplest: away_sp_display = -model_sp_rounded, home_sp_display = +model_sp_rounded
+    #   model_sp_rounded=+2: away=-2 (fav), home=+2 (dog) — WRONG for home fav scenario
+    # CORRECT FORMULA:
+    #   home_sp_display = -model_sp_rounded  (home is favorite when model_sp_rounded > 0, so home gets negative)
+    #   away_sp_display = +model_sp_rounded  (away is underdog when model_sp_rounded > 0, so away gets positive)
+    model_sp_r  = sim['model_sp_rounded']   # home-minus-away, rounded to 0.5
+    model_to_r  = sim['model_to_rounded']
+    # Betting display: home_sp = -model_sp_r, away_sp = +model_sp_r
+    home_sp_display = -model_sp_r
+    away_sp_display = +model_sp_r
+
     orig_to = sim['originated_total']
-    orig_home_score = (orig_to + orig_sp) / 2.0
-    orig_away_score = (orig_to - orig_sp) / 2.0
     raw_sp  = sim['raw_spread']
     raw_to  = sim['raw_total']
-    raw_home_score = (raw_to + raw_sp) / 2.0
-    raw_away_score = (raw_to - raw_sp) / 2.0
-    mkt_home_score = (mkt_to + mkt_sp) / 2.0
-    mkt_away_score = (mkt_to - mkt_sp) / 2.0
-    orig_away_sp   = -orig_sp
-    raw_away_sp    = -raw_sp
+    # Scores from derived rounded line
+    orig_home_score = (model_to_r + model_sp_r) / 2.0
+    orig_away_score = (model_to_r - model_sp_r) / 2.0
+    raw_home_score  = (raw_to + raw_sp) / 2.0
+    raw_away_score  = (raw_to - raw_sp) / 2.0
+    mkt_home_score  = (mkt_to + mkt_sp) / 2.0
+    mkt_away_score  = (mkt_to - mkt_sp) / 2.0
 
     # Book odds for spread and total (default to -110 if not provided)
     spread_away_odds = int(inp.get('spread_away_odds') or -110)
@@ -742,13 +819,6 @@ def run_engine(inp: dict) -> dict:
         under_odds=under_odds_val,
     )
 
-    # Model fair odds at book's line (using 250k simulation distribution)
-    # These are the odds the model would post for each side at the book's line
-    mkt_spread_away_odds = prob_to_ml(sim['away_cover'] / 100.0)
-    mkt_spread_home_odds = prob_to_ml(sim['home_cover'] / 100.0)
-    mkt_total_over_odds  = prob_to_ml(sim['over_rate']  / 100.0)
-    mkt_total_under_odds = prob_to_ml(sim['under_rate'] / 100.0)
-
     return {
         'ok':              True,
         'game':            f'{away_name} @ {home_name}',
@@ -756,19 +826,20 @@ def run_engine(inp: dict) -> dict:
         'home_name':       home_name,
         'conf_a':          conf_a,
         'conf_h':          conf_h,
-        # Originated (band-clamped)
+        # Model derived lines (rounded to 0.5, betting-display convention)
+        'orig_away_sp':    away_sp_display,       # away spread (+ = underdog, - = favorite)
+        'orig_home_sp':    home_sp_display,        # home spread (- = favorite, + = underdog)
+        'orig_total':      model_to_r,             # model total (rounded to 0.5)
+        # Model projected scores
         'orig_away_score': round(orig_away_score, 2),
         'orig_home_score': round(orig_home_score, 2),
-        'orig_away_sp':    round(orig_away_sp, 2),
-        'orig_home_sp':    round(orig_sp, 2),
-        'orig_total':      round(orig_to, 2),
-        # Raw (pre-band)
+        # Raw (pre-band, pre-rounding) for debugging
         'raw_away_score':  round(raw_away_score, 2),
         'raw_home_score':  round(raw_home_score, 2),
-        'raw_away_sp':     round(raw_away_sp, 2),
+        'raw_away_sp':     round(-raw_sp, 2),      # betting display
         'raw_home_sp':     round(raw_sp, 2),
         'raw_total':       round(raw_to, 2),
-        # Market implied
+        # Market implied scores
         'mkt_away_score':  round(mkt_away_score, 2),
         'mkt_home_score':  round(mkt_home_score, 2),
         'mkt_total':       mkt_to,
@@ -777,7 +848,7 @@ def run_engine(inp: dict) -> dict:
         'ml_home_pct':     sim['ml_home_pct'],
         'away_ml_fair':    sim['away_ml_fair'],
         'home_ml_fair':    sim['home_ml_fair'],
-        # Over/under
+        # Over/under at book line
         'over_rate':       sim['over_rate'],
         'under_rate':      sim['under_rate'],
         # Simulation metadata
@@ -788,11 +859,11 @@ def run_engine(inp: dict) -> dict:
         'def_suppression': matchup['def_suppression'],
         'sigma_away':      sim['sigma_away'],
         'sigma_home':      sim['sigma_home'],
-        # Model fair odds at book's line
-        'mkt_spread_away_odds': mkt_spread_away_odds,
-        'mkt_spread_home_odds': mkt_spread_home_odds,
-        'mkt_total_over_odds':  mkt_total_over_odds,
-        'mkt_total_under_odds': mkt_total_under_odds,
+        # Model fair odds at DERIVED model line (from 250k distribution at rounded line)
+        'mkt_spread_away_odds': sim['mdl_away_sp_odds'],  # odds for away to cover model spread
+        'mkt_spread_home_odds': sim['mdl_home_sp_odds'],  # odds for home to cover model spread
+        'mkt_total_over_odds':  sim['mdl_over_odds'],     # odds for over at model total
+        'mkt_total_under_odds': sim['mdl_under_odds'],    # odds for under at model total
         # Edges
         'edges':           edges,
         'error':           None,

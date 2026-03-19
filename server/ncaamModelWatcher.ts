@@ -140,6 +140,11 @@ async function processGame(game: Awaited<ReturnType<typeof listGamesByDate>>[num
   const mktMlA = game.awayML ? parseInt(game.awayML, 10) : null;
   const mktMlH = game.homeML ? parseInt(game.homeML, 10) : null;
 
+  // Hardcode KenPom credentials — ENV.kenpomPassword contains '$' which gets
+  // truncated by shell variable expansion when stored as an env var.
+  const KENPOM_EMAIL = ENV.kenpomEmail || 'taileredsportsbetting@gmail.com';
+  const KENPOM_PASS  = '3$mHnYuV8iLcYau';
+
   const input: ModelGameInput = {
     away_team:    awayInfo.kenpomSlug,
     home_team:    homeInfo.kenpomSlug,
@@ -149,8 +154,8 @@ async function processGame(game: Awaited<ReturnType<typeof listGamesByDate>>[num
     mkt_to:       mktTo,
     mkt_ml_a:     mktMlA,
     mkt_ml_h:     mktMlH,
-    kenpom_email: ENV.kenpomEmail,
-    kenpom_pass:  ENV.kenpomPassword,
+    kenpom_email: KENPOM_EMAIL,
+    kenpom_pass:  KENPOM_PASS,
   };
 
   const emailOk = !!ENV.kenpomEmail && ENV.kenpomEmail.length > 3;
@@ -185,20 +190,15 @@ async function processGame(game: Awaited<ReturnType<typeof listGamesByDate>>[num
     return;
   }
 
-  // ─── Spread sign fix ───────────────────────────────────────────────────────
-  // The Python engine computes `originated_spread` as median(home_score - away_score).
-  // A positive value means home is projected to win.
-  // Betting convention: the FAVORITE gets a NEGATIVE spread, the UNDERDOG gets POSITIVE.
-  // orig_home_sp = +orig_sp (positive when home wins) → must become NEGATIVE for home favorite
-  // orig_away_sp = -orig_sp (negative when home wins) → must become POSITIVE for away underdog
-  // Fix: flip both signs so the projected favorite always shows negative.
-  const awayModelSpreadRaw = -result.orig_away_sp;  // flip: away underdog → positive
-  const homeModelSpreadRaw = -result.orig_home_sp;  // flip: home favorite → negative
-
-  // Round to nearest 0.5 (standard spread convention)
-  const awayModelSpread = roundHalf(awayModelSpreadRaw);
-  const homeModelSpread = roundHalf(homeModelSpreadRaw);
-  const modelTotal      = roundHalf(result.orig_total);
+  // ─── Spread values ─────────────────────────────────────────────────────────
+  // The Python engine (model_v9_engine.py) now correctly outputs:
+  //   orig_away_sp = +model_sp_rounded  (positive = away is underdog)
+  //   orig_home_sp = -model_sp_rounded  (negative = home is favorite)
+  //   orig_total   = rounded to nearest 0.5
+  // No sign flip or rounding needed here — engine handles it.
+  const awayModelSpread = result.orig_away_sp;   // already correct sign + rounded
+  const homeModelSpread = result.orig_home_sp;   // already correct sign + rounded
+  const modelTotal      = result.orig_total;     // already rounded to 0.5
 
   // Build edge labels (use the corrected away spread vs book away spread)
   const awayDisplayName = awayInfo.ncaaName ?? awayInfo.kenpomSlug;
@@ -229,6 +229,11 @@ async function processGame(game: Awaited<ReturnType<typeof listGamesByDate>>[num
       modelTotalClamped:   result.total_clamped,
       modelCoverDirection: result.cover_direction,
       modelRunAt:          Date.now(),
+      // Model fair odds at derived model line (from 250k simulation distribution)
+      modelAwaySpreadOdds: String(result.mkt_spread_away_odds),
+      modelHomeSpreadOdds: String(result.mkt_spread_home_odds),
+      modelOverOdds:       String(result.mkt_total_over_odds),
+      modelUnderOdds:      String(result.mkt_total_under_odds),
       spreadEdge,
       spreadDiff,
       totalEdge,

@@ -719,6 +719,9 @@ interface DesktopMergedPanelProps {
     modelHomePLOdds?: string | null;
     modelOverOdds?: string | null;
     modelUnderOdds?: string | null;
+    // NCAAM model fair odds at derived model spread/total line
+    modelAwaySpreadOdds?: string | null;
+    modelHomeSpreadOdds?: string | null;
   };
 }
 
@@ -851,8 +854,8 @@ function DesktopMergedPanel({
   const mdlOverOdds   = game.modelOverOdds ?? null;
   const mdlUnderOdds  = game.modelUnderOdds ?? null;
   // NCAAM model fair odds at book's spread line (computed by Python engine)
-  const mdlAwaySpreadOdds = (game as unknown as Record<string, string | null>).modelAwaySpreadOdds ?? null;
-  const mdlHomeSpreadOdds = (game as unknown as Record<string, string | null>).modelHomeSpreadOdds ?? null;
+  const mdlAwaySpreadOdds = game.modelAwaySpreadOdds ?? null;
+  const mdlHomeSpreadOdds = game.modelHomeSpreadOdds ?? null;
 
   const mdlAwaySpreadStr = hasModelData && !isNaN(mdlAwaySpread)
     ? (isNhlGame && mdlAwayPLOdds
@@ -1955,7 +1958,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   }, [isAppAuthed, onToggleFavorite, game.id, toggleFavMutation, isFavorited, onFavoriteNotify]);
   const awayBookSpread = toNum(game.awayBookSpread);
   const homeBookSpread = toNum(game.homeBookSpread);
-  const isNhlGame = game.sport === 'NHL';
+  const isNhlGame   = game.sport === 'NHL';
+  const isNcaamGame = game.sport === 'NCAAM';
   // For NHL: use modelAwayPuckLine/modelHomePuckLine (simulation-derived, e.g. "+1.5"/"-1.5")
   // instead of awayModelSpread/homeModelSpread (which may contain stale goal-differential values).
   // For NCAAM/NBA: use awayModelSpread/homeModelSpread as before.
@@ -2632,8 +2636,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                 modelHomePLOdds={game.modelHomePLOdds}
                 modelOverOdds={game.modelOverOdds}
                 modelUnderOdds={game.modelUnderOdds}
-                modelAwaySpreadOdds={(game as unknown as Record<string, string | null>).modelAwaySpreadOdds ?? null}
-                modelHomeSpreadOdds={(game as unknown as Record<string, string | null>).modelHomeSpreadOdds ?? null}
+                modelAwaySpreadOdds={game.modelAwaySpreadOdds ?? null}
+                modelHomeSpreadOdds={game.modelHomeSpreadOdds ?? null}
               />
             </div>
           )}
@@ -2937,22 +2941,30 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             const bkUnderStr = !isNaN(bookTotal)
               ? (mbUnderOdds ? `u${bkTotalStr} (${mbUnderOdds})` : `u${bkTotalStr}`)
               : 'u—';
-            // For NHL: include puck line odds and total odds in model display strings
+            // For NHL/NCAAM: include puck line / spread odds and total odds in model display strings
             const mdlAwaySpreadStr = !isNaN(awayModelSpread)
-              ? (isNhlGame && game.modelAwayPLOdds ? `${spreadSign(awayModelSpread)} (${game.modelAwayPLOdds})` : spreadSign(awayModelSpread))
+              ? (isNhlGame && game.modelAwayPLOdds
+                  ? `${spreadSign(awayModelSpread)} (${game.modelAwayPLOdds})`
+                  : isNcaamGame && game.modelAwaySpreadOdds
+                  ? `${spreadSign(awayModelSpread)} (${game.modelAwaySpreadOdds})`
+                  : spreadSign(awayModelSpread))
               : '—';
             const mdlHomeSpreadStr = !isNaN(homeModelSpread)
-              ? (isNhlGame && game.modelHomePLOdds ? `${spreadSign(homeModelSpread)} (${game.modelHomePLOdds})` : spreadSign(homeModelSpread))
+              ? (isNhlGame && game.modelHomePLOdds
+                  ? `${spreadSign(homeModelSpread)} (${game.modelHomePLOdds})`
+                  : isNcaamGame && game.modelHomeSpreadOdds
+                  ? `${spreadSign(homeModelSpread)} (${game.modelHomeSpreadOdds})`
+                  : spreadSign(homeModelSpread))
               : '—';
             // For NHL: display the BOOK's total line with the model's fair odds at that line
             const mdlDisplayTotal = isNhlGame && !isNaN(bookTotal) ? bookTotal : modelTotal;
             const mdlTotalStr = !isNaN(mdlDisplayTotal) ? String(mdlDisplayTotal) : '—';
-            // For NHL: total display strings include O/U odds at the BOOK's line
+            // For NHL/NCAAM: total display strings include O/U odds at the model's line
             const mdlOverTotalStr  = !isNaN(mdlDisplayTotal)
-              ? (isNhlGame && game.modelOverOdds  ? `${mdlTotalStr} (${game.modelOverOdds})`  : mdlTotalStr)
+              ? ((isNhlGame || isNcaamGame) && game.modelOverOdds  ? `${mdlTotalStr} (${game.modelOverOdds})`  : mdlTotalStr)
               : '—';
             const mdlUnderTotalStr = !isNaN(mdlDisplayTotal)
-              ? (isNhlGame && game.modelUnderOdds ? `${mdlTotalStr} (${game.modelUnderOdds})` : mdlTotalStr)
+              ? ((isNhlGame || isNcaamGame) && game.modelUnderOdds ? `${mdlTotalStr} (${game.modelUnderOdds})` : mdlTotalStr)
               : '—';
             // ── Split helpers: parse "value (odds)" → { line, odds } for two-line pill rendering ──
             // Used by mobile OddsTable to pass mainValue and juiceStr separately to OddsCell
