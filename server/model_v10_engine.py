@@ -570,10 +570,29 @@ def run_engine(inp: dict) -> dict:
     # Convention: away_sp_display = -model_spread so that:
     #   if home favored (model_spread < 0): away_sp_display = +abs(model_spread) ✓
     #   if away favored (model_spread > 0): away_sp_display = -abs(model_spread) ✓
-    model_sp = mkt['model_spread']
+    SPREAD_BAND = 5.0   # max ±5pt delta from book spread
+    TOTAL_BAND  = 7.0   # max ±7pt delta from book total
+
+    raw_model_sp = mkt['model_spread']
+    raw_model_to = mkt['model_total']
+
+    # Clamp spread within ±SPREAD_BAND of book spread
+    # mkt_sp is the AWAY book spread (positive = away underdog)
+    # raw_model_sp is the HOME-perspective spread (negative = home favored)
+    # We compare in the same sign convention: away_sp_display = -raw_model_sp
+    raw_away_sp_display = -raw_model_sp
+    clamped_away_sp = max(mkt_sp - SPREAD_BAND, min(mkt_sp + SPREAD_BAND, raw_away_sp_display))
+    spread_clamped = (clamped_away_sp != raw_away_sp_display)
+    # Re-derive model_sp from clamped away display
+    model_sp = -clamped_away_sp
+
+    # Clamp total within ±TOTAL_BAND of book total
+    clamped_to = max(mkt_to - TOTAL_BAND, min(mkt_to + TOTAL_BAND, raw_model_to))
+    total_clamped = (clamped_to != raw_model_to)
+    model_to = round_to_half(clamped_to)
+
     away_sp_display = -model_sp
     home_sp_display = +model_sp
-    model_to = mkt['model_total']
 
     orig_away_score = (model_to - model_sp) / 2.0
     orig_home_score = (model_to + model_sp) / 2.0
@@ -620,8 +639,8 @@ def run_engine(inp: dict) -> dict:
         'home_ml_fair':    mkt['ML_B'],
         'over_rate':       round(mkt['over_rate'], 4),
         'under_rate':      round(mkt['under_rate'], 4),
-        'spread_clamped':  False,
-        'total_clamped':   False,
+        'spread_clamped':  spread_clamped,
+        'total_clamped':   total_clamped,
         'cover_direction': 'OVER' if mkt['p_over'] > 0.5 else 'UNDER',
         'cover_adj':       0.0,
         'def_suppression': 1.0,
