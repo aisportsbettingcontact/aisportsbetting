@@ -17,7 +17,7 @@ const CDN_MONEY_BAG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/
 const CDN_MARCH_MADNESS = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-march-madness_ecd8f481.png";
 const CDN_NBA = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-nba_3fa4f508.png";
 import { GameCard } from "@/components/GameCard";
-import { MarchMadnessBracket } from "@/pages/MarchMadnessBracket";
+import MarchMadnessBracket from "@/pages/MarchMadnessBracket";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";

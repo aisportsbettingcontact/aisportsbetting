@@ -1,90 +1,72 @@
 /**
- * MarchMadnessBracket.tsx
+ * MarchMadnessBracket.tsx — 2026 NCAA Tournament Bracket
  *
- * Full interactive 2026 March Madness bracket.
+ * Architecture:
+ *   - CSS-based connectors (border lines on pair-wrappers) — pixel-perfect, layout-driven
+ *   - No SVG / getBoundingClientRect — eliminates paint-timing bugs
+ *   - Each "pair" of matchups is wrapped in a .bracket-pair div that draws the
+ *     right-side bracket arm via ::before / ::after pseudo-elements
+ *   - Gap between matchups doubles each round (standard bracket geometry)
  *
- * Layout (as confirmed):
+ * Layout:
  *   LEFT  side: EAST (top) + SOUTH (bottom)
- *   RIGHT side: WEST (top) + MIDWEST (bottom)
+ *   RIGHT side: WEST (top, RTL) + MIDWEST (bottom, RTL)
+ *   CENTER: Final Four + Championship
  *
- * Visual design mirrors bracket-v2.html:
- *   - Dark #0d0d0f background with fire radial gradients
- *   - Team color strips with laminate sheen
- *   - SVG connector lines between rounds
- *   - Winner (gold border) / Loser (dimmed) states
- *   - Seed number + team abbreviation + team name
- *   - Animated ember particles
+ * Debugging:
+ *   - console.group logs per region with round counts and game IDs
+ *   - console.warn for any missing game IDs or slug resolution failures
  */
-
-import React, { useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import { NCAAM_TEAMS } from "@shared/ncaamTeams";
 
-// ─── Team registry lookup ─────────────────────────────────────────────────────
+// ─── Team registry ────────────────────────────────────────────────────────────
 const TEAM_BY_SLUG = new Map(NCAAM_TEAMS.map(t => [t.dbSlug, t]));
 
-// ─── Seed map: bracketGameId → { awaySlug: seed, homeSlug: seed } ─────────────
-// Derived from the official 2026 bracket
+// ─── Seed map ─────────────────────────────────────────────────────────────────
 const SEED_MAP: Record<number, { away: number; home: number }> = {
   // First Four
-  101: { away: 16, home: 16 }, // UMBC vs Howard (MIDWEST 16-seed)
-  102: { away: 11, home: 11 }, // Texas vs NC State (WEST 11-seed)
-  103: { away: 16, home: 16 }, // PV A&M vs Lehigh (SOUTH 16-seed)
-  104: { away: 11, home: 11 }, // Miami OH vs SMU (MIDWEST 11-seed)
+  101: { away: 16, home: 16 },
+  102: { away: 11, home: 11 },
+  103: { away: 16, home: 16 },
+  104: { away: 11, home: 11 },
   // EAST R64
-  201: { away: 16, home: 1  }, // Siena @ Duke
-  202: { away: 9,  home: 8  }, // TCU @ Ohio St
-  203: { away: 12, home: 5  }, // N.Iowa @ St.John's
-  204: { away: 13, home: 4  }, // Cal Baptist @ Kansas
-  205: { away: 11, home: 6  }, // S.Florida @ Louisville
-  206: { away: 14, home: 3  }, // NDSU @ Michigan St
-  207: { away: 10, home: 7  }, // UCF @ UCLA
-  208: { away: 15, home: 2  }, // Furman @ UConn
+  201: { away: 16, home: 1  }, 202: { away: 9,  home: 8  },
+  203: { away: 12, home: 5  }, 204: { away: 13, home: 4  },
+  205: { away: 11, home: 6  }, 206: { away: 14, home: 3  },
+  207: { away: 10, home: 7  }, 208: { away: 15, home: 2  },
   // SOUTH R64
-  209: { away: 16, home: 1  }, // FF winner @ Florida
-  210: { away: 9,  home: 8  }, // Iowa @ Clemson
-  211: { away: 12, home: 5  }, // McNeese @ Vanderbilt
-  212: { away: 13, home: 4  }, // Troy @ Nebraska
-  213: { away: 11, home: 6  }, // VCU @ N.Carolina
-  214: { away: 14, home: 3  }, // Penn @ Illinois
-  215: { away: 10, home: 7  }, // Tex A&M @ St.Mary's
-  216: { away: 15, home: 2  }, // Idaho @ Houston
+  209: { away: 16, home: 1  }, 210: { away: 9,  home: 8  },
+  211: { away: 12, home: 5  }, 212: { away: 13, home: 4  },
+  213: { away: 11, home: 6  }, 214: { away: 14, home: 3  },
+  215: { away: 10, home: 7  }, 216: { away: 15, home: 2  },
   // WEST R64
-  217: { away: 16, home: 1  }, // LIU @ Arizona
-  218: { away: 9,  home: 8  }, // Utah St @ Villanova
-  219: { away: 12, home: 5  }, // High Point @ Wisconsin
-  220: { away: 13, home: 4  }, // Hawaii @ Arkansas
-  221: { away: 11, home: 6  }, // Texas[FF] @ BYU
-  222: { away: 14, home: 3  }, // Kennesaw @ Gonzaga
-  223: { away: 10, home: 7  }, // Missouri @ Miami FL
-  224: { away: 15, home: 2  }, // Queens NC @ Purdue
+  217: { away: 16, home: 1  }, 218: { away: 9,  home: 8  },
+  219: { away: 12, home: 5  }, 220: { away: 13, home: 4  },
+  221: { away: 11, home: 6  }, 222: { away: 14, home: 3  },
+  223: { away: 10, home: 7  }, 224: { away: 15, home: 2  },
   // MIDWEST R64
-  225: { away: 16, home: 1  }, // Howard[FF] @ Michigan
-  226: { away: 9,  home: 8  }, // St.Louis @ Georgia
-  227: { away: 12, home: 5  }, // Akron @ Texas Tech
-  228: { away: 13, home: 4  }, // Hofstra @ Alabama
-  229: { away: 11, home: 6  }, // Miami OH[FF] @ Tennessee
-  230: { away: 14, home: 3  }, // Wright St @ Virginia
-  231: { away: 10, home: 7  }, // Santa Clara @ Kentucky
-  232: { away: 15, home: 2  }, // Tenn St @ Iowa St
+  225: { away: 16, home: 1  }, 226: { away: 9,  home: 8  },
+  227: { away: 12, home: 5  }, 228: { away: 13, home: 4  },
+  229: { away: 11, home: 6  }, 230: { away: 14, home: 3  },
+  231: { away: 10, home: 7  }, 232: { away: 15, home: 2  },
 };
 
-// ─── Color helpers ────────────────────────────────────────────────────────────
-function hexToRgb(h: string): [number, number, number] {
-  const hex = h.replace('#', '');
-  return [
-    parseInt(hex.slice(0, 2), 16),
-    parseInt(hex.slice(2, 4), 16),
-    parseInt(hex.slice(4, 6), 16),
-  ];
-}
-function luminance(hex: string): number {
-  const [r, g, b] = hexToRgb(hex).map(v => v / 255);
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-}
-// All text is ALWAYS white — no black text allowed on bracket
-function textColor(_hex: string): string {
-  return '#fff';
+// ─── Slug aliases (DB slug → ncaamTeams dbSlug) ───────────────────────────────
+const SLUG_ALIAS: Record<string, string> = {
+  'north_carolina_st': 'nc_state',
+  's_florida': 'south_florida',
+  'north_dakota_st': 'n_dakota_st',
+  'vcu': 'va_commonwealth',
+  'penn': 'pennsylvania',
+  'texas_am': 'texas_a_and_m',
+  'saint_marys': 'st_marys',
+  'liu': 'liu_brooklyn',
+  'byu': 'brigham_young',
+};
+function resolveSlug(slug: string): string {
+  return SLUG_ALIAS[slug] ?? slug;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -120,7 +102,7 @@ interface BracketGame {
 interface TeamSlot {
   slug: string;
   seed: number;
-  isWinner: boolean | null; // true=won, false=lost, null=TBD
+  isWinner: boolean | null;
 }
 
 interface MatchupData {
@@ -128,16 +110,13 @@ interface MatchupData {
   top: TeamSlot;
   bottom: TeamSlot;
   gameStatus: string;
-  awayScore: number | null;
-  homeScore: number | null;
+  topScore: number | null;
+  bottomScore: number | null;
   startTimeEst: string;
-  gameDate: string;
-  spread: string | null;
-  total: string | null;
-  isTbd: boolean; // true when both teams are tbd_* placeholders
+  isTbd: boolean;
 }
 
-// ─── Build bracket structure from flat game list ──────────────────────────────
+// ─── Build bracket structure ──────────────────────────────────────────────────
 function buildBracketStructure(games: BracketGame[]) {
   const byId = new Map<number, BracketGame>();
   for (const g of games) byId.set(g.bracketGameId, g);
@@ -151,80 +130,80 @@ function buildBracketStructure(games: BracketGame[]) {
     return { slug, seed, isWinner };
   }
 
-  // Slug alias: DB slug → ncaamTeams dbSlug for teams whose DB slug differs
-  const SLUG_ALIAS: Record<string, string> = {
-    'north_carolina_st': 'nc_state',
-    's_florida': 'south_florida',
-    'north_dakota_st': 'n_dakota_st',
-    'vcu': 'va_commonwealth',
-    'penn': 'pennsylvania',
-    'texas_am': 'texas_a_and_m',
-    'saint_marys': 'st_marys',
-    'liu': 'liu_brooklyn',
-    'byu': 'brigham_young',
-  };
-  function resolveSlug(slug: string): string {
-    return SLUG_ALIAS[slug] ?? slug;
-  }
-
   function makeMatchup(bracketGameId: number): MatchupData | null {
     const g = byId.get(bracketGameId);
-    if (!g) return null;
+    if (!g) {
+      console.warn(`[Bracket] Missing game ID: ${bracketGameId}`);
+      return null;
+    }
     const seeds = SEED_MAP[bracketGameId] ?? { away: 0, home: 0 };
-    // Resolve any slug aliases so TEAM_BY_SLUG lookup works
     const awaySlug = resolveSlug(g.awayTeam);
     const homeSlug = resolveSlug(g.homeTeam);
-    const awaySeed = seeds.away;
-    const homeSeed = seeds.home;
-    // Always put LOWER seed number on top (seed 1 = top, seed 16 = bottom)
-    // For First Four games both seeds are equal — keep away on top
-    const awayIsTop = awaySeed <= homeSeed;
+
+    if (!TEAM_BY_SLUG.has(awaySlug) && !awaySlug.startsWith('tbd_')) {
+      console.warn(`[Bracket] Unknown away slug: "${awaySlug}" (raw: "${g.awayTeam}") in game ${bracketGameId}`);
+    }
+    if (!TEAM_BY_SLUG.has(homeSlug) && !homeSlug.startsWith('tbd_')) {
+      console.warn(`[Bracket] Unknown home slug: "${homeSlug}" (raw: "${g.homeTeam}") in game ${bracketGameId}`);
+    }
+
+    const awayIsTop = seeds.away <= seeds.home;
     const topSlug  = awayIsTop ? awaySlug  : homeSlug;
     const botSlug  = awayIsTop ? homeSlug  : awaySlug;
-    const topSeed  = awayIsTop ? awaySeed  : homeSeed;
-    const botSeed  = awayIsTop ? homeSeed  : awaySeed;
+    const topSeed  = awayIsTop ? seeds.away : seeds.home;
+    const botSeed  = awayIsTop ? seeds.home : seeds.away;
     const topIsAway = awayIsTop;
+
     const topSlot = makeTeamSlot(topSlug, topSeed, g, topIsAway);
     const botSlot = makeTeamSlot(botSlug, botSeed, g, !topIsAway);
-    // Scores follow the top/bottom assignment
     const topScore = topIsAway ? g.awayScore : g.homeScore;
     const botScore = topIsAway ? g.homeScore : g.awayScore;
+
+    const isTbd = (awaySlug.startsWith('tbd_') || awaySlug === 'tbd') &&
+                  (homeSlug.startsWith('tbd_') || homeSlug === 'tbd');
+
     return {
       bracketGameId,
       top: topSlot,
       bottom: botSlot,
       gameStatus: g.gameStatus,
-      awayScore: topScore,
-      homeScore: botScore,
+      topScore,
+      bottomScore: botScore,
       startTimeEst: g.startTimeEst,
-      gameDate: g.gameDate,
-      spread: g.awayBookSpread || g.homeBookSpread || null,
-      total: g.bookTotal || null,
-      isTbd: (awaySlug.startsWith('tbd_') || awaySlug === 'tbd') && (homeSlug.startsWith('tbd_') || homeSlug === 'tbd'),
+      isTbd,
     };
   }
 
-  // Build per-region round arrays
-  // Each region: R64 (8 games), R32 (4 games), S16 (2 games), E8 (1 game)
-  const regions = {
+  const REGION_IDS = {
     EAST:    { r64: [201,202,203,204,205,206,207,208], r32: [301,302,303,304], s16: [401,402], e8: [501] },
     SOUTH:   { r64: [209,210,211,212,213,214,215,216], r32: [305,306,307,308], s16: [403,404], e8: [502] },
     WEST:    { r64: [217,218,219,220,221,222,223,224], r32: [309,310,311,312], s16: [405,406], e8: [503] },
     MIDWEST: { r64: [225,226,227,228,229,230,231,232], r32: [313,314,315,316], s16: [407,408], e8: [504] },
   };
 
-  const ff = [601, 602];
-  const champ = [701];
+  type RegionKey = keyof typeof REGION_IDS;
 
-  type RegionKey = keyof typeof regions;
-
-  function getMatchups(ids: number[]): (MatchupData | null)[] {
+  function getMatchups(ids: number[]) {
     return ids.map(id => makeMatchup(id));
   }
 
+  // Deep debug logging
+  console.group('[Bracket] buildBracketStructure');
+  console.log(`Total games loaded: ${games.length}`);
+  for (const [region, ids] of Object.entries(REGION_IDS)) {
+    const allIds = [...ids.r64, ...ids.r32, ...ids.s16, ...ids.e8];
+    const found = allIds.filter(id => byId.has(id));
+    const missing = allIds.filter(id => !byId.has(id));
+    console.log(`${region}: ${found.length}/${allIds.length} games found${missing.length ? ` | MISSING: ${missing.join(',')}` : ''}`);
+  }
+  const ffIds = [601, 602, 701];
+  const ffFound = ffIds.filter(id => byId.has(id));
+  console.log(`Final Four/Champ: ${ffFound.length}/${ffIds.length} games found`);
+  console.groupEnd();
+
   return {
     regions: Object.fromEntries(
-      Object.entries(regions).map(([key, val]) => [
+      Object.entries(REGION_IDS).map(([key, val]) => [
         key,
         {
           r64: getMatchups(val.r64),
@@ -234,45 +213,39 @@ function buildBracketStructure(games: BracketGame[]) {
         },
       ])
     ) as Record<RegionKey, { r64: (MatchupData|null)[]; r32: (MatchupData|null)[]; s16: (MatchupData|null)[]; e8: (MatchupData|null)[] }>,
-    ff: getMatchups(ff),
-    champ: getMatchups(champ),
+    ff: getMatchups([601, 602]),
+    champ: getMatchups([701]),
     firstFour: [101, 102, 103, 104].map(id => makeMatchup(id)),
   };
 }
 
-// ─── TeamStrip component ──────────────────────────────────────────────────────
+// ─── TeamStrip ────────────────────────────────────────────────────────────────
 function TeamStrip({ slug, seed, isWinner, score }: {
   slug: string;
   seed: number;
   isWinner: boolean | null;
   score?: number | null;
 }) {
-  // Detect TBD placeholder slugs (e.g. "tbd_301_away") — render as blank dark slot
   const isPlaceholder = slug.startsWith('tbd_') || slug === 'tbd';
   const team = isPlaceholder ? null : TEAM_BY_SLUG.get(slug);
-  const color = isPlaceholder ? '#111' : (team?.primaryColor ?? '#1a1a2e');
+  const color = isPlaceholder ? '#0e0e14' : (team?.primaryColor ?? '#1a1a2e');
   const displayName = isPlaceholder ? '' : (team ? team.ncaaName : slug.replace(/_/g, ' ').toUpperCase());
   const logoUrl = isPlaceholder ? null : (team?.logoUrl ?? null);
-  // Logo circle: always semi-transparent white for visibility on any team color
-  const logoBg = 'rgba(255,255,255,.15)';
   const stateClass = isWinner === true ? 'strip-winner' : isWinner === false ? 'strip-loser' : '';
-  const hasScore = !isPlaceholder && score !== undefined && score !== null;;
+  const hasScore = !isPlaceholder && score !== undefined && score !== null;
 
   return (
     <div
       className={`bracket-strip ${stateClass}`}
       style={{ background: color }}
-      title={`${displayName}${hasScore ? ` (${score})` : ''}`}
+      title={displayName || 'TBD'}
     >
-      {/* Laminate sheen */}
       <div className="strip-sheen" />
-      {/* Bottom shadow */}
       <div className="strip-shadow" />
 
-      {/* Left: team logo circle — hidden for placeholder slots */}
       {!isPlaceholder && (
         <div className="strip-logo-left">
-          <div className="logo-circle" style={{ background: logoBg }}>
+          <div className="logo-circle">
             {logoUrl ? (
               <img
                 src={logoUrl}
@@ -297,115 +270,100 @@ function TeamStrip({ slug, seed, isWinner, score }: {
         </div>
       )}
 
-      {/* Center: seed + name — hidden for placeholder slots */}
       <div className="strip-center">
         {!isPlaceholder && seed > 0 && (
-          <span className="strip-seed" style={{ color: 'rgba(255,255,255,.6)', textShadow: '0 1px 3px rgba(0,0,0,.8)' }}>
-            {seed}
-          </span>
+          <span className="strip-seed">{seed}</span>
         )}
         {!isPlaceholder && (
-          <span className="strip-name" style={{ color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,.9)' }}>
-            {displayName}
-          </span>
+          <span className="strip-name">{displayName}</span>
         )}
       </div>
 
-      {/* Right: score — always white with text-shadow */}
-      <div className="strip-score-right">
-        {hasScore && (
-          <span className="strip-score-val" style={{ color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,.9)' }}>
-            {score}
-          </span>
-        )}
-      </div>
+      {hasScore && (
+        <div className="strip-score-right">
+          <span className="strip-score-val">{score}</span>
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Matchup component ────────────────────────────────────────────────────────
-function Matchup({ data, size = 'normal' }: { data: MatchupData | null; size?: 'normal' | 'small' | 'champ' }) {
+// ─── Matchup ──────────────────────────────────────────────────────────────────
+function Matchup({ data, size = 'normal' }: {
+  data: MatchupData | null;
+  size?: 'normal' | 'champ';
+}) {
   if (!data) {
-    // TBD placeholder
     return (
       <div className={`bracket-matchup bracket-matchup-${size}`}>
-        <div className="bracket-strip strip-tbd">
-          <div className="strip-sheen" />
-          <div className="strip-center"><span className="strip-name" style={{ color: 'rgba(255,255,255,.3)' }}>TBD</span></div>
-        </div>
+        <div className="bracket-strip strip-placeholder"><div className="strip-sheen" /></div>
         <div className="matchup-divider" />
-        <div className="bracket-strip strip-tbd">
-          <div className="strip-sheen" />
-          <div className="strip-center"><span className="strip-name" style={{ color: 'rgba(255,255,255,.3)' }}>TBD</span></div>
-        </div>
+        <div className="bracket-strip strip-placeholder"><div className="strip-sheen" /></div>
       </div>
     );
   }
 
   const isFinal = data.gameStatus === 'final';
-  const isLive = data.gameStatus === 'live';
+  const isLive  = data.gameStatus === 'live';
   const isUpcoming = !isFinal && !isLive;
 
-  // Status label shown ABOVE the matchup cell
   let statusLabel: React.ReactNode = null;
   if (isLive) {
-    statusLabel = (
-      <div style={{ fontSize: 9, fontWeight: 800, color: '#4ade80', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center', textShadow: '0 0 6px rgba(74,222,128,.6)' }}>
-        ● LIVE
-      </div>
-    );
+    statusLabel = <div className="matchup-status status-live">● LIVE</div>;
   } else if (isFinal) {
-    statusLabel = (
-      <div style={{ fontSize: 9, fontWeight: 700, color: 'rgba(255,255,255,.5)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' }}>
-        FINAL
-      </div>
-    );
+    statusLabel = <div className="matchup-status status-final">FINAL</div>;
   } else if (isUpcoming && !data.isTbd && data.startTimeEst && data.startTimeEst !== 'TBD') {
-    statusLabel = (
-      <div style={{ fontSize: 9, fontWeight: 600, color: 'rgba(255,255,255,.4)', letterSpacing: 0.5, marginBottom: 2, textAlign: 'center' }}>
-        {data.startTimeEst} EST
-      </div>
-    );
+    statusLabel = <div className="matchup-status status-time">{data.startTimeEst} EST</div>;
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch' }}>
+    <div className="matchup-wrap">
       {statusLabel}
       <div className={`bracket-matchup bracket-matchup-${size}`}>
         <TeamStrip
           slug={data.top.slug}
           seed={data.top.seed}
           isWinner={isFinal ? data.top.isWinner : null}
-          score={isFinal || isLive ? data.awayScore : undefined}
+          score={isFinal || isLive ? data.topScore : undefined}
         />
         <div className="matchup-divider" />
         <TeamStrip
           slug={data.bottom.slug}
           seed={data.bottom.seed}
           isWinner={isFinal ? data.bottom.isWinner : null}
-          score={isFinal || isLive ? data.homeScore : undefined}
+          score={isFinal || isLive ? data.bottomScore : undefined}
         />
       </div>
     </div>
   );
 }
 
-// ─── Round column ─────────────────────────────────────────────────────────────
-function RoundCol({ matchups, gap, width, animDelay }: {
+// ─── Constants ────────────────────────────────────────────────────────────────
+// MATCHUP_H = height of one matchup card (2 strips × 32px + 1px divider + ~16px status label)
+// We use CSS variables so the connector math is always in sync with actual rendered height.
+// Strip height: 32px × 2 + 1px divider = 65px card body
+// Status label: ~16px (but we account for it in the pair-wrapper padding)
+const STRIP_H = 32;   // px — must match .bracket-strip min-height in CSS
+const DIVIDER_H = 1;  // px
+const STATUS_H = 16;  // px — reserved for status label above each matchup
+const CARD_H = STRIP_H * 2 + DIVIDER_H; // 65px
+const MATCHUP_TOTAL_H = STATUS_H + CARD_H; // 81px — total vertical space per matchup slot
+
+// Gap between matchup slots in R64 (no gap — they're packed)
+// Gap doubles each round: R32 = 1 matchup height, S16 = 3, E8 = 7
+// These gaps are between the BOTTOM of one matchup slot and the TOP of the next
+const COL_W = 180; // px — matchup card width
+const COL_GAP = 24; // px — horizontal gap between round columns
+
+// ─── BracketRound: one column of matchups ────────────────────────────────────
+function BracketRound({ matchups, direction }: {
   matchups: (MatchupData | null)[];
-  gap: number;
-  width: number;
-  animDelay: number;
+  direction: 'ltr' | 'rtl';
 }) {
+  // For LTR: matchups are in natural order (top to bottom)
+  // For RTL: same — the column order is reversed at the RegionBracket level
   return (
-    <div
-      className="round-col"
-      style={{
-        width,
-        gap,
-        animationDelay: `${animDelay}s`,
-      }}
-    >
+    <div className="round-col" style={{ width: COL_W }}>
       {matchups.map((m, i) => (
         <Matchup key={m?.bracketGameId ?? `tbd-${i}`} data={m} />
       ))}
@@ -413,113 +371,141 @@ function RoundCol({ matchups, gap, width, animDelay }: {
   );
 }
 
-// ─── SVG Connector lines ──────────────────────────────────────────────────────
-function drawConnectors(
-  wrapEl: HTMLElement,
-  colEls: HTMLElement[],
-  svgEl: SVGSVGElement,
-  direction: 'ltr' | 'rtl'
-) {
-  svgEl.innerHTML = '';
-  const wrapRect = wrapEl.getBoundingClientRect();
-  svgEl.setAttribute('width', `${wrapEl.scrollWidth}px`);
-  svgEl.setAttribute('height', `${wrapEl.scrollHeight}px`);
-  function cy(el: Element): number {
-    const r = el.getBoundingClientRect();
-    return r.top - wrapRect.top + r.height / 2;
-  }
-  function rx(el: Element): number {
-    const r = el.getBoundingClientRect();
-    return r.right - wrapRect.left;
-  }
-  function lx(el: Element): number {
-    const r = el.getBoundingClientRect();
-    return r.left - wrapRect.left;
-  }
-  function addPath(d: string) {
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', d);
-    p.setAttribute('fill', 'none');
-    p.setAttribute('stroke', 'rgba(255,255,255,.45)');
-    p.setAttribute('stroke-width', '1.5');
-    p.setAttribute('stroke-linecap', 'square');
-    svgEl.appendChild(p);
-  }
-  for (let ri = 0; ri < colEls.length - 1; ri++) {
-    const currCol = colEls[ri];
-    const nextCol = colEls[ri + 1];
-    const currMatchups = Array.from(currCol.querySelectorAll('.bracket-matchup'));
-    const nextMatchups = Array.from(nextCol.querySelectorAll('.bracket-matchup'));
-    for (let ni = 0; ni < nextMatchups.length; ni++) {
-      const topFeeder = currMatchups[ni * 2];
-      const botFeeder = currMatchups[ni * 2 + 1];
-      const target = nextMatchups[ni];
-      if (!topFeeder || !botFeeder || !target) continue;
-      const y1 = cy(topFeeder);
-      const y2 = cy(botFeeder);
-      const yMid = (y1 + y2) / 2;
-      if (direction === 'ltr') {
-        // LTR: feeders exit RIGHT edge → target enters LEFT edge
-        const x1 = rx(topFeeder);
-        const x2 = lx(target);
-        const xMid = x1 + (x2 - x1) / 2;
-        addPath(`M ${x1} ${y1} H ${xMid} V ${yMid}`);
-        addPath(`M ${x1} ${y2} H ${xMid} V ${yMid}`);
-        addPath(`M ${xMid} ${yMid} H ${x2}`);
-      } else {
-        // RTL: feeders exit LEFT edge → target enters RIGHT edge
-        const x1 = lx(topFeeder);
-        const x2 = rx(target);
-        const xMid = x1 - (x1 - x2) / 2;
-        addPath(`M ${x1} ${y1} H ${xMid} V ${yMid}`);
-        addPath(`M ${x1} ${y2} H ${xMid} V ${yMid}`);
-        addPath(`M ${xMid} ${yMid} H ${x2}`);
-      }
-    }
-  }
+// ─── ConnectorColumn: draws the bracket arm between two rounds ────────────────
+// Uses CSS borders on pair-wrappers to draw the classic bracket bracket arm:
+//   top matchup  ──┐
+//                  ├── next round slot
+//   bot matchup  ──┘
+//
+// The pair-wrapper height = 2 × MATCHUP_TOTAL_H + inter-pair-gap
+// The connector arm is drawn via border-right + ::before/::after on the pair-wrapper.
+function ConnectorColumn({ pairCount, pairH, slotH, direction }: {
+  pairCount: number;    // number of pairs (= nextRound.length)
+  pairH: number;        // height of each pair wrapper in px (= 2 x slotH)
+  slotH: number;        // height each feeder matchup occupies (center = slotH/2)
+  direction: 'ltr' | 'rtl';
+}) {
+  const connW = COL_GAP;
+  // Guard against NaN/0 values (defensive programming)
+  const safePairH = pairH > 0 ? pairH : 1;
+  const safeSlotH = slotH > 0 ? slotH : 1;
+  // Center of top feeder matchup = slotH/2 from top of pair
+  const topTickY = safeSlotH / 2;
+  // Center of bottom feeder matchup = pairH - slotH/2 from top of pair
+  const botTickY = safePairH - safeSlotH / 2;
+  // Midpoint between the two ticks = where the arm to next round exits
+  const midY = safePairH / 2;
+  return (
+    <div style={{
+      width: connW,
+      display: 'flex',
+      flexDirection: 'column',
+      flexShrink: 0,
+      position: 'relative',
+    }}>
+      {Array.from({ length: pairCount }).map((_, i) => (
+        <div
+          key={i}
+          style={{
+            height: safePairH,
+            position: 'relative',
+            flexShrink: 0,
+          }}
+        >
+          {/* Vertical bracket arm: from center of top feeder to center of bottom feeder */}
+          <div style={{
+            position: 'absolute',
+            top: topTickY,
+            bottom: safePairH - botTickY,
+            [direction === 'ltr' ? 'left' : 'right']: 0,
+            width: 0,
+            borderLeft: direction === 'ltr' ? '1.5px solid rgba(255,255,255,.38)' : 'none',
+            borderRight: direction === 'rtl' ? '1.5px solid rgba(255,255,255,.38)' : 'none',
+          }} />
+          {/* Top horizontal tick */}
+          <div style={{
+            position: 'absolute',
+            top: topTickY,
+            [direction === 'ltr' ? 'left' : 'right']: 0,
+            width: connW / 2,
+            height: 0,
+            borderTop: '1.5px solid rgba(255,255,255,.38)',
+          }} />
+          {/* Bottom horizontal tick */}
+          <div style={{
+            position: 'absolute',
+            top: botTickY,
+            [direction === 'ltr' ? 'left' : 'right']: 0,
+            width: connW / 2,
+            height: 0,
+            borderTop: '1.5px solid rgba(255,255,255,.38)',
+          }} />
+          {/* Center horizontal arm to next round slot */}
+          <div style={{
+            position: 'absolute',
+            top: midY,
+            [direction === 'ltr' ? 'left' : 'right']: connW / 2,
+            width: connW / 2,
+            height: 0,
+            borderTop: '1.5px solid rgba(255,255,255,.38)',
+          }} />
+        </div>
+      ))}
+    </div>
+  );
 }
 
-// ─── Region bracket (one side: R64 → R32 → S16 → E8) ─────────────────────────
-function RegionBracket({
-  region,
-  data,
-  direction,
-}: {
+// ─── RegionBracket ────────────────────────────────────────────────────────────
+// Renders one region: 4 rounds (R64, R32, S16, E8) with connectors between each.
+// LTR: R64 → R32 → S16 → E8  (left side: EAST, SOUTH)
+// RTL: E8 → S16 → R32 → R64  (right side: WEST, MIDWEST)
+function RegionBracket({ region, data, direction }: {
   region: string;
   data: { r64: (MatchupData|null)[]; r32: (MatchupData|null)[]; s16: (MatchupData|null)[]; e8: (MatchupData|null)[] };
-  direction: 'ltr' | 'rtl'; // ltr = left region (R64 first), rtl = right region (E8 first)
+  direction: 'ltr' | 'rtl';
 }) {
-  const wrapRef = useRef<HTMLDivElement>(null);
-  const svgRef = useRef<SVGSVGElement>(null);
+  // Debug log
+  console.group(`[Bracket] RegionBracket: ${region} (${direction})`);
+  console.log(`R64: ${data.r64.length} games | R32: ${data.r32.length} | S16: ${data.s16.length} | E8: ${data.e8.length}`);
+  const missingR64 = data.r64.filter(m => !m).length;
+  const missingR32 = data.r32.filter(m => !m).length;
+  if (missingR64 > 0) console.warn(`  R64 missing ${missingR64} games`);
+  if (missingR32 > 0) console.warn(`  R32 missing ${missingR32} games`);
+  console.groupEnd();
 
-  const MATCHUP_H = 65; // 32px strip × 2 + 1px divider
-  const COL_W = 180;
-  const COL_GAP = 28;
+  // Pair heights for each transition:
+  // R64→R32: each R32 game covers 2 R64 games. Pair height = 2 × MATCHUP_TOTAL_H
+  // R32→S16: each S16 game covers 2 R32 games. Pair height = 2 × (2 × MATCHUP_TOTAL_H) = 4 × MATCHUP_TOTAL_H
+  // S16→E8:  each E8 game covers 2 S16 games. Pair height = 2 × (4 × MATCHUP_TOTAL_H) = 8 × MATCHUP_TOTAL_H
+  const pairH_r64_r32 = 2 * MATCHUP_TOTAL_H;
+  const pairH_r32_s16 = 4 * MATCHUP_TOTAL_H;
+  const pairH_s16_e8  = 8 * MATCHUP_TOTAL_H;
 
-  // Gap between matchups per round (doubles each round)
-  const gaps = [8, MATCHUP_H + 8, MATCHUP_H * 3 + 8, MATCHUP_H * 7 + 8];
-
+  // Column order depends on direction
+  // LTR: [R64, conn, R32, conn, S16, conn, E8]
+  // RTL: [E8, conn, S16, conn, R32, conn, R64]
   const rounds = direction === 'ltr'
     ? [data.r64, data.r32, data.s16, data.e8]
     : [data.e8, data.s16, data.r32, data.r64];
-
-  const redraw = useCallback(() => {
-    if (!wrapRef.current || !svgRef.current) return;
-    const cols = Array.from(wrapRef.current.querySelectorAll<HTMLElement>('.round-col'));
-    drawConnectors(wrapRef.current, cols, svgRef.current, direction);
-  }, [direction]);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => requestAnimationFrame(redraw));
-    window.addEventListener('resize', redraw);
-    return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener('resize', redraw);
-    };
-  }, [redraw, data]);
+  const roundLabels = direction === 'ltr'
+    ? ['R64', 'R32', 'S16', 'E8']
+    : ['E8', 'S16', 'R32', 'R64'];
+  // Connector pair heights in column order
+  const connPairHeights = direction === 'ltr'
+    ? [pairH_r64_r32, pairH_r32_s16, pairH_s16_e8]
+    : [pairH_s16_e8, pairH_r32_s16, pairH_r64_r32];
+  // Pair counts (= number of matchups in the NEXT round)
+  const connPairCounts = direction === 'ltr'
+    ? [data.r32.length, data.s16.length, data.e8.length]
+    : [data.s16.length, data.r32.length, data.r64.length];
+  // slotH = height each FEEDER matchup occupies in the column to the left of the connector
+  // R64 matchups each occupy MATCHUP_TOTAL_H; R32 occupy 2×; S16 occupy 4×
+  const connSlotHeights = direction === 'ltr'
+    ? [MATCHUP_TOTAL_H, pairH_r64_r32, pairH_r32_s16]
+    : [pairH_r32_s16, pairH_r64_r32, MATCHUP_TOTAL_H];
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: direction === 'rtl' ? 'flex-end' : 'flex-start' }}>
       {/* Region label */}
       <div style={{
         fontSize: 9,
@@ -527,66 +513,57 @@ function RegionBracket({
         letterSpacing: '0.22em',
         textTransform: 'uppercase',
         color: 'rgba(255,165,50,.7)',
-        marginBottom: 6,
-        paddingLeft: direction === 'rtl' ? (COL_W + COL_GAP) * 3 : 0,
+        marginBottom: 4,
+        paddingLeft: direction === 'rtl' ? 0 : 0,
+        alignSelf: 'flex-start',
+        marginLeft: direction === 'rtl' ? 'auto' : 0,
       }}>
         {region}
       </div>
-      {/* Round labels */}
-      <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 8, gap: 0 }}>
-        {(direction === 'ltr'
-          ? ['R64', 'R32', 'S16', 'E8']
-          : ['E8', 'S16', 'R32', 'R64']
-        ).map((label, i) => (
-          <div key={label} style={{
-            width: COL_W,
-            marginRight: i < 3 ? COL_GAP : 0,
-            fontSize: 8.5,
-            fontWeight: 700,
-            letterSpacing: '0.2em',
-            textTransform: 'uppercase',
-            color: 'rgba(255,255,255,.28)',
-            paddingBottom: 4,
-            borderBottom: '1px solid rgba(255,255,255,.09)',
-            textAlign: 'center',
-          }}>
-            {label}
-          </div>
+
+      {/* Round header labels */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 6 }}>
+        {roundLabels.map((label, i) => (
+          <React.Fragment key={label}>
+            <div style={{
+              width: COL_W,
+              fontSize: 8.5,
+              fontWeight: 700,
+              letterSpacing: '0.2em',
+              textTransform: 'uppercase',
+              color: 'rgba(255,255,255,.28)',
+              paddingBottom: 4,
+              borderBottom: '1px solid rgba(255,255,255,.09)',
+              textAlign: 'center',
+            }}>
+              {label}
+            </div>
+            {i < 3 && <div style={{ width: COL_GAP }} />}
+          </React.Fragment>
         ))}
       </div>
-      {/* Bracket wrap with SVG connectors */}
-      <div ref={wrapRef} style={{ position: 'relative', display: 'flex', alignItems: 'flex-start' }}>
-        <svg ref={svgRef} style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible', zIndex: 2 }} />
-        {rounds.map((matchups, ri) => {
-          const gapIdx = direction === 'ltr' ? ri : (3 - ri);
-          return (
-            <div
-              key={ri}
-              className="round-col"
-              style={{
-                width: COL_W,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: gaps[gapIdx],
-                marginRight: ri < 3 ? COL_GAP : 0,
-                position: 'relative',
-                zIndex: 3,
-                opacity: 0,
-                animation: `colIn 0.5s ${0.2 + ri * 0.12}s forwards`,
-              }}
-            >
-              {matchups.map((m, mi) => (
-                <Matchup key={m?.bracketGameId ?? `tbd-${ri}-${mi}`} data={m} />
-              ))}
-            </div>
-          );
-        })}
+
+      {/* Bracket columns + connectors */}
+      <div style={{ display: 'flex', alignItems: 'flex-start' }}>
+        {rounds.map((matchups, ri) => (
+          <React.Fragment key={ri}>
+            <BracketRound matchups={matchups} direction={direction} />
+            {ri < 3 && (
+              <ConnectorColumn
+                pairCount={connPairCounts[ri]}
+                pairH={connPairHeights[ri]}
+                slotH={connSlotHeights[ri]}
+                direction={direction}
+              />
+            )}
+          </React.Fragment>
+        ))}
       </div>
     </div>
   );
 }
 
-// ─── Final Four + Championship ────────────────────────────────────────────────
+// ─── FinalFourSection ─────────────────────────────────────────────────────────
 function FinalFourSection({ ff, champ }: {
   ff: (MatchupData | null)[];
   champ: (MatchupData | null)[];
@@ -594,254 +571,108 @@ function FinalFourSection({ ff, champ }: {
   const champGame = champ[0];
   const champTeam = useMemo(() => {
     if (!champGame || champGame.gameStatus !== 'final') return null;
-    if (champGame.awayScore === null || champGame.homeScore === null) return null;
-    return champGame.awayScore > champGame.homeScore ? champGame.top.slug : champGame.bottom.slug;
+    if (champGame.topScore === null || champGame.bottomScore === null) return null;
+    return champGame.topScore > champGame.bottomScore ? champGame.top.slug : champGame.bottom.slug;
   }, [champGame]);
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, minWidth: 200 }}>
-      <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,255,255,.28)', paddingBottom: 4, borderBottom: '1px solid rgba(255,255,255,.09)', width: '100%', textAlign: 'center' }}>
-        FINAL FOUR
-      </div>
-      {/* F4 Game 601: EAST vs SOUTH */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
-        <div style={{ fontSize: 7.5, color: 'rgba(255,165,50,.6)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 2 }}>
-          EAST · SOUTH
-        </div>
-        <Matchup data={ff[0]} size="normal" />
-      </div>
-      {/* Championship */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, marginTop: 8 }}>
-        <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,165,50,.7)' }}>
-          CHAMPIONSHIP
-        </div>
-        <div style={{ fontSize: 22, animation: 'glow-trophy 2.2s ease-in-out infinite', lineHeight: 1 }}>🏆</div>
-        <Matchup data={champGame ?? null} size="champ" />
-        {champTeam && (
-          <div style={{
-            fontSize: 14,
-            fontWeight: 900,
-            textTransform: 'uppercase',
-            letterSpacing: '0.06em',
-            background: 'linear-gradient(130deg,#FF6B1A,#FFD060)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-            textAlign: 'center',
-            maxWidth: 160,
-            lineHeight: 1.1,
-          }}>
-            {TEAM_BY_SLUG.get(champTeam)?.ncaaName ?? champTeam}
-          </div>
-        )}
-      </div>
-      {/* F4 Game 602: WEST vs MIDWEST */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center', marginTop: 8 }}>
-        <div style={{ fontSize: 7.5, color: 'rgba(255,165,50,.6)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 2 }}>
-          WEST · MIDWEST
-        </div>
-        <Matchup data={ff[1]} size="normal" />
-      </div>
-    </div>
-  );
-}
-
-// ─── First Four section ──────────────────────────────────────────────────────────────────────────────────────
-const FF_LABELS: Record<number, string> = {
-  101: 'MIDWEST · 16-seed',
-  102: 'WEST · 11-seed',
-  103: 'SOUTH · 16-seed',
-  104: 'MIDWEST · 11-seed',
-};
-
-function FirstFourSection({ games }: { games: (MatchupData | null)[] }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
-      <div style={{
-        fontSize: 9,
-        fontWeight: 700,
-        letterSpacing: '0.22em',
-        textTransform: 'uppercase',
-        color: 'rgba(255,165,50,.7)',
-        borderBottom: '1px solid rgba(255,255,255,.09)',
-        paddingBottom: 4,
-        marginBottom: 4,
-      }}>
-        FIRST FOUR — DAYTON, OH (MAR 17–18)
-      </div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-        {games.map((g, i) => (
-          <div key={g?.bracketGameId ?? i} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ fontSize: 7.5, color: 'rgba(255,255,255,.35)', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-              {g ? (FF_LABELS[g.bracketGameId] ?? `Game ${g.bracketGameId}`) : 'TBD'}
-            </div>
-            <Matchup data={g} size="small" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── Ember particles ──────────────────────────────────────────────────────────
-function Embers() {
-  const colors = ['#FF6B1A', '#FF9B3A', '#FFD060', '#FF4422'];
-  const embers = useMemo(() => Array.from({ length: 24 }, (_, i) => ({
-    id: i,
-    sz: 1.5 + Math.random() * 3,
-    col: colors[Math.floor(Math.random() * colors.length)],
-    left: Math.random() * 100,
-    bottom: Math.random() * 50,
-    d: 4 + Math.random() * 9,
-    delay: -Math.random() * 12,
-    tx: (Math.random() - 0.5) * 90,
-    ty: -(120 + Math.random() * 320),
-  })), []);
-
-  return (
-    <>
-      {embers.map(e => (
-        <div
-          key={e.id}
-          style={{
-            position: 'fixed',
-            borderRadius: '50%',
-            opacity: 0,
-            width: e.sz,
-            height: e.sz,
-            left: `${e.left}%`,
-            bottom: `${e.bottom}%`,
-            background: e.col,
-            boxShadow: `0 0 ${e.sz * 2.5}px ${e.col}`,
-            animation: `rise ${e.d}s ${e.delay}s infinite ease-in`,
-            pointerEvents: 'none',
-            zIndex: 1,
-            ['--tx' as string]: `${e.tx}px`,
-            ['--ty' as string]: `${e.ty}px`,
-          }}
-        />
-      ))}
-    </>
-  );
-}
-
-// ─── Main Bracket component ───────────────────────────────────────────────────
-export function MarchMadnessBracket() {
-  const { data, isLoading, error } = trpc.bracket.getGames.useQuery(undefined, {
-    refetchInterval: 30_000, // refresh every 30s for live scores
-    staleTime: 20_000,
-  });
-
-  const bracket = useMemo(() => {
-    if (!data?.games) return null;
-    return buildBracketStructure(data.games as BracketGame[]);
-  }, [data]);
-
-  if (isLoading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: 'rgba(255,255,255,.5)', fontSize: 13, letterSpacing: '0.1em' }}>
-        LOADING BRACKET…
-      </div>
-    );
-  }
-
-  if (error || !bracket) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 300, color: 'rgba(255,100,50,.7)', fontSize: 13 }}>
-        {error ? `Error: ${error.message}` : 'No bracket data available.'}
-      </div>
-    );
-  }
+  const champTeamData = champTeam ? TEAM_BY_SLUG.get(champTeam) : null;
 
   return (
     <div style={{
-      position: 'relative',
-      background: '#0d0d0f',
-      minHeight: '100vh',
-      fontFamily: "'Barlow Condensed', 'Arial Narrow', sans-serif",
-      overflowX: 'auto',
-      paddingBottom: 60,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: 0,
+      minWidth: 220,
+      paddingTop: MATCHUP_TOTAL_H * 3, // vertically center with E8 games
     }}>
-      {/* Fire background */}
+      {/* F4 label */}
       <div style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 0,
-        pointerEvents: 'none',
-        background: `
-          radial-gradient(ellipse 55% 45% at 10% 15%, rgba(255,100,20,0.28) 0%, transparent 65%),
-          radial-gradient(ellipse 45% 55% at 88% 80%, rgba(180,30,30,0.22) 0%, transparent 65%),
-          radial-gradient(ellipse 35% 35% at 55% 45%, rgba(255,140,40,0.10) 0%, transparent 55%)
-        `,
-      }} />
-
-      <Embers />
-
-      {/* Header */}
-      <header style={{ position: 'relative', zIndex: 10, textAlign: 'center', padding: '24px 0 16px' }}>
-        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.24em', textTransform: 'uppercase', color: '#FF7A28', marginBottom: 4 }}>
-          NCAA Division I Men's Basketball
-        </div>
-        <div style={{ fontSize: 'clamp(32px, 6vw, 60px)', fontWeight: 900, color: '#fff', lineHeight: 0.92, textTransform: 'uppercase', letterSpacing: '-0.01em' }}>
-          March{' '}
-          <em style={{
-            fontStyle: 'normal',
-            background: 'linear-gradient(130deg,#FF6B1A,#FFCF60)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}>Madness</em>
-        </div>
-        <div style={{ fontSize: 11, letterSpacing: '0.14em', color: 'rgba(255,255,255,.28)', marginTop: 6 }}>
-          2026 Tournament · All Regions
-        </div>
-      </header>
-
-      {/* Main bracket stage */}
-      <div style={{ position: 'relative', zIndex: 10, padding: '12px 24px 40px', minWidth: 1400 }}>
-        {/* First Four */}
-        <FirstFourSection games={bracket.firstFour} />
-
-        {/* Main bracket: LEFT (EAST + SOUTH) | CENTER (F4 + Champ) | RIGHT (WEST + MIDWEST) */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 20 }}>
-          {/* LEFT SIDE */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-            <RegionBracket region="EAST" data={bracket.regions.EAST} direction="ltr" />
-            <RegionBracket region="SOUTH" data={bracket.regions.SOUTH} direction="ltr" />
-          </div>
-
-          {/* CENTER: Final Four + Championship */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto', paddingTop: 60 }}>
-            <FinalFourSection ff={bracket.ff} champ={bracket.champ} />
-          </div>
-
-          {/* RIGHT SIDE */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 32 }}>
-            <RegionBracket region="WEST" data={bracket.regions.WEST} direction="rtl" />
-            <RegionBracket region="MIDWEST" data={bracket.regions.MIDWEST} direction="rtl" />
-          </div>
-        </div>
+        fontSize: 8.5, fontWeight: 700, letterSpacing: '0.2em',
+        textTransform: 'uppercase', color: 'rgba(255,255,255,.28)',
+        paddingBottom: 4, borderBottom: '1px solid rgba(255,255,255,.09)',
+        width: COL_W, textAlign: 'center', marginBottom: 6,
+      }}>
+        FINAL FOUR
       </div>
 
-      {/* Inline styles */}
+      {/* F4 Game 601: EAST vs SOUTH */}
+      <div style={{ marginBottom: MATCHUP_TOTAL_H * 2 }}>
+        <div style={{ fontSize: 7.5, color: 'rgba(255,165,50,.6)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 4, textAlign: 'center' }}>
+          EAST · SOUTH
+        </div>
+        <Matchup data={ff[0]} />
+      </div>
+
+      {/* Championship */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        <div style={{ fontSize: 8.5, fontWeight: 700, letterSpacing: '0.2em', textTransform: 'uppercase', color: 'rgba(255,165,50,.7)' }}>
+          CHAMPIONSHIP
+        </div>
+        <div style={{ fontSize: 22, lineHeight: 1 }}>🏆</div>
+        <Matchup data={champGame ?? null} size="champ" />
+        {champTeam && (
+          <div style={{ marginTop: 8, textAlign: 'center' }}>
+            <div style={{ fontSize: 9, color: 'rgba(255,165,50,.7)', letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 4 }}>2026 CHAMPION</div>
+            <div style={{ fontSize: 14, fontWeight: 900, color: '#fff', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {champTeamData?.ncaaName ?? champTeam.replace(/_/g, ' ').toUpperCase()}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* F4 Game 602: WEST vs MIDWEST */}
+      <div style={{ marginTop: MATCHUP_TOTAL_H * 2 }}>
+        <div style={{ fontSize: 7.5, color: 'rgba(255,165,50,.6)', letterSpacing: '0.15em', textTransform: 'uppercase', marginBottom: 4, textAlign: 'center' }}>
+          WEST · MIDWEST
+        </div>
+        <Matchup data={ff[1]} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ───────────────────────────────────────────────────────────
+export default function MarchMadnessBracket() {
+  const { data: result, isLoading, error } = trpc.bracket.getGames.useQuery(undefined, {
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  });
+
+  const bracket = useMemo(() => {
+    if (!result?.games) return null;
+    console.log(`[Bracket] Received ${result.games.length} games from API`);
+    return buildBracketStructure(result.games as unknown as BracketGame[]);
+  }, [result]);
+
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'rgba(255,255,255,.5)', fontSize: 14 }}>
+        Loading bracket…
+      </div>
+    );
+  }
+  if (error || !bracket) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: '#f87171', fontSize: 14 }}>
+        Failed to load bracket data.
+      </div>
+    );
+  }
+
+  return (
+    <div className="bracket-root">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700;800;900&display=swap');
-
-        @keyframes colIn {
-          from { opacity: 0; transform: translateX(-6px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes rise {
-          0%   { opacity: 0; transform: translate(0, 0) scale(1); }
-          15%  { opacity: .8; }
-          85%  { opacity: .2; }
-          100% { opacity: 0; transform: translate(var(--tx, 20px), var(--ty, -280px)) scale(.2); }
-        }
-        @keyframes glow-trophy {
-          0%, 100% { filter: drop-shadow(0 0 6px rgba(255,155,40,.5)); }
-          50%       { filter: drop-shadow(0 0 16px rgba(255,155,40,.95)); }
+        .bracket-root {
+          background: #0d0d0f;
+          padding: 24px 16px;
+          overflow-x: auto;
+          overflow-y: auto;
+          min-height: 600px;
+          font-family: 'Inter', 'Helvetica Neue', sans-serif;
         }
 
+        /* ── Matchup card ── */
         .bracket-matchup {
           display: flex;
           flex-direction: column;
@@ -850,40 +681,62 @@ export function MarchMadnessBracket() {
           border-radius: 3px;
           overflow: hidden;
           box-shadow: 0 2px 8px rgba(0,0,0,.7), inset 0 0 0 1px rgba(255,255,255,.04);
-          position: relative;
-          width: 180px;
+          width: ${COL_W}px;
         }
-        .bracket-matchup-small { width: 160px; }
         .bracket-matchup-champ {
-          width: 180px;
           border-color: rgba(255,185,50,.5);
           box-shadow: 0 0 18px rgba(255,120,20,.3), 0 2px 8px rgba(0,0,0,.7);
         }
-
         .matchup-divider {
-          height: 1px;
+          height: ${DIVIDER_H}px;
           background: #000;
           flex-shrink: 0;
         }
 
+        /* ── Matchup wrapper (includes status label) ── */
+        .matchup-wrap {
+          display: flex;
+          flex-direction: column;
+          align-items: stretch;
+          min-height: ${MATCHUP_TOTAL_H}px;
+        }
+        .matchup-status {
+          height: ${STATUS_H}px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 9px;
+          font-weight: 700;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+        }
+        .status-live  { color: #4ade80; text-shadow: 0 0 6px rgba(74,222,128,.6); }
+        .status-final { color: rgba(255,255,255,.5); }
+        .status-time  { color: rgba(255,255,255,.38); font-weight: 600; }
+
+        /* ── Round column ── */
+        .round-col {
+          display: flex;
+          flex-direction: column;
+          flex-shrink: 0;
+        }
+
+        /* ── Team strip ── */
         .bracket-strip {
           position: relative;
           width: 100%;
-          min-height: 32px;
-          height: auto;
+          height: ${STRIP_H}px;
           display: flex;
           align-items: center;
-          justify-content: flex-start;
-          overflow: visible;
+          overflow: hidden;
           cursor: pointer;
           transition: filter .12s;
-          padding-top: 4px;
-          padding-bottom: 4px;
+          flex-shrink: 0;
         }
         .bracket-strip:hover { filter: brightness(1.15); z-index: 10; }
+        .strip-placeholder { background: #0e0e14 !important; }
         .strip-winner { box-shadow: inset 0 0 0 1.5px rgba(255,200,80,.45); }
         .strip-loser  { filter: brightness(.55) saturate(.6); }
-        .strip-tbd    { background: #111 !important; }
 
         .strip-sheen {
           position: absolute;
@@ -899,30 +752,28 @@ export function MarchMadnessBracket() {
           background: rgba(0,0,0,.4);
           z-index: 3;
         }
-
         .strip-logo-left {
           position: absolute;
           left: 4px;
           top: 50%;
           transform: translateY(-50%);
           z-index: 4;
+          width: 28px;
+          height: 22px;
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 28px;
-          height: 22px;
         }
-
         .logo-circle {
           width: 22px;
           height: 22px;
           border-radius: 50%;
+          background: rgba(255,255,255,.15);
           display: flex;
           align-items: center;
           justify-content: center;
           overflow: hidden;
         }
-
         .strip-center {
           position: relative;
           z-index: 4;
@@ -931,28 +782,8 @@ export function MarchMadnessBracket() {
           gap: 3px;
           flex: 1;
           min-width: 0;
-          padding-left: 32px;
+          padding-left: 36px;
           padding-right: 36px;
-        }
-
-        .strip-score-right {
-          position: absolute;
-          right: 6px;
-          top: 50%;
-          transform: translateY(-50%);
-          z-index: 4;
-          display: flex;
-          align-items: center;
-          justify-content: flex-end;
-          min-width: 28px;
-        }
-        .strip-score-val {
-          font-size: 13px;
-          font-weight: 900;
-          letter-spacing: 0.02em;
-          line-height: 1;
-          color: #fff !important;
-          text-shadow: 0 1px 4px rgba(0,0,0,.9);
         }
         .strip-seed {
           font-size: 9px;
@@ -960,8 +791,9 @@ export function MarchMadnessBracket() {
           min-width: 10px;
           text-align: right;
           line-height: 1;
-          color: rgba(255,255,255,.6) !important;
+          color: rgba(255,255,255,.6);
           text-shadow: 0 1px 3px rgba(0,0,0,.8);
+          flex-shrink: 0;
         }
         .strip-name {
           font-size: 11px;
@@ -969,44 +801,72 @@ export function MarchMadnessBracket() {
           letter-spacing: 0.04em;
           text-transform: uppercase;
           text-shadow: 0 1px 4px rgba(0,0,0,.9);
-          white-space: normal;
-          word-break: break-word;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
           line-height: 1.1;
-          user-select: none;
-          color: #fff !important;
+          color: #fff;
         }
-        .strip-score {
-          font-size: 11px;
-          font-weight: 800;
-          margin-left: 4px;
-        }
-
-        .live-badge {
+        .strip-score-right {
           position: absolute;
-          top: 2px;
-          right: 4px;
-          font-size: 6px;
-          font-weight: 900;
-          letter-spacing: 0.1em;
-          color: #39FF14;
-          text-transform: uppercase;
-          z-index: 10;
-          animation: pulse-live 1.2s ease-in-out infinite;
+          right: 6px;
+          top: 50%;
+          transform: translateY(-50%);
+          z-index: 4;
+          min-width: 24px;
+          text-align: right;
         }
-        @keyframes pulse-live {
-          0%, 100% { opacity: 1; }
-          50%       { opacity: 0.4; }
+        .strip-score-val {
+          font-size: 13px;
+          font-weight: 900;
+          color: #fff;
+          text-shadow: 0 1px 4px rgba(0,0,0,.9);
         }
 
-        .round-col {
+        /* ── Bracket layout ── */
+        .bracket-layout {
+          display: flex;
+          align-items: flex-start;
+          gap: 16px;
+          min-width: max-content;
+        }
+        .bracket-half {
           display: flex;
           flex-direction: column;
-          position: relative;
-          z-index: 3;
+          gap: 32px;
         }
       `}</style>
+
+      {/* Title */}
+      <div style={{
+        textAlign: 'center',
+        marginBottom: 20,
+        fontSize: 13,
+        fontWeight: 800,
+        letterSpacing: '0.25em',
+        textTransform: 'uppercase',
+        color: 'rgba(255,165,50,.85)',
+      }}>
+        2026 NCAA TOURNAMENT BRACKET
+      </div>
+
+      {/* Main bracket layout */}
+      <div className="bracket-layout">
+        {/* LEFT HALF: EAST + SOUTH */}
+        <div className="bracket-half">
+          <RegionBracket region="EAST"  data={bracket.regions.EAST}  direction="ltr" />
+          <RegionBracket region="SOUTH" data={bracket.regions.SOUTH} direction="ltr" />
+        </div>
+
+        {/* CENTER: Final Four + Championship */}
+        <FinalFourSection ff={bracket.ff} champ={bracket.champ} />
+
+        {/* RIGHT HALF: WEST + MIDWEST (RTL) */}
+        <div className="bracket-half">
+          <RegionBracket region="WEST"    data={bracket.regions.WEST}    direction="rtl" />
+          <RegionBracket region="MIDWEST" data={bracket.regions.MIDWEST} direction="rtl" />
+        </div>
+      </div>
     </div>
   );
 }
-
-export default MarchMadnessBracket;
