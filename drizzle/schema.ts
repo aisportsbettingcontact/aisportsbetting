@@ -398,6 +398,83 @@ export const nhlTeams = mysqlTable("nhl_teams", {
 export type NhlTeamRow = typeof nhlTeams.$inferSelect;
 export type InsertNhlTeam = typeof nhlTeams.$inferInsert;
 
+// ─── MLB Teams (seeded from MLB.com + VSiN + Action Network mapping) ─────────────
+export const mlbTeams = mysqlTable("mlb_teams", {
+  id: int("id").autoincrement().primaryKey(),
+  /** DB storage key — vsinSlug (single-word), e.g. "yankees", "redsox", "bluejays" */
+  dbSlug: varchar("dbSlug", { length: 128 }).notNull().unique(),
+  /** MLB Stats API numeric team ID, e.g. 147 for Yankees */
+  mlbId: int("mlbId").notNull().unique(),
+  /** MLB.com internal 3-letter team code, e.g. "nya", "lan" */
+  mlbCode: varchar("mlbCode", { length: 8 }).notNull().unique(),
+  /** Standard MLB abbreviation, e.g. "NYY", "LAD", "CWS" */
+  abbrev: varchar("abbrev", { length: 8 }).notNull().unique(),
+  /** VSiN href slug (single-word), e.g. "yankees", "redsox", "dbacks" */
+  vsinSlug: varchar("vsinSlug", { length: 128 }).notNull().unique(),
+  /** Action Network URL slug, e.g. "new-york-yankees" */
+  anSlug: varchar("anSlug", { length: 128 }).notNull().unique(),
+  /** Action Network logo slug for sprtactn.co CDN, e.g. "nyyd", "ladd", "mia_n" */
+  anLogoSlug: varchar("anLogoSlug", { length: 32 }).notNull(),
+  /** Baseball Reference team abbreviation — may differ from standard abbrev (e.g. "KCR", "TBD", "FLA", "OAK") */
+  brAbbrev: varchar("brAbbrev", { length: 8 }).notNull().unique(),
+  /** Full team name, e.g. "New York Yankees" */
+  name: varchar("name", { length: 255 }).notNull(),
+  /** Team nickname, e.g. "Yankees", "Blue Jays", "D-backs" */
+  nickname: varchar("nickname", { length: 128 }).notNull(),
+  /** City/region name, e.g. "New York", "Tampa Bay", "Arizona" */
+  city: varchar("city", { length: 128 }).notNull(),
+  /** League: "AL" or "NL" */
+  league: mysqlEnum("league", ["AL", "NL"]).notNull(),
+  /** Division: "East", "Central", or "West" */
+  division: mysqlEnum("division", ["East", "Central", "West"]).notNull(),
+  /** Official MLB.com SVG logo URL, e.g. "https://www.mlbstatic.com/team-logos/147.svg" */
+  logoUrl: text("logoUrl").notNull(),
+  /** Primary brand hex color, e.g. "#003087" */
+  primaryColor: varchar("primaryColor", { length: 16 }),
+  /** Secondary brand hex color */
+  secondaryColor: varchar("secondaryColor", { length: 16 }),
+  /** Tertiary brand hex color */
+  tertiaryColor: varchar("tertiaryColor", { length: 16 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MlbTeamRow = typeof mlbTeams.$inferSelect;
+export type InsertMlbTeam = typeof mlbTeams.$inferInsert;
+
+// ─── MLB Players (active roster mapped to current teams via Baseball Reference) ──────
+export const mlbPlayers = mysqlTable("mlb_players", {
+  id: int("id").autoincrement().primaryKey(),
+  /**
+   * Baseball Reference player ID, e.g. "judgeaa01", "harpebr03".
+   * Format: first 5 chars of last name + first 2 chars of first name + 2-digit sequence.
+   * URL: https://www.baseball-reference.com/players/{letter}/{brId}.shtml
+   */
+  brId: varchar("brId", { length: 32 }).notNull().unique(),
+  /** MLB Advanced Media (MLBAM) numeric player ID — used for headshot URLs */
+  mlbamId: int("mlbamId"),
+  /** Full display name, e.g. "Aaron Judge" */
+  name: varchar("name", { length: 255 }).notNull(),
+  /** Primary position, e.g. "Pitcher", "Catcher", "Outfielder", "Shortstop" */
+  position: varchar("position", { length: 64 }),
+  /** Bats: "R", "L", or "S" (switch) */
+  bats: varchar("bats", { length: 4 }),
+  /** Throws: "R" or "L" */
+  throws: varchar("throws", { length: 4 }),
+  /**
+   * Baseball Reference team abbreviation of current team.
+   * FK reference to mlb_teams.brAbbrev.
+   * e.g. "NYY", "ATL", "KCR", "TBD"
+   */
+  currentTeamBrAbbrev: varchar("currentTeamBrAbbrev", { length: 8 }),
+  /** Whether this player is currently on an active MLB roster */
+  isActive: boolean("isActive").notNull().default(true),
+  /** UTC timestamp (ms) when this record was last synced from Baseball Reference */
+  lastSyncedAt: bigint("lastSyncedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MlbPlayerRow = typeof mlbPlayers.$inferSelect;
+export type InsertMlbPlayer = typeof mlbPlayers.$inferInsert;
+
 // ─── Odds History (per-game DK NJ line snapshots from AN API) ───────────────────
 
 export const oddsHistory = mysqlTable("odds_history", {

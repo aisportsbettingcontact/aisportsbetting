@@ -1848,3 +1848,24 @@
 - [x] IMAGE_DELAY_MS reduced from 1500ms to 800ms (safe: 1.25 msg/s vs Discord limit of 1 msg/s)
 - [x] Granular timing logs: each phase (logo fetch, page claim, setContent, screenshot) logged with ms
 - [x] Expected result: 1-card warm = ~1.5s, 4-card warm = ~2.5s (parallel render) + 3x800ms gaps = ~5s total
+
+## MLB Database — Teams + Active Players (2026-03-24)
+- [ ] Add brAbbrev field to mlbTeams.ts shared registry (30 teams)
+- [ ] Add brAbbrev column to mlb_teams schema
+- [ ] Add mlb_players table to schema (brId, name, position, bats, throws, currentTeamBrAbbrev, mlbamId, isActive)
+- [ ] Run db:push to create mlb_teams and mlb_players tables
+- [ ] Seed all 30 MLB teams with complete data: mlbId, mlbCode, abbrev, vsinSlug, anSlug, anLogoSlug, brAbbrev, name, nickname, city, league, division, logoUrl, primaryColor, secondaryColor, tertiaryColor
+- [ ] Seed active players from BR player list HTML (55 active players extracted, mapped to current teams)
+- [ ] Verify all 30 teams and active players are correctly stored with accurate team assignments
+
+## MLB Database — Teams + Active Players (2026-03-24)
+- [x] Audit existing NHL/NBA team schema and shared registry structure
+- [x] Build mlbTeams.ts shared registry: all 30 teams with mlbId, mlbCode, abbrev, brAbbrev, league, division, city, nickname, name, vsinSlug, dbSlug, anSlug, anLogoSlug, logoUrl, primaryColor, secondaryColor, tertiaryColor
+- [x] Cross-referenced sources: MLB.com (mlbId, mlbCode), Baseball Reference (brAbbrev), VSiN (vsinSlug), Action Network (anSlug, anLogoSlug), Rotowire (dbSlug)
+- [x] Added mlb_teams table to drizzle/schema.ts (19 columns) and ran db:push
+- [x] Added mlb_players table to drizzle/schema.ts (12 columns: brId, mlbamId, name, position, bats, throws, currentTeamBrAbbrev, isActive, lastSyncedAt) and ran db:push
+- [x] Fetched 902 active players from MLB Stats API (2026 season) for MLBAM ID cross-reference
+- [x] Extracted 55 notable active/recent players from Baseball Reference active player list (pasted_content_12.txt, pasted_content_13.txt)
+- [x] Cross-referenced all 55 BR players with MLBAM API: 40 matched in 2026 season, 15 found in 2025 season (marked isActive=false)
+- [x] Wrote seed-mlb.mjs and ran successfully: 30 teams inserted, 55 players inserted
+- [x] Verified: 30 teams (5 per division × 6 divisions), 40 active + 15 inactive players
