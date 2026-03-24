@@ -1775,3 +1775,8 @@
 - [x] Update ModelProjections.tsx to query activeSports and hide pills with no upcoming games
 - [x] Auto-switch selected sport if current sport becomes hidden (fallback: NHL → NBA → NCAAM)
 - [x] Pills show during loading (activeSports undefined) to avoid flash of empty nav
+
+## NCAAM Tab Visibility Bug (2026-03-24)
+- [x] Debug: ROOT CAUSE = getActiveSports counted unpublished regular season NCAAM games (wichita_st@tulsa, st_josephs@new_mexico) that have odds but publishedToFeed=0 and no bracketGameId
+- [x] Fix: NCAAM now requires bracketGameId IS NOT NULL — only March Madness bracket games trigger the tab
+- [x] Verified: [activeSports] log confirms NCAAM=false when no bracket games exist today/tomorrow
