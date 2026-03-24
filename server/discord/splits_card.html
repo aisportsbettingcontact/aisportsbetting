@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Splits Card</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --away-primary:   #EF3B24;
+    --away-secondary: #007AC1;
+    --away-dark:      #002D62;
+    --away-text:      #FFFFFF;
+
+    --home-primary:   #006BB6;
+    --home-secondary: #ED174C;
+    --home-dark:      #002B5C;
+    --home-text:      #FFFFFF;
+
+    --neon-over:  #39FF14;
+    --neon-under: #FF2D55;
+
+    --bg:      #06090D;
+    --bg2:     #090E14;
+    --bg3:     #0C1219;
+    --border:  #182433;
+    --border2: #1E3048;
+    --text:    #EDF2F7;
+    --muted:   #3A5A7A;
+    --muted2:  #254060;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #03050A;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 20px;
+    min-height: 100vh;
+  }
+
+  .sc {
+    font-family: 'Barlow', sans-serif;
+    background: var(--bg);
+    border-radius: 16px;
+    overflow: hidden;
+    width: 820px;
+    border: 1px solid var(--border2);
+  }
+
+  /* ── HEADER ── */
+  .hdr {
+    background: var(--bg2);
+    padding: 18px 22px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border2);
+    position: relative;
+  }
+
+  .hdr::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg,
+      var(--away-primary)   0%,
+      var(--away-secondary) 20%,
+      transparent           44%,
+      transparent           56%,
+      var(--home-secondary) 80%,
+      var(--home-primary)   100%
+    );
+  }
+
+  .tblk { display: flex; align-items: center; gap: 14px; }
+
+  .tlogo {
+    width: 50px; height: 50px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-weight: 800;
+    flex-shrink: 0;
+    overflow: hidden;
+  }
+  .logo-away {
+    background: radial-gradient(circle at 35% 35%, var(--away-primary), var(--away-dark));
+  }
+  .logo-home {
+    background: radial-gradient(circle at 35% 35%, var(--home-primary), var(--home-dark));
+  }
+  .tlogo img {
+    width: 36px; height: 36px;
+    object-fit: contain;
+  }
+
+  .tinfo { display: flex; flex-direction: column; }
+  .tinfo.right { align-items: flex-end; }
+
+  /* Team city name uses the display color (already contrast-safe from pickColor) */
+  .tname {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 20px; font-weight: 700;
+    letter-spacing: 0.3px; line-height: 1.1;
+  }
+  .tname-away { color: var(--away-primary); }
+  .tname-home { color: var(--home-primary); }
+
+  .tfull { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; margin-top: 2px; }
+
+  .tbadge {
+    display: inline-flex; align-items: center;
+    font-size: 9px; font-weight: 700;
+    letter-spacing: 1.5px; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 3px;
+    margin-top: 5px; width: fit-content;
+  }
+  .badge-away {
+    background: rgba(255,255,255,0.06);
+    color: var(--away-primary);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .badge-home {
+    background: rgba(255,255,255,0.06);
+    color: var(--home-primary);
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+
+  .vblk { text-align: center; }
+  .vat {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px; color: var(--muted2);
+    letter-spacing: 4px; text-transform: uppercase;
+  }
+  .gmeta { font-size: 10px; color: var(--muted2); margin-top: 4px; letter-spacing: 0.5px; }
+
+  .glive {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 9px; font-weight: 700;
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--neon-over); margin-top: 6px;
+  }
+  .glive-dot {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--neon-over);
+  }
+
+  /* ── BODY ── */
+  .body { padding: 14px 16px 16px; }
+
+  .grid3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* ── Market card ── */
+  .sg {
+    background: var(--bg3);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 12px 13px 13px;
+  }
+
+  /* Section title — plain white, no border, centered */
+  .sgt {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 3px; text-transform: uppercase;
+    color: rgba(255,255,255,0.75);
+    text-align: center;
+    margin-bottom: 10px;
+  }
+
+  /* Line value row */
+  .line-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .lblock { text-align: center; }
+
+  .lval {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 24px; font-weight: 800;
+    letter-spacing: -1px; line-height: 1;
+  }
+  /* Line values use the display color — already contrast-safe */
+  .lval.away  { color: var(--away-primary); }
+  .lval.home  { color: var(--home-primary); }
+  .lval.over  { color: var(--neon-over);   }
+  .lval.under { color: var(--neon-under);  }
+
+  .llbl {
+    font-size: 9px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1.5px; margin-top: 3px;
+  }
+  .lsep { font-size: 10px; color: var(--border2); }
+
+  /* ── Split bars ── */
+  .flow-section { margin-bottom: 6px; }
+  .flow-section:last-child { margin-bottom: 0; }
+
+  .flow-type {
+    font-size: 9px; color: rgba(255,255,255,0.40);
+    font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
+    display: block; margin-bottom: 4px;
+  }
+
+  .flow-bar-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .flow-bar {
+    flex: 1;
+    display: flex;
+    height: 28px;
+    border-radius: 5px;
+    overflow: hidden;
+  }
+
+  .outside-left, .outside-right {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px; font-weight: 800;
+    color: rgba(255,255,255,0.75);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .flow-seg { display: flex; align-items: center; height: 100%; min-width: 0; }
+  .seg-left  { justify-content: flex-start; padding-left: 8px; }
+  .seg-right { justify-content: flex-end;   padding-right: 8px; }
+
+  .flow-seg-pct {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px; font-weight: 800;
+    color: #ffffff;
+    white-space: nowrap;
+    text-shadow:
+      -1px -1px 0 rgba(0,0,0,0.95),
+       1px -1px 0 rgba(0,0,0,0.95),
+      -1px  1px 0 rgba(0,0,0,0.95),
+       1px  1px 0 rgba(0,0,0,0.95),
+       0    0   6px rgba(0,0,0,0.5);
+  }
+
+  /* Bar segment colors — use team primary for away/home, neon for over/under */
+  .seg-away  { background: linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%), var(--away-primary); }
+  .seg-home  { background: linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 100%), var(--home-primary); }
+  .seg-over  { background: linear-gradient(180deg, #80FF50 0%, #28D800 50%, #158000 100%); }
+  .seg-under { background: linear-gradient(180deg, #FF6080 0%, var(--neon-under) 50%, #A00020 100%); }
+</style>
+</head>
+<body>
+<div id="splits-card" class="sc">
+  <!-- injected by renderer -->
+</div>
+<script id="game-data" type="application/json">__GAME_JSON__</script>
+<script>
+  const GAME = JSON.parse(document.getElementById('game-data').textContent);
+
+  // Inject CSS variables
+  const r = document.documentElement.style;
+  r.setProperty("--away-primary",   GAME.away.primary);
+  r.setProperty("--away-secondary", GAME.away.secondary);
+  r.setProperty("--away-dark",      GAME.away.dark);
+  r.setProperty("--away-text",      GAME.away.logoText);
+  r.setProperty("--home-primary",   GAME.home.primary);
+  r.setProperty("--home-secondary", GAME.home.secondary);
+  r.setProperty("--home-dark",      GAME.home.dark);
+  r.setProperty("--home-text",      GAME.home.logoText);
+
+  function bar(leftClass, leftPct, rightClass, rightPct) {
+    // Clamp visual widths so both sides always have a sliver
+    const l = Math.max(1, Math.min(99, leftPct));
+    const r2 = 100 - l;
+    // If a segment is too narrow (<12%) the label won't fit inside — float it outside
+    const leftInside  = leftPct  >= 12;
+    const rightInside = rightPct >= 12;
+    const leftLabel  = leftInside
+      ? `<span class="flow-seg-pct">${leftPct}%</span>`
+      : '';
+    const rightLabel = rightInside
+      ? `<span class="flow-seg-pct">${rightPct}%</span>`
+      : '';
+    const leftOutside  = !leftInside
+      ? `<span class="flow-seg-pct outside-left">${leftPct}%</span>`
+      : '';
+    const rightOutside = !rightInside
+      ? `<span class="flow-seg-pct outside-right">${rightPct}%</span>`
+      : '';
+    return `
+      <div class="flow-bar-wrap">
+        ${leftOutside}
+        <div class="flow-bar">
+          <div class="flow-seg ${leftClass}  seg-left"  style="width:${l}%">${leftLabel}</div>
+          <div class="flow-seg ${rightClass} seg-right" style="width:${r2}%">${rightLabel}</div>
+        </div>
+        ${rightOutside}
+      </div>`;
+  }
+
+  function logoHTML(side) {
+    const t = GAME[side];
+    const cls = 'tlogo logo-' + side;
+    if (t.logoUrl) {
+      // Use data-abbr and data-color for the onerror fallback to avoid quote escaping
+      return '<div class="' + cls + '" data-abbr="' + t.abbr + '" data-color="' + t.logoText + '" data-size="' + (t.logoSize || '15px') + '">' +
+        '<img src="' + t.logoUrl + '" alt="' + t.abbr + '" onload="" onerror="var p=this.parentElement;p.innerHTML=\'<span style=font-size:\'+p.dataset.size+\';color:\'+p.dataset.color+\'>\'+ p.dataset.abbr +\'</span>\'" />' +
+        '</div>';
+    }
+    return '<div class="' + cls + '" style="font-size:' + (t.logoSize || '15px') + ';color:' + t.logoText + '">' + t.abbr + '</div>';
+  }
+
+  function market(title, leftVal, leftLbl, leftClass, rightVal, rightLbl, rightClass, tix, money) {
+    return `
+      <div class="sg">
+        <div class="sgt">${title}</div>
+        <div class="line-row">
+          <div class="lblock"><div class="lval ${leftClass}">${leftVal}</div><div class="llbl">${leftLbl}</div></div>
+          <div class="lsep">/</div>
+          <div class="lblock"><div class="lval ${rightClass}">${rightVal}</div><div class="llbl">${rightLbl}</div></div>
+        </div>
+        <div class="flow-section">
+          <span class="flow-type">Tickets</span>
+          ${bar(`seg-${leftClass}`, tix.left, `seg-${rightClass}`, tix.right)}
+        </div>
+        <div class="flow-section">
+          <span class="flow-type">Money</span>
+          ${bar(`seg-${leftClass}`, money.left, `seg-${rightClass}`, money.right)}
+        </div>
+      </div>`;
+  }
+
+  const liveHTML = GAME.liveSplits
+    ? `<div class="glive"><span class="glive-dot"></span>Live Splits</div>`
+    : "";
+
+  const spreadAwayLine = GAME.spread.awayLine != null ? String(GAME.spread.awayLine) : "N/A";
+  const spreadHomeLine = GAME.spread.homeLine != null ? String(GAME.spread.homeLine) : "N/A";
+  const totalLine      = GAME.total.line != null ? String(GAME.total.line) : "N/A";
+  const mlAwayLine     = GAME.moneyline.awayLine != null ? String(GAME.moneyline.awayLine) : "N/A";
+  const mlHomeLine     = GAME.moneyline.homeLine != null ? String(GAME.moneyline.homeLine) : "N/A";
+
+  document.getElementById('splits-card').innerHTML = `
+    <div class="hdr">
+      <div class="tblk">
+        ${logoHTML('away')}
+        <div class="tinfo">
+          <div class="tname tname-away">${GAME.away.city}</div>
+          <div class="tfull">${GAME.away.name}</div>
+          <div class="tbadge badge-away">Away</div>
+        </div>
+      </div>
+
+      <div class="vblk">
+        <div class="vat">@</div>
+        <div class="gmeta">${GAME.league} · ${GAME.time}</div>
+        <div class="gmeta">${GAME.date}</div>
+        ${liveHTML}
+      </div>
+
+      <div class="tblk">
+        <div class="tinfo right">
+          <div class="tname tname-home">${GAME.home.city}</div>
+          <div class="tfull">${GAME.home.name}</div>
+          <div class="tbadge badge-home">Home</div>
+        </div>
+        ${logoHTML('home')}
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="grid3">
+        ${market(
+          "Spread",
+          spreadAwayLine, GAME.away.abbr, "away",
+          spreadHomeLine, GAME.home.abbr, "home",
+          { left: GAME.spread.tickets.away, right: GAME.spread.tickets.home },
+          { left: GAME.spread.money.away,   right: GAME.spread.money.home   }
+        )}
+        ${market(
+          "Total",
+          "O " + totalLine, "Over",  "over",
+          "U " + totalLine, "Under", "under",
+          { left: GAME.total.tickets.over,  right: GAME.total.tickets.under },
+          { left: GAME.total.money.over,    right: GAME.total.money.under   }
+        )}
+        ${market(
+          "Moneyline",
+          mlAwayLine, GAME.away.abbr, "away",
+          mlHomeLine, GAME.home.abbr, "home",
+          { left: GAME.moneyline.tickets.away, right: GAME.moneyline.tickets.home },
+          { left: GAME.moneyline.money.away,   right: GAME.moneyline.money.home   }
+        )}
+      </div>
+    </div>
+  `;
+</script>
+</body>
+</html>

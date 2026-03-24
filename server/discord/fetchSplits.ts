@@ -49,6 +49,12 @@ export interface GameSplits {
   home_color3: string;
   away_logo:   string;
   home_logo:   string;
+  // Book lines
+  away_book_spread: string | null;
+  home_book_spread: string | null;
+  book_total:       string | null;
+  away_ml:          string | null;
+  home_ml:          string | null;
   spread:      SpreadSplits;
   total:       TotalSplits;
   moneyline:   MoneylineSplits;
@@ -178,6 +184,11 @@ export async function fetchAllDailySplits(dateOverride?: string): Promise<GameSp
       home_color3: homeEntry.tertiaryColor,
       away_logo:   awayEntry.logoUrl,
       home_logo:   homeEntry.logoUrl,
+      away_book_spread: row.awayBookSpread != null ? String(row.awayBookSpread) : null,
+      home_book_spread: row.homeBookSpread != null ? String(row.homeBookSpread) : null,
+      book_total:       row.bookTotal      != null ? String(row.bookTotal)      : null,
+      away_ml:          row.awayML         ?? null,
+      home_ml:          row.homeML         ?? null,
       spread: {
         away_ticket_pct: spreadAwayTicket,
         away_money_pct:  spreadAwayMoney,

@@ -5,13 +5,14 @@
  *   1. Validates that the invoking user is the allowed user ID.
  *   2. Defers the reply (ephemeral) so Discord doesn't time out.
  *   3. Fetches all daily splits directly from the database.
- *   4. Generates a PNG image per game using the Python image generator.
- *   5. Posts each image as an attachment into the target channel.
- *   6. Adds a 1.5s delay between messages to respect Discord rate limits.
- *   7. Replies to the invoker with an ephemeral summary.
+ *   4. Converts each GameSplits record into a SplitsCardData object using
+ *      the exact same pickColor logic as the frontend GameCard.tsx.
+ *   5. Renders each card to PNG via Playwright (headless Chromium).
+ *   6. Posts each PNG as an attachment into the target channel.
+ *   7. Adds a 1.5s delay between messages to respect Discord rate limits.
+ *   8. Replies to the invoker with an ephemeral summary.
  *
  * Deep logging: every stage emits structured [SplitsBot][stage] prefixed logs.
- * Set LOG_LEVEL=debug in env for Python-level image generation logs.
  */
 
 import {
@@ -21,38 +22,23 @@ import {
   AttachmentBuilder,
   type Client,
 } from "discord.js";
-import { spawn } from "child_process";
-import { promises as fs } from "fs";
-import { tmpdir } from "os";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-import { fetchAllDailySplits, type GameSplits } from "./fetchSplits";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname  = dirname(__filename);
+import { fetchAllDailySplits, type GameSplits } from "./fetchSplits.js";
+import { renderSplitsCard, closeSplitsRenderer, type SplitsCardData, type SplitsCardTeam } from "./renderSplitsCard.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ALLOWED_USER_ID   = "1098485718734602281";
 const SPLITS_CHANNEL_ID = "1400758184188186744";
 const IMAGE_DELAY_MS    = 1_500;
-const PYTHON_BIN        = "python3.11";
-const GENERATOR_SCRIPT  = join(__dirname, "generate_splits_image.py");
-const DEBUG_PYTHON      = process.env.LOG_LEVEL === "debug";
 
 // ─── Structured logger ────────────────────────────────────────────────────────
 type LogLevel = "info" | "warn" | "error" | "debug";
 function log(stage: string, msg: string, level: LogLevel = "info"): void {
   const ts = new Date().toISOString();
   const prefix = `[${ts}][SplitsBot][${stage}]`;
-  if (level === "error") {
-    console.error(`${prefix} ❌ ${msg}`);
-  } else if (level === "warn") {
-    console.warn(`${prefix} ⚠️  ${msg}`);
-  } else if (level === "debug") {
-    if (process.env.LOG_LEVEL === "debug") console.log(`${prefix} 🔍 ${msg}`);
-  } else {
-    console.log(`${prefix} ${msg}`);
-  }
+  if (level === "error")      console.error(`${prefix} ❌ ${msg}`);
+  else if (level === "warn")  console.warn(`${prefix} ⚠️  ${msg}`);
+  else if (level === "debug") { if (process.env.LOG_LEVEL === "debug") console.log(`${prefix} 🔍 ${msg}`); }
+  else                        console.log(`${prefix} ${msg}`);
 }
 
 // ─── Command definition (used by register script) ─────────────────────────────
@@ -94,14 +80,14 @@ function auditSplits(g: GameSplits): string[] {
   const check = (path: string, val: unknown) => {
     if (val === null || val === undefined) issues.push(path);
   };
-  check("spread.away_ticket_pct",  g.spread?.away_ticket_pct);
-  check("spread.away_money_pct",   g.spread?.away_money_pct);
-  check("spread.home_ticket_pct",  g.spread?.home_ticket_pct);
-  check("spread.home_money_pct",   g.spread?.home_money_pct);
-  check("total.over_ticket_pct",   g.total?.over_ticket_pct);
-  check("total.over_money_pct",    g.total?.over_money_pct);
-  check("total.under_ticket_pct",  g.total?.under_ticket_pct);
-  check("total.under_money_pct",   g.total?.under_money_pct);
+  check("spread.away_ticket_pct",    g.spread?.away_ticket_pct);
+  check("spread.away_money_pct",     g.spread?.away_money_pct);
+  check("spread.home_ticket_pct",    g.spread?.home_ticket_pct);
+  check("spread.home_money_pct",     g.spread?.home_money_pct);
+  check("total.over_ticket_pct",     g.total?.over_ticket_pct);
+  check("total.over_money_pct",      g.total?.over_money_pct);
+  check("total.under_ticket_pct",    g.total?.under_ticket_pct);
+  check("total.under_money_pct",     g.total?.under_money_pct);
   check("moneyline.away_ticket_pct", g.moneyline?.away_ticket_pct);
   check("moneyline.away_money_pct",  g.moneyline?.away_money_pct);
   check("moneyline.home_ticket_pct", g.moneyline?.home_ticket_pct);
@@ -109,65 +95,241 @@ function auditSplits(g: GameSplits): string[] {
   return issues;
 }
 
+// ─── pickColor logic (mirrors frontend GameCard.tsx exactly) ─────────────────
+
+/** Relative luminance per WCAG 2.1 */
+function luminance(hex: string): number {
+  const clean = hex.replace("#", "");
+  const r = parseInt(clean.slice(0, 2), 16) / 255;
+  const g = parseInt(clean.slice(2, 4), 16) / 255;
+  const b = parseInt(clean.slice(4, 6), 16) / 255;
+  const toLinear = (c: number) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+function isUnusable(hex: string): boolean {
+  if (!hex || hex.length < 4) return true;
+  const lum = luminance(hex);
+  return lum < 0.04 || lum > 0.90;
+}
+
+function colorDistance(a: string, b: string): number {
+  const toRgb = (h: string) => {
+    const c = h.replace("#", "");
+    return [parseInt(c.slice(0,2),16), parseInt(c.slice(2,4),16), parseInt(c.slice(4,6),16)];
+  };
+  const [r1,g1,b1] = toRgb(a);
+  const [r2,g2,b2] = toRgb(b);
+  return Math.sqrt((r1-r2)**2 + (g1-g2)**2 + (b1-b2)**2);
+}
+
+function tooSimilar(a: string, b: string): boolean {
+  return colorDistance(a, b) < 80;
+}
+
+const FALLBACK_AWAY = "#EF3B24";
+const FALLBACK_HOME = "#1D9BF0";
+
+function pickColor(
+  primary: string,
+  secondary: string,
+  tertiary: string,
+  opponentChosen: string | null,
+  label: string
+): string {
+  const candidates = [primary, secondary, tertiary].filter(Boolean);
+  for (const c of candidates) {
+    if (isUnusable(c)) {
+      log("color", `${label}: skipping "${c}" (unusable luminance)`, "debug");
+      continue;
+    }
+    if (opponentChosen && tooSimilar(c, opponentChosen)) {
+      log("color", `${label}: skipping "${c}" (too similar to opponent ${opponentChosen})`, "debug");
+      continue;
+    }
+    log("color", `${label}: chose "${c}"`, "debug");
+    return c;
+  }
+  const fallback = opponentChosen === FALLBACK_AWAY ? FALLBACK_HOME : FALLBACK_AWAY;
+  log("color", `${label}: all candidates unusable — using fallback ${fallback}`, "warn");
+  return fallback;
+}
+
+/** Derive the darkest shade for the logo gradient background */
+function darkShade(primary: string): string {
+  const clean = primary.replace("#", "");
+  const r = Math.max(0, parseInt(clean.slice(0,2),16) - 60);
+  const g = Math.max(0, parseInt(clean.slice(2,4),16) - 60);
+  const b = Math.max(0, parseInt(clean.slice(4,6),16) - 60);
+  return `#${r.toString(16).padStart(2,"0")}${g.toString(16).padStart(2,"0")}${b.toString(16).padStart(2,"0")}`;
+}
+
+/** Choose white or black for text inside the logo circle based on luminance */
+function logoTextColor(hex: string): string {
+  return luminance(hex) > 0.35 ? "#000000" : "#FFFFFF";
+}
+
 /**
- * Calls the Python image generator and returns the path to the generated PNG.
- * Streams Python stderr to console when LOG_LEVEL=debug.
- * Throws on non-zero exit code.
+ * Splits a full team name into city + nickname.
+ * e.g. "Golden State Warriors" → { city: "Golden State", name: "Warriors" }
+ * For single-word names (e.g. "Heat"), city = name = the full name.
  */
-function generateSplitsImage(game: GameSplits, outputPath: string): Promise<{ stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const payload = JSON.stringify({
-      away_team:   game.away_team,
-      home_team:   game.home_team,
-      away_abbr:   game.away_abbr,
-      home_abbr:   game.home_abbr,
-      away_color:  game.away_color,
-      home_color:  game.home_color,
-      away_color2: game.away_color2,
-      home_color2: game.home_color2,
-      away_color3: game.away_color3,
-      home_color3: game.home_color3,
-      away_logo:   game.away_logo,
-      home_logo:   game.home_logo,
-      league:      game.league,
-      game_date:   game.game_date,
-      start_time:  game.start_time,
-      spread:      game.spread,
-      total:       game.total,
-      moneyline:   game.moneyline,
-    });
+function splitTeamName(fullName: string): { city: string; name: string } {
+  const parts = fullName.trim().split(" ");
+  if (parts.length === 1) return { city: fullName, name: fullName };
+  const name = parts[parts.length - 1] ?? fullName;
+  const city = parts.slice(0, -1).join(" ");
+  return { city, name };
+}
 
-    const env = { ...process.env, SPLITS_DEBUG: DEBUG_PYTHON ? "1" : "0" };
-    const proc = spawn(PYTHON_BIN, [GENERATOR_SCRIPT, payload, outputPath], {
-      timeout: 30_000,
-      env,
-    });
+/** Format a spread value: ensure it shows sign, e.g. "1.5" → "+1.5", "-1.5" → "-1.5" */
+function fmtSpread(val: string | null): string | null {
+  if (!val) return null;
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  if (n === 0) return "PK";
+  return n > 0 ? `+${n}` : String(n);
+}
 
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (d: Buffer) => { stdout += d.toString(); });
-    proc.stderr.on("data", (d: Buffer) => {
-      const chunk = d.toString();
-      stderr += chunk;
-      if (DEBUG_PYTHON) {
-        chunk.split("\n").filter(Boolean).forEach((line) =>
-          log("py-generator", line, "debug")
-        );
-      }
-    });
+/** Format a total value: strip trailing ".0" */
+function fmtTotal(val: string | null): string | null {
+  if (!val) return null;
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  return n % 1 === 0 ? String(n) : val;
+}
 
-    proc.on("close", (code) => {
-      if (code === 0) {
-        resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
-      } else {
-        reject(new Error(`Python exited ${code}:\n${stderr.trim()}`));
-      }
-    });
+/** Format a moneyline value: ensure sign is shown */
+function fmtML(val: string | null): string | null {
+  if (!val) return null;
+  const n = parseInt(val, 10);
+  if (isNaN(n)) return val;
+  if (n > 0) return `+${n}`;
+  return String(n);
+}
 
-    proc.on("error", (err) => {
-      reject(new Error(`Failed to spawn Python: ${err.message}`));
-    });
-  });
+/** Clamp a split percentage to [1, 99] for bar display */
+function clampPct(val: number | null): number {
+  if (val === null || val === undefined) return 50;
+  return Math.max(1, Math.min(99, val));
+}
+
+// ─── Convert GameSplits → SplitsCardData ─────────────────────────────────────
+
+function buildCardData(game: GameSplits): SplitsCardData {
+  const key = formatGameKey(game);
+  log("card", `Building card data for: ${key}`);
+
+  // 1. Pick display colors using the same logic as GameCard.tsx
+  const homeColor = pickColor(
+    game.home_color, game.home_color2, game.home_color3,
+    null,
+    `${key} HOME`
+  );
+  const awayColor = pickColor(
+    game.away_color, game.away_color2, game.away_color3,
+    homeColor,
+    `${key} AWAY`
+  );
+
+  log("card", `${key} — awayColor=${awayColor} homeColor=${homeColor}`);
+
+  // 2. Build team objects
+  const awayNames = splitTeamName(game.away_team);
+  const homeNames = splitTeamName(game.home_team);
+
+  const awayTeam: SplitsCardTeam = {
+    city:      awayNames.city,
+    name:      awayNames.name,
+    abbr:      game.away_abbr,
+    primary:   awayColor,
+    secondary: isUnusable(game.away_color2) ? awayColor : game.away_color2,
+    dark:      darkShade(awayColor),
+    logoText:  logoTextColor(awayColor),
+    logoUrl:   game.away_logo || undefined,
+    logoSize:  "17px",
+  };
+
+  const homeTeam: SplitsCardTeam = {
+    city:      homeNames.city,
+    name:      homeNames.name,
+    abbr:      game.home_abbr,
+    primary:   homeColor,
+    secondary: isUnusable(game.home_color2) ? homeColor : game.home_color2,
+    dark:      darkShade(homeColor),
+    logoText:  logoTextColor(homeColor),
+    logoUrl:   game.home_logo || undefined,
+    logoSize:  "17px",
+  };
+
+  // 3. Format date
+  const dateLabel = (() => {
+    try {
+      return new Date(game.game_date + "T12:00:00").toLocaleDateString("en-US", {
+        month: "long", day: "numeric", year: "numeric",
+      });
+    } catch {
+      return game.game_date;
+    }
+  })();
+
+  // 4. Log line values
+  log("card", `${key} — lines: spread=${game.away_book_spread}/${game.home_book_spread} total=${game.book_total} ml=${game.away_ml}/${game.home_ml}`, "debug");
+
+  // 5. Log split values
+  const sp = game.spread;
+  const to = game.total;
+  const ml = game.moneyline;
+  log("card", `${key} — spread tix: ${sp.away_ticket_pct}%/${sp.home_ticket_pct}%  money: ${sp.away_money_pct}%/${sp.home_money_pct}%`, "debug");
+  log("card", `${key} — total  tix: ${to.over_ticket_pct}%/${to.under_ticket_pct}%  money: ${to.over_money_pct}%/${to.under_money_pct}%`, "debug");
+  log("card", `${key} — ml     tix: ${ml.away_ticket_pct}%/${ml.home_ticket_pct}%  money: ${ml.away_money_pct}%/${ml.home_money_pct}%`, "debug");
+
+  const card: SplitsCardData = {
+    away: awayTeam,
+    home: homeTeam,
+    league:     game.league,
+    time:       game.start_time,
+    date:       dateLabel,
+    liveSplits: false,
+
+    spread: {
+      awayLine: fmtSpread(game.away_book_spread),
+      homeLine: fmtSpread(game.home_book_spread),
+      tickets: {
+        away: clampPct(sp.away_ticket_pct),
+        home: clampPct(sp.home_ticket_pct),
+      },
+      money: {
+        away: clampPct(sp.away_money_pct),
+        home: clampPct(sp.home_money_pct),
+      },
+    },
+    total: {
+      line: fmtTotal(game.book_total),
+      tickets: {
+        over:  clampPct(to.over_ticket_pct),
+        under: clampPct(to.under_ticket_pct),
+      },
+      money: {
+        over:  clampPct(to.over_money_pct),
+        under: clampPct(to.under_money_pct),
+      },
+    },
+    moneyline: {
+      awayLine: fmtML(game.away_ml),
+      homeLine: fmtML(game.home_ml),
+      tickets: {
+        away: clampPct(ml.away_ticket_pct),
+        home: clampPct(ml.home_ticket_pct),
+      },
+      money: {
+        away: clampPct(ml.away_money_pct),
+        home: clampPct(ml.home_money_pct),
+      },
+    },
+  };
+
+  return card;
 }
 
 // ─── Handler ──────────────────────────────────────────────────────────────────
@@ -228,7 +390,6 @@ export async function handleSplitsCommand(
     games = await fetchAllDailySplits(dateOverride);
     log("fetch", `Fetched ${games.length} game(s)`);
 
-    // Deep audit of each game's data completeness
     for (const g of games) {
       const key    = formatGameKey(g);
       const issues = auditSplits(g);
@@ -237,8 +398,6 @@ export async function handleSplitsCommand(
       } else {
         log("fetch", `${key} — all split fields present ✓`, "debug");
       }
-      log("fetch", `${key} — colors: away=(${g.away_color},${g.away_color2},${g.away_color3}) home=(${g.home_color},${g.home_color2},${g.home_color3})`, "debug");
-      log("fetch", `${key} — logos: away=${g.away_logo ?? "NONE"} home=${g.home_logo ?? "NONE"}`, "debug");
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -271,34 +430,43 @@ export async function handleSplitsCommand(
     log("post", `Header send failed: ${err instanceof Error ? err.message : String(err)}`, "warn");
   }
 
-  // 6. Generate and post one image per game
+  // 6. Render and post one image per game
   let posted = 0;
   const errors: string[] = [];
-  const tmpFiles: string[] = [];
 
   for (let i = 0; i < games.length; i++) {
-    const game    = games[i];
-    const key     = formatGameKey(game);
-    const tmpPath = join(tmpdir(), `splits_${game.id}_${Date.now()}.png`);
-    tmpFiles.push(tmpPath);
+    const game = games[i];
+    const key  = formatGameKey(game);
+    log("render", `[${i + 1}/${games.length}] Building card: ${key}`);
 
-    log("image", `[${i + 1}/${games.length}] Generating: ${key}`);
-    const genStart = Date.now();
-
+    let cardData: SplitsCardData;
     try {
-      const { stdout } = await generateSplitsImage(game, tmpPath);
-      const genMs = Date.now() - genStart;
-      log("image", `[${i + 1}/${games.length}] Generated in ${genMs}ms — ${stdout}`);
+      cardData = buildCardData(game);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log("render", `[${i + 1}/${games.length}] buildCardData FAILED for ${key}: ${msg}`, "error");
+      errors.push(`${key}: buildCardData — ${msg}`);
+      continue;
+    }
 
-      // Verify file exists and has reasonable size
-      const stat = await fs.stat(tmpPath);
-      if (stat.size < 1000) {
-        throw new Error(`Generated file is suspiciously small: ${stat.size} bytes`);
-      }
-      log("image", `[${i + 1}/${games.length}] File size: ${(stat.size / 1024).toFixed(1)} KB`);
+    log("render", `[${i + 1}/${games.length}] Rendering PNG: ${key}`);
+    const renderStart = Date.now();
+    let pngBuffer: Buffer;
+    try {
+      pngBuffer = await renderSplitsCard(cardData);
+      const renderMs = Date.now() - renderStart;
+      log("render", `[${i + 1}/${games.length}] Rendered in ${renderMs}ms — ${(pngBuffer.length / 1024).toFixed(1)} KB`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log("render", `[${i + 1}/${games.length}] renderSplitsCard FAILED for ${key}: ${msg}`, "error");
+      errors.push(`${key}: render — ${msg}`);
+      if (i < games.length - 1) await sleep(IMAGE_DELAY_MS);
+      continue;
+    }
 
-      // Post to channel
-      const attachment = new AttachmentBuilder(tmpPath, {
+    // Post to channel
+    try {
+      const attachment = new AttachmentBuilder(pngBuffer, {
         name: `splits_${game.away_abbr}_vs_${game.home_abbr}.png`,
       });
       await channel.send({ files: [attachment] });
@@ -306,8 +474,8 @@ export async function handleSplitsCommand(
       log("post", `[${i + 1}/${games.length}] ✅ Posted: ${key}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      log("image", `[${i + 1}/${games.length}] FAILED for ${key}: ${msg}`, "error");
-      errors.push(`${key}: ${msg}`);
+      log("post", `[${i + 1}/${games.length}] Discord send FAILED for ${key}: ${msg}`, "error");
+      errors.push(`${key}: send — ${msg}`);
     }
 
     // Rate-limit delay between messages
@@ -316,13 +484,7 @@ export async function handleSplitsCommand(
     }
   }
 
-  // 7. Cleanup temp files
-  log("cleanup", `Removing ${tmpFiles.length} temp file(s)`);
-  for (const f of tmpFiles) {
-    fs.unlink(f).catch((e) => log("cleanup", `Could not delete ${f}: ${e.message}`, "warn"));
-  }
-
-  // 8. Ephemeral summary
+  // 7. Ephemeral summary
   const totalMs = Date.now() - t0;
   const summary = [
     `✅ Posted **${posted}/${games.length}** split images to <#${SPLITS_CHANNEL_ID}>`,
@@ -339,3 +501,6 @@ export async function handleSplitsCommand(
   log("done", `Complete — ${posted}/${games.length} posted in ${(totalMs / 1000).toFixed(1)}s` +
     (errors.length > 0 ? ` (${errors.length} errors)` : ""));
 }
+
+// Re-export for bot.ts shutdown hook
+export { closeSplitsRenderer };

@@ -15,7 +15,7 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import { ENV } from "../_core/env";
-import { handleSplitsCommand } from "./splitsCommand";
+import { handleSplitsCommand, closeSplitsRenderer } from "./splitsCommand";
 import { enrichTeamRegistryFromDb } from "./teamRegistry";
 
 let botClient: Client | null = null;
@@ -76,6 +76,15 @@ export function startDiscordBot(): void {
   });
 
   botClient = client;
+
+  // Gracefully close the Playwright browser on process exit
+  const shutdown = async () => {
+    console.log('[SplitsBot] Shutting down — closing Playwright browser...');
+    await closeSplitsRenderer();
+    client.destroy();
+  };
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT',  shutdown);
 }
 
 export function getDiscordClient(): Client | null {
