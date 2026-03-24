@@ -95,7 +95,10 @@ function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; s
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            // "top center" keeps the face at the top of the circle
+            // MLB /headshot/67/ is 180x270. In a 32x32 circle with objectFit:cover,
+            // the image scales to 32x48. "top center" shows rows 0-32 of the 48px displayed,
+            // which maps to original rows 0-180. Face center is at y=95 of 270 (35%),
+            // which lands at y=17 of the 32px circle — perfectly centered.
             objectPosition: "top center",
           }}
           onError={(e) => {

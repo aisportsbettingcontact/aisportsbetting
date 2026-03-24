@@ -1949,3 +1949,4 @@
 - [x] Fix MlbLineupCard: both Away and Home sides use identical left-aligned layout: [number] [photo] [position] [name] [bats]
 - [x] Fix player photo crop: photos are too zoomed in showing chin/neck, need to show full face
 - [x] Fix home side pitcher section: should be left-aligned matching away side
+- [x] Fix player headshot: objectPosition top center shows cap/helmet, need to shift down to show face (use center 30% or similar)
