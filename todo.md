@@ -1869,3 +1869,12 @@
 - [x] Cross-referenced all 55 BR players with MLBAM API: 40 matched in 2026 season, 15 found in 2025 season (marked isActive=false)
 - [x] Wrote seed-mlb.mjs and ran successfully: 30 teams inserted, 55 players inserted
 - [x] Verified: 30 teams (5 per division × 6 divisions), 40 active + 15 inactive players
+
+## MLB Player Sync Cron (08:00 UTC nightly)
+- [ ] Audit existing cron infrastructure (scoreRefresh, vsinScraper crons)
+- [ ] Write server/discord/mlbPlayerSync.ts with MLB Stats API integration
+- [ ] Implement diff-based update logic: insert new players, update changed team/status
+- [ ] Add structured noise-free logging: sync start, API fetch count, inserts, updates, skips, errors
+- [ ] Register cron at 08:00 UTC in server startup
+- [ ] Verify TypeScript compiles cleanly
+- [ ] Test sync manually before relying on cron

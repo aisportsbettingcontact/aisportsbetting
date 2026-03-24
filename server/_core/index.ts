@@ -15,6 +15,7 @@ import { startModelWatcher } from "../ncaamModelWatcher";
 import { startNhlModelSyncScheduler } from "../nhlModelSync";
 import { startNhlGoalieWatcher } from "../nhlGoalieWatcher";
 import { startDiscordBot } from "../discord/bot";
+import { startMlbPlayerSyncScheduler } from "../mlbPlayerSync";
 
 // ─── Global crash protection ─────────────────────────────────────────────────
 // Prevent unhandled promise rejections and uncaught exceptions from killing the
@@ -131,6 +132,8 @@ async function startServer() {
     startNhlGoalieWatcher();
     // Discord bot — listens for /splits slash command
     startDiscordBot();
+    // MLB player sync — nightly at 08:00 UTC, updates active rosters from MLB Stats API
+    startMlbPlayerSyncScheduler();
   });
 }
 
