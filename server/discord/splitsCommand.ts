@@ -44,7 +44,26 @@ function log(stage: string, msg: string, level: LogLevel = "info"): void {
 // ─── Command definition (used by register script) ─────────────────────────────
 export const splitsCommandData = new SlashCommandBuilder()
   .setName("splits")
-  .setDescription("Post today's full daily betting splits into the splits channel")
+  .setDescription("Post today's betting splits into the splits channel")
+  .addStringOption((opt) =>
+    opt
+      .setName("sport")
+      .setDescription("Filter by sport (default: ALL)")
+      .setRequired(false)
+      .addChoices(
+        { name: "ALL Sports",  value: "ALL" },
+        { name: "NBA",         value: "NBA" },
+        { name: "NHL",         value: "NHL" },
+        { name: "NCAAM",       value: "NCAAM" },
+      )
+  )
+  .addStringOption((opt) =>
+    opt
+      .setName("game")
+      .setDescription("Post a single game (type AWAY @ HOME, e.g. OKC @ DAL) or leave blank for ALL")
+      .setRequired(false)
+      .setAutocomplete(true)
+  )
   .addStringOption((opt) =>
     opt
       .setName("date")
@@ -355,6 +374,9 @@ export async function handleSplitsCommand(
   await interaction.deferReply({ ephemeral: true });
 
   const dateOverride = interaction.options.getString("date") ?? undefined;
+  const sportFilter  = interaction.options.getString("sport") ?? "ALL";
+  const gameFilter   = interaction.options.getString("game")?.trim() ?? undefined;
+
   if (dateOverride) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateOverride)) {
       log("input", `Invalid date override: "${dateOverride}"`, "warn");
@@ -365,6 +387,7 @@ export async function handleSplitsCommand(
   } else {
     log("input", "No date override — using today ET");
   }
+  log("input", `Sport filter: ${sportFilter}${gameFilter ? ` | Game filter: ${gameFilter}` : ""}`);
 
   // 3. Resolve target channel
   log("channel", `Fetching channel ${SPLITS_CHANNEL_ID}`);
@@ -387,8 +410,23 @@ export async function handleSplitsCommand(
   log("fetch", "Fetching daily splits from DB...");
   let games: GameSplits[];
   try {
-    games = await fetchAllDailySplits(dateOverride);
-    log("fetch", `Fetched ${games.length} game(s)`);
+    const sportArg = sportFilter === "ALL" ? undefined : sportFilter;
+    games = await fetchAllDailySplits(dateOverride, sportArg);
+    log("fetch", `Fetched ${games.length} game(s) (sport=${sportFilter})`);
+
+    // Apply single-game filter if specified
+    if (gameFilter) {
+      const filterLower = gameFilter.toLowerCase();
+      games = games.filter((g) => {
+        const key = formatGameKey(g).toLowerCase();
+        return key.includes(filterLower) ||
+          g.away_abbr.toLowerCase().includes(filterLower) ||
+          g.home_abbr.toLowerCase().includes(filterLower) ||
+          g.away_team.toLowerCase().includes(filterLower) ||
+          g.home_team.toLowerCase().includes(filterLower);
+      });
+      log("fetch", `After game filter "${gameFilter}": ${games.length} game(s) remaining`);
+    }
 
     for (const g of games) {
       const key    = formatGameKey(g);
@@ -408,8 +446,10 @@ export async function handleSplitsCommand(
 
   if (games.length === 0) {
     const dateLabel = dateOverride ?? todayEtLabel();
-    log("fetch", `No games found for ${dateLabel}`, "warn");
-    await interaction.editReply(`ℹ️ No games found for ${dateLabel}.`);
+    const sportMsg  = sportFilter !== "ALL" ? ` (${sportFilter})` : "";
+    const gameMsg   = gameFilter ? ` matching "${gameFilter}"` : "";
+    log("fetch", `No games found for ${dateLabel}${sportMsg}${gameMsg}`, "warn");
+    await interaction.editReply(`ℹ️ No games found for ${dateLabel}${sportMsg}${gameMsg}.`);
     return;
   }
 
@@ -420,10 +460,16 @@ export async function handleSplitsCommand(
       })
     : todayEtLabel();
 
-  log("post", `Sending header for ${dateLabel} (${games.length} games)`);
+  const sportTag = sportFilter !== "ALL" ? ` · ${sportFilter}` : "";
+  const gameTag  = gameFilter ? ` · ${gameFilter}` : "";
+  const headerCount = games.length === 1
+    ? "1 game"
+    : `${games.length} games`;
+
+  log("post", `Sending header for ${dateLabel} (${games.length} games, sport=${sportFilter})`);
   try {
     await channel.send({
-      content: `## 📊 Daily Betting Splits — ${dateLabel}\n${games.length} game${games.length !== 1 ? "s" : ""} today`,
+      content: `## 📊 Daily Betting Splits — ${dateLabel}${sportTag}${gameTag}\n${headerCount}`,
     });
     await sleep(IMAGE_DELAY_MS);
   } catch (err) {
@@ -500,6 +546,36 @@ export async function handleSplitsCommand(
   await interaction.editReply(summary);
   log("done", `Complete — ${posted}/${games.length} posted in ${(totalMs / 1000).toFixed(1)}s` +
     (errors.length > 0 ? ` (${errors.length} errors)` : ""));
+}
+
+/**
+ * Autocomplete handler for the `game` option.
+ * Returns up to 25 matching games from today's DB as choices.
+ */
+export async function handleSplitsAutocomplete(
+  interaction: import("discord.js").AutocompleteInteraction
+): Promise<void> {
+  const focused = interaction.options.getFocused().toLowerCase();
+  const sportFilter = interaction.options.getString("sport") ?? "ALL";
+  const dateOverride = interaction.options.getString("date") ?? undefined;
+  try {
+    const sportArg = sportFilter === "ALL" ? undefined : sportFilter;
+    const games = await fetchAllDailySplits(dateOverride, sportArg);
+    const choices = games
+      .map((g) => ({
+        name: `${g.away_abbr} @ ${g.home_abbr} (${g.league} ${g.start_time})`,
+        value: formatGameKey(g),
+      }))
+      .filter((c) =>
+        !focused ||
+        c.name.toLowerCase().includes(focused) ||
+        c.value.toLowerCase().includes(focused)
+      )
+      .slice(0, 25);
+    await interaction.respond(choices);
+  } catch {
+    await interaction.respond([]);
+  }
 }
 
 // Re-export for bot.ts shutdown hook

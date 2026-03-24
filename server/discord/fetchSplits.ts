@@ -105,12 +105,12 @@ function complement(pct: number | null): number | null {
  * Fetch all daily betting splits for a given date (defaults to today ET).
  * Reads directly from the database — no HTTP overhead.
  */
-export async function fetchAllDailySplits(dateOverride?: string): Promise<GameSplits[]> {
+export async function fetchAllDailySplits(dateOverride?: string, sport?: string): Promise<GameSplits[]> {
   const gameDate = dateOverride ?? todayEt();
-  log("init", `Fetching splits for date: ${gameDate}`);
+  log("init", `Fetching splits for date: ${gameDate}${sport ? ` sport: ${sport}` : ""}`);
 
   const t0   = Date.now();
-  const rows = await listGames({ gameDate });
+  const rows = await listGames({ gameDate, ...(sport ? { sport } : {}) });
   const dbMs = Date.now() - t0;
   log("db", `DB query returned ${rows.length} row(s) in ${dbMs}ms`);
 

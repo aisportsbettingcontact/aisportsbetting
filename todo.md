@@ -1735,3 +1735,12 @@
 - [x] Fix JS syntax error in onerror handler (use global logoErr() function instead of inline code)
 - [x] Enable 2x device pixel ratio rendering (--force-device-scale-factor=2) for maximum sharpness
 - [x] Use scale:"device" in Playwright screenshot for crisp 2x output
+
+## Discord Splits Card v2 (2026-03-24)
+- [x] Remove "NBA · DAILY BETTING SPLITS" subtitle from center header (keep @ symbol, time, date only)
+- [x] Fix Over color to #39FF14 (neon green), Under color to #FF1818 (bright red)
+- [x] Add sport filter option to /splits command: NBA, NHL, NCAAM, ALL
+- [x] Add game selection option: ALL (post all games) or individual game picker (select one game)
+- [x] Update fetchAllDailySplits to accept optional sport parameter
+- [x] Wire autocomplete handler in bot.ts for game picker
+- [x] Re-register Discord slash command with new sport/game/date options

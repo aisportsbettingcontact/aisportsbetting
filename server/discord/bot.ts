@@ -15,7 +15,7 @@ import {
   type ChatInputCommandInteraction,
 } from "discord.js";
 import { ENV } from "../_core/env";
-import { handleSplitsCommand, closeSplitsRenderer } from "./splitsCommand";
+import { handleSplitsCommand, handleSplitsAutocomplete, closeSplitsRenderer } from "./splitsCommand";
 import { enrichTeamRegistryFromDb } from "./teamRegistry";
 
 let botClient: Client | null = null;
@@ -40,6 +40,16 @@ export function startDiscordBot(): void {
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
+    // Handle autocomplete for /splits game option
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName === "splits") {
+        await handleSplitsAutocomplete(interaction).catch((err) =>
+          console.error("[SplitsBot] Autocomplete error:", err)
+        );
+      }
+      return;
+    }
+
     if (!interaction.isChatInputCommand()) return;
 
     const { commandName } = interaction;
