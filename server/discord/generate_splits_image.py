@@ -10,6 +10,8 @@ Color picking logic is ported from GameCard.tsx:
 
 Usage:
   python3 generate_splits_image.py '<json_data>' <output_path>
+
+Deep logging: set env var SPLITS_DEBUG=1 for verbose output.
 """
 
 import sys
@@ -17,20 +19,36 @@ import json
 import os
 import io
 import math
+import time
 import urllib.request
 from PIL import Image, ImageDraw, ImageFont
+
+DEBUG = os.environ.get("SPLITS_DEBUG", "0") == "1"
+
+def log(msg, level="INFO"):
+    if DEBUG or level in ("ERROR", "WARN"):
+        ts = time.strftime("%H:%M:%S")
+        print(f"[{ts}][{level}] {msg}", file=sys.stderr)
 
 try:
     import cairosvg
     HAS_CAIROSVG = True
+    log("cairosvg available — SVG logos enabled")
 except ImportError:
     HAS_CAIROSVG = False
+    log("cairosvg NOT available — SVG logos will be skipped", "WARN")
 
 # ── Font paths ────────────────────────────────────────────────────────────────
 FONT_DIR  = os.path.join(os.path.dirname(__file__), "fonts")
 FONT_BOLD = os.path.join(FONT_DIR, "Barlow-Bold.ttf")
 FONT_SEMI = os.path.join(FONT_DIR, "Barlow-SemiBold.ttf")
 FONT_REG  = os.path.join(FONT_DIR, "Barlow-Regular.ttf")
+
+for fp in [FONT_BOLD, FONT_SEMI, FONT_REG]:
+    if os.path.exists(fp):
+        log(f"Font OK: {os.path.basename(fp)}")
+    else:
+        log(f"Font MISSING: {fp}", "WARN")
 
 # ── Palette ───────────────────────────────────────────────────────────────────
 BG_DARK       = (12, 14, 20)
@@ -45,10 +63,6 @@ UNDER_COLOR   = (200, 65, 65)
 
 FALLBACK_AWAY = (26, 74, 138)     # #1a4a8a
 FALLBACK_HOME = (200, 75, 12)     # #c84b0c
-
-TAB_SPREAD    = (255, 196, 0)
-TAB_TOTAL     = (60, 200, 110)
-TAB_ML        = (99, 160, 255)
 
 W   = 1100
 PAD = 32
@@ -85,30 +99,47 @@ def too_similar(rgb_a, rgb_b):
     dist = math.sqrt(sum((a - b) ** 2 for a, b in zip(rgb_a, rgb_b)))
     return dist < 60
 
-def pick_color(p, s, t, fallback):
+def pick_color(p, s, t, fallback, label="?"):
     """Try primary → secondary → tertiary → fallback, skip unusable."""
-    for c in [p, s, t]:
-        if c and not is_unusable(c):
-            return c
+    candidates = [("primary", p), ("secondary", s), ("tertiary", t)]
+    for name, c in candidates:
+        if c is None:
+            log(f"  [{label}] {name}: None — skip")
+            continue
+        lum = luminance(c)
+        if is_unusable(c):
+            log(f"  [{label}] {name}: rgb{c} lum={lum:.3f} — UNUSABLE (too dark/light)")
+            continue
+        log(f"  [{label}] {name}: rgb{c} lum={lum:.3f} — SELECTED")
+        return c
+    log(f"  [{label}] all unusable — using FALLBACK rgb{fallback}", "WARN")
     return fallback
 
-def resolve_team_colors(primary_hex, secondary_hex, tertiary_hex, other_color, fallback):
+def resolve_away_color(primary_hex, secondary_hex, tertiary_hex, home_color, label="away"):
     """
-    Resolve the display color for a team, mirroring GameCard.tsx's awayColor logic.
-    `other_color` is the opposing team's resolved color (used for tooSimilar check).
+    Resolve away team display color — same as GameCard.tsx awayColor logic.
+    Also skips colors too similar to homeColor.
     """
     p = hex_to_rgb(primary_hex)
     s = hex_to_rgb(secondary_hex)
     t = hex_to_rgb(tertiary_hex)
-    for c in [p, s, t]:
+    candidates = [("primary", p), ("secondary", s), ("tertiary", t)]
+    for name, c in candidates:
         if c is None:
+            log(f"  [{label}] {name}: None — skip")
             continue
+        lum = luminance(c)
         if is_unusable(c):
+            log(f"  [{label}] {name}: rgb{c} lum={lum:.3f} — UNUSABLE")
             continue
-        if other_color and too_similar(c, other_color):
+        if too_similar(c, home_color):
+            dist = math.sqrt(sum((a - b)**2 for a, b in zip(c, home_color)))
+            log(f"  [{label}] {name}: rgb{c} — TOO SIMILAR to home rgb{home_color} (dist={dist:.1f})")
             continue
+        log(f"  [{label}] {name}: rgb{c} lum={lum:.3f} — SELECTED")
         return c
-    return fallback
+    log(f"  [{label}] all unusable/similar — using FALLBACK rgb{FALLBACK_AWAY}", "WARN")
+    return FALLBACK_AWAY
 
 def darken(rgb, f=0.28):
     return tuple(max(0, int(c * f)) for c in rgb)
@@ -116,8 +147,11 @@ def darken(rgb, f=0.28):
 # ── Font / draw helpers ───────────────────────────────────────────────────────
 def load_font(path, size):
     try:
-        return ImageFont.truetype(path, size)
-    except Exception:
+        font = ImageFont.truetype(path, size)
+        log(f"Loaded font {os.path.basename(path)} @ {size}px")
+        return font
+    except Exception as e:
+        log(f"Font load failed {path} @ {size}: {e}", "WARN")
         return ImageFont.load_default()
 
 def tw(draw, text, font):
@@ -131,33 +165,43 @@ def th(draw, text, font):
 def draw_rr(draw, xy, r, fill=None, outline=None, ow=2):
     draw.rounded_rectangle(xy, radius=r, fill=fill, outline=outline, width=ow)
 
-def fetch_logo(url, size):
+def fetch_logo(url, size, team_name="?"):
     if not url:
+        log(f"  [logo:{team_name}] No URL provided", "WARN")
         return None
+    t0 = time.time()
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=6) as resp:
             data = resp.read()
+        elapsed = time.time() - t0
+        log(f"  [logo:{team_name}] Fetched {len(data)} bytes in {elapsed:.2f}s from {url}")
+
         if url.lower().endswith(".svg") or b"<svg" in data[:200]:
             if HAS_CAIROSVG:
                 png_data = cairosvg.svg2png(bytestring=data,
                                              output_width=size, output_height=size)
                 img = Image.open(io.BytesIO(png_data)).convert("RGBA")
+                log(f"  [logo:{team_name}] SVG→PNG converted, size={img.size}")
             else:
+                log(f"  [logo:{team_name}] SVG detected but cairosvg unavailable — skipping", "WARN")
                 return None
         else:
             img = Image.open(io.BytesIO(data)).convert("RGBA")
+            log(f"  [logo:{team_name}] Raster image loaded, size={img.size}")
+
         return img.resize((size, size), Image.LANCZOS)
     except Exception as e:
-        print(f"[logo] failed {url}: {e}", file=sys.stderr)
+        log(f"  [logo:{team_name}] FAILED: {e}", "ERROR")
         return None
 
 # ── Bar renderer ──────────────────────────────────────────────────────────────
 def draw_split_bar(draw, x, y, bar_w, bar_h,
-                   lp, rp, left_color, right_color, font_pct):
+                   lp, rp, left_color, right_color, font_pct,
+                   bar_label="?"):
     """
-    Two-tone pill bar. Labels are always white with black stroke.
-    When a segment is too narrow, the label is placed just outside.
+    Two-tone pill bar. Labels always white with black stroke.
+    When a segment is too narrow, the label is placed above the bar edge.
     """
     r = bar_h // 2
     lp = max(0, min(100, lp if lp is not None else 50))
@@ -173,6 +217,9 @@ def draw_split_bar(draw, x, y, bar_w, bar_h,
     lbl_y   = y + (bar_h - lbl_h) // 2 - 1
 
     INSIDE_MIN = lbl_w_l + 18
+
+    log(f"  [bar:{bar_label}] lp={lp}% rp={rp}% left_w={left_w}px right_w={right_w}px "
+        f"bar_w={bar_w}px inside_min={INSIDE_MIN}px")
 
     # Background pill
     draw_rr(draw, [x, y, x + bar_w, y + bar_h], r, fill=BG_BAR_EMPTY)
@@ -199,27 +246,30 @@ def draw_split_bar(draw, x, y, bar_w, bar_h,
         draw.rectangle([x + left_w - 1, y + 2, x + left_w + 1, y + bar_h - 2],
                        fill=BG_DARK)
 
-    # Left label — inside if there's room, otherwise above-left of bar
+    # Left label — inside if there's room, otherwise above-left corner of bar
     if left_w >= INSIDE_MIN:
         draw.text((x + 10, lbl_y), lp_str, font=font_pct, fill=WHITE,
                   stroke_width=1, stroke_fill=(0, 0, 0))
+        log(f"  [bar:{bar_label}] left label INSIDE at x={x+10}")
     else:
-        # Place label above the left edge of the bar so it never overlaps right side
-        above_y = y - lbl_h - 2
+        above_y = y - lbl_h - 3
         draw.text((x, above_y), lp_str, font=font_pct, fill=WHITE,
                   stroke_width=1, stroke_fill=(0, 0, 0))
+        log(f"  [bar:{bar_label}] left label ABOVE at y={above_y}")
 
-    # Right label — inside if there's room, otherwise above-right of bar
+    # Right label — inside if there's room, otherwise above-right corner of bar
     if right_w >= lbl_w_r + 18:
         draw.text((x + bar_w - lbl_w_r - 10, lbl_y), rp_str, font=font_pct, fill=WHITE,
                   stroke_width=1, stroke_fill=(0, 0, 0))
+        log(f"  [bar:{bar_label}] right label INSIDE at x={x+bar_w-lbl_w_r-10}")
     else:
-        above_y = y - lbl_h - 2
+        above_y = y - lbl_h - 3
         draw.text((x + bar_w - lbl_w_r, above_y), rp_str, font=font_pct, fill=WHITE,
                   stroke_width=1, stroke_fill=(0, 0, 0))
+        log(f"  [bar:{bar_label}] right label ABOVE at y={above_y}")
 
 # ── Section renderer ──────────────────────────────────────────────────────────
-def draw_section(draw, x, y, sec_w, title, accent,
+def draw_section(draw, x, y, sec_w, title,
                  r1_lbl, r1_left, r1_right,
                  r2_lbl, r2_left, r2_right,
                  left_name, right_name,
@@ -230,26 +280,30 @@ def draw_section(draw, x, y, sec_w, title, accent,
     f_name  = fonts["name"]
 
     title_h = th(draw, title, f_title)
-    hdr_h   = title_h + 12       # compact — 6px top + 6px bottom
+    hdr_h   = title_h + 10       # 5px top + 5px bottom — tight
 
     name_h  = th(draw, left_name, f_name)
     bar_h   = 32
-    row_gap = 10
+    # Spacing: name row → 3px → bar → 8px → next name row → 3px → bar → done
+    row_gap = 8
 
-    # Tab
-    draw_rr(draw, [x, y, x + sec_w, y + hdr_h], 6,
-            fill=BG_HEADER, outline=accent, ow=2)
+    log(f"[section:{title}] x={x} y={y} sec_w={sec_w} hdr_h={hdr_h}")
+    log(f"[section:{title}] r1: {r1_lbl} left={r1_left} right={r1_right}")
+    log(f"[section:{title}] r2: {r2_lbl} left={r2_left} right={r2_right}")
+
+    # Tab — plain background, NO border/outline, white text
+    draw_rr(draw, [x, y, x + sec_w, y + hdr_h], 5, fill=BG_HEADER)
     t_w = tw(draw, title, f_title)
-    draw.text((x + (sec_w - t_w) // 2, y + 6), title,
-              font=f_title, fill=accent)
+    draw.text((x + (sec_w - t_w) // 2, y + 5), title,
+              font=f_title, fill=WHITE)
 
-    cy = y + hdr_h + 10
+    cy = y + hdr_h + 8   # 8px gap between tab and first name row
 
     for row_lbl, lp, rp in [(r1_lbl, r1_left, r1_right),
                               (r2_lbl, r2_left, r2_right)]:
         lp_val = lp if lp is not None else 50
 
-        # Name row — abbreviations in WHITE, center label in gray
+        # Name row
         rn_w  = tw(draw, right_name, f_name)
         lbl_w = tw(draw, row_lbl, f_lbl)
 
@@ -258,75 +312,106 @@ def draw_section(draw, x, y, sec_w, title, accent,
                   font=f_lbl, fill=GRAY_L)
         draw.text((x + sec_w - rn_w, cy), right_name, font=f_name, fill=WHITE)
 
-        cy += name_h + 3
+        cy += name_h + 3   # tight: 3px between name and bar
 
         draw_split_bar(draw, x, cy, sec_w, bar_h,
                        lp_val, 100 - lp_val,
-                       left_color, right_color, f_pct)
+                       left_color, right_color, f_pct,
+                       bar_label=f"{title}/{row_lbl}")
 
-        cy += bar_h + row_gap
+        cy += bar_h + row_gap   # 8px between bar and next name row
 
+    # Remove trailing gap
+    cy -= row_gap
+
+    log(f"[section:{title}] total height used = {cy - y}px")
     return cy - y
 
 # ── Main card renderer ────────────────────────────────────────────────────────
 def render_card(data, output_path):
-    away_team = data["away_team"]
-    home_team = data["home_team"]
-    away_abbr = data.get("away_abbr", away_team[:3].upper())
-    home_abbr = data.get("home_abbr", home_team[:3].upper())
-    league    = data.get("league",    "NBA")
-    game_date = data.get("game_date", "")
+    t_start = time.time()
+
+    away_team  = data["away_team"]
+    home_team  = data["home_team"]
+    away_abbr  = data.get("away_abbr", away_team[:3].upper())
+    home_abbr  = data.get("home_abbr", home_team[:3].upper())
+    league     = data.get("league",    "NBA")
+    game_date  = data.get("game_date", "")
     start_time = data.get("start_time", "")
 
     spread    = data.get("spread",    {})
     total     = data.get("total",     {})
     moneyline = data.get("moneyline", {})
 
+    log(f"=== render_card START: {away_team} @ {home_team} ===")
+    log(f"  league={league}  date={game_date}  time={start_time}")
+    log(f"  away_abbr={away_abbr}  home_abbr={home_abbr}")
+    log(f"  colors: away=({data.get('away_color')},{data.get('away_color2')},{data.get('away_color3')})")
+    log(f"  colors: home=({data.get('home_color')},{data.get('home_color2')},{data.get('home_color3')})")
+    log(f"  spread:    {spread}")
+    log(f"  total:     {total}")
+    log(f"  moneyline: {moneyline}")
+
+    # Validate splits data completeness
+    for section_name, section in [("spread", spread), ("total", total), ("moneyline", moneyline)]:
+        for key, val in section.items():
+            if val is None:
+                log(f"  [data] {section_name}.{key} = None — will show 50/50", "WARN")
+
     # ── Resolve colors using exact frontend pickColor logic ───────────────────
-    # Home color: pick first usable from primary → secondary → tertiary
+    log("--- Color resolution ---")
     home_color = pick_color(
         hex_to_rgb(data.get("home_color")),
         hex_to_rgb(data.get("home_color2")),
         hex_to_rgb(data.get("home_color3")),
         FALLBACK_HOME,
+        label=f"home/{home_abbr}",
     )
-    # Away color: also skip if too similar to home
-    away_color = resolve_team_colors(
+    away_color = resolve_away_color(
         data.get("away_color"),
         data.get("away_color2"),
         data.get("away_color3"),
         home_color,
-        FALLBACK_AWAY,
+        label=f"away/{away_abbr}",
     )
+    log(f"  FINAL away_color=rgb{away_color}  home_color=rgb{home_color}")
 
     fonts = {
         "matchup": load_font(FONT_BOLD, 30),
-        "title":   load_font(FONT_BOLD, 16),
-        "label":   load_font(FONT_SEMI, 13),
+        "title":   load_font(FONT_BOLD, 15),
+        "label":   load_font(FONT_SEMI, 12),
         "pct":     load_font(FONT_BOLD, 17),
-        "name":    load_font(FONT_SEMI, 13),
-        "footer":  load_font(FONT_REG,  13),
+        "name":    load_font(FONT_SEMI, 12),
+        "footer":  load_font(FONT_REG,  12),
     }
 
-    # Layout
+    # Layout constants
     inner_w     = W - PAD * 2
-    section_gap = 16
+    section_gap = 14
     section_w   = (inner_w - section_gap * 2) // 3
 
     logo_size  = 84
     logo_pad   = 8
     logo_total = logo_size + logo_pad * 2
 
-    # Estimate height
+    log(f"--- Layout: inner_w={inner_w} section_w={section_w} section_gap={section_gap} ---")
+
+    # Measure section height on a dummy canvas
     _dummy_img  = Image.new("RGB", (1, 1))
     _dummy_draw = ImageDraw.Draw(_dummy_img)
     title_h = th(_dummy_draw, "SPREAD", fonts["title"])
-    hdr_h   = title_h + 12
+    hdr_h   = title_h + 10
     name_h  = th(_dummy_draw, "GSW", fonts["name"])
-    sec_h   = hdr_h + 10 + ((name_h + 3 + 32 + 10) * 2)
+    bar_h   = 32
+    row_gap = 8
+    # 2 rows: (name_h + 3 + bar_h + row_gap) * 2 - row_gap
+    sec_h   = hdr_h + 8 + (name_h + 3 + bar_h + row_gap) * 2 - row_gap
+
     header_h = logo_total + 20
-    footer_h = 30
-    H = 14 + header_h + 14 + sec_h + footer_h + 20
+    footer_h = 28
+    H = 14 + header_h + 14 + sec_h + footer_h + 18
+
+    log(f"--- Canvas: W={W} H={H} header_h={header_h} sec_h={sec_h} ---")
 
     img  = Image.new("RGBA", (W, H), BG_DARK)
     draw = ImageDraw.Draw(img)
@@ -334,7 +419,7 @@ def render_card(data, output_path):
     # Card background
     draw_rr(draw, [0, 0, W, H], 16, fill=BG_CARD)
 
-    # Top gradient stripe
+    # Top gradient stripe (5px)
     for px in range(W):
         t = px / W
         r = int(away_color[0]*(1-t) + home_color[0]*t)
@@ -346,20 +431,27 @@ def render_card(data, output_path):
     hdr_y  = 6 + 12
     logo_y = hdr_y + 4
 
-    away_logo = fetch_logo(data.get("away_logo", ""), logo_size)
-    home_logo = fetch_logo(data.get("home_logo", ""), logo_size)
+    log("--- Fetching logos ---")
+    away_logo = fetch_logo(data.get("away_logo", ""), logo_size, team_name=away_abbr)
+    home_logo = fetch_logo(data.get("home_logo", ""), logo_size, team_name=home_abbr)
 
     if away_logo:
         cx1, cy1 = PAD, logo_y
         draw.ellipse([cx1, cy1, cx1 + logo_total, cy1 + logo_total],
                      fill=darken(away_color))
         img.paste(away_logo, (cx1 + logo_pad, cy1 + logo_pad), away_logo)
+        log(f"  [logo:{away_abbr}] pasted at ({cx1},{cy1})")
+    else:
+        log(f"  [logo:{away_abbr}] NOT rendered (fetch failed)", "WARN")
 
     if home_logo:
         cx1, cy1 = W - PAD - logo_total, logo_y
         draw.ellipse([cx1, cy1, cx1 + logo_total, cy1 + logo_total],
                      fill=darken(home_color))
         img.paste(home_logo, (cx1 + logo_pad, cy1 + logo_pad), home_logo)
+        log(f"  [logo:{home_abbr}] pasted at ({cx1},{cy1})")
+    else:
+        log(f"  [logo:{home_abbr}] NOT rendered (fetch failed)", "WARN")
 
     # Matchup text — team names in their resolved display color
     f_m = fonts["matchup"]
@@ -375,6 +467,8 @@ def render_card(data, output_path):
     mx = logo_right_edge + max(0, (text_zone_w - total_mw) // 2)
     my = logo_y + (logo_total - th(draw, away_team, f_m)) // 2
 
+    log(f"  [matchup] text_zone_w={text_zone_w} total_mw={total_mw} mx={mx} my={my}")
+
     draw.text((mx, my), away_team, font=f_m, fill=away_color,
               stroke_width=2, stroke_fill=BG_DARK)
     draw.text((mx + at_w, my), "  @  ", font=f_m, fill=GRAY_D,
@@ -388,11 +482,11 @@ def render_card(data, output_path):
 
     # ── Sections ──────────────────────────────────────────────────────────────
     sec_y = div_y + 14
+    log(f"--- Sections start at y={sec_y} ---")
 
     sections = [
         {
             "title":      "SPREAD",
-            "accent":     TAB_SPREAD,
             "r1_lbl":     "TICKETS",
             "r1_left":    spread.get("away_ticket_pct"),
             "r1_right":   spread.get("home_ticket_pct"),
@@ -406,7 +500,6 @@ def render_card(data, output_path):
         },
         {
             "title":      "TOTAL",
-            "accent":     TAB_TOTAL,
             "r1_lbl":     "TICKETS",
             "r1_left":    total.get("over_ticket_pct"),
             "r1_right":   total.get("under_ticket_pct"),
@@ -420,7 +513,6 @@ def render_card(data, output_path):
         },
         {
             "title":      "MONEYLINE",
-            "accent":     TAB_ML,
             "r1_lbl":     "TICKETS",
             "r1_left":    moneyline.get("away_ticket_pct"),
             "r1_right":   moneyline.get("home_ticket_pct"),
@@ -439,7 +531,7 @@ def render_card(data, output_path):
         sx = PAD + i * (section_w + section_gap)
         h  = draw_section(
             draw, sx, sec_y, section_w,
-            sec["title"], sec["accent"],
+            sec["title"],
             sec["r1_lbl"], sec["r1_left"], sec["r1_right"],
             sec["r2_lbl"], sec["r2_left"], sec["r2_right"],
             sec["left_name"], sec["right_name"],
@@ -447,6 +539,7 @@ def render_card(data, output_path):
             fonts,
         )
         max_sec_h = max(max_sec_h, h)
+        log(f"  [section:{sec['title']}] rendered at x={sx}, height={h}px")
 
     # ── Footer ────────────────────────────────────────────────────────────────
     footer_y    = sec_y + max_sec_h + 12
@@ -454,10 +547,12 @@ def render_card(data, output_path):
     ft_w = tw(draw, footer_text, fonts["footer"])
     draw.text(((W - ft_w) // 2, footer_y), footer_text,
               font=fonts["footer"], fill=GRAY_D)
+    log(f"  [footer] y={footer_y} text='{footer_text}'")
 
     # Crop and save
-    final_h = footer_y + 26
+    final_h = footer_y + 24
     img = img.crop((0, 0, W, final_h))
+    log(f"  [output] cropped to {W}x{final_h}")
 
     out = Image.new("RGB", img.size, BG_DARK)
     if img.mode == "RGBA":
@@ -465,6 +560,10 @@ def render_card(data, output_path):
     else:
         out.paste(img)
     out.save(output_path, "PNG", optimize=True)
+
+    elapsed = time.time() - t_start
+    file_kb = os.path.getsize(output_path) / 1024
+    log(f"=== render_card DONE in {elapsed:.2f}s — {output_path} ({file_kb:.1f} KB) ===")
     print(f"OK:{output_path}:{out.size[0]}x{out.size[1]}")
 
 # ── Entry point ───────────────────────────────────────────────────────────────
