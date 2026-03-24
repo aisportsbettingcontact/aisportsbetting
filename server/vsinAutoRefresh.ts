@@ -17,14 +17,14 @@
 
 import { listGamesByDate, updateBookOdds, insertGames, getGameByNcaaContestId, updateNcaaStartTime, updateAnOdds, insertOddsHistory, advanceBracketWinner } from "./db";
 import { fetchActionNetworkOdds, type AnSport } from "./actionNetworkScraper";
-import { scrapeVsinBettingSplits, type VsinSplitsGame } from "./vsinBettingSplitsScraper";
+import { scrapeVsinBettingSplits, scrapeVsinMlbBettingSplits, type VsinSplitsGame } from "./vsinBettingSplitsScraper";
 import { fetchNcaaGames, buildStartTimeMap } from "./ncaaScoreboard";
 import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "./nbaScoreboard";
 import { fetchNhlGamesForRange, buildNhlStartTimeMap, buildNhlGameMap, fetchNhlLiveScores, type NhlScheduleGame } from "./nhlSchedule";
 import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG, BY_AN_SLUG as NCAAM_BY_AN, getTeamByAnSlug as getNcaamTeamByAnSlug } from "../shared/ncaamTeams";
-import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG, getNbaTeamByVsinSlug } from "../shared/nbaTeams";
+import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG, getNbaTeamByVsinSlug, NBA_BY_DB_SLUG } from "../shared/nbaTeams";
 import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG, getNhlTeamByAnSlug, VSIN_NHL_HREF_ALIASES } from "../shared/nhlTeams";
-import { NBA_BY_DB_SLUG } from "../shared/nbaTeams";
+import { MLB_BY_ABBREV, MLB_BY_VSIN_SLUG, MLB_VALID_ABBREVS, getMlbTeamByAnSlug, getMlbTeamByVsinSlug, VSIN_MLB_HREF_ALIASES } from "../shared/mlbTeams";
 import type { InsertGame } from "../drizzle/schema";
 
 const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -747,6 +747,146 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
   return { updated: totalUpdated, inserted: totalInserted, scheduleInserted, total: vsinSplits.length };
 }
 
+// ─── MLB refresh ─────────────────────────────────────────────────────────────
+
+/**
+ * Refreshes MLB betting splits from VSiN for today's games.
+ *
+ * MLB teams are stored in the DB as abbreviations ("NYY", "SF") — NOT dbSlugs.
+ * VSiN uses single-word slugs ("yankees", "giants").
+ * Matching chain: VSiN slug → getMlbTeamByVsinSlug() → abbrev → DB lookup.
+ *
+ * Returns { updated, total } — non-fatal, errors are logged.
+ */
+async function refreshMlb(todayStr: string): Promise<{
+  updated: number;
+  total: number;
+}> {
+  const tag = "[refreshMlb]";
+  console.log(`${tag} ► START — today: ${todayStr}`);
+
+  // ── Step 1: Scrape VSiN MLB betting splits (dedicated MLB page) ───────────
+  // MLB uses a separate URL (data.vsin.com/mlb/betting-splits/) with different
+  // column order: Moneyline(1-3) → Total(4-6) → Run Line(7-9).
+  // The combined betting-splits page does NOT include MLB games.
+  let vsinSplits: VsinSplitsGame[] = [];
+  try {
+    vsinSplits = await scrapeVsinMlbBettingSplits();
+    console.log(`${tag} VSiN MLB splits fetched: ${vsinSplits.length} games from MLB-specific page`);
+    if (vsinSplits.length === 0) {
+      console.log(`${tag} No MLB games on VSiN today — splits update skipped`);
+    } else {
+      for (const g of vsinSplits) {
+        console.log(
+          `${tag} VSiN game: ${g.awayVsinSlug} @ ${g.homeVsinSlug} ` +
+          `| spread: ${g.spreadAwayBetsPct}%/${g.spreadAwayMoneyPct}% ` +
+          `| total: ${g.totalOverBetsPct}%/${g.totalOverMoneyPct}% ` +
+          `| ml: ${g.mlAwayBetsPct}%/${g.mlAwayMoneyPct}%`
+        );
+      }
+    }
+  } catch (err) {
+    console.warn(`${tag} VSiN MLB splits scrape failed (non-fatal):`, err);
+  }
+
+  // ── Step 2: Build VSiN slug → abbrev lookup map ────────────────────────────
+  // MLB teams stored as abbreviations in DB; VSiN uses single-word slugs.
+  // Both orderings stored so swapped home/away is handled transparently.
+  const vsinSplitsMap = new Map<string, { game: VsinSplitsGame; swapped: boolean }>();
+  for (const g of vsinSplits) {
+    const awayTeam = getMlbTeamByVsinSlug(g.awayVsinSlug);
+    const homeTeam = getMlbTeamByVsinSlug(g.homeVsinSlug);
+    if (awayTeam && homeTeam) {
+      // Key by abbreviation (how DB stores MLB teams)
+      vsinSplitsMap.set(`${awayTeam.abbrev}@${homeTeam.abbrev}`, { game: g, swapped: false });
+      vsinSplitsMap.set(`${homeTeam.abbrev}@${awayTeam.abbrev}`, { game: g, swapped: true });
+      console.log(
+        `${tag} Mapped VSiN splits: ${awayTeam.abbrev} @ ${homeTeam.abbrev} ` +
+        `(awaySlug="${g.awayVsinSlug}" homeSlug="${g.homeVsinSlug}")`
+      );
+    } else {
+      console.warn(
+        `${tag} UNRESOLVED VSiN slug: "${g.awayVsinSlug}" @ "${g.homeVsinSlug}" ` +
+        `— awayResolved=${!!awayTeam} homeResolved=${!!homeTeam} ` +
+        `— add to VSIN_MLB_HREF_ALIASES if this is a known alias`
+      );
+    }
+  }
+
+  // -- Step 3: Apply VSiN splits to today + tomorrow's DB games --
+  // VSiN's MLB page shows games for the next 1-2 days, so we query both
+  // today and tomorrow to ensure we catch games on either side of midnight.
+  let totalUpdated = 0;
+  const tomorrowStr = (() => {
+    const d = new Date(todayStr + "T12:00:00Z");
+    d.setUTCDate(d.getUTCDate() + 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const [todayGames, tomorrowGames] = await Promise.all([
+    listGamesByDate(todayStr, "MLB"),
+    listGamesByDate(tomorrowStr, "MLB"),
+  ]);
+  const existingToday = [...todayGames, ...tomorrowGames];
+  console.log(
+    `${tag} DB has ${todayGames.length} MLB games for ${todayStr}` +
+    ` + ${tomorrowGames.length} games for ${tomorrowStr}` +
+    ` = ${existingToday.length} total`
+  );
+
+  for (const dbGame of existingToday) {
+    const key = `${dbGame.awayTeam}@${dbGame.homeTeam}`;
+    const entry = vsinSplitsMap.get(key);
+    if (!entry) {
+      console.log(
+        `${tag} NO_VSIN_MATCH: ${dbGame.awayTeam} @ ${dbGame.homeTeam} ` +
+        `(gameId=${dbGame.id}) — not in VSiN splits today`
+      );
+      continue;
+    }
+    const { game: splits, swapped } = entry;
+
+    // Flip away/home percentages when VSiN and DB have teams in opposite order
+    const spreadAwayBetsPct = swapped
+      ? (splits.spreadAwayBetsPct != null ? 100 - splits.spreadAwayBetsPct : null)
+      : splits.spreadAwayBetsPct;
+    const spreadAwayMoneyPct = swapped
+      ? (splits.spreadAwayMoneyPct != null ? 100 - splits.spreadAwayMoneyPct : null)
+      : splits.spreadAwayMoneyPct;
+    const mlAwayBetsPct = swapped
+      ? (splits.mlAwayBetsPct != null ? 100 - splits.mlAwayBetsPct : null)
+      : splits.mlAwayBetsPct;
+    const mlAwayMoneyPct = swapped
+      ? (splits.mlAwayMoneyPct != null ? 100 - splits.mlAwayMoneyPct : null)
+      : splits.mlAwayMoneyPct;
+
+    await updateBookOdds(dbGame.id, {
+      spreadAwayBetsPct,
+      spreadAwayMoneyPct,
+      totalOverBetsPct: splits.totalOverBetsPct,
+      totalOverMoneyPct: splits.totalOverMoneyPct,
+      mlAwayBetsPct,
+      mlAwayMoneyPct,
+    });
+    totalUpdated++;
+
+    if (swapped) {
+      console.log(`${tag} SWAPPED: VSiN has ${splits.awayVsinSlug}@${splits.homeVsinSlug} but DB has ${dbGame.awayTeam}@${dbGame.homeTeam} — flipped percentages`);
+    }
+    console.log(
+      `${tag} Splits updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} ` +
+      `(gameId=${dbGame.id}) ` +
+      `| runLine: ${spreadAwayBetsPct}%/${spreadAwayMoneyPct}% ` +
+      `| total: ${splits.totalOverBetsPct}%/${splits.totalOverMoneyPct}% ` +
+      `| ml: ${mlAwayBetsPct}%/${mlAwayMoneyPct}%`
+    );
+  }
+
+  console.log(
+    `${tag} ✅ DONE — splits_updated=${totalUpdated} db_games=${existingToday.length} vsin_games=${vsinSplits.length}`
+  );
+  return { updated: totalUpdated, total: vsinSplits.length };
+}
+
 // ─── AN API DK Odds Auto-Population ──────────────────────────────────────────
 
 /**
@@ -774,7 +914,7 @@ async function refreshAnApiOdds(
 
   for (const sport of sports) {
     try {
-      const dbSport = sport === "nba" ? "NBA" : sport === "nhl" ? "NHL" : "NCAAM";
+      const dbSport = sport === "nba" ? "NBA" : sport === "nhl" ? "NHL" : sport === "mlb" ? "MLB" : "NCAAM";
       const anGames = await fetchActionNetworkOdds(sport, dateStr);
 
       if (anGames.length === 0) {
@@ -797,6 +937,27 @@ async function refreshAnApiOdds(
         } else if (sport === "nhl") {
           awayDbSlug = getNhlTeamByAnSlug(anGame.awayUrlSlug)?.dbSlug;
           homeDbSlug = getNhlTeamByAnSlug(anGame.homeUrlSlug)?.dbSlug;
+        } else if (sport === "mlb") {
+          // MLB teams are stored in DB as abbreviations ("NYY", "SF"), not dbSlugs.
+          // getMlbTeamByAnSlug resolves AN url_slug ("new-york-yankees") → MlbTeam → abbrev.
+          const awayMlb = getMlbTeamByAnSlug(anGame.awayUrlSlug);
+          const homeMlb = getMlbTeamByAnSlug(anGame.homeUrlSlug);
+          awayDbSlug = awayMlb?.abbrev;
+          homeDbSlug = homeMlb?.abbrev;
+          if (!awayMlb || !homeMlb) {
+            console.warn(
+              `[ANApiOdds][MLB] UNRESOLVED AN slug: "${anGame.awayUrlSlug}" @ "${anGame.homeUrlSlug}" ` +
+              `— awayResolved=${!!awayMlb} homeResolved=${!!homeMlb} ` +
+              `— add to MLB_AN_SLUG_ALIASES in mlbTeams.ts if this is a known alias`
+            );
+          } else {
+            console.log(
+              `[ANApiOdds][MLB] Resolved: "${anGame.awayUrlSlug}" → ${awayMlb.abbrev} | ` +
+              `"${anGame.homeUrlSlug}" → ${homeMlb.abbrev} | ` +
+              `runLine=${anGame.dkAwaySpread}/${anGame.dkHomeSpread} ` +
+              `total=${anGame.dkTotal} ml=${anGame.dkAwayML}/${anGame.dkHomeML}`
+            );
+          }
         } else {
           // NCAAM — use alias-aware helper so v2 slugs (e.g. "wichita-state-shockers",
           // "south-florida-bulls", "pennsylvania-quakers") resolve correctly
@@ -952,9 +1113,16 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
       `total=${nhlResult.total}`
     );
 
+    // MLB: refresh VSiN splits (non-fatal)
+    const mlbResult = await refreshMlb(todayStr);
+    console.log(
+      `[VSiNAutoRefresh] MLB VSiN splits: updated=${mlbResult.updated} total=${mlbResult.total}`
+    );
+
     // Auto-populate DK NJ current lines from Action Network API for today
     // (non-fatal — errors are logged but do not block the refresh)
-    const anOddsResult = await refreshAnApiOdds(todayStr, ["ncaab", "nba", "nhl"], "auto");
+    // MLB included: run line (spread), total, moneyline from AN DK NJ
+    const anOddsResult = await refreshAnApiOdds(todayStr, ["ncaab", "nba", "nhl", "mlb"], "auto");
     console.log(
       `[VSiNAutoRefresh] AN API DK odds: updated=${anOddsResult.updated} ` +
       `skipped=${anOddsResult.skipped} frozen=${anOddsResult.frozen} errors=${anOddsResult.errors.length}`
@@ -964,7 +1132,8 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
     const tomorrowStr = datePst(1);
     await runTomorrowSplitsUpdate(tomorrowStr);
     // Also populate tomorrow's DK odds from AN API (tomorrow games are never live, no freeze needed)
-    const anOddsTomorrow = await refreshAnApiOdds(tomorrowStr, ["ncaab", "nba", "nhl"], "auto");
+    // MLB included for tomorrow
+    const anOddsTomorrow = await refreshAnApiOdds(tomorrowStr, ["ncaab", "nba", "nhl", "mlb"], "auto");
     console.log(
       `[VSiNAutoRefresh] AN API DK odds (tomorrow): updated=${anOddsTomorrow.updated} ` +
       `skipped=${anOddsTomorrow.skipped} frozen=${anOddsTomorrow.frozen} errors=${anOddsTomorrow.errors.length}`
@@ -1078,6 +1247,7 @@ async function refreshNcaamScores(): Promise<void> {
 }
 
 const SCORE_INTERVAL_MS = 15 * 1000; // 15 seconds
+const MLB_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — MLB scores + splits + AN odds
 
 /**
  * Refreshes NBA live/final scores and game status from the NBA live scoreboard API.
@@ -1158,11 +1328,37 @@ async function refreshNhlScores(): Promise<void> {
 }
 
 /**
- * Runs NCAAM, NBA, and NHL score refreshes immediately.
+ * MLB score refresh — fetches live scores from MLB Stats API for today.
+ * Runs every 10 minutes (same interval as MLB odds/splits refresh).
+ */
+async function refreshMlbScoresNow(): Promise<void> {
+  const todayStr = datePst();
+  try {
+    const { refreshMlbScores } = await import("./mlbScoreRefresh");
+    const result = await refreshMlbScores(todayStr);
+    console.log(
+      `[ScoreRefresh][MLB] ✅ ${todayStr}: updated=${result.updated} unchanged=${result.unchanged} ` +
+      `noMatch=${result.noMatch} errors=${result.errors.length}`
+    );
+    if (result.errors.length > 0) {
+      console.warn(`[ScoreRefresh][MLB] Errors:`, result.errors);
+    }
+  } catch (err) {
+    console.warn("[ScoreRefresh][MLB] MLB score refresh failed (non-fatal):", err);
+  }
+}
+
+/**
+ * Runs NCAAM, NBA, NHL, and MLB score refreshes immediately.
  * Exported so it can be triggered manually from the admin panel.
  */
 export async function refreshAllScoresNow(): Promise<void> {
-  await Promise.allSettled([refreshNcaamScores(), refreshNbaScores(), refreshNhlScores()]);
+  await Promise.allSettled([
+    refreshNcaamScores(),
+    refreshNbaScores(),
+    refreshNhlScores(),
+    refreshMlbScoresNow(),
+  ]);
   lastScoresRefreshedAt = new Date().toISOString();
   // Patch scoresRefreshedAt into the last refresh result so the UI can show it
   if (lastRefreshResult) {
@@ -1180,7 +1376,7 @@ export async function refreshAllScoresNow(): Promise<void> {
  *                are refreshed (legacy full-refresh behaviour).
  */
 export async function runVsinRefreshManual(
-  sport?: "NCAAM" | "NBA" | "NHL"
+  sport?: "NCAAM" | "NBA" | "NHL" | "MLB"
 ): Promise<RefreshResult | null> {
   const todayStr = datePst();
   const sportLabel = sport ?? "ALL";
@@ -1199,10 +1395,11 @@ export async function runVsinRefreshManual(
     const rangeEnd = datePst(RANGE_DAYS_AHEAD);
     const allDates = dateRange(todayStr, rangeEnd);
 
-    // ── Per-sport VSiN splits + schedule refresh ──────────────────────────────
+    // ── Per-sport VSiN splits + schedule refresh ──────────────────────────────────────────
     const doNcaam = !sport || sport === "NCAAM";
     const doNba   = !sport || sport === "NBA";
     const doNhl   = !sport || sport === "NHL";
+    const doMlb   = !sport || sport === "MLB";
 
     let ncaamResult = { updated: 0, inserted: 0, ncaaInserted: 0, total: 0 };
     let nbaResult   = { updated: 0, inserted: 0, scheduleInserted: 0, total: 0 };
@@ -1249,6 +1446,19 @@ export async function runVsinRefreshManual(
     if (doNcaam) anSports.push("ncaab");
     if (doNba)   anSports.push("nba");
     if (doNhl)   anSports.push("nhl");
+    if (doMlb)   anSports.push("mlb");
+
+    // MLB VSiN splits refresh (manual)
+    if (doMlb) {
+      console.log(`[VSiNAutoRefresh][MANUAL][MLB] ── Refreshing MLB VSiN splits…`);
+      const mlbResult = await refreshMlb(todayStr);
+      console.log(
+        `[VSiNAutoRefresh][MANUAL][MLB] ✓ MLB VSiN splits done — ` +
+        `updated=${mlbResult.updated} total=${mlbResult.total}`
+      );
+    } else {
+      console.log(`[VSiNAutoRefresh][MANUAL][${sportLabel}] Skipping MLB VSiN refresh (not in scope)`);
+    }
 
     console.log(
       `[VSiNAutoRefresh][MANUAL][${sportLabel}] ── AN API DK odds refresh for sports: [${anSports.join(", ")}]…`
@@ -1362,6 +1572,7 @@ export function startVsinAutoRefresh() {
   }, INTERVAL_MS);
 
   // 15-second score refresh (runs independently of the hourly full refresh)
+  // NCAAM, NBA, NHL only — MLB has its own 10-minute cycle below
   setInterval(() => {
     if (isWithinActiveHours()) {
       void refreshNcaamScores();
@@ -1370,5 +1581,83 @@ export function startVsinAutoRefresh() {
     }
   }, SCORE_INTERVAL_MS);
 
-  console.log("[VSiNAutoRefresh] Scheduler started — every 60 min (3am–midnight PST) + score refresh every 15 sec.");
+  // ─── MLB 10-minute refresh cycle ──────────────────────────────────────────────
+  // Runs every 10 minutes during active hours:
+  //   1. MLB Stats API live scores (runs, hits, errors, inning, status, pitchers)
+  //   2. VSiN MLB betting splits (run line, total, ML percentages)
+  //   3. Action Network DK NJ odds (run line, total, ML lines)
+  //
+  // Fires immediately on startup so MLB data is never stale after a restart.
+  // Non-fatal: each step is isolated; errors in one do not block the others.
+  const runMlbCycle = async () => {
+    if (!isWithinActiveHours()) {
+      console.log("[MLBCycle] Tick skipped — outside active hours (3am–midnight PST).");
+      return;
+    }
+    const todayStr = datePst();
+    console.log(`[MLBCycle] ► START — ${new Date().toISOString()} | date: ${todayStr}`);
+
+    // Step 1: Live scores from MLB Stats API
+    try {
+      await refreshMlbScoresNow();
+    } catch (err) {
+      console.warn("[MLBCycle] Score refresh failed (non-fatal):", err);
+    }
+
+    // Step 2: VSiN betting splits (run line, total, ML percentages)
+    try {
+      const mlbSplitsResult = await refreshMlb(todayStr);
+      console.log(
+        `[MLBCycle] VSiN splits: updated=${mlbSplitsResult.updated} total=${mlbSplitsResult.total}`
+      );
+    } catch (err) {
+      console.warn("[MLBCycle] VSiN splits refresh failed (non-fatal):", err);
+    }
+
+    // Step 3: AN DK NJ odds (run line spread, total, moneyline)
+    // Fetch both today AND tomorrow — MLB games are often seeded a day ahead
+    // (e.g. today=March 24 but the game is on March 25).
+    // Freeze is respected: live/final games are skipped so pre-game lines are locked.
+    const mlbTomorrowStr = (() => {
+      const d = new Date(todayStr + "T12:00:00Z");
+      d.setUTCDate(d.getUTCDate() + 1);
+      return d.toISOString().slice(0, 10);
+    })();
+    try {
+      const [anToday, anTomorrow] = await Promise.all([
+        refreshAnApiOdds(todayStr, ["mlb"], "auto"),
+        refreshAnApiOdds(mlbTomorrowStr, ["mlb"], "auto"),
+      ]);
+      const totalUpdated = anToday.updated + anTomorrow.updated;
+      const totalSkipped = anToday.skipped + anTomorrow.skipped;
+      const totalFrozen = anToday.frozen + anTomorrow.frozen;
+      const allErrors = [...anToday.errors, ...anTomorrow.errors];
+      console.log(
+        `[MLBCycle] AN DK odds: updated=${totalUpdated} skipped=${totalSkipped} ` +
+        `frozen=${totalFrozen} errors=${allErrors.length}` +
+        ` (today=${anToday.updated} tomorrow=${anTomorrow.updated})`
+      );
+      if (allErrors.length > 0) {
+        console.warn("[MLBCycle] AN odds errors:", allErrors);
+      }
+    } catch (err) {
+      console.warn("[MLBCycle] AN odds refresh failed (non-fatal):", err);
+    }
+
+    console.log(`[MLBCycle] ✅ DONE — ${new Date().toISOString()}`);
+  };
+
+  // Fire MLB cycle immediately on startup
+  void runMlbCycle();
+
+  // Then repeat every 10 minutes
+  setInterval(() => {
+    void runMlbCycle();
+  }, MLB_INTERVAL_MS);
+
+  console.log(
+    "[VSiNAutoRefresh] Scheduler started — " +
+    "NCAAM/NBA/NHL: every 60 min (3am–midnight PST) + score refresh every 15 sec | " +
+    "MLB: every 10 min (scores + VSiN splits + AN DK NJ odds)"
+  );
 }

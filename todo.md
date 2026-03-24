@@ -1895,3 +1895,22 @@
 - [x] Update column header in ModelProjections.tsx for MLB: "RUN LINE" instead of "SPREAD"
 - [x] Add MLB choice to Discord /splits command sport filter
 - [x] Fix root cause of "Unknown column" DB errors: columns were already in DB, errors were from before migration was applied
+
+## MLB Live Data Infrastructure (2026-03-24)
+- [x] Build mlbScoreRefresh.ts — live scores from MLB Stats API with deep structured logging
+- [x] Build scrapeVsinMlbBettingSplits() in vsinBettingSplitsScraper.ts — MLB-specific URL + column mapping (ML→Total→RL)
+- [x] Add refreshMlb() function in vsinAutoRefresh.ts — VSiN splits + AN odds wired together
+- [x] Wire MLB into 10-minute MLBCycle cron in vsinAutoRefresh.ts (separate from hourly NCAAM/NBA/NHL cron)
+- [x] Add MLB to refreshAnApiOdds() — team resolution via getMlbTeamByAnSlug() → abbrev → DB match
+- [x] Add MLB to triggerRefresh procedure in routers.ts
+- [x] Verify all three pipelines fire correctly and update DB on schedule
+
+## MLB Splits Fix (2026-03-24)
+- [x] Diagnosed: VSiN MLB uses dedicated URL (data.vsin.com/mlb/betting-splits/) not combined page
+- [x] Fixed: MLB column order is ML(1-3) → Total(4-6) → RL(7-9), opposite of NBA/NHL order
+- [x] Fixed: VSIN_MLB_HREF_ALIASES now includes all 30 full hyphenated slugs (new-york-yankees etc.)
+- [x] Fixed: refreshMlb queries both today + tomorrow DB games (MLB games seeded a day ahead)
+- [x] Fixed: MLBCycle AN odds fetches both today + tomorrow dates in parallel
+- [x] Fixed: mlbScoreRefresh team resolution uses MLB_BY_ID.get(team.id)?.abbrev (API has no abbreviation field)
+- [x] Fixed: mlbScoreRefresh probablePitcher path uses teams.away.probablePitcher (not game.probablePitchers)
+- [x] VERIFIED: NYY @ SF (2026-03-25) — runLine=-1.5/+1.5, total=7, ml=-123/+101, splits 77%/84% RL bets/handle ✅

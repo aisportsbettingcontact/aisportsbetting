@@ -407,11 +407,47 @@ export const MLB_VALID_ABBREVS = new Set<string>(MLB_TEAMS.map((t) => t.abbrev))
  * Format: { "alternate-slug": "canonical-vsin-slug" }
  */
 export const VSIN_MLB_HREF_ALIASES: Record<string, string> = {
+  // ── Multi-word short-form aliases (combined betting-splits page) ──────────
   "red-sox": "redsox",
   "white-sox": "whitesox",
   "blue-jays": "bluejays",
   "d-backs": "dbacks",
   "diamondbacks": "dbacks",
+
+  // ── Full hyphenated slugs (MLB-specific page: data.vsin.com/mlb/betting-splits/) ──
+  // These match the anSlug format exactly (e.g. "new-york-yankees" → "yankees")
+  "new-york-yankees": "yankees",
+  "boston-red-sox": "redsox",
+  "tampa-bay-rays": "rays",
+  "toronto-blue-jays": "bluejays",
+  "baltimore-orioles": "orioles",
+  "chicago-white-sox": "whitesox",
+  "cleveland-guardians": "guardians",
+  "detroit-tigers": "tigers",
+  "kansas-city-royals": "royals",
+  "minnesota-twins": "twins",
+  "houston-astros": "astros",
+  "los-angeles-angels": "angels",
+  "oakland-athletics": "athletics",
+  "sacramento-athletics": "athletics",
+  "athletics": "athletics",
+  "seattle-mariners": "mariners",
+  "texas-rangers": "rangers",
+  "atlanta-braves": "braves",
+  "miami-marlins": "marlins",
+  "new-york-mets": "mets",
+  "philadelphia-phillies": "phillies",
+  "washington-nationals": "nationals",
+  "chicago-cubs": "cubs",
+  "cincinnati-reds": "reds",
+  "milwaukee-brewers": "brewers",
+  "pittsburgh-pirates": "pirates",
+  "st-louis-cardinals": "cardinals",
+  "arizona-diamondbacks": "dbacks",
+  "colorado-rockies": "rockies",
+  "los-angeles-dodgers": "dodgers",
+  "san-diego-padres": "padres",
+  "san-francisco-giants": "giants",
 };
 
 // ─── AN slug aliases ──────────────────────────────────────────────────────────

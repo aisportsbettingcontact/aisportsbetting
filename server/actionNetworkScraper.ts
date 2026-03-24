@@ -39,7 +39,7 @@
  *   "nhl"   = NHL
  */
 
-export type AnSport = "ncaab" | "nba" | "nhl";
+export type AnSport = "ncaab" | "nba" | "nhl" | "mlb";
 
 export interface AnGameOdds {
   /** Action Network internal game ID */
@@ -263,10 +263,11 @@ const AN_HEADERS = {
  *   - All NCAAB D1 games (Ivy League, conference tournaments, etc.)
  *   - All NBA games
  *   - All NHL games
+ *   - All MLB games (run line = spread, total, moneyline)
  *
  * Unlike the v1 API, v2 never silently drops games.
  *
- * @param sport  - "ncaab", "nba", or "nhl"
+ * @param sport  - "ncaab", "nba", "nhl", or "mlb"
  * @param date   - Date string in YYYY-MM-DD format (e.g. "2026-03-15")
  * @returns Array of AnGameOdds for ALL games that day (Open + DK NJ fields populated where available).
  */
@@ -278,9 +279,18 @@ export async function fetchActionNetworkOdds(
   const dateParam = date.replace(/-/g, "");
 
   // Build URL — NCAAB needs division=D1 to get all D1 games
+  // MLB uses the same v2 endpoint with no extra params
   const extraParams =
     sport === "ncaab" ? "&division=D1&tournament=0" : "";
   const url = `${AN_V2_BASE}/${sport}?bookIds=${BOOK_IDS}&date=${dateParam}&periods=event${extraParams}`;
+
+  // Log MLB specifically since it's a new integration
+  if (sport === "mlb") {
+    console.log(
+      `[ActionNetwork][v2][MLB] Fetching MLB run line + total + ML odds for ${date}` +
+      ` | bookIds=${BOOK_IDS} (30=Open, 68=DK NJ, 69=FD NJ)`
+    );
+  }
 
   console.log(
     `[ActionNetwork][v2] Fetching ${sport.toUpperCase()} Open + DK NJ odds for ${date} ...`

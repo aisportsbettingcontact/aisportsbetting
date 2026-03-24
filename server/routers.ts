@@ -590,7 +590,7 @@ export const appRouter = router({
     triggerRefresh: ownerProcedure
       .input(
         z.object({
-          sport: z.enum(["NCAAM", "NBA", "NHL"]).optional(),
+          sport: z.enum(["NCAAM", "NBA", "NHL", "MLB"]).optional(),
         }).optional()
       )
       .mutation(async ({ input }) => {

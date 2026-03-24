@@ -484,6 +484,13 @@ export async function updateBookOdds(
     homeSpreadOdds?: string | null;
     overOdds?: string | null;
     underOdds?: string | null;
+    // MLB pitcher fields
+    awayStartingPitcher?: string | null;
+    homeStartingPitcher?: string | null;
+    awayPitcherConfirmed?: boolean | null;
+    homePitcherConfirmed?: boolean | null;
+    // MLB game PK (Stats API unique game identifier)
+    mlbGamePk?: number | null;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -508,6 +515,12 @@ export async function updateBookOdds(
   if (data.homeSpreadOdds !== undefined) updateData.homeSpreadOdds = data.homeSpreadOdds;
   if (data.overOdds !== undefined) updateData.overOdds = data.overOdds;
   if (data.underOdds !== undefined) updateData.underOdds = data.underOdds;
+  // MLB pitcher fields
+  if (data.awayStartingPitcher !== undefined) updateData.awayStartingPitcher = data.awayStartingPitcher;
+  if (data.homeStartingPitcher !== undefined) updateData.homeStartingPitcher = data.homeStartingPitcher;
+  if (data.awayPitcherConfirmed !== undefined) updateData.awayPitcherConfirmed = data.awayPitcherConfirmed;
+  if (data.homePitcherConfirmed !== undefined) updateData.homePitcherConfirmed = data.homePitcherConfirmed;
+  if (data.mlbGamePk !== undefined) updateData.mlbGamePk = data.mlbGamePk;
   await db.update(games).set(updateData).where(eq(games.id, id));
 }
 
