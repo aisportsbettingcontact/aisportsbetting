@@ -16,6 +16,7 @@ import {
 } from "discord.js";
 import { ENV } from "../_core/env";
 import { handleSplitsCommand } from "./splitsCommand";
+import { enrichTeamRegistryFromDb } from "./teamRegistry";
 
 let botClient: Client | null = null;
 
@@ -32,6 +33,10 @@ export function startDiscordBot(): void {
   client.once(Events.ClientReady, (readyClient) => {
     console.log(`[SplitsBot] ✅ Logged in as ${readyClient.user.tag}`);
     console.log(`[SplitsBot] Guild: ${ENV.discordGuildId}`);
+    // Enrich team registry with abbrevs and colors from DB
+    enrichTeamRegistryFromDb().catch((err) =>
+      console.error('[SplitsBot] Team registry enrichment failed:', err)
+    );
   });
 
   client.on(Events.InteractionCreate, async (interaction) => {
