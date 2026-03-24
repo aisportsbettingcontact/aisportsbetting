@@ -1914,3 +1914,18 @@
 - [x] Fixed: mlbScoreRefresh team resolution uses MLB_BY_ID.get(team.id)?.abbrev (API has no abbreviation field)
 - [x] Fixed: mlbScoreRefresh probablePitcher path uses teams.away.probablePitcher (not game.probablePitchers)
 - [x] VERIFIED: NYY @ SF (2026-03-25) — runLine=-1.5/+1.5, total=7, ml=-123/+101, splits 77%/84% RL bets/handle ✅
+
+## MLB Tab Order + Opening Day (2026-03-24)
+- [ ] Move MLB tab before NHL in ModelProjections.tsx sport selector
+- [ ] Update auto-switch fallback order: MLB first
+- [ ] Publish all March 25 MLB games to feed (publishedToFeed=1)
+- [ ] Verify feed shows March 25 MLB games when MLB tab is selected
+
+## MLB Tab Order + Opening Day (2026-03-24)
+- [x] Move MLB pill before NHL in ModelProjections.tsx (feed) sport selector
+- [x] Move MLB button before NHL in PublishProjections.tsx sport selector
+- [x] Seed all 2,430 MLB regular season games (March 25 - September 27, 2026) into DB
+- [x] Publish March 25 (NYY @ SF) and March 26 (11 games) to feed
+- [x] Add 7-day rolling window filter to listGames() for MLB (prevents 2430-game payload)
+- [x] Update getActiveSports() to use 7-day window for MLB tab visibility
+- [x] Auto-advance selectedDate to first available date when current date has no games (MLB opening day fix)

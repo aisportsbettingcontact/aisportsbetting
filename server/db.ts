@@ -212,6 +212,17 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }): P
 
   if (opts?.sport) conditions.push(eq(games.sport, opts.sport));
 
+  // For MLB: apply a 7-day rolling window (today through today+6) since the full season
+  // (2,430 games) is pre-seeded and we don't want to transfer all of them on every query.
+  // Other sports use VSiN-driven insertion so they only have current/upcoming games in DB.
+  if (opts?.sport === 'MLB' && !opts?.gameDate) {
+    const todayUtc = new Date().toISOString().slice(0, 10);
+    const plusSeven = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    conditions.push(gte(games.gameDate, todayUtc));
+    conditions.push(lte(games.gameDate, plusSeven));
+    console.log(`[DB][listGames] MLB 7-day window: ${todayUtc} → ${plusSeven}`);
+  }
+
   // Public feed: show all games that have live VSiN odds (regardless of publishedToFeed)
   // MLB games are seeded from the schedule and may not have odds yet — show them regardless
   if (opts?.sport !== 'MLB') {
@@ -1248,11 +1259,20 @@ export async function getActiveSports(): Promise<{ NBA: boolean; NHL: boolean; N
   const tomorrowUTC = tomorrowDate.toISOString().slice(0, 10);
   const dateFilter = or(eq(games.gameDate, todayUTC), eq(games.gameDate, tomorrowUTC))!;
 
-  // NBA, NHL, MLB: any game on today/tomorrow (odds optional for MLB since we seed schedule ahead)
+  // MLB uses a 7-day window since the full season is pre-seeded
+  const plusSevenDate = new Date(now);
+  plusSevenDate.setUTCDate(plusSevenDate.getUTCDate() + 7);
+  const plusSevenUTC = plusSevenDate.toISOString().slice(0, 10);
+  const mlbDateFilter = and(gte(games.gameDate, todayUTC), lte(games.gameDate, plusSevenUTC))!;
+
+  // NBA, NHL: any game on today/tomorrow; MLB: any game in next 7 days
   const proRows = await db
     .select({ sport: games.sport })
     .from(games)
-    .where(and(dateFilter, or(eq(games.sport, 'NBA'), eq(games.sport, 'NHL'), eq(games.sport, 'MLB'))!))
+    .where(or(
+      and(dateFilter, or(eq(games.sport, 'NBA'), eq(games.sport, 'NHL'))!),
+      and(mlbDateFilter, eq(games.sport, 'MLB'))
+    )!)
     .groupBy(games.sport);
   const proActive = new Set(proRows.map((r: { sport: string }) => r.sport));
 

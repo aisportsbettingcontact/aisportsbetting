@@ -490,6 +490,17 @@ export default function ModelProjections() {
     return Array.from(dateSet).sort();
   }, [allGames]);
 
+  // Auto-advance to the first available date when the current selectedDate has no games.
+  // This handles MLB opening day: today is March 24 but first game is March 25.
+  useEffect(() => {
+    if (!allGames || allGames.length === 0 || allDates.length === 0) return;
+    const hasGamesOnDate = allGames.some(g => g && effectiveGameDate(g.gameDate, g.startTimeEst) === selectedDate);
+    if (!hasGamesOnDate && allDates.length > 0) {
+      console.log(`[Feed] No games on ${selectedDate} for ${selectedSport} — advancing to ${allDates[0]}`);
+      setSelectedDate(allDates[0]!);
+    }
+  }, [allGames, allDates, selectedDate, selectedSport]);
+
   const games = useMemo(() => {
     if (!allGames) return allGames;
     let working = selectedStatuses.size === 0 ? allGames : allGames.filter(g => selectedStatuses.has(g?.gameStatus as "upcoming" | "live" | "final"));
@@ -865,6 +876,15 @@ export default function ModelProjections() {
             isAdmin={isOwner || user?.role === "admin"}
           />
 
+          {/* MLB pill — only shown when MLB has games today or tomorrow */}
+          {(!activeSports || activeSports.MLB) && (
+            <button onClick={() => setSelectedSport("MLB")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+              style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "MLB" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+              <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
+              MLB
+            </button>
+          )}
+
           {/* NHL pill — only shown when NHL has games today or tomorrow */}
           {(!activeSports || activeSports.NHL) && (
             <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
@@ -888,15 +908,6 @@ export default function ModelProjections() {
             <button onClick={() => setSelectedSport("NCAAM")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
               style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NCAAM" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
               NCAAM
-            </button>
-          )}
-
-          {/* MLB pill — only shown when MLB has games today or tomorrow */}
-          {(!activeSports || activeSports.MLB) && (
-            <button onClick={() => setSelectedSport("MLB")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-              style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "MLB" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-              <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
-              MLB
             </button>
           )}
 
