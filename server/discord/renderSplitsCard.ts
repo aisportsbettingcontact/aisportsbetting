@@ -4,17 +4,59 @@
  * Uses Playwright (headless Chromium) to render the splits_card.html template
  * with injected game data and screenshot it to a PNG buffer.
  *
- * The HTML template is self-contained — it loads Barlow Condensed from Google
- * Fonts and renders the exact same card design as the frontend feed.
+ * Logos are pre-fetched server-side and embedded as base64 data URIs so
+ * Playwright never needs to make outbound network requests for images.
  */
 
 import { chromium, type Browser } from "playwright";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
+import https from "https";
+import http from "http";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_PATH = path.join(__dirname, "splits_card.html");
+
+// ─── Logo cache: URL → base64 data URI ───────────────────────────────────────
+const _logoCache = new Map<string, string>();
+
+/**
+ * Fetches a logo URL and returns a base64 data URI.
+ * Results are cached in memory so each logo is only fetched once per process.
+ */
+async function fetchLogoAsDataUri(url: string): Promise<string | null> {
+  if (_logoCache.has(url)) return _logoCache.get(url)!;
+  return new Promise((resolve) => {
+    const client = url.startsWith("https") ? https : http;
+    const req = client.get(url, { timeout: 5000 }, (res) => {
+      if (res.statusCode !== 200) {
+        console.warn(`[SplitsRenderer] Logo fetch failed (${res.statusCode}): ${url}`);
+        resolve(null);
+        return;
+      }
+      const contentType = res.headers["content-type"] || "image/svg+xml";
+      const chunks: Buffer[] = [];
+      res.on("data", (chunk: Buffer) => chunks.push(chunk));
+      res.on("end", () => {
+        const b64 = Buffer.concat(chunks).toString("base64");
+        const dataUri = `data:${contentType};base64,${b64}`;
+        _logoCache.set(url, dataUri);
+        console.log(`[SplitsRenderer] Logo cached: ${url.split("/").slice(-3).join("/")} (${b64.length} chars)`);
+        resolve(dataUri);
+      });
+    });
+    req.on("error", (err: Error) => {
+      console.warn(`[SplitsRenderer] Logo fetch error: ${url} — ${err.message}`);
+      resolve(null);
+    });
+    req.on("timeout", () => {
+      req.destroy();
+      console.warn(`[SplitsRenderer] Logo fetch timeout: ${url}`);
+      resolve(null);
+    });
+  });
+}
 
 // ─── Singleton browser instance (reused across all renders) ──────────────────
 let _browser: Browser | null = null;
@@ -92,11 +134,41 @@ export async function renderSplitsCard(data: SplitsCardData): Promise<Buffer> {
   const t0 = Date.now();
   console.log(`[SplitsRenderer] Rendering: ${data.away.abbr} @ ${data.home.abbr} (${data.league})`);
 
+  // Pre-fetch logos server-side and replace URLs with base64 data URIs
+  // so Playwright never needs to make outbound network requests for images
+  const enrichedData = {
+    ...data,
+    away: { ...data.away },
+    home: { ...data.home },
+  };
+
+  if (data.away.logoUrl) {
+    const dataUri = await fetchLogoAsDataUri(data.away.logoUrl);
+    if (dataUri) {
+      enrichedData.away.logoUrl = dataUri;
+      console.log(`[SplitsRenderer] Away logo embedded: ${data.away.abbr}`);
+    } else {
+      console.warn(`[SplitsRenderer] Away logo unavailable, using abbr fallback: ${data.away.abbr}`);
+      enrichedData.away.logoUrl = undefined;
+    }
+  }
+
+  if (data.home.logoUrl) {
+    const dataUri = await fetchLogoAsDataUri(data.home.logoUrl);
+    if (dataUri) {
+      enrichedData.home.logoUrl = dataUri;
+      console.log(`[SplitsRenderer] Home logo embedded: ${data.home.abbr}`);
+    } else {
+      console.warn(`[SplitsRenderer] Home logo unavailable, using abbr fallback: ${data.home.abbr}`);
+      enrichedData.home.logoUrl = undefined;
+    }
+  }
+
   // 1. Read template HTML
   const templateHtml = fs.readFileSync(TEMPLATE_PATH, "utf-8");
 
-  // 2. Inject game JSON into the placeholder
-  const gameJson = JSON.stringify(data);
+  // 2. Inject enriched game JSON (with base64 logos) into the placeholder
+  const gameJson = JSON.stringify(enrichedData);
   const html = templateHtml.replace("__GAME_JSON__", gameJson.replace(/</g, "\\u003c"));
 
   // 3. Open page and set content
@@ -104,14 +176,14 @@ export async function renderSplitsCard(data: SplitsCardData): Promise<Buffer> {
   const page = await browser.newPage();
 
   // Capture browser console messages for debugging
-  page.on('console', (msg) => {
-    if (msg.type() === 'error') {
+  page.on("console", (msg) => {
+    if (msg.type() === "error") {
       console.error(`[SplitsRenderer][BrowserConsole] ${msg.text()}`);
-    } else {
+    } else if (msg.type() !== "log") {
       console.log(`[SplitsRenderer][BrowserConsole] ${msg.type()}: ${msg.text()}`);
     }
   });
-  page.on('pageerror', (err) => {
+  page.on("pageerror", (err) => {
     console.error(`[SplitsRenderer][PageError] ${err.message}`);
   });
 
@@ -119,7 +191,7 @@ export async function renderSplitsCard(data: SplitsCardData): Promise<Buffer> {
     // Set viewport to match card width + padding
     await page.setViewportSize({ width: 860, height: 600 });
 
-    // Load Google Fonts by setting content with a base URL so relative resources work
+    // Load HTML — logos are embedded as data URIs, no external requests needed
     await page.setContent(html, { waitUntil: "networkidle" });
 
     // Wait for fonts to be ready
@@ -127,8 +199,10 @@ export async function renderSplitsCard(data: SplitsCardData): Promise<Buffer> {
 
     // Debug: check if card has content
     const cardHtml = await page.evaluate(() => {
-      const el = document.getElementById('splits-card');
-      return el ? `height=${el.offsetHeight} children=${el.children.length} innerHTML_len=${el.innerHTML.length}` : 'NOT FOUND';
+      const el = document.getElementById("splits-card");
+      return el
+        ? `height=${el.offsetHeight} children=${el.children.length} innerHTML_len=${el.innerHTML.length}`
+        : "NOT FOUND";
     });
     console.log(`[SplitsRenderer]   Card state: ${cardHtml}`);
 

@@ -101,16 +101,17 @@
   .tinfo { display: flex; flex-direction: column; }
   .tinfo.right { align-items: flex-end; }
 
-  /* Team city name uses the display color (already contrast-safe from pickColor) */
+  /* Team city name — always white for readability */
   .tname {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 20px; font-weight: 700;
     letter-spacing: 0.3px; line-height: 1.1;
+    color: #ffffff;
   }
-  .tname-away { color: var(--away-primary); }
-  .tname-home { color: var(--home-primary); }
+  .tname-away { color: #ffffff; }
+  .tname-home { color: #ffffff; }
 
-  .tfull { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; margin-top: 2px; }
+  .tfull { font-size: 10px; color: rgba(255,255,255,0.70); letter-spacing: 0.5px; margin-top: 2px; }
 
   .tbadge {
     display: inline-flex; align-items: center;
@@ -120,23 +121,23 @@
     margin-top: 5px; width: fit-content;
   }
   .badge-away {
-    background: rgba(255,255,255,0.06);
-    color: var(--away-primary);
-    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.10);
+    color: #ffffff;
+    border: 1px solid rgba(255,255,255,0.20);
   }
   .badge-home {
-    background: rgba(255,255,255,0.06);
-    color: var(--home-primary);
-    border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.10);
+    color: #ffffff;
+    border: 1px solid rgba(255,255,255,0.20);
   }
 
   .vblk { text-align: center; }
   .vat {
     font-family: 'Barlow Condensed', sans-serif;
-    font-size: 11px; color: var(--muted2);
+    font-size: 11px; color: rgba(255,255,255,0.55);
     letter-spacing: 4px; text-transform: uppercase;
   }
-  .gmeta { font-size: 10px; color: var(--muted2); margin-top: 4px; letter-spacing: 0.5px; }
+  .gmeta { font-size: 10px; color: rgba(255,255,255,0.55); margin-top: 4px; letter-spacing: 0.5px; }
 
   .glive {
     display: inline-flex; align-items: center; gap: 5px;
@@ -166,12 +167,12 @@
     padding: 12px 13px 13px;
   }
 
-  /* Section title — plain white, no border, centered */
+  /* Section title — bright white, no border, centered */
   .sgt {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 11px; font-weight: 700;
     letter-spacing: 3px; text-transform: uppercase;
-    color: rgba(255,255,255,0.75);
+    color: #ffffff;
     text-align: center;
     margin-bottom: 10px;
   }
@@ -192,24 +193,24 @@
     font-size: 24px; font-weight: 800;
     letter-spacing: -1px; line-height: 1;
   }
-  /* Line values use the display color — already contrast-safe */
-  .lval.away  { color: var(--away-primary); }
-  .lval.home  { color: var(--home-primary); }
-  .lval.over  { color: var(--neon-over);   }
-  .lval.under { color: var(--neon-under);  }
+  /* Line values — always white for readability */
+  .lval.away  { color: #ffffff; }
+  .lval.home  { color: #ffffff; }
+  .lval.over  { color: #ffffff; }
+  .lval.under { color: #ffffff; }
 
   .llbl {
-    font-size: 9px; color: var(--muted);
+    font-size: 9px; color: rgba(255,255,255,0.55);
     text-transform: uppercase; letter-spacing: 1.5px; margin-top: 3px;
   }
-  .lsep { font-size: 10px; color: var(--border2); }
+  .lsep { font-size: 10px; color: rgba(255,255,255,0.25); }
 
   /* ── Split bars ── */
   .flow-section { margin-bottom: 6px; }
   .flow-section:last-child { margin-bottom: 0; }
 
   .flow-type {
-    font-size: 9px; color: rgba(255,255,255,0.40);
+    font-size: 9px; color: rgba(255,255,255,0.65);
     font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
     display: block; margin-bottom: 4px;
   }
@@ -232,7 +233,7 @@
   .outside-left, .outside-right {
     font-family: 'Barlow Condensed', sans-serif;
     font-size: 12px; font-weight: 800;
-    color: rgba(255,255,255,0.75);
+    color: #ffffff;
     white-space: nowrap;
     flex-shrink: 0;
   }
