@@ -54,7 +54,7 @@ export interface MlbLineupRow {
 // ─── MLB headshot CDN ──────────────────────────────────────────────────────────
 const mlbPhoto = (id: number | null | undefined): string | null => {
   if (!id) return null;
-  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_60,q_auto:best/v1/people/${id}/headshot/67/current`;
+  return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_120,q_auto:best/v1/people/${id}/headshot/67/current`;
 };
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; s
           src={url}
           alt=""
           loading="lazy"
-          style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }}
+          style={{ width: "130%", height: "130%", objectFit: "cover", objectPosition: "center 20%", marginTop: "-8%", marginLeft: "-15%" }}
           onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
         />
       ) : (
@@ -276,6 +276,8 @@ function LineupRows({ players, align }: { players: LineupPlayer[]; align: "left"
     );
   }
 
+  const isRight = align === "right";
+
   return (
     <div style={{ padding: "10px 14px" }}>
       {players.map((p, i) => (
@@ -287,37 +289,60 @@ function LineupRows({ players, align }: { players: LineupPlayer[]; align: "left"
             gap: 7,
             padding: "5px 0",
             borderBottom: i < players.length - 1 ? "1px solid rgba(24,36,51,0.6)" : "none",
-            flexDirection: align === "right" ? "row-reverse" : "row",
+            // Both sides use left-to-right order; home side content is right-aligned via flex
+            flexDirection: "row",
+            justifyContent: isRight ? "flex-end" : "flex-start",
           }}
         >
-          <span
-            style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#3A5A7A",
-              minWidth: 14,
-              flexShrink: 0,
-              textAlign: align === "right" ? "left" : "right",
-            }}
-          >
-            {p.battingOrder}
-          </span>
-          <PlayerAvatar mlbamId={p.mlbamId} size={28} />
-          <span
-            style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize: 10,
-              fontWeight: 700,
-              letterSpacing: "0.5px",
-              textTransform: "uppercase",
-              color: "#3A5A7A",
-              minWidth: 22,
-              flexShrink: 0,
-            }}
-          >
-            {p.position}
-          </span>
+          {/* Away (left) layout: number | photo | position | name | bats */}
+          {/* Home (right) layout: bats | name | position | photo | number — true mirror */}
+
+          {/* Batting order number — left side of away, right side of home */}
+          {!isRight && (
+            <span
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#3A5A7A",
+                minWidth: 14,
+                flexShrink: 0,
+                textAlign: "right",
+              }}
+            >
+              {p.battingOrder}
+            </span>
+          )}
+
+          {/* Bats indicator — only on home side, leftmost position */}
+          {isRight && (
+            <span style={{ fontSize: 9, color: "#3A5A7A", fontWeight: 600, flexShrink: 0, minWidth: 10, textAlign: "right" }}>
+              {p.bats}
+            </span>
+          )}
+
+          {/* Photo — left of position/name on away; right of name/position on home */}
+          {!isRight && <PlayerAvatar mlbamId={p.mlbamId} size={32} />}
+
+          {/* Position badge */}
+          {!isRight && (
+            <span
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.5px",
+                textTransform: "uppercase",
+                color: "#3A5A7A",
+                minWidth: 22,
+                flexShrink: 0,
+              }}
+            >
+              {p.position}
+            </span>
+          )}
+
+          {/* Player name — flex-1 to fill space */}
           <span
             style={{
               fontFamily: "'Barlow Condensed', sans-serif",
@@ -328,13 +353,57 @@ function LineupRows({ players, align }: { players: LineupPlayer[]; align: "left"
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
+              textAlign: isRight ? "right" : "left",
             }}
           >
             {p.name}
           </span>
-          <span style={{ fontSize: 9, color: "#3A5A7A", fontWeight: 600, flexShrink: 0 }}>
-            {p.bats}
-          </span>
+
+          {/* Position badge — home side: after name */}
+          {isRight && (
+            <span
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: 10,
+                fontWeight: 700,
+                letterSpacing: "0.5px",
+                textTransform: "uppercase",
+                color: "#3A5A7A",
+                minWidth: 22,
+                flexShrink: 0,
+                textAlign: "left",
+              }}
+            >
+              {p.position}
+            </span>
+          )}
+
+          {/* Photo — home side: after position */}
+          {isRight && <PlayerAvatar mlbamId={p.mlbamId} size={32} />}
+
+          {/* Batting order number — home side: rightmost */}
+          {isRight && (
+            <span
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#3A5A7A",
+                minWidth: 14,
+                flexShrink: 0,
+                textAlign: "left",
+              }}
+            >
+              {p.battingOrder}
+            </span>
+          )}
+
+          {/* Bats indicator — away side: rightmost */}
+          {!isRight && (
+            <span style={{ fontSize: 9, color: "#3A5A7A", fontWeight: 600, flexShrink: 0, minWidth: 10 }}>
+              {p.bats}
+            </span>
+          )}
         </div>
       ))}
     </div>

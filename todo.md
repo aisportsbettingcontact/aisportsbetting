@@ -1944,3 +1944,5 @@
 - [x] Populate mlbamId for pitchers and batters via mlb_players name lookup in upsertLineupsToDB
 - [x] Add generational suffix stripping (Jr./Sr./II/III) to name normalizer for better matching
 - [x] Re-scrape Rotowire lineups: all 9 NYY batters now have full names + mlbamIds
+- [ ] Fix MlbLineupCard home side row layout: mirror away side (number → photo → position → name → bats, right-aligned)
+- [ ] Zoom out player headshot photos slightly (reduce objectPosition crop)
