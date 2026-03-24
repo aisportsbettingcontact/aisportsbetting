@@ -23,7 +23,7 @@ import { fetchNbaGamesForDate, buildNbaStartTimeMap, fetchNbaLiveScores } from "
 import { fetchNhlGamesForRange, buildNhlStartTimeMap, buildNhlGameMap, fetchNhlLiveScores, type NhlScheduleGame } from "./nhlSchedule";
 import { VALID_DB_SLUGS, BY_DB_SLUG, BY_VSIN_SLUG, BY_AN_SLUG as NCAAM_BY_AN, getTeamByAnSlug as getNcaamTeamByAnSlug } from "../shared/ncaamTeams";
 import { NBA_VALID_DB_SLUGS, NBA_BY_VSIN_SLUG, NBA_BY_AN_SLUG, getNbaTeamByVsinSlug } from "../shared/nbaTeams";
-import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG, getNhlTeamByAnSlug } from "../shared/nhlTeams";
+import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NHL_BY_AN_SLUG, getNhlTeamByAnSlug, VSIN_NHL_HREF_ALIASES } from "../shared/nhlTeams";
 import { NBA_BY_DB_SLUG } from "../shared/nbaTeams";
 import type { InsertGame } from "../drizzle/schema";
 
@@ -31,6 +31,30 @@ const INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 
 // Rolling window: today through N days ahead
 const RANGE_DAYS_AHEAD = 6; // fetch today + 6 more days = 7-day window
+
+/**
+ * Resolve a raw VSiN NHL href slug to an NhlTeam entry.
+ * Applies VSIN_NHL_HREF_ALIASES FIRST (e.g. "ny-islanders" → "new-york-islanders")
+ * before looking up in NHL_BY_VSIN_SLUG.
+ *
+ * This is the ONLY place NHL VSiN slug resolution should happen in this file.
+ * Adding aliases to VSIN_NHL_HREF_ALIASES in shared/nhlTeams.ts is all that’s
+ * ever needed to fix future VSiN slug mismatches.
+ */
+function resolveNhlVsinSlug(rawSlug: string) {
+  const canonical = VSIN_NHL_HREF_ALIASES[rawSlug] ?? rawSlug;
+  const team = NHL_BY_VSIN_SLUG.get(canonical);
+  if (!team) {
+    console.warn(
+      `[VSiNAutoRefresh][NHL] resolveNhlVsinSlug: unknown slug "${rawSlug}"` +
+      (canonical !== rawSlug ? ` (aliased from "${rawSlug}" → "${canonical}")` : "") +
+      " — game will be skipped. Add to VSIN_NHL_HREF_ALIASES if this is a known alias."
+    );
+  } else if (canonical !== rawSlug) {
+    console.log(`[VSiNAutoRefresh][NHL] resolveNhlVsinSlug: alias resolved "${rawSlug}" → "${canonical}" → dbSlug="${team.dbSlug}"`);
+  }
+  return team;
+}
 
 export interface RefreshResult {
   refreshedAt: string;       // ISO timestamp of last VSiN odds/splits refresh
@@ -203,8 +227,8 @@ async function runTomorrowSplitsUpdate(tomorrowStr: string): Promise<void> {
       const existingNhl = await listGamesByDate(tomorrowStr, "NHL");
       let updated = 0;
       for (const g of nhlSplits) {
-        const awayTeam = NHL_BY_VSIN_SLUG.get(g.awayVsinSlug);
-        const homeTeam = NHL_BY_VSIN_SLUG.get(g.homeVsinSlug);
+        const awayTeam = resolveNhlVsinSlug(g.awayVsinSlug);
+        const homeTeam = resolveNhlVsinSlug(g.homeVsinSlug);
         if (!awayTeam || !homeTeam) continue;
         let dbGame = existingNhl.find(e => e.awayTeam === awayTeam.dbSlug && e.homeTeam === homeTeam.dbSlug);
         let teamsSwapped = false;
@@ -597,13 +621,12 @@ async function refreshNhl(todayStr: string, allDates: string[]): Promise<{
   // Build a map: dbSlug pair → VsinSplitsGame for fast lookup (both orderings)
   const vsinSplitsMap = new Map<string, { game: VsinSplitsGame; swapped: boolean }>();
   for (const g of vsinSplits) {
-    const awayTeam = NHL_BY_VSIN_SLUG.get(g.awayVsinSlug);
-    const homeTeam = NHL_BY_VSIN_SLUG.get(g.homeVsinSlug);
+    const awayTeam = resolveNhlVsinSlug(g.awayVsinSlug);
+    const homeTeam = resolveNhlVsinSlug(g.homeVsinSlug);
     if (awayTeam && homeTeam) {
       vsinSplitsMap.set(`${awayTeam.dbSlug}@${homeTeam.dbSlug}`, { game: g, swapped: false });
       vsinSplitsMap.set(`${homeTeam.dbSlug}@${awayTeam.dbSlug}`, { game: g, swapped: true });
-    } else {
-      console.log(`[VSiNAutoRefresh][NHL] Unknown VSiN slug: ${g.awayVsinSlug} @ ${g.homeVsinSlug}`);
+      console.log(`[VSiNAutoRefresh][NHL] Mapped splits: ${awayTeam.dbSlug} @ ${homeTeam.dbSlug} (awayVsinSlug="${g.awayVsinSlug}" homeVsinSlug="${g.homeVsinSlug}")`);
     }
   }
 

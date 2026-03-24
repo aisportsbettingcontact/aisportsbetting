@@ -1785,3 +1785,22 @@
 - [x] Over bar: now uses CSS var(--away-primary) — matches away team color
 - [x] Under bar: now uses CSS var(--home-primary) — matches home team color
 - [x] Verified via test render: MIL(green) Over / LAC(blue) Under display correctly
+
+## /splits Command Channel Targeting (2026-03-24)
+- [ ] Audit splitsCommand.ts: find where target channel is set (hardcoded vs interaction.channelId)
+- [ ] Update execute() to post cards to interaction.channelId (the channel where /splits was run)
+- [ ] Add detailed logging: log channelId, gameCount, and per-card success/failure
+- [ ] Verify TypeScript compiles cleanly
+
+## /splits Channel Targeting + NYI/NYR Fix (2026-03-24)
+- [x] Fix stray backtick syntax error on summary line in splitsCommand.ts (auto-fixed by file tool)
+- [x] /splits posts to interaction.channelId (channel where command was run) — removed hardcoded SPLITS_CHANNEL_ID
+- [x] Deep debug NYI/NYR splits loading failure:
+      ROOT CAUSE: vsinAutoRefresh.ts used raw NHL_BY_VSIN_SLUG.get(g.awayVsinSlug) without applying
+      VSIN_NHL_HREF_ALIASES first. VSiN page sends "ny-islanders" and "ny-rangers" but the map
+      is keyed on "new-york-islanders" and "new-york-rangers". Silent miss = NULL splits every time.
+- [x] Fix: added resolveNhlVsinSlug() helper that applies VSIN_NHL_HREF_ALIASES before map lookup
+- [x] Replaced both raw NHL_BY_VSIN_SLUG.get() call sites (today + tomorrow blocks) with resolveNhlVsinSlug()
+- [x] Added detailed alias-resolution logging to confirm matches in server logs
+- [x] Zero raw NHL_BY_VSIN_SLUG.get() calls remain in the codebase
+- [x] Future aliases: add to VSIN_NHL_HREF_ALIASES in shared/nhlTeams.ts only — no code changes needed elsewhere

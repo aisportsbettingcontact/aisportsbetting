@@ -27,7 +27,6 @@ import { renderSplitsCard, closeSplitsRenderer, type SplitsCardData, type Splits
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ALLOWED_USER_ID   = "1098485718734602281";
-const SPLITS_CHANNEL_ID = "1400758184188186744";
 const IMAGE_DELAY_MS    = 1_500;
 
 // ─── Structured logger ────────────────────────────────────────────────────────
@@ -389,22 +388,16 @@ export async function handleSplitsCommand(
   }
   log("input", `Sport filter: ${sportFilter}${gameFilter ? ` | Game filter: ${gameFilter}` : ""}`);
 
-  // 3. Resolve target channel
-  log("channel", `Fetching channel ${SPLITS_CHANNEL_ID}`);
-  let channel: TextChannel;
-  try {
-    const ch = await client.channels.fetch(SPLITS_CHANNEL_ID);
-    if (!ch || !ch.isTextBased()) {
-      throw new Error(`Channel ${SPLITS_CHANNEL_ID} is not a text channel`);
-    }
-    channel = ch as TextChannel;
-    log("channel", `Resolved: #${channel.name} in guild ${channel.guild?.name ?? "?"}`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log("channel", `Fetch failed: ${msg}`, "error");
-    await interaction.editReply(`❌ Could not access the target channel: ${msg}`);
+  // 3. Resolve target channel — use the channel where the command was invoked
+  log("channel", `Resolving channel from interaction: channelId=${interaction.channelId}`);
+  const rawChannel = interaction.channel;
+  if (!rawChannel || !rawChannel.isTextBased()) {
+    log("channel", `Channel ${interaction.channelId} is not a text-based channel or is unavailable`, "error");
+    await interaction.editReply("❌ Could not post here — this channel is not a text channel.");
     return;
   }
+  const channel = rawChannel as TextChannel;
+  log("channel", `Resolved: #${channel.name ?? interaction.channelId} in guild ${channel.guild?.name ?? "DM/unknown"}`);
 
   // 4. Fetch splits data
   log("fetch", "Fetching daily splits from DB...");
@@ -519,7 +512,7 @@ export async function handleSplitsCommand(
   // 7. Ephemeral summary
   const totalMs = Date.now() - t0;
   const summary = [
-    `✅ Posted **${posted}/${games.length}** split images to <#${SPLITS_CHANNEL_ID}>`,
+    `✅ Posted **${posted}/${games.length}** split image(s) to <#${interaction.channelId}>`,
     `📅 Date: **${dateLabel}**`,
     `⏱ Completed in **${(totalMs / 1000).toFixed(1)}s**`,
     errors.length > 0
