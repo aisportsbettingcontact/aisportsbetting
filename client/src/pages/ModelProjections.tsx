@@ -255,7 +255,7 @@ export default function ModelProjections() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NCAAM");
+  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL" | "MLB">("NCAAM");
 
   // Query which sports have games today or tomorrow (UTC) — hides pills with no games
   const { data: activeSports } = trpc.games.activeSports.useQuery(undefined, {
@@ -265,10 +265,10 @@ export default function ModelProjections() {
   // Auto-switch away from a sport with no games once activeSports loads
   useEffect(() => {
     if (!activeSports) return;
-    const sportActive = activeSports[selectedSport as 'NBA' | 'NHL' | 'NCAAM'];
+    const sportActive = activeSports[selectedSport as 'NBA' | 'NHL' | 'NCAAM' | 'MLB'];
     if (!sportActive) {
-      // Pick the first active sport in display order: NHL → NBA → NCAAM
-      const fallback = (['NHL', 'NBA', 'NCAAM'] as const).find(s => activeSports[s]);
+      // Pick the first active sport in display order: MLB → NHL → NBA → NCAAM
+      const fallback = (['MLB', 'NHL', 'NBA', 'NCAAM'] as const).find(s => activeSports[s]);
       if (fallback) setSelectedSport(fallback);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -871,6 +871,15 @@ export default function ModelProjections() {
             </button>
           )}
 
+          {/* MLB pill — only shown when MLB has games today or tomorrow */}
+          {(!activeSports || activeSports.MLB) && (
+            <button onClick={() => setSelectedSport("MLB")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+              style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "MLB" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+              <img src="https://www.mlbstatic.com/team-logos/league-logos/mlb.svg" alt="MLB" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
+              MLB
+            </button>
+          )}
+
           {/* Search bar — always visible, shrinks when Favorites button is present */}
           {/* Mobile: min-w-[28px] so it always shows at least the icon; flex-1 fills remaining space */}
           <div className="flex-1 min-w-0" style={{ minWidth: 28 }}>
@@ -950,7 +959,7 @@ export default function ModelProjections() {
                   whiteSpace: 'nowrap',
                   flexShrink: 0,
                 }}
-              >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : selectedSport === 'NBA' ? 'NBA BASKETBALL' : 'NHL HOCKEY'}</span>
+              >{selectedSport === 'NCAAM' ? "MEN'S COLLEGE BASKETBALL" : selectedSport === 'NBA' ? 'NBA BASKETBALL' : selectedSport === 'MLB' ? 'MLB BASEBALL' : 'NHL HOCKEY'}</span>
             </div>
           </div>
         )}
@@ -1023,7 +1032,7 @@ export default function ModelProjections() {
           {/* Right: SPREAD/PUCK LINE | TOTAL | ML labels aligned to card columns */}
           <div style={{ padding: '4px 6px', display: 'flex', alignItems: 'center', gap: '5px' }}>
             <div style={{ display: 'flex', gap: '5px', flex: '1 1 0', minWidth: 0 }}>
-              {[selectedSport === 'NHL' ? 'PUCK LINE' : 'SPREAD', 'TOTAL', 'ML'].map(h => (
+              {[selectedSport === 'NHL' ? 'PUCK LINE' : selectedSport === 'MLB' ? 'RUN LINE' : 'SPREAD', 'TOTAL', 'ML'].map(h => (
                 <div key={h} style={{ flex: '1 1 0', textAlign: 'center' }}>
                   <span style={{ fontSize: 'clamp(7.5px, 1.9vw, 9px)', fontWeight: 700, color: 'rgba(255,255,255,0.55)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{h}</span>
                 </div>

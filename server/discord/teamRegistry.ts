@@ -6,6 +6,7 @@
 import { NCAAM_TEAMS } from "@shared/ncaamTeams";
 import { NBA_TEAMS } from "@shared/nbaTeams";
 import { NHL_TEAMS } from "@shared/nhlTeams";
+import { MLB_TEAMS } from "@shared/mlbTeams";
 import { getDb } from "../db";
 import { nbaTeams, nhlTeams } from "../../drizzle/schema";
 
@@ -146,12 +147,29 @@ function fallback(dbSlug: string): TeamEntry {
   };
 }
 
+// MLB — all data from shared registry
+const mlbByDbSlug = new Map<string, TeamEntry>();
+for (const t of MLB_TEAMS) {
+  mlbByDbSlug.set(t.dbSlug, {
+    displayName: t.name,
+    city: t.city,               // e.g. "New York", "Los Angeles"
+    nickname: t.nickname,       // e.g. "Yankees", "Dodgers"
+    abbrev: t.abbrev,
+    logoUrl: t.logoUrl,
+    primaryColor: t.primaryColor,
+    secondaryColor: t.secondaryColor,
+    tertiaryColor: t.tertiaryColor ?? t.secondaryColor,
+  });
+}
+
 export function resolveTeam(dbSlug: string, sport: string): TeamEntry {
   switch (sport.toUpperCase()) {
     case "NBA":
       return nbaByDbSlug.get(dbSlug) ?? fallback(dbSlug);
     case "NHL":
       return nhlByDbSlug.get(dbSlug) ?? fallback(dbSlug);
+    case "MLB":
+      return mlbByDbSlug.get(dbSlug) ?? fallback(dbSlug);
     default:
       return ncaamByDbSlug.get(dbSlug) ?? fallback(dbSlug);
   }

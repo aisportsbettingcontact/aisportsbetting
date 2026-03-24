@@ -213,7 +213,10 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }): P
   if (opts?.sport) conditions.push(eq(games.sport, opts.sport));
 
   // Public feed: show all games that have live VSiN odds (regardless of publishedToFeed)
-  conditions.push(or(isNotNull(games.awayBookSpread), isNotNull(games.bookTotal))!);
+  // MLB games are seeded from the schedule and may not have odds yet — show them regardless
+  if (opts?.sport !== 'MLB') {
+    conditions.push(or(isNotNull(games.awayBookSpread), isNotNull(games.bookTotal))!);
+  }
 
   const rows = await db
     .select()
@@ -1222,26 +1225,26 @@ export async function auditAndAdvanceAllBracketWinners(): Promise<number> {
  * Returns which sports have at least one game with live odds on today's UTC date
  * or tomorrow's UTC date. Used by the frontend to hide sport tabs with no upcoming games.
  */
-export async function getActiveSports(): Promise<{ NBA: boolean; NHL: boolean; NCAAM: boolean }> {
+export async function getActiveSports(): Promise<{ NBA: boolean; NHL: boolean; NCAAM: boolean; MLB: boolean }> {
   const db = await getDb();
-  if (!db) return { NBA: false, NHL: false, NCAAM: false };
+  if (!db) return { NBA: false, NHL: false, NCAAM: false, MLB: false };
   const now = new Date();
   const todayUTC = now.toISOString().slice(0, 10);
   const tomorrowDate = new Date(now);
   tomorrowDate.setUTCDate(tomorrowDate.getUTCDate() + 1);
   const tomorrowUTC = tomorrowDate.toISOString().slice(0, 10);
   const dateFilter = or(eq(games.gameDate, todayUTC), eq(games.gameDate, tomorrowUTC))!;
-  const oddsFilter = or(isNotNull(games.awayBookSpread), isNotNull(games.bookTotal))!;
 
-  // NBA and NHL: any game with live odds on today/tomorrow
-  const nbaHlRows = await db
+  // NBA, NHL, MLB: any game on today/tomorrow (odds optional for MLB since we seed schedule ahead)
+  const proRows = await db
     .select({ sport: games.sport })
     .from(games)
-    .where(and(dateFilter, oddsFilter, or(eq(games.sport, 'NBA'), eq(games.sport, 'NHL'))!))
+    .where(and(dateFilter, or(eq(games.sport, 'NBA'), eq(games.sport, 'NHL'), eq(games.sport, 'MLB'))!))
     .groupBy(games.sport);
-  const nhlNbaActive = new Set(nbaHlRows.map((r: { sport: string }) => r.sport));
+  const proActive = new Set(proRows.map((r: { sport: string }) => r.sport));
 
   // NCAAM: only bracket games (March Madness tournament) count — regular season games are ignored
+  const oddsFilter = or(isNotNull(games.awayBookSpread), isNotNull(games.bookTotal))!;
   const ncaamRows = await db
     .select({ sport: games.sport })
     .from(games)
@@ -1249,10 +1252,11 @@ export async function getActiveSports(): Promise<{ NBA: boolean; NHL: boolean; N
     .limit(1);
   const ncaamActive = ncaamRows.length > 0;
 
-  console.log(`[activeSports] todayUTC=${todayUTC} tomorrowUTC=${tomorrowUTC} NBA=${nhlNbaActive.has('NBA')} NHL=${nhlNbaActive.has('NHL')} NCAAM=${ncaamActive}`);
+  console.log(`[activeSports] todayUTC=${todayUTC} tomorrowUTC=${tomorrowUTC} NBA=${proActive.has('NBA')} NHL=${proActive.has('NHL')} MLB=${proActive.has('MLB')} NCAAM=${ncaamActive}`);
   return {
-    NBA: nhlNbaActive.has('NBA'),
-    NHL: nhlNbaActive.has('NHL'),
+    NBA: proActive.has('NBA'),
+    NHL: proActive.has('NHL'),
+    MLB: proActive.has('MLB'),
     NCAAM: ncaamActive,
   };
 }

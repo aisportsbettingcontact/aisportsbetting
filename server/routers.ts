@@ -36,6 +36,7 @@ import { MARCH_MADNESS_DB_SLUGS } from "@shared/marchMadnessTeams";
 import { parseAnAllMarketsHtml, type AnSport } from "./anHtmlParser";
 import { NBA_VALID_DB_SLUGS, NBA_TEAMS } from "@shared/nbaTeams";
 import { NHL_VALID_DB_SLUGS, NHL_TEAMS } from "@shared/nhlTeams";
+import { MLB_BY_ABBREV, MLB_VALID_DB_SLUGS } from "@shared/mlbTeams";
 
 /** Returns true if both teams are in the appropriate registry for the given sport */
 function isValidGame(awayTeam: string, homeTeam: string, sport?: string | null): boolean {
@@ -44,6 +45,9 @@ function isValidGame(awayTeam: string, homeTeam: string, sport?: string | null):
   }
   if (sport === "NHL") {
     return NHL_VALID_DB_SLUGS.has(awayTeam) && NHL_VALID_DB_SLUGS.has(homeTeam);
+  }
+  if (sport === "MLB") {
+    return MLB_VALID_DB_SLUGS.has(awayTeam) && MLB_VALID_DB_SLUGS.has(homeTeam);
   }
   // NCAAM: only show March Madness bracket teams
   return MARCH_MADNESS_DB_SLUGS.has(awayTeam) && MARCH_MADNESS_DB_SLUGS.has(homeTeam);

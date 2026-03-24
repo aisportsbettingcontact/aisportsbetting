@@ -53,6 +53,7 @@ export const splitsCommandData = new SlashCommandBuilder()
       .setRequired(false)
       .addChoices(
         { name: "ALL Sports",  value: "ALL" },
+        { name: "MLB",         value: "MLB" },
         { name: "NBA",         value: "NBA" },
         { name: "NHL",         value: "NHL" },
         { name: "NCAAM",       value: "NCAAM" },

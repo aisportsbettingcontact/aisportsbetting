@@ -10,6 +10,7 @@ import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
 import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
+import { MLB_BY_ABBREV } from "@shared/mlbTeams";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -24,7 +25,7 @@ function formatMilitaryTime(time: string | null | undefined, sport?: string): st
   if (isNaN(h) || isNaN(m)) return "TBD";
   const suffix = h >= 12 ? "PM" : "AM";
   const hour12 = h % 12 === 0 ? 12 : h % 12;
-  const tz = sport === "NCAAM" ? "PST" : "EST";
+  const tz = sport === "NCAAM" ? "PST" : "ET";
   return `${hour12}:${String(m).padStart(2, "0")} ${suffix} ${tz}`;
 }
 
@@ -58,8 +59,9 @@ function TeamBadge({ slug, size = 22 }: { slug: string; size?: number }) {
   const ncaa = getTeamByDbSlug(slug);
   const nba = !ncaa ? getNbaTeamByDbSlug(slug) : null;
   const nhl = (!ncaa && !nba) ? NHL_BY_DB_SLUG.get(slug) ?? null : null;
-  const logo = ncaa?.logoUrl ?? nba?.logoUrl ?? nhl?.logoUrl;
-  const initials = (ncaa?.ncaaName ?? nba?.name ?? nhl?.name ?? slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
+  const mlb = (!ncaa && !nba && !nhl) ? MLB_BY_ABBREV.get(slug) ?? null : null;
+  const logo = ncaa?.logoUrl ?? nba?.logoUrl ?? nhl?.logoUrl ?? mlb?.logoUrl;
+  const initials = (ncaa?.ncaaName ?? nba?.name ?? nhl?.name ?? mlb?.name ?? slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
   return (
     <div
       className="rounded overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0"
@@ -84,13 +86,15 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   const homeNba = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
   const awayNhl = (!awayNcaa && !awayNba) ? NHL_BY_DB_SLUG.get(game.awayTeam) ?? null : null;
   const homeNhl = (!homeNcaa && !homeNba) ? NHL_BY_DB_SLUG.get(game.homeTeam) ?? null : null;
-  // For NBA/NHL: show city on line 1, nickname on line 2
-  const awaySchool = awayNcaa?.ncaaName ?? awayNba?.city ?? awayNhl?.city ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const awayNick = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? awayNhl?.nickname ?? "";
-  const homeSchool = homeNcaa?.ncaaName ?? homeNba?.city ?? homeNhl?.city ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const homeNick = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? homeNhl?.nickname ?? "";
+  const awayMlb = (!awayNcaa && !awayNba && !awayNhl) ? MLB_BY_ABBREV.get(game.awayTeam) ?? null : null;
+  const homeMlb = (!homeNcaa && !homeNba && !homeNhl) ? MLB_BY_ABBREV.get(game.homeTeam) ?? null : null;
+  // For NBA/NHL/MLB: show city on line 1, nickname on line 2
+  const awaySchool = awayNcaa?.ncaaName ?? awayNba?.city ?? awayNhl?.city ?? awayMlb?.city ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const awayNick = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? awayNhl?.nickname ?? awayMlb?.nickname ?? "";
+  const homeSchool = homeNcaa?.ncaaName ?? homeNba?.city ?? homeNhl?.city ?? homeMlb?.city ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const homeNick = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? homeNhl?.nickname ?? homeMlb?.nickname ?? "";
   // Determine sport from team lookup if not directly available
-  const sport = game.sport ?? (awayNcaa ? "NCAAM" : awayNba ? "NBA" : "NHL");
+  const sport = game.sport ?? (awayNcaa ? "NCAAM" : awayNba ? "NBA" : awayMlb ? "MLB" : "NHL");
   const time = formatMilitaryTime(game.startTimeEst, sport);
   const dateShort = formatDateShort(game.gameDate);
 
@@ -138,7 +142,7 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NCAAM");
+  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL" | "MLB">("NCAAM");
   // Multi-select status filter: empty Set = ALL
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
   const [searchQuery, setSearchQuery] = useState("");
@@ -551,6 +555,24 @@ export default function Dashboard() {
             />
             NHL
           </button>
+          {/* MLB button */}
+          <button
+            onClick={() => setSelectedSport("MLB")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+            style={selectedSport === "MLB"
+              ? { background: "rgba(0,45,114,0.25)", color: "#E31837", border: "1px solid rgba(227,24,55,0.5)" }
+              : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
+            }
+          >
+            <img
+              src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg"
+              alt="MLB"
+              width={16}
+              height={16}
+              style={{ opacity: selectedSport === "MLB" ? 1 : 0.5 }}
+            />
+            MLB
+          </button>
           {/* Splits timestamp — pushed to the right */}
           <div className="ml-auto flex items-center gap-1.5">
             <Clock style={{ width: 11, height: 11, flexShrink: 0, color: "#39FF14" }} />
@@ -717,7 +739,7 @@ export default function Dashboard() {
                   <span
                     className="font-semibold"
                     style={{ color: '#a3a3a3', letterSpacing: '0.06em', fontSize: 'clamp(9px, 2.8vw, 17px)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
-                  >{selectedSport === 'NCAAM' ? 'NCAA MARCH MADNESS' : selectedSport === 'NBA' ? 'NBA BASKETBALL' : 'NHL HOCKEY'}</span>
+                  >{selectedSport === 'NCAAM' ? 'NCAA MARCH MADNESS' : selectedSport === 'NBA' ? 'NBA BASKETBALL' : selectedSport === 'MLB' ? 'MLB BASEBALL' : 'NHL HOCKEY'}</span>
                 </div>
                 <div className="flex-1" />
               </div>

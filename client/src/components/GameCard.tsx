@@ -28,6 +28,7 @@ import type { AppRouter } from "@/lib/trpc";
 import { getTeamByDbSlug } from "@shared/ncaamTeams";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
 import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
+import { MLB_BY_ABBREV } from "@shared/mlbTeams";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
@@ -48,8 +49,8 @@ function formatMilitaryTime(time: string, sport?: string): string {
   if (isNaN(hours)) return "TBD";
   const ampm = hours >= 12 ? "PM" : "AM";
   hours = hours % 12 || 12;
-  // NCAAM uses PST; NBA and NHL use EST
-  const tz = sport === "NCAAM" ? "PST" : "EST";
+  // NCAAM uses PST; NBA, NHL, and MLB use ET
+  const tz = sport === "NCAAM" ? "PST" : "ET";
   return `${hours}:${minutes} ${ampm} ${tz}`;
 }
 
@@ -849,6 +850,7 @@ function DesktopMergedPanel({
   // For NHL/NCAAM games, append model odds in parentheses
   const isNhlGame   = game.sport === 'NHL';
   const isNcaamGame = game.sport === 'NCAAM';
+  const isMlbGame   = game.sport === 'MLB';
   const mdlAwayPLOdds = game.modelAwayPLOdds ?? null;
   const mdlHomePLOdds = game.modelHomePLOdds ?? null;
   const mdlOverOdds   = game.modelOverOdds ?? null;
@@ -1960,6 +1962,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const homeBookSpread = toNum(game.homeBookSpread);
   const isNhlGame   = game.sport === 'NHL';
   const isNcaamGame = game.sport === 'NCAAM';
+  const isMlbGame   = game.sport === 'MLB';
   // For NHL: use modelAwayPuckLine/modelHomePuckLine (simulation-derived, e.g. "+1.5"/"-1.5")
   // instead of awayModelSpread/homeModelSpread (which may contain stale goal-differential values).
   // For NCAAM/NBA: use awayModelSpread/homeModelSpread as before.
@@ -2030,14 +2033,16 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const homeNba  = !homeNcaa ? getNbaTeamByDbSlug(game.homeTeam) : null;
   const awayNhl  = (!awayNcaa && !awayNba) ? NHL_BY_DB_SLUG.get(game.awayTeam) ?? null : null;
   const homeNhl  = (!homeNcaa && !homeNba) ? NHL_BY_DB_SLUG.get(game.homeTeam) ?? null : null;
+  const awayMlb  = (!awayNcaa && !awayNba && !awayNhl) ? MLB_BY_ABBREV.get(game.awayTeam) ?? null : null;
+  const homeMlb  = (!homeNcaa && !homeNba && !homeNhl) ? MLB_BY_ABBREV.get(game.homeTeam) ?? null : null;
   // Normalize city abbreviations: "LA" → "Los Angeles" (defensive, DB should already have full name)
   const normCity = (c: string | undefined) => c === 'LA' ? 'Los Angeles' : c;
-  const awayName = awayNcaa?.ncaaName ?? normCity(awayNba?.city) ?? awayNhl?.city ?? game.awayTeam.replace(/_/g, " ");
-  const homeName = homeNcaa?.ncaaName ?? normCity(homeNba?.city) ?? homeNhl?.city ?? game.homeTeam.replace(/_/g, " ");
-  const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? awayNhl?.nickname ?? "";
-  const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? homeNhl?.nickname ?? "";
-  const awayLogoUrl = awayNcaa?.logoUrl ?? awayNba?.logoUrl ?? awayNhl?.logoUrl;
-  const homeLogoUrl = homeNcaa?.logoUrl ?? homeNba?.logoUrl ?? homeNhl?.logoUrl;
+  const awayName = awayNcaa?.ncaaName ?? normCity(awayNba?.city) ?? awayNhl?.city ?? awayMlb?.city ?? game.awayTeam.replace(/_/g, " ");
+  const homeName = homeNcaa?.ncaaName ?? normCity(homeNba?.city) ?? homeNhl?.city ?? homeMlb?.city ?? game.homeTeam.replace(/_/g, " ");
+  const awayNickname = awayNcaa?.ncaaNickname ?? awayNba?.nickname ?? awayNhl?.nickname ?? awayMlb?.nickname ?? "";
+  const homeNickname = homeNcaa?.ncaaNickname ?? homeNba?.nickname ?? homeNhl?.nickname ?? homeMlb?.nickname ?? "";
+  const awayLogoUrl = awayNcaa?.logoUrl ?? awayNba?.logoUrl ?? awayNhl?.logoUrl ?? awayMlb?.logoUrl;
+  const homeLogoUrl = homeNcaa?.logoUrl ?? homeNba?.logoUrl ?? homeNhl?.logoUrl ?? homeMlb?.logoUrl;
 
   const time = formatMilitaryTime(game.startTimeEst, game.sport);
   // NCAAM uses PST — no midnight date-shift needed (00:00 is no longer used for NCAAM).
@@ -2506,6 +2511,54 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
           </span>
         )}
       </div>
+
+      {/* MLB-specific metadata: venue, broadcaster, starting pitchers */}
+      {isMlbGame && isUpcoming && (
+        <div className="flex flex-col gap-0.5 px-2 pb-1.5" style={{ marginTop: 2 }}>
+          {/* Venue + broadcaster on one line */}
+          {(game.venue || game.broadcaster) && (
+            <div className="flex items-center gap-1 flex-wrap">
+              {game.venue && (
+                <span style={{ fontSize: 'clamp(9px, 0.7vw, 11px)', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>
+                  {game.venue}
+                </span>
+              )}
+              {game.venue && game.broadcaster && (
+                <span style={{ fontSize: 'clamp(9px, 0.7vw, 11px)', color: 'hsl(var(--border))' }}>·</span>
+              )}
+              {game.broadcaster && (
+                <span style={{ fontSize: 'clamp(9px, 0.7vw, 11px)', color: '#60a5fa', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {game.broadcaster}
+                </span>
+              )}
+              {(game.doubleHeader === 'Y' || game.doubleHeader === 'S') && (
+                <span style={{ fontSize: 'clamp(8px, 0.65vw, 10px)', color: '#f59e0b', fontWeight: 700, whiteSpace: 'nowrap', marginLeft: 2 }}>
+                  DH-{game.doubleHeader === 'Y' ? '1' : '2'}
+                </span>
+              )}
+            </div>
+          )}
+          {/* Starting pitchers */}
+          {(game.awayStartingPitcher || game.homeStartingPitcher) && (
+            <div className="flex items-center gap-1 flex-wrap">
+              <span style={{ fontSize: 'clamp(8px, 0.65vw, 10px)', color: 'hsl(var(--muted-foreground))', opacity: 0.6, whiteSpace: 'nowrap' }}>SP:</span>
+              {game.awayStartingPitcher && (
+                <span style={{ fontSize: 'clamp(8px, 0.65vw, 10px)', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>
+                  {game.awayStartingPitcher}{!game.awayPitcherConfirmed ? ' *' : ''}
+                </span>
+              )}
+              {game.awayStartingPitcher && game.homeStartingPitcher && (
+                <span style={{ fontSize: 'clamp(8px, 0.65vw, 10px)', color: 'hsl(var(--border))' }}>vs</span>
+              )}
+              {game.homeStartingPitcher && (
+                <span style={{ fontSize: 'clamp(8px, 0.65vw, 10px)', color: 'hsl(var(--muted-foreground))', whiteSpace: 'nowrap' }}>
+                  {game.homeStartingPitcher}{!game.homePitcherConfirmed ? ' *' : ''}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       </div>{/* end team group wrapper */}
     </div>
     );

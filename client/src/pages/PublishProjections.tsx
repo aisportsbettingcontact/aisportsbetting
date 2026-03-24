@@ -1633,7 +1633,7 @@ export default function PublishProjections() {
   const { appUser, isOwner, loading: authLoading } = useAppAuth();
   const [filter, setFilter] = useState<"all" | "regular_season" | "conference_tournament">("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "upcoming" | "live" | "final" | "missing_odds" | "modeled" | "not_modeled">("all");
-  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL">("NCAAM");
+  const [selectedSport, setSelectedSport] = useState<"NCAAM" | "NBA" | "NHL" | "MLB">("NCAAM");
   const [gameDate, setGameDate] = useState(() => todayPst());
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -1808,7 +1808,9 @@ export default function PublishProjections() {
       `activeSport: ${selectedSport} | date: ${gameDate}`
     );
     // Pass the active sport so the server only refreshes that sport's data
-    triggerRefreshMutation.mutate({ sport: selectedSport as "NCAAM" | "NBA" | "NHL" });
+    if (selectedSport !== "MLB") {
+      triggerRefreshMutation.mutate({ sport: selectedSport as "NCAAM" | "NBA" | "NHL" });
+    }
     // NBA also triggers model sync (NBA-specific model pipeline)
     if (selectedSport === "NBA") {
       console.log(`[PublishProjections][RefreshNow] Also triggering NBA model sync…`);
@@ -2077,6 +2079,24 @@ export default function PublishProjections() {
               style={{ opacity: selectedSport === "NHL" ? 1 : 0.5 }}
             />
             NHL
+          </button>
+          {/* MLB button */}
+          <button
+            onClick={() => setSelectedSport("MLB")}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
+            style={selectedSport === "MLB"
+              ? { background: "rgba(0,45,114,0.25)", color: "#E31837", border: "1px solid rgba(227,24,55,0.5)" }
+              : { background: "hsl(var(--card))", color: "hsl(var(--muted-foreground))", border: "1px solid hsl(var(--border))" }
+            }
+          >
+            <img
+              src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg"
+              alt="MLB"
+              width={16}
+              height={16}
+              style={{ opacity: selectedSport === "MLB" ? 1 : 0.5 }}
+            />
+            MLB
           </button>
         </div>
 

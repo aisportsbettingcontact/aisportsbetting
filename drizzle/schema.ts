@@ -256,6 +256,37 @@ export const games = mysqlTable("games", {
   homeScore: int("homeScore"),
   /** Game clock string for live games, e.g. "15:07 1st" or "HALF" (null = not live) */
   gameClock: varchar("gameClock", { length: 32 }),
+  // ─── MLB-specific fields ──────────────────────────────────────────────────
+  /** MLB.com gamePk (unique game ID from statsapi.mlb.com) */
+  mlbGamePk: int("mlbGamePk"),
+  /** Primary TV broadcaster for the game, e.g. "Netflix", "ESPN", "FOX" */
+  broadcaster: varchar("broadcaster", { length: 128 }),
+  /** Away team starting pitcher name, e.g. "Gerrit Cole" */
+  awayStartingPitcher: varchar("awayStartingPitcher", { length: 128 }),
+  /** Home team starting pitcher name, e.g. "Logan Webb" */
+  homeStartingPitcher: varchar("homeStartingPitcher", { length: 128 }),
+  /** Whether the away starting pitcher is confirmed (true) or projected (false) */
+  awayPitcherConfirmed: boolean("awayPitcherConfirmed").default(false),
+  /** Whether the home starting pitcher is confirmed (true) or projected (false) */
+  homePitcherConfirmed: boolean("homePitcherConfirmed").default(false),
+  /** Ballpark / venue name, e.g. "Oracle Park" */
+  venue: varchar("venue", { length: 128 }),
+  /** Whether this is a doubleheader: 'N'=no, 'Y'=yes game 1, 'S'=yes game 2 */
+  doubleHeader: varchar("doubleHeader", { length: 2 }).default("N"),
+  /** Game number within a doubleheader (1 or 2; 1 for non-DH games) */
+  gameNumber: tinyint("gameNumber").default(1),
+  /** Away team run line (spread), e.g. "-1.5" or "+1.5" */
+  awayRunLine: varchar("awayRunLine", { length: 8 }),
+  /** Home team run line (spread), e.g. "+1.5" or "-1.5" */
+  homeRunLine: varchar("homeRunLine", { length: 8 }),
+  /** Away run line juice, e.g. "+135" or "-160" */
+  awayRunLineOdds: varchar("awayRunLineOdds", { length: 16 }),
+  /** Home run line juice, e.g. "-160" or "+135" */
+  homeRunLineOdds: varchar("homeRunLineOdds", { length: 16 }),
+  /** % of run line bets placed on the away team */
+  rlAwayBetsPct: tinyint("rlAwayBetsPct"),
+  /** % of run line money wagered on the away team */
+  rlAwayMoneyPct: tinyint("rlAwayMoneyPct"),
   // ─── NHL-specific fields ──────────────────────────────────────────────────
   /** Starting goalie for the away team (NHL only), e.g. "Jeremy Swayman" */
   awayGoalie: varchar("awayGoalie", { length: 128 }),

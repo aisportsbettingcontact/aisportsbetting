@@ -1878,3 +1878,13 @@
 - [ ] Register cron at 08:00 UTC in server startup
 - [ ] Verify TypeScript compiles cleanly
 - [ ] Test sync manually before relying on cron
+
+## MLB Feed Integration (2026-03-24)
+- [x] Fix isValidGame() in routers.ts to use MLB_VALID_DB_SLUGS (dbSlug) instead of MLB_BY_ABBREV (abbrev) for MLB team validation
+- [x] Add MLB pill to ModelProjections.tsx sport selector (NHL | NBA | NCAAM | MLB)
+- [x] Add MLB to selectedSport type in ModelProjections.tsx
+- [x] Update auto-switch logic in ModelProjections.tsx to include MLB in fallback order (MLB → NHL → NBA → NCAAM)
+- [x] Update date header label in ModelProjections.tsx for MLB: "MLB BASEBALL"
+- [x] Update column header in ModelProjections.tsx for MLB: "RUN LINE" instead of "SPREAD"
+- [x] Add MLB choice to Discord /splits command sport filter
+- [x] Fix root cause of "Unknown column" DB errors: columns were already in DB, errors were from before migration was applied
