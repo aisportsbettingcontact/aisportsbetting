@@ -1968,3 +1968,6 @@
 - [x] Fix MLB splits card: team names showing abbrev instead of city/nickname (NYY/SF instead of New York/Yankees, San Francisco/Giants)
 - [x] Fix MLB splits card: game time showing wrong value (7:05 AM instead of correct ET time)
 - [x] Add deep diagnostic logging to MLB team registry resolution in fetchSplits.ts
+- [x] Fix /lineups: replace MLB_BY_DB_SLUG with resolveTeam() so NYY/SF abbreviations resolve correctly
+- [x] Rebuild /lineups with date scope dropdown (TODAY/ALL/YYYY-MM-DD) and game autocomplete
+- [x] Rebuild /splits with dropdown sport selector and game autocomplete (already had this, verified working)

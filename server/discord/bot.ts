@@ -16,7 +16,7 @@ import {
 } from "discord.js";
 import { ENV } from "../_core/env";
 import { handleSplitsCommand, handleSplitsAutocomplete, closeSplitsRenderer } from "./splitsCommand";
-import { handleLineupsCommand } from "./lineupsCommand";
+import { handleLineupsCommand, handleLineupsAutocomplete } from "./lineupsCommand";
 import { warmUpRenderer } from "./renderSplitsCard";
 import { enrichTeamRegistryFromDb } from "./teamRegistry";
 
@@ -78,6 +78,10 @@ export function startDiscordBot(): void {
       if (interaction.commandName === "splits") {
         await handleSplitsAutocomplete(interaction).catch((err) =>
           console.error("[SplitsBot] Autocomplete error:", err)
+        );
+      } else if (interaction.commandName === "lineups") {
+        await handleLineupsAutocomplete(interaction).catch((err) =>
+          console.error("[LineupsBot] Autocomplete error:", err)
         );
       }
       return;
