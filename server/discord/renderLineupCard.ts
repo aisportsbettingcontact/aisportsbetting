@@ -70,6 +70,8 @@ export interface LineupCardTeam {
   nickname: string;
   abbrev: string;
   primaryColor: string;
+  secondaryColor: string;
+  tertiaryColor: string;
   darkColor: string;
   logoUrl: string;
 }

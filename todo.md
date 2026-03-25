@@ -1979,3 +1979,5 @@
 - [x] lineup_card.html: improve weather section readability (larger text, better contrast, bigger icons)
 - [x] lineup_card.html: add CONFIRMED (#39FF14) / EXPECTED (#FFFF33) badges next to pitcher names and lineup section headers
 - [x] lineupsCommand.ts + renderLineupCard.ts: pass awayLineupConfirmed/homeLineupConfirmed to template
+- [x] lineup_card.html: white font for precip percentage and label, spell out PRECIPITATION fully
+- [x] lineup_card.html: white font for wind speed and direction text

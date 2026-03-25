@@ -71,11 +71,42 @@ function playerAvatar(mlbamId, size) {
   return wrap;
 }
 
+// ── Logo circle background: pick highest-contrast color vs primary (mirrors splits card) ──
+function luminance(hex) {
+  const c = hex.replace('#','');
+  const r = parseInt(c.slice(0,2),16)/255;
+  const g = parseInt(c.slice(2,4),16)/255;
+  const b = parseInt(c.slice(4,6),16)/255;
+  const lin = v => v <= 0.03928 ? v/12.92 : Math.pow((v+0.055)/1.055, 2.4);
+  return 0.2126*lin(r) + 0.7152*lin(g) + 0.0722*lin(b);
+}
+function pickLogoBg(primary, secondary, tertiary) {
+  const candidates = [primary, secondary, tertiary].filter(c => c && c.length >= 4);
+  let bestColor = primary, bestContrast = 0;
+  for (const bg of candidates) {
+    const lumLogo = luminance(primary);
+    const lumBg   = luminance(bg);
+    const lighter = Math.max(lumLogo, lumBg);
+    const darker  = Math.min(lumLogo, lumBg);
+    const cr = (lighter + 0.05) / (darker + 0.05);
+    if (cr > bestContrast) { bestContrast = cr; bestColor = bg; }
+  }
+  return bestContrast < 1.5 ? '#1a1a2e' : bestColor;
+}
+function darkShade(hex) {
+  const c = hex.replace('#','');
+  const r = Math.max(0, parseInt(c.slice(0,2),16) - 60);
+  const g = Math.max(0, parseInt(c.slice(2,4),16) - 60);
+  const b = Math.max(0, parseInt(c.slice(4,6),16) - 60);
+  return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
 function teamLogoCircle(team, size) {
+  const logoBg     = pickLogoBg(team.primaryColor, team.secondaryColor, team.tertiaryColor);
+  const logoBgDark = darkShade(logoBg);
   const circle = el('div', {
     width: size+'px', height: size+'px', borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: `radial-gradient(circle at 35% 35%, ${team.primaryColor}, ${team.darkColor})`,
+    background: `radial-gradient(circle at 35% 35%, ${logoBg}, ${logoBgDark})`,
     flexShrink: '0', overflow: 'hidden',
   });
   const logoSize = Math.round(size * 0.65);
@@ -178,26 +209,31 @@ function lineupRows(players, lineupConfirmed) {
       padding: '5px 0',
       borderBottom: i < players.length - 1 ? '1px solid rgba(24,36,51,0.6)' : 'none',
     });
+    // Batting order number
     row.appendChild(el('span', {
       fontFamily: '"Barlow Condensed", sans-serif', fontSize: '13px', fontWeight: '700',
       color: '#FFFFFF', width: '16px', flexShrink: '0', textAlign: 'right',
     }, String(p.battingOrder)));
+    // Player headshot
     row.appendChild(playerAvatar(p.mlbamId, 48)); // 48px CSS × 4x DPR = 192px physical
-    row.appendChild(el('span', {
-      fontFamily: '"Barlow Condensed", sans-serif', fontSize: '13px', fontWeight: '700',
-      letterSpacing: '0.5px', textTransform: 'uppercase', color: '#7EB8D4',
-      background: 'rgba(30,60,90,0.6)', padding: '2px 6px', borderRadius: '3px',
-      border: '1px solid rgba(30,80,120,0.4)', flexShrink: '0',
-      textAlign: 'center', minWidth: '32px',
-    }, p.position));
+    // Player name — flex:1 so it takes remaining space
     row.appendChild(el('span', {
       fontFamily: '"Barlow Condensed", sans-serif', fontSize: '16px', fontWeight: '800',
       color: '#FFFFFF', flex: '1', whiteSpace: 'nowrap', overflow: 'hidden',
       textOverflow: 'ellipsis', textAlign: 'left', minWidth: '0',
     }, p.name));
+    // Position pill — after name
+    row.appendChild(el('span', {
+      fontFamily: '"Barlow Condensed", sans-serif', fontSize: '12px', fontWeight: '700',
+      letterSpacing: '0.5px', textTransform: 'uppercase', color: '#7EB8D4',
+      background: 'rgba(30,60,90,0.6)', padding: '2px 5px', borderRadius: '3px',
+      border: '1px solid rgba(30,80,120,0.4)', flexShrink: '0',
+      textAlign: 'center', minWidth: '28px',
+    }, p.position));
+    // Handedness — directly right of position pill
     row.appendChild(el('span', {
       fontFamily: '"Barlow Condensed", sans-serif', fontSize: '14px', fontWeight: '800',
-      color: '#FFFFFF', flexShrink: '0', width: '14px', textAlign: 'right',
+      color: '#FFFFFF', flexShrink: '0', width: '14px', textAlign: 'center',
     }, p.bats));
     container.appendChild(row);
   });
@@ -236,11 +272,8 @@ function weatherStrip(weather) {
 
   if (!temp && !wind && precip == null) return null;
 
-  // Precip color: green=0%, yellow=1-29%, red=30%+
-  const precipColor = precip == null ? '#FFFFFF'
-    : precip === 0 ? '#39FF14'
-    : precip < 30  ? '#FFCC00'
-    : '#FF2D55';
+  // Precip percentage is always white — color coding removed for readability
+  const precipColor = '#FFFFFF';
 
   const strip = el('div', {
     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '32px',
@@ -257,7 +290,7 @@ function weatherStrip(weather) {
     }, temp));
     if (wind) tempBlock.appendChild(el('div', {
       fontFamily: '"Barlow Condensed", sans-serif', fontSize: '13px', fontWeight: '500',
-      color: 'rgba(255,255,255,0.55)', letterSpacing: '0.5px', marginTop: '3px',
+      color: '#FFFFFF', letterSpacing: '0.5px', marginTop: '3px',
     }, wind));
     left.appendChild(tempBlock);
     strip.appendChild(left);
@@ -274,9 +307,9 @@ function weatherStrip(weather) {
     }, precip + '%'));
     precipEl.appendChild(el('div', {
       fontFamily: '"Barlow Condensed", sans-serif', fontSize: '11px', fontWeight: '600',
-      color: 'rgba(255,255,255,0.4)', letterSpacing: '1.5px',
+      color: '#FFFFFF', letterSpacing: '1.5px',
       textTransform: 'uppercase', marginTop: '3px',
-    }, 'PRECIP'));
+    }, 'PRECIPITATION'));
     strip.appendChild(precipEl);
   }
 
