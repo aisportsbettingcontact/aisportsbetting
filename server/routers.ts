@@ -25,7 +25,8 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
-import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory, getBracketGames, auditAndAdvanceAllBracketWinners, getMlbLineupsByGameIds } from "./db";
+import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory, getBracketGames, auditAndAdvanceAllBracketWinners, getMlbLineupsByGameIds, getStrikeoutPropsByGame, getStrikeoutPropsByGames } from "./db";
+import { runStrikeoutModel, type StrikeoutRunnerInput } from "./strikeoutModelRunner";
 import { getLastRefreshResult, runVsinRefresh, runVsinRefreshManual, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
 import { triggerModelWatcherForDate } from "./ncaamModelWatcher";
@@ -791,6 +792,65 @@ export const appRouter = router({
         return { history: rows };
       }),
   }),
+  // ─── MLB Strikeout Props ──────────────────────────────────────────────────────────────────────
+  strikeoutProps: router({
+    /**
+     * Fetch strikeout prop projections for a single game.
+     * Returns 0–2 rows (away pitcher, home pitcher).
+     */
+    getByGame: publicProcedure
+      .input(z.object({ gameId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        const rows = await getStrikeoutPropsByGame(input.gameId);
+        return { props: rows };
+      }),
+
+    /**
+     * Fetch strikeout props for multiple games at once.
+     * Returns a record of gameId → rows[].
+     */
+    getByGames: publicProcedure
+      .input(z.object({ gameIds: z.array(z.number().int().positive()) }))
+      .query(async ({ input }) => {
+        const map = await getStrikeoutPropsByGames(input.gameIds);
+        // Convert Map to plain object for serialization
+        const result: Record<number, typeof map extends Map<number, infer V> ? V : never> = {};
+        Array.from(map.entries()).forEach(([k, v]) => {
+          result[k] = v;
+        });
+        return { propsByGame: result };
+      }),
+
+    /**
+     * Owner-only: run the StrikeoutModel.py for a specific game.
+     * Requires file paths to Retrosheet plays, Statcast JSON, and crosswalk CSV.
+     */
+    runModel: ownerProcedure
+      .input(
+        z.object({
+          gameId: z.number().int().positive(),
+          gameDate: z.string(),
+          awayTeam: z.string(),
+          homeTeam: z.string(),
+          awayPitcherRsId: z.string(),
+          homePitcherRsId: z.string(),
+          playsPath: z.string(),
+          statcastPath: z.string(),
+          crosswalkPath: z.string(),
+          awayMarketLine: z.number().optional(),
+          awayMarketOverOdds: z.string().optional(),
+          awayMarketUnderOdds: z.string().optional(),
+          homeMarketLine: z.number().optional(),
+          homeMarketOverOdds: z.string().optional(),
+          homeMarketUnderOdds: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const result = await runStrikeoutModel(input as StrikeoutRunnerInput);
+        return result;
+      }),
+  }),
+
   // ─── March Madness Bracket ─────────────────────────────────────────────────────────────────────
   bracket: router({
     /**

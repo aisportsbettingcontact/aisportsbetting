@@ -17,6 +17,7 @@ const CDN_MONEY_BAG = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/
 const CDN_NBA = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3FicTy7ae3qrm8dx8Lua/icon-nba_3fa4f508.png";
 import { GameCard } from "@/components/GameCard";
 import { MlbLineupCard } from "@/components/MlbLineupCard";
+import { MlbPropsCard, type StrikeoutPropRow } from "@/components/MlbPropsCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
@@ -308,13 +309,13 @@ export default function ModelProjections() {
   // ── Main page tab: projections | splits ───────────────────────────────────
 
   // ── Feed-wide mobile tab filter ───────────────────────────────────────────
-  // Two tabs: MODEL PROJECTIONS (dual) | BETTING SPLITS (splits) | LINEUPS (lineups, MLB only)
-  type FeedMobileTab = 'dual' | 'splits' | 'lineups';
-  const FEED_TAB_KEY = 'prez_bets_mobile_tab_v2';
+  // Two tabs: MODEL PROJECTIONS (dual) | BETTING SPLITS (splits) | LINEUPS (lineups, MLB only) | PROPS (props, MLB only)
+  type FeedMobileTab = 'dual' | 'splits' | 'lineups' | 'props';
+  const FEED_TAB_KEY = 'prez_bets_mobile_tab_v3';
   const getPersistedFeedTab = (): FeedMobileTab => {
     try {
       const stored = localStorage.getItem(FEED_TAB_KEY);
-      if (stored === 'dual' || stored === 'splits' || stored === 'lineups') return stored as FeedMobileTab;
+      if (stored === 'dual' || stored === 'splits' || stored === 'lineups' || stored === 'props') return stored as FeedMobileTab;
     } catch { /* ignore */ }
     return 'dual';
   };
@@ -324,12 +325,13 @@ export default function ModelProjections() {
     try { localStorage.setItem(FEED_TAB_KEY, next); } catch { /* ignore */ }
   };
   const feedIsDual = feedMobileTab === 'dual';
-  // Tabs: MODEL PROJECTIONS | BETTING SPLITS | LINEUPS (MLB only)
+  // Tabs: MODEL PROJECTIONS | BETTING SPLITS | LINEUPS (MLB only) | PROPS (MLB only)
   const FEED_TABS: { id: FeedMobileTab; label: string }[] = selectedSport === 'MLB'
     ? [
         { id: 'dual',    label: 'MODEL PROJECTIONS' },
         { id: 'splits',  label: 'BETTING SPLITS' },
         { id: 'lineups', label: 'LINEUPS' },
+        { id: 'props',   label: 'K PROPS' },
       ]
     : [
         { id: 'dual',   label: 'MODEL PROJECTIONS' },
@@ -503,6 +505,26 @@ export default function ModelProjections() {
     if (!mlbLineupsRaw) return new Map();
     return new Map(Object.entries(mlbLineupsRaw).map(([k, v]) => [Number(k), v]));
   }, [mlbLineupsRaw]);
+
+  // ── MLB Strikeout Props ──────────────────────────────────────────────────────
+  // Fetch K props for all MLB games when Props tab is active.
+  const { data: mlbPropsRaw } = trpc.strikeoutProps.getByGames.useQuery(
+    { gameIds: mlbGameIds },
+    {
+      enabled: selectedSport === 'MLB' && feedMobileTab === 'props' && mlbGameIds.length > 0,
+      refetchOnWindowFocus: false,
+      refetchInterval: 10 * 60 * 1000, // re-fetch every 10 minutes
+      staleTime: 5 * 60 * 1000,
+    }
+  );
+
+  // Map of gameId → StrikeoutPropRow[] for fast lookup
+  const mlbPropsMap = useMemo(() => {
+    if (!mlbPropsRaw?.propsByGame) return new Map<number, StrikeoutPropRow[]>();
+    return new Map(
+      Object.entries(mlbPropsRaw.propsByGame).map(([k, v]) => [Number(k), v as StrikeoutPropRow[]])
+    );
+  }, [mlbPropsRaw]);
 
   const toggleStatus = (status: "upcoming" | "live" | "final") => {
     setSelectedStatuses(prev => {
@@ -1138,7 +1160,7 @@ export default function ModelProjections() {
                         onToggleFavorite={handleToggleFavorite}
                         onFavoriteNotify={handleFavoriteNotify}
                         isAppAuthed={Boolean(appUser)}
-                        mobileTab={feedMobileTab === 'lineups' ? 'dual' : feedMobileTab}
+                        mobileTab={(feedMobileTab === 'lineups' || feedMobileTab === 'props') ? 'dual' : feedMobileTab as 'dual' | 'splits'}
                         onMobileTabChange={(t) => handleFeedTabChange(t)}
                       />
                     </div>
@@ -1146,7 +1168,7 @@ export default function ModelProjections() {
                 </div>
               )
             ) : (
-              /* NORMAL PROJECTIONS FEED — or LINEUPS tab for MLB */
+              /* NORMAL PROJECTIONS FEED — or LINEUPS/PROPS tab for MLB */
               feedMobileTab === 'lineups' && selectedSport === 'MLB' ? (
                 /* ── LINEUPS VIEW ── */
                 gamesLoading ? (
@@ -1173,6 +1195,38 @@ export default function ModelProjections() {
                             homeTeam={game!.homeTeam}
                             startTime={game!.startTimeEst ? formatMilitaryTime(game!.startTimeEst) : 'TBD'}
                             lineup={mlbLineupsMap.get(game!.id) as Parameters<typeof MlbLineupCard>[0]['lineup']}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : feedMobileTab === 'props' && selectedSport === 'MLB' ? (
+                /* ── K PROPS VIEW ── */
+                gamesLoading ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-3">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    <p className="text-sm text-muted-foreground">Loading K props…</p>
+                  </div>
+                ) : sortedDates.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
+                    <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground mb-1">No MLB games found</p>
+                      <p className="text-xs text-muted-foreground">Check back closer to Opening Day.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '10px 10px 0' }}>
+                    {sortedDates.map((date) => (
+                      <div key={date}>
+                        {gamesByDate[date]!.map((game) => (
+                          <MlbPropsCard
+                            key={game!.id}
+                            awayTeam={game!.awayTeam}
+                            homeTeam={game!.homeTeam}
+                            startTime={game!.startTimeEst ? formatMilitaryTime(game!.startTimeEst) : 'TBD'}
+                            props={mlbPropsMap.get(game!.id) as StrikeoutPropRow[] | undefined}
                           />
                         ))}
                       </div>
@@ -1211,7 +1265,7 @@ export default function ModelProjections() {
                               onToggleFavorite={handleToggleFavorite}
                               onFavoriteNotify={handleFavoriteNotify}
                               isAppAuthed={Boolean(appUser)}
-                              mobileTab={feedMobileTab === 'lineups' ? 'dual' : feedMobileTab}
+                              mobileTab={(feedMobileTab === 'lineups' || feedMobileTab === 'props') ? 'dual' : feedMobileTab as 'dual' | 'splits'}
                               onMobileTabChange={(t) => handleFeedTabChange(t)}
                             />
                           </div>

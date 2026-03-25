@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, isNotNull, isNull, lte, lt, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
-import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, appUsers as appUsersTable, oddsHistory, mlbLineups, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam, type OddsHistoryRow, type MlbLineupRow, type InsertMlbLineup } from "../drizzle/schema";
+import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, appUsers as appUsersTable, oddsHistory, mlbLineups, mlbStrikeoutProps, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam, type OddsHistoryRow, type MlbLineupRow, type InsertMlbLineup, type MlbStrikeoutPropRow, type InsertMlbStrikeoutProp } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1389,6 +1389,122 @@ export async function getMlbLineupsByGameIds(gameIds: number[]): Promise<Map<num
     }
 
     console.log(`${tag} Fetched ${result.size}/${gameIds.length} lineup records`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${tag} DB error: ${msg}`);
+  }
+
+  return result;
+}
+
+// ─── MLB Strikeout Props ──────────────────────────────────────────────────────
+
+/**
+ * Upsert a strikeout prop row for a pitcher.
+ * Keyed on (gameId, side) — one row per pitcher per game.
+ */
+export async function upsertStrikeoutProp(row: InsertMlbStrikeoutProp): Promise<void> {
+  const tag = "[DB][upsertStrikeoutProp]";
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  try {
+    await db
+      .insert(mlbStrikeoutProps)
+      .values(row)
+      .onDuplicateKeyUpdate({
+        set: {
+          pitcherName: sql`VALUES(pitcherName)`,
+          pitcherHand: sql`VALUES(pitcherHand)`,
+          retrosheetId: sql`VALUES(retrosheetId)`,
+          mlbamId: sql`VALUES(mlbamId)`,
+          kProj: sql`VALUES(kProj)`,
+          kLine: sql`VALUES(kLine)`,
+          kPer9: sql`VALUES(kPer9)`,
+          kMedian: sql`VALUES(kMedian)`,
+          kP5: sql`VALUES(kP5)`,
+          kP95: sql`VALUES(kP95)`,
+          bookLine: sql`VALUES(bookLine)`,
+          bookOverOdds: sql`VALUES(bookOverOdds)`,
+          bookUnderOdds: sql`VALUES(bookUnderOdds)`,
+          pOver: sql`VALUES(pOver)`,
+          pUnder: sql`VALUES(pUnder)`,
+          modelOverOdds: sql`VALUES(modelOverOdds)`,
+          modelUnderOdds: sql`VALUES(modelUnderOdds)`,
+          edgeOver: sql`VALUES(edgeOver)`,
+          edgeUnder: sql`VALUES(edgeUnder)`,
+          verdict: sql`VALUES(verdict)`,
+          bestEdge: sql`VALUES(bestEdge)`,
+          bestSide: sql`VALUES(bestSide)`,
+          bestMlStr: sql`VALUES(bestMlStr)`,
+          signalBreakdown: sql`VALUES(signalBreakdown)`,
+          matchupRows: sql`VALUES(matchupRows)`,
+          distribution: sql`VALUES(distribution)`,
+          inningBreakdown: sql`VALUES(inningBreakdown)`,
+          modelRunAt: sql`VALUES(modelRunAt)`,
+        },
+      });
+    console.log(`${tag} Upserted gameId=${row.gameId} side=${row.side} pitcher="${row.pitcherName}"`);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${tag} DB error: ${msg}`);
+    throw err;
+  }
+}
+
+/**
+ * Fetch all strikeout prop rows for a game (both pitchers).
+ * Returns an array of 0–2 rows ordered by side (away first).
+ */
+export async function getStrikeoutPropsByGame(gameId: number): Promise<MlbStrikeoutPropRow[]> {
+  const tag = "[DB][getStrikeoutPropsByGame]";
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  try {
+    const rows = await db
+      .select()
+      .from(mlbStrikeoutProps)
+      .where(eq(mlbStrikeoutProps.gameId, gameId))
+      .orderBy(mlbStrikeoutProps.side); // 'away' < 'home' alphabetically
+    console.log(`${tag} gameId=${gameId} → ${rows.length} rows`);
+    return rows as MlbStrikeoutPropRow[];
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${tag} DB error: ${msg}`);
+    return [];
+  }
+}
+
+/**
+ * Fetch strikeout props for multiple games at once.
+ * Returns a Map<gameId, MlbStrikeoutPropRow[]>.
+ */
+export async function getStrikeoutPropsByGames(gameIds: number[]): Promise<Map<number, MlbStrikeoutPropRow[]>> {
+  const tag = "[DB][getStrikeoutPropsByGames]";
+  const result = new Map<number, MlbStrikeoutPropRow[]>();
+  if (gameIds.length === 0) return result;
+
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  try {
+    const rows = await db
+      .select()
+      .from(mlbStrikeoutProps)
+      .where(
+        gameIds.length === 1
+          ? eq(mlbStrikeoutProps.gameId, gameIds[0])
+          : sql`${mlbStrikeoutProps.gameId} IN (${sql.join(gameIds.map((id) => sql`${id}`), sql`, `)})`
+      )
+      .orderBy(mlbStrikeoutProps.side);
+
+    for (const row of rows as MlbStrikeoutPropRow[]) {
+      const arr = result.get(row.gameId) ?? [];
+      arr.push(row);
+      result.set(row.gameId, arr);
+    }
+    console.log(`${tag} Fetched props for ${result.size}/${gameIds.length} games`);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`${tag} DB error: ${msg}`);

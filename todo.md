@@ -1988,3 +1988,19 @@
 - [x] lineupsCommand.ts: remove text header message (date/game count) before posting cards
 - [x] lineup_card.html: add game date (Month Day, Year) above ET start time in rendered card
 - [ ] Recalibrate NHL model goal projection scoring — projected totals (~13-14 combined) are inflated vs book total (6.5); trace xGF_60/xGA_60 scaling and pace factors in nhlModelEngine.py and nhlHockeyRefTeamStats.ts
+
+## MLB Strikeout Props Feature
+
+- [x] Create mlb_strikeout_props DB table (33 columns) in drizzle/schema.ts
+- [x] Add upsertStrikeoutProp() helper to server/db.ts
+- [x] Add getStrikeoutPropsByGame() helper to server/db.ts
+- [x] Add getStrikeoutPropsByGames() helper to server/db.ts
+- [x] Build server/strikeoutModelRunner.ts — spawns StrikeoutModel.py, parses JSON, upserts to DB
+- [x] Fix __dirname in strikeoutModelRunner.ts (ES module: fileURLToPath)
+- [x] Add strikeoutProps tRPC router (getByGame, getByGames, runModel procedures)
+- [x] Build client/src/components/MlbPropsCard.tsx — styled to match MlbLineupCard
+- [x] Wire 'K PROPS' tab (4th tab) into FEED_TABS in ModelProjections.tsx (MLB only)
+- [x] Add mlbPropsMap query (trpc.strikeoutProps.getByGames) to ModelProjections.tsx
+- [x] Write vitest tests for strikeout props feature (12 tests passing)
+- [ ] Run StrikeoutModel.py for March 26 games and verify Props tab displays correctly
+- [ ] Add book line inputs to Publish Projections page for K props (optional)

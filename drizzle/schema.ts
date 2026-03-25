@@ -623,3 +623,78 @@ export const userFavoriteGames = mysqlTable(
 );
 export type UserFavoriteGame = typeof userFavoriteGames.$inferSelect;
 export type InsertUserFavoriteGame = typeof userFavoriteGames.$inferInsert;
+
+// ─── MLB Strikeout Props ──────────────────────────────────────────────────────
+/**
+ * One row per pitcher per game.
+ * Stores the StrikeoutModel.py output for each starting pitcher.
+ * signalBreakdown and matchupRows are JSON blobs.
+ * Completely isolated from the game model projections (games table).
+ */
+export const mlbStrikeoutProps = mysqlTable("mlb_strikeout_props", {
+  id: int("id").autoincrement().primaryKey(),
+  /** FK → games.id */
+  gameId: int("gameId").notNull(),
+  /** 'away' | 'home' */
+  side: varchar("side", { length: 8 }).notNull(),
+  /** Pitcher full name, e.g. "Max Fried" */
+  pitcherName: varchar("pitcherName", { length: 128 }).notNull(),
+  /** Pitcher hand: 'L' | 'R' */
+  pitcherHand: varchar("pitcherHand", { length: 4 }),
+  /** Retrosheet ID, e.g. "friem001" */
+  retrosheetId: varchar("retrosheetId", { length: 32 }),
+  /** MLBAM player ID for headshot */
+  mlbamId: int("mlbamId"),
+  /** Model projected strikeout total (float, e.g. "4.73") */
+  kProj: varchar("kProj", { length: 16 }),
+  /** Model recommended line (e.g. "4.5") */
+  kLine: varchar("kLine", { length: 16 }),
+  /** K per 9 innings */
+  kPer9: varchar("kPer9", { length: 16 }),
+  /** Median of distribution */
+  kMedian: varchar("kMedian", { length: 16 }),
+  /** 5th percentile */
+  kP5: varchar("kP5", { length: 16 }),
+  /** 95th percentile */
+  kP95: varchar("kP95", { length: 16 }),
+  /** Book line (e.g. "4.5") */
+  bookLine: varchar("bookLine", { length: 16 }),
+  /** Book over odds (e.g. "-152") */
+  bookOverOdds: varchar("bookOverOdds", { length: 16 }),
+  /** Book under odds (e.g. "+115") */
+  bookUnderOdds: varchar("bookUnderOdds", { length: 16 }),
+  /** P(over book line) as decimal string, e.g. "0.499" */
+  pOver: varchar("pOver", { length: 16 }),
+  /** P(under book line) as decimal string, e.g. "0.501" */
+  pUnder: varchar("pUnder", { length: 16 }),
+  /** American odds for over implied by model, e.g. "+100" */
+  modelOverOdds: varchar("modelOverOdds", { length: 16 }),
+  /** American odds for under implied by model, e.g. "-100" */
+  modelUnderOdds: varchar("modelUnderOdds", { length: 16 }),
+  /** Edge on over (decimal string), e.g. "-0.012" */
+  edgeOver: varchar("edgeOver", { length: 16 }),
+  /** Edge on under (decimal string), e.g. "+0.012" */
+  edgeUnder: varchar("edgeUnder", { length: 16 }),
+  /** Best side: 'OVER' | 'UNDER' | 'PASS' */
+  verdict: varchar("verdict", { length: 32 }),
+  /** Best edge value (decimal string) */
+  bestEdge: varchar("bestEdge", { length: 16 }),
+  /** Best side label: 'OVER' | 'UNDER' */
+  bestSide: varchar("bestSide", { length: 16 }),
+  /** Best side ML string, e.g. "+115" */
+  bestMlStr: varchar("bestMlStr", { length: 16 }),
+  /** JSON: { platoon, ha, tto, whiff, zone, arsenal } signal breakdown */
+  signalBreakdown: text("signalBreakdown"),
+  /** JSON: array of { order, name, hand, kRate, adj, expK } for opposing lineup */
+  matchupRows: text("matchupRows"),
+  /** JSON: { bins: number[], probs: number[] } distribution */
+  distribution: text("distribution"),
+  /** JSON: { inn: number, expK: number }[] inning breakdown */
+  inningBreakdown: text("inningBreakdown"),
+  /** UTC timestamp (ms) when model was run */
+  modelRunAt: bigint("modelRunAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type MlbStrikeoutPropRow = typeof mlbStrikeoutProps.$inferSelect;
+export type InsertMlbStrikeoutProp = typeof mlbStrikeoutProps.$inferInsert;
