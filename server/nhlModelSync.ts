@@ -24,6 +24,7 @@ import { bulkApproveModels } from "./db.js";
 import { games } from "../drizzle/schema.js";
 import type { Game } from "../drizzle/schema.js";
 import { scrapeNhlTeamStats, scrapeNhlGoalieStats, getDefaultGoalieStats } from "./nhlNaturalStatScraper.js";
+import { scrapeNhlTeamStatsFromHockeyRef } from "./nhlHockeyRefTeamStats.js";
 import { scrapeNhlStartingGoalies, matchGoalieName } from "./nhlRotoWireScraper.js";
 import { runNhlModelForGame, buildTeamStatsDict, formatNhlML } from "./nhlModelEngine.js";
 import type { NhlModelEngineInput } from "./nhlModelEngine.js";
@@ -185,13 +186,22 @@ export async function syncNhlModelForToday(
     scrapeNhlGoalieStats(),
   ]);
 
-  if (teamStatsResult.status === "fulfilled") {
+  if (teamStatsResult.status === "fulfilled" && teamStatsResult.value.size >= 30) {
     teamStatsMap = teamStatsResult.value;
-    console.log(`[NhlModelSync]${tag}   ✅ Team stats: ${teamStatsMap.size} teams`);
+    console.log(`[NhlModelSync]${tag}   ✅ Team stats (NST): ${teamStatsMap.size} teams`);
   } else {
-    const msg = teamStatsResult.reason instanceof Error ? teamStatsResult.reason.message : String(teamStatsResult.reason);
-    console.error(`[NhlModelSync]${tag}   ⚠ Team stats scrape failed: ${msg} — using defaults`);
-    result.errors.push(`Team stats scrape failed: ${msg}`);
+    const nstMsg = teamStatsResult.status === "rejected"
+      ? (teamStatsResult.reason instanceof Error ? teamStatsResult.reason.message : String(teamStatsResult.reason))
+      : `only ${(teamStatsResult as PromiseFulfilledResult<any>).value.size} teams returned`;
+    console.warn(`[NhlModelSync]${tag}   ⚠ NST team stats failed (${nstMsg}) — trying Hockey-Reference fallback...`);
+    try {
+      teamStatsMap = await scrapeNhlTeamStatsFromHockeyRef();
+      console.log(`[NhlModelSync]${tag}   ✅ Team stats (HR fallback): ${teamStatsMap.size} teams`);
+    } catch (hrErr) {
+      const hrMsg = hrErr instanceof Error ? hrErr.message : String(hrErr);
+      console.error(`[NhlModelSync]${tag}   ✗ HR fallback also failed: ${hrMsg} — using league-average defaults`);
+      result.errors.push(`Team stats scrape failed (NST: ${nstMsg}; HR: ${hrMsg})`);
+    }
   }
 
   if (goalieStatsResult.status === "fulfilled") {
