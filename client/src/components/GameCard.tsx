@@ -3019,29 +3019,39 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               ? (mbUnderOdds ? `u${bkTotalStr} (${mbUnderOdds})` : `u${bkTotalStr}`)
               : 'u—';
             // For NHL/NCAAM: include puck line / spread odds and total odds in model display strings
+            // LOG: [GameCard:MobileOdds] trace model odds for each sport
+            if (process.env.NODE_ENV === 'development') {
+              console.log(
+                `%c[GameCard:MobileOdds] game=${game.id} sport=${game.sport} ` +
+                `mdlAwaySpreadOdds=${game.modelAwaySpreadOdds ?? 'null'} mdlHomeSpreadOdds=${game.modelHomeSpreadOdds ?? 'null'} ` +
+                `mdlOverOdds=${game.modelOverOdds ?? 'null'} mdlUnderOdds=${game.modelUnderOdds ?? 'null'} ` +
+                `isMlbGame=${isMlbGame} isNhlGame=${isNhlGame} isNcaamGame=${isNcaamGame}`,
+                'color:#FF9900;font-size:9px'
+              );
+            }
             const mdlAwaySpreadStr = !isNaN(awayModelSpread)
               ? (isNhlGame && game.modelAwayPLOdds
                   ? `${spreadSign(awayModelSpread)} (${game.modelAwayPLOdds})`
-                  : isNcaamGame && game.modelAwaySpreadOdds
+                  : (isNcaamGame || isMlbGame) && game.modelAwaySpreadOdds
                   ? `${spreadSign(awayModelSpread)} (${game.modelAwaySpreadOdds})`
                   : spreadSign(awayModelSpread))
               : '—';
             const mdlHomeSpreadStr = !isNaN(homeModelSpread)
               ? (isNhlGame && game.modelHomePLOdds
                   ? `${spreadSign(homeModelSpread)} (${game.modelHomePLOdds})`
-                  : isNcaamGame && game.modelHomeSpreadOdds
+                  : (isNcaamGame || isMlbGame) && game.modelHomeSpreadOdds
                   ? `${spreadSign(homeModelSpread)} (${game.modelHomeSpreadOdds})`
                   : spreadSign(homeModelSpread))
               : '—';
             // For NHL: display the BOOK's total line with the model's fair odds at that line
             const mdlDisplayTotal = isNhlGame && !isNaN(bookTotal) ? bookTotal : modelTotal;
             const mdlTotalStr = !isNaN(mdlDisplayTotal) ? String(mdlDisplayTotal) : '—';
-            // For NHL/NCAAM: total display strings include O/U odds at the model's line
+            // For NHL/NCAAM/MLB: total display strings include O/U odds at the model's line
             const mdlOverTotalStr  = !isNaN(mdlDisplayTotal)
-              ? ((isNhlGame || isNcaamGame) && game.modelOverOdds  ? `${mdlTotalStr} (${game.modelOverOdds})`  : mdlTotalStr)
+              ? ((isNhlGame || isNcaamGame || isMlbGame) && game.modelOverOdds  ? `${mdlTotalStr} (${game.modelOverOdds})`  : mdlTotalStr)
               : '—';
             const mdlUnderTotalStr = !isNaN(mdlDisplayTotal)
-              ? ((isNhlGame || isNcaamGame) && game.modelUnderOdds ? `${mdlTotalStr} (${game.modelUnderOdds})` : mdlTotalStr)
+              ? ((isNhlGame || isNcaamGame || isMlbGame) && game.modelUnderOdds ? `${mdlTotalStr} (${game.modelUnderOdds})` : mdlTotalStr)
               : '—';
             // ── Split helpers: parse "value (odds)" → { line, odds } for two-line pill rendering ──
             // Used by mobile OddsTable to pass mainValue and juiceStr separately to OddsCell
@@ -3303,15 +3313,27 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             // Each market is independent — never averaged, never combined.
             // Recalculate on every render (derived state, not stored state).
             // AWAY spread edge: book juice vs model juice
+            // NHL uses puck-line odds (modelAwayPLOdds); MLB/NCAAM use run-line/spread odds (modelAwaySpreadOdds)
             const awaySpreadEdgePP: number = (() => {
               const bkOdds  = toNum(game.awaySpreadOdds);
-              const mdlOdds = toNum(game.modelAwayPLOdds);
+              const mdlOdds = isNhlGame
+                ? toNum(game.modelAwayPLOdds)
+                : toNum((game as unknown as Record<string, string | null>).modelAwaySpreadOdds ?? null);
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`%c[GameCard:SpreadEdgePP:AWAY] game=${game.id} sport=${game.sport} bkOdds=${bkOdds} mdlOdds=${mdlOdds} isNhlGame=${isNhlGame}`, 'color:#FF9900;font-size:9px');
+              }
               return calculateEdge(bkOdds, mdlOdds);
             })();
             // HOME spread edge
+            // NHL uses puck-line odds (modelHomePLOdds); MLB/NCAAM use run-line/spread odds (modelHomeSpreadOdds)
             const homeSpreadEdgePP: number = (() => {
               const bkOdds  = toNum(game.homeSpreadOdds);
-              const mdlOdds = toNum(game.modelHomePLOdds);
+              const mdlOdds = isNhlGame
+                ? toNum(game.modelHomePLOdds)
+                : toNum((game as unknown as Record<string, string | null>).modelHomeSpreadOdds ?? null);
+              if (process.env.NODE_ENV === 'development') {
+                console.log(`%c[GameCard:SpreadEdgePP:HOME] game=${game.id} sport=${game.sport} bkOdds=${bkOdds} mdlOdds=${mdlOdds} isNhlGame=${isNhlGame}`, 'color:#FF9900;font-size:9px');
+              }
               return calculateEdge(bkOdds, mdlOdds);
             })();
             // OVER total edge
