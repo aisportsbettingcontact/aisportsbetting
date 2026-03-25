@@ -103,6 +103,8 @@ export interface LineupCardData {
   away: LineupCardTeam;
   home: LineupCardTeam;
   startTime: string;
+  /** Game date in YYYY-MM-DD format, rendered inside the card above the start time */
+  gameDate: string;
   lineup: {
     awayPitcher: LineupCardPitcher;
     homePitcher: LineupCardPitcher;

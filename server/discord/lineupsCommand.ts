@@ -32,7 +32,7 @@ import type { Game } from "../../drizzle/schema.js";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const ALLOWED_USER_ID    = "1098485718734602281";
-const DEFAULT_CHANNEL_ID = "1400758184188186744"; // Test Channel
+const DEFAULT_CHANNEL_ID = "1486210563276144700"; // MLB Lineups channel
 const IMAGE_DELAY_MS     = 800;
 
 // ─── Logger ───────────────────────────────────────────────────────────────────
@@ -388,18 +388,7 @@ export async function handleLineupsCommand(
     lineupsMap = new Map();
   }
 
-  // ── STEP 8: Post header ───────────────────────────────────────────────────
-  const dateLabel = effectiveScope === "TODAY"
-    ? todayEtLabel()
-    : effectiveScope === "ALL"
-      ? "Upcoming MLB Games"
-      : new Date(effectiveScope + "T12:00:00").toLocaleDateString("en-US", {
-          weekday: "long", month: "long", day: "numeric", year: "numeric",
-        });
-
-  await channel.send({
-    content: `⚾ **MLB LINEUPS — ${dateLabel.toUpperCase()}** ⚾\n${games.length} game${games.length !== 1 ? "s" : ""}`,
-  });
+  // ── STE  // ── STEP 8: (header removed — date is now rendered inside each card image) ─────────────
 
   // ── STEP 9: Resolve teams, render, and post each card ─────────────────────
   let posted = 0;
@@ -493,6 +482,7 @@ export async function handleLineupsCommand(
         logoUrl:        homeEntry.logoUrl,
       },
       startTime: formatTime(game.startTimeEst),
+      gameDate: game.gameDate, // e.g. "2026-03-25" — rendered inside the card above the start time
       lineup: {
         awayPitcher,
         homePitcher,

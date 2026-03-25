@@ -25,7 +25,7 @@ function el(tag, style, children, attrs) {
   const e = document.createElement(tag);
   if (style) Object.assign(e.style, style);
   if (attrs) Object.keys(attrs).forEach(k => e.setAttribute(k, attrs[k]));
-  if (typeof children === 'string') e.textContent = children;
+  if (typeof children === 'string' || typeof children === 'number') e.textContent = String(children);
   else if (Array.isArray(children)) children.filter(Boolean).forEach(c => e.appendChild(c));
   else if (children) e.appendChild(children);
   return e;
@@ -323,7 +323,16 @@ function weatherStrip(weather) {
 }
 
 function buildCard(data) {
-  const { away, home, startTime, lineup } = data;
+  const { away, home, startTime, gameDate, lineup } = data;
+
+  // Format gameDate ("2026-03-25") → "March 25, 2026"
+  function formatGameDate(d) {
+    if (!d) return '';
+    const [year, month, day] = d.split('-').map(Number);
+    const months = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+    return `${months[month - 1]} ${day}, ${year}`;
+  }
   const card = el('div', {
     background: '#090E14', borderRadius: '12px',
     border: '1px solid #182433', overflow: 'hidden', width: '680px',
@@ -355,6 +364,14 @@ function buildCard(data) {
   awayCol.appendChild(awayInfo);
   // Center
   const center = el('div', { textAlign: 'center' });
+  // Game date above start time
+  if (gameDate) {
+    center.appendChild(el('div', {
+      fontFamily: '"Barlow Condensed", sans-serif', fontSize: '12px', fontWeight: '500',
+      color: 'rgba(255,255,255,0.65)', letterSpacing: '0.5px', whiteSpace: 'nowrap',
+      marginBottom: '2px', textTransform: 'uppercase',
+    }, formatGameDate(gameDate)));
+  }
   center.appendChild(el('div', {
     fontFamily: '"Barlow Condensed", sans-serif', fontSize: '15px', fontWeight: '700',
     color: '#FFFFFF', letterSpacing: '1px', whiteSpace: 'nowrap',

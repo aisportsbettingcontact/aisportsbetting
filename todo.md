@@ -1984,3 +1984,6 @@
 - [x] lineup_card.html: move position pill and handedness to immediately after player name (not right-edge)
 - [x] lineup_card.html: fix name flex:1 stretching so POS pill and HAND are pixel-adjacent to name text
 - [x] renderLineupCard.ts: boost render quality (higher DPR, larger viewport, sharper output)
+- [x] lineupsCommand.ts: post to channel 1486210563276144700 instead of current channel
+- [x] lineupsCommand.ts: remove text header message (date/game count) before posting cards
+- [x] lineup_card.html: add game date (Month Day, Year) above ET start time in rendered card
