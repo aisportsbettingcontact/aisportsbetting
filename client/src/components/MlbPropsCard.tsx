@@ -209,18 +209,24 @@ function SignalBreakdown({ signalBreakdown, isMobile }: SignalBreakdownProps) {
 
   if (!signals) return null;
 
-  const SIGNAL_LABELS: Record<string, string> = {
-    platoon: 'Platoon',
-    ha: 'Home/Away',
-    tto: 'TTO',
-    whiff: 'Whiff',
-    zone: 'Zone',
-    arsenal: 'Arsenal',
-  };
+  // Map the actual signal keys from StrikeoutModel.py JSON output to display labels.
+  // The model outputs string values like "23.8%" or "1.009x" — we display them as-is.
+  const SIGNAL_DISPLAY_KEYS: Array<{ key: string; label: string }> = [
+    { key: 'combined_k',   label: 'Combined K%' },
+    { key: 'pit_k_ha',     label: 'Pit K (H/A)' },
+    { key: 'pit_whiff',    label: 'Pit Whiff' },
+    { key: 'lu_whiff',     label: 'LU Whiff' },
+    { key: 'pit_f_strike', label: 'F-Strike' },
+    { key: 'ff_speed',     label: 'FB Velo' },
+    { key: 'whiff_mult',   label: 'Whiff Mult' },
+    { key: 'zone_mult',    label: 'Zone Mult' },
+    { key: 'arsenal_mult', label: 'Arsenal Mult' },
+    { key: 'base_k_rate',  label: 'Base K%' },
+  ];
 
-  const entries = Object.entries(SIGNAL_LABELS)
-    .map(([key, label]) => ({ key, label, val: signals[key] ?? 0 }))
-    .filter(e => e.val !== 0);
+  const entries = SIGNAL_DISPLAY_KEYS
+    .map(({ key, label }) => ({ key, label, val: (signals as Record<string, string | number>)[key] }))
+    .filter(e => e.val != null && e.val !== '' && e.val !== 0);
 
   if (entries.length === 0) return null;
 
@@ -231,7 +237,8 @@ function SignalBreakdown({ signalBreakdown, isMobile }: SignalBreakdownProps) {
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? 3 : 4 }}>
         {entries.map(({ key, label, val }) => {
-          const isPos = val > 0;
+          // val is a string like "23.8%" or "1.009x" or a number
+          const displayVal = typeof val === 'string' ? val : String(val);
           return (
             <div
               key={key}
@@ -239,15 +246,15 @@ function SignalBreakdown({ signalBreakdown, isMobile }: SignalBreakdownProps) {
                 display: 'inline-flex',
                 alignItems: 'center',
                 gap: 3,
-                background: isPos ? 'rgba(57,255,20,0.08)' : 'rgba(255,34,68,0.08)',
-                border: `1px solid ${isPos ? 'rgba(57,255,20,0.2)' : 'rgba(255,34,68,0.2)'}`,
+                background: 'rgba(255,255,255,0.05)',
+                border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: 4,
                 padding: isMobile ? '2px 5px' : '2px 6px',
               }}
             >
-              <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.55)' }}>{label}</span>
-              <span style={{ fontSize: isMobile ? 8 : 9, color: isPos ? '#39FF14' : '#FF2244', fontWeight: 700 }}>
-                {isPos ? '+' : ''}{val.toFixed(2)}
+              <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.45)' }}>{label}</span>
+              <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.85)', fontWeight: 700 }}>
+                {displayVal}
               </span>
             </div>
           );
@@ -269,7 +276,8 @@ function MatchupRows({ matchupRows, isMobile }: MatchupRowsProps) {
     if (!matchupRows) return null;
     try {
       return JSON.parse(matchupRows) as Array<{
-        order: number;
+        spot?: number;
+        order?: number;
         name: string;
         hand: string;
         kRate: number;
@@ -292,12 +300,12 @@ function MatchupRows({ matchupRows, isMobile }: MatchupRowsProps) {
           <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', textAlign: 'center' }}>#</span>
           <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)' }}>Batter</span>
           <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>K%</span>
-          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>Adj</span>
-          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>xK</span>
+          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>AdjK%</span>
+          <span style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', textAlign: 'right' }}>xK/PA</span>
         </div>
-        {rows.slice(0, 9).map((row) => (
+        {rows.slice(0, 9).map((row, idx) => (
           <div
-            key={row.order}
+            key={row.spot ?? row.order ?? idx}
             style={{
               display: 'grid',
               gridTemplateColumns: '16px 1fr 28px 28px 28px',
@@ -306,14 +314,14 @@ function MatchupRows({ matchupRows, isMobile }: MatchupRowsProps) {
               borderBottom: '1px solid rgba(24,36,51,0.3)',
             }}
           >
-            <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>{row.order}</span>
+            <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.3)', textAlign: 'center' }}>{row.spot ?? row.order ?? idx + 1}</span>
             <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.7)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {row.name}
               <span style={{ fontSize: 7, color: 'rgba(255,255,255,0.3)', marginLeft: 3 }}>{row.hand}</span>
             </span>
-            <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.55)', textAlign: 'right' }}>{(row.kRate * 100).toFixed(0)}%</span>
-            <span style={{ fontSize: isMobile ? 8 : 9, color: row.adj >= 0 ? 'rgba(57,255,20,0.7)' : 'rgba(255,34,68,0.7)', textAlign: 'right' }}>
-              {row.adj >= 0 ? '+' : ''}{row.adj.toFixed(2)}
+            <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.55)', textAlign: 'right' }}>{row.kRate.toFixed(0)}%</span>
+            <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.75)', textAlign: 'right' }}>
+              {row.adj.toFixed(1)}%
             </span>
             <span style={{ fontSize: isMobile ? 8 : 9, color: 'rgba(255,255,255,0.7)', textAlign: 'right' }}>{row.expK.toFixed(2)}</span>
           </div>
