@@ -15,6 +15,7 @@
  */
 
 import { chromium, type Browser, type Page } from "playwright";
+import { execSync } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
@@ -87,10 +88,34 @@ let _warmUpPromise: Promise<void> | null = null;
  * In normal operation this should never launch (warmUpRenderer() does it at
  * startup), but it acts as a safety net for the first call.
  */
+async function ensurePlaywrightBrowsers(): Promise<void> {
+  const execPath = chromium.executablePath();
+  console.log(`[SplitsRenderer] Checking Chromium binary at: ${execPath}`);
+  if (!fs.existsSync(execPath)) {
+    console.warn(`[SplitsRenderer] ⚠️  Chromium binary NOT found — running playwright install...`);
+    try {
+      const result = execSync(
+        `node ${require.resolve("playwright/cli")} install chromium`,
+        { timeout: 120_000, encoding: "utf-8", stdio: "pipe" }
+      );
+      console.log(`[SplitsRenderer] playwright install output: ${result}`);
+      console.log(`[SplitsRenderer] ✅ Chromium installed successfully`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[SplitsRenderer] ❌ playwright install FAILED: ${msg}`);
+      throw new Error(`Playwright Chromium install failed: ${msg}`);
+    }
+  } else {
+    console.log(`[SplitsRenderer] ✅ Chromium binary exists (${(fs.statSync(execPath).size / 1024 / 1024).toFixed(0)} MB)`);
+  }
+}
+
 async function getBrowser(): Promise<Browser> {
   if (_browser && _browser.isConnected()) return _browser;
   console.log("[SplitsRenderer] Launching headless Chromium...");
   const t0 = Date.now();
+  // Auto-install browser if missing (e.g. after deployment to a new host)
+  await ensurePlaywrightBrowsers();
   _browser = await chromium.launch({
     headless: true,
     args: [
