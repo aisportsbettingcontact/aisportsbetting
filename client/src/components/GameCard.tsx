@@ -838,12 +838,19 @@ function DesktopMergedPanel({
     : '—';
 
   // ── Open line strings (from AN HTML ingest) ───────────────────────────────
+  // fmtLine: format open line string; normalizeSpread adds '+' to positive spread values
+  const normalizeSpread = (s: string | null | undefined): string | null => {
+    if (!s) return null;
+    const n = parseFloat(s);
+    if (!isNaN(n) && n > 0 && !s.startsWith('+')) return `+${s}`;
+    return s;
+  };
   const fmtLine = (line: string | null | undefined, odds: string | null | undefined): string | null => {
     if (!line) return null;
     return odds ? `${line} (${odds})` : line;
   };
-  const openAwaySpreadStr = fmtLine(game.openAwaySpread, game.openAwaySpreadOdds);
-  const openHomeSpreadStr = fmtLine(game.openHomeSpread, game.openHomeSpreadOdds);
+  const openAwaySpreadStr = fmtLine(normalizeSpread(game.openAwaySpread), game.openAwaySpreadOdds);
+  const openHomeSpreadStr = fmtLine(normalizeSpread(game.openHomeSpread), game.openHomeSpreadOdds);
   const openOverStr       = fmtLine(game.openTotal, game.openOverOdds);
   const openUnderStr      = fmtLine(game.openTotal, game.openUnderOdds);
   const openAwayMlStr     = game.openAwayML ?? null;
@@ -2006,12 +2013,18 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       ? Math.round(Math.abs(modelTotal - bookTotal) * 10) / 10
       : toNum(game.totalDiff);
   // ── Open line strings (from AN HTML ingest) — available in GameCard scope ─
+  const _normSpread = (s: string | null | undefined): string | null => {
+    if (!s) return null;
+    const n = parseFloat(s);
+    if (!isNaN(n) && n > 0 && !s.startsWith('+')) return `+${s}`;
+    return s;
+  };
   const _fmtLine = (line: string | null | undefined, odds: string | null | undefined): string | null => {
     if (!line) return null;
     return odds ? `${line} (${odds})` : line;
   };
-  const openAwaySpreadStr = _fmtLine(game.openAwaySpread, game.openAwaySpreadOdds);
-  const openHomeSpreadStr = _fmtLine(game.openHomeSpread, game.openHomeSpreadOdds);
+  const openAwaySpreadStr = _fmtLine(_normSpread(game.openAwaySpread), game.openAwaySpreadOdds);
+  const openHomeSpreadStr = _fmtLine(_normSpread(game.openHomeSpread), game.openHomeSpreadOdds);
   const openOverStr       = _fmtLine(game.openTotal, game.openOverOdds);
   const openUnderStr      = _fmtLine(game.openTotal, game.openUnderOdds);
   const openAwayMlStr     = game.openAwayML ?? null;
