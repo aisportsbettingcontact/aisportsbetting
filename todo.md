@@ -1950,3 +1950,6 @@
 - [x] Fix player photo crop: photos are too zoomed in showing chin/neck, need to show full face
 - [x] Fix home side pitcher section: should be left-aligned matching away side
 - [x] Fix player headshot: objectPosition top center shows cap/helmet, need to shift down to show face (use center 30% or similar)
+- [x] Fix MlbLineupCard mobile: stack Away/Home vertically on mobile so names don't get cut off
+- [x] Fix MlbLineupCard photo size: increase avatar to ~56px to match desktop reference screenshot
+- [x] Fix MlbLineupCard photo crop: match the working state shown in reference (face fully visible, not cut off)

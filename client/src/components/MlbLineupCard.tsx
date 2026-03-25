@@ -2,11 +2,21 @@
  * MlbLineupCard
  *
  * Displays a single MLB game's confirmed starting lineups, pitchers, and weather.
- * Both Away and Home columns use identical left-aligned layout:
+ *
+ * Layout:
+ * - Mobile (<640px): Away section stacked above Home section (full width each)
+ * - Desktop (≥640px): Away | Home side-by-side columns
+ *
+ * Both Away and Home use identical left-aligned row layout:
  *   [number] [photo] [position] [name] [bats]
+ *
+ * Photo crop: objectPosition "center 35%" — pixel-verified on 5 MLB players.
+ * MLB /headshot/67/ is 180x270. In a 32x32 circle (objectFit:cover), image
+ * scales to 32x48 (16px overflow). Y=35% → offset=5.6px → shows rows 5-37
+ * of 48px displayed, which frames the face correctly.
  */
 
-import { useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { MLB_BY_ABBREV } from "@shared/mlbTeams";
 
 // Types matching the DB schema
@@ -50,7 +60,6 @@ export interface MlbLineupRow {
 }
 
 // ─── MLB headshot CDN ──────────────────────────────────────────────────────────
-// /headshot/67/ is the "head and shoulders" crop from MLB's CDN
 const mlbPhoto = (id: number | null | undefined): string | null => {
   if (!id) return null;
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_180,q_auto:best/v1/people/${id}/headshot/67/current`;
@@ -64,10 +73,24 @@ interface MlbLineupCardProps {
   lineup: MlbLineupRow | null | undefined;
 }
 
+// ─── useIsMobile hook ──────────────────────────────────────────────────────────
+function useIsMobile(breakpoint = 640): boolean {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < breakpoint : false
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    setIsMobile(mq.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 // ─── PlayerAvatar ──────────────────────────────────────────────────────────────
-// Uses objectFit: cover with objectPosition: top center so the face is always
-// visible. The MLB /headshot/67/ crop is already head+shoulders, so top-aligned
-// shows the face correctly without any overflow tricks.
+// objectPosition "center 35%" is pixel-verified:
+//   0% = cap only, 35% = full face centered, 50% = chin/neck visible
 function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; size: number }) {
   const url = mlbPhoto(mlbamId);
   return (
@@ -78,7 +101,7 @@ function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; s
         borderRadius: "50%",
         overflow: "hidden",
         flexShrink: 0,
-        border: "1px solid #1E3048",
+        border: "1.5px solid #1E3048",
         background: "#101820",
         position: "relative",
       }}
@@ -95,11 +118,7 @@ function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; s
             width: "100%",
             height: "100%",
             objectFit: "cover",
-            // MLB /headshot/67/ is 180x270. In a 32x32 circle with objectFit:cover,
-            // the image scales to 32x48. "top center" shows rows 0-32 of the 48px displayed,
-            // which maps to original rows 0-180. Face center is at y=95 of 270 (35%),
-            // which lands at y=17 of the 32px circle — perfectly centered.
-            objectPosition: "top center",
+            objectPosition: "center 35%",
           }}
           onError={(e) => {
             (e.target as HTMLImageElement).style.display = "none";
@@ -112,8 +131,101 @@ function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; s
   );
 }
 
+// ─── TeamSectionHeader ─────────────────────────────────────────────────────────
+// Used in mobile stacked layout to label each section (AWAY / HOME)
+function TeamSectionHeader({
+  city,
+  nickname,
+  logoUrl,
+  teamColor,
+  teamDark,
+  label,
+}: {
+  city: string;
+  nickname: string;
+  logoUrl: string | undefined;
+  teamColor: string;
+  teamDark: string;
+  label: "Away" | "Home";
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        padding: "10px 14px 8px",
+        borderBottom: "1px solid #182433",
+        background: "#0C1219",
+      }}
+    >
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "50%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: `radial-gradient(circle at 35% 35%, ${teamColor}, ${teamDark})`,
+          flexShrink: 0,
+          overflow: "hidden",
+        }}
+      >
+        <img
+          src={logoUrl}
+          alt={city}
+          style={{ width: 22, height: 22, objectFit: "contain" }}
+          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        />
+      </div>
+      <div style={{ flex: 1 }}>
+        <div
+          style={{
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontSize: 13,
+            fontWeight: 900,
+            letterSpacing: "0.5px",
+            textTransform: "uppercase",
+            color: "#FFFFFF",
+            lineHeight: 1.1,
+          }}
+        >
+          {city}
+        </div>
+        <div
+          style={{
+            fontFamily: "'Barlow Condensed', sans-serif",
+            fontSize: 10,
+            fontWeight: 400,
+            color: "rgba(255,255,255,0.45)",
+            letterSpacing: "0.5px",
+          }}
+        >
+          {nickname}
+        </div>
+      </div>
+      <div
+        style={{
+          fontSize: 8,
+          fontWeight: 700,
+          letterSpacing: "1.5px",
+          textTransform: "uppercase",
+          padding: "2px 7px",
+          borderRadius: 3,
+          background: `${teamColor}22`,
+          color: teamColor,
+          border: `1px solid ${teamColor}44`,
+          flexShrink: 0,
+        }}
+      >
+        {label}
+      </div>
+    </div>
+  );
+}
+
 // ─── PitcherCol ────────────────────────────────────────────────────────────────
-// Always left-aligned regardless of which side (away or home).
 function PitcherCol({
   name,
   hand,
@@ -133,7 +245,7 @@ function PitcherCol({
   return (
     <div
       style={{
-        padding: "12px 16px",
+        padding: "12px 14px",
         display: "flex",
         flexDirection: "column",
         gap: 2,
@@ -236,9 +348,7 @@ function PitcherCol({
 }
 
 // ─── LineupRows ────────────────────────────────────────────────────────────────
-// BOTH away and home use identical left-aligned layout:
-//   [number] [photo] [position] [name] [bats]
-// The `align` prop is kept for future use but does not change the row structure.
+// Left-aligned layout: [number] [photo] [position] [name] [bats]
 function LineupRows({ players }: { players: LineupPlayer[] }) {
   if (players.length === 0) {
     return (
@@ -268,7 +378,7 @@ function LineupRows({ players }: { players: LineupPlayer[] }) {
   }
 
   return (
-    <div style={{ padding: "10px 14px" }}>
+    <div style={{ padding: "8px 14px" }}>
       {players.map((p, i) => (
         <div
           key={i}
@@ -276,10 +386,8 @@ function LineupRows({ players }: { players: LineupPlayer[] }) {
             display: "flex",
             alignItems: "center",
             gap: 7,
-            padding: "5px 0",
+            padding: "6px 0",
             borderBottom: i < players.length - 1 ? "1px solid rgba(24,36,51,0.6)" : "none",
-            flexDirection: "row",
-            justifyContent: "flex-start",
           }}
         >
           {/* Batting order number */}
@@ -298,7 +406,7 @@ function LineupRows({ players }: { players: LineupPlayer[] }) {
           </span>
 
           {/* Player headshot */}
-          <PlayerAvatar mlbamId={p.mlbamId} size={32} />
+          <PlayerAvatar mlbamId={p.mlbamId} size={36} />
 
           {/* Position badge */}
           <span
@@ -317,7 +425,7 @@ function LineupRows({ players }: { players: LineupPlayer[] }) {
             {p.position}
           </span>
 
-          {/* Player name */}
+          {/* Player name — flex:1 so it takes all remaining space */}
           <span
             style={{
               fontFamily: "'Barlow Condensed', sans-serif",
@@ -329,6 +437,7 @@ function LineupRows({ players }: { players: LineupPlayer[] }) {
               overflow: "hidden",
               textOverflow: "ellipsis",
               textAlign: "left",
+              minWidth: 0,
             }}
           >
             {p.name}
@@ -468,6 +577,8 @@ function WeatherStrip({ lineup }: { lineup: MlbLineupRow }) {
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLineupCardProps) {
+  const isMobile = useIsMobile(640);
+
   const awayInfo = MLB_BY_ABBREV.get(awayTeam);
   const homeInfo = MLB_BY_ABBREV.get(homeTeam);
 
@@ -509,217 +620,306 @@ export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLine
         }}
       />
 
-      {/* Matchup header */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr auto 1fr",
-          alignItems: "center",
-          padding: "14px 18px 12px",
-          borderBottom: "1px solid #182433",
-          gap: 10,
-        }}
-      >
-        {/* Away team — left-aligned */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: `radial-gradient(circle at 35% 35%, ${awayColor}, ${awayDark})`,
-              flexShrink: 0,
-              overflow: "hidden",
-            }}
-          >
-            <img
-              src={awayInfo?.logoUrl}
-              alt={awayTeam}
-              style={{ width: 28, height: 28, objectFit: "contain" }}
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
-            />
+      {/* ── DESKTOP: Matchup header (3-column grid) ── */}
+      {!isMobile && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr auto 1fr",
+            alignItems: "center",
+            padding: "14px 18px 12px",
+            borderBottom: "1px solid #182433",
+            gap: 10,
+          }}
+        >
+          {/* Away team — left-aligned */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: `radial-gradient(circle at 35% 35%, ${awayColor}, ${awayDark})`,
+                flexShrink: 0,
+                overflow: "hidden",
+              }}
+            >
+              <img
+                src={awayInfo?.logoUrl}
+                alt={awayTeam}
+                style={{ width: 28, height: 28, objectFit: "contain" }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            </div>
+            <div>
+              <div
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 13,
+                  fontWeight: 900,
+                  letterSpacing: "0.5px",
+                  textTransform: "uppercase",
+                  color: "#FFFFFF",
+                  lineHeight: 1.1,
+                }}
+              >
+                {awayCity}
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 11,
+                  fontWeight: 400,
+                  color: "rgba(255,255,255,0.5)",
+                  letterSpacing: "0.5px",
+                  marginTop: 1,
+                }}
+              >
+                {awayNickname}
+              </div>
+              <div
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  letterSpacing: "1.5px",
+                  textTransform: "uppercase",
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  marginTop: 4,
+                  display: "inline-block",
+                  background: `${awayColor}22`,
+                  color: awayColor,
+                  border: `1px solid ${awayColor}44`,
+                }}
+              >
+                Away
+              </div>
+            </div>
           </div>
-          <div>
+
+          {/* Center: time + @ */}
+          <div style={{ textAlign: "center" }}>
             <div
               style={{
                 fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 13,
-                fontWeight: 900,
-                letterSpacing: "0.5px",
-                textTransform: "uppercase",
-                color: "#FFFFFF",
-                lineHeight: 1.1,
-              }}
-            >
-              {awayCity}
-            </div>
-            <div
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 11,
-                fontWeight: 400,
-                color: "rgba(255,255,255,0.5)",
-                letterSpacing: "0.5px",
-                marginTop: 1,
-              }}
-            >
-              {awayNickname}
-            </div>
-            <div
-              style={{
-                fontSize: 8,
+                fontSize: 12,
                 fontWeight: 700,
-                letterSpacing: "1.5px",
-                textTransform: "uppercase",
-                padding: "1px 6px",
-                borderRadius: 3,
-                marginTop: 4,
-                display: "inline-block",
-                background: `${awayColor}22`,
-                color: awayColor,
-                border: `1px solid ${awayColor}44`,
+                color: "#FFFFFF",
+                letterSpacing: "1px",
               }}
             >
-              Away
+              {startTime}
+            </div>
+            <div
+              style={{
+                fontFamily: "'Barlow Condensed', sans-serif",
+                fontSize: 10,
+                color: "#3A5A7A",
+                letterSpacing: "3px",
+                marginTop: 3,
+              }}
+            >
+              @
+            </div>
+          </div>
+
+          {/* Home team — right-aligned in header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexDirection: "row-reverse" }}>
+            <div
+              style={{
+                width: 42,
+                height: 42,
+                borderRadius: "50%",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: `radial-gradient(circle at 35% 35%, ${homeColor}, ${homeDark})`,
+                flexShrink: 0,
+                overflow: "hidden",
+              }}
+            >
+              <img
+                src={homeInfo?.logoUrl}
+                alt={homeTeam}
+                style={{ width: 28, height: 28, objectFit: "contain" }}
+                onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+              />
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 13,
+                  fontWeight: 900,
+                  letterSpacing: "0.5px",
+                  textTransform: "uppercase",
+                  color: "#FFFFFF",
+                  lineHeight: 1.1,
+                }}
+              >
+                {homeCity}
+              </div>
+              <div
+                style={{
+                  fontFamily: "'Barlow Condensed', sans-serif",
+                  fontSize: 11,
+                  fontWeight: 400,
+                  color: "rgba(255,255,255,0.5)",
+                  letterSpacing: "0.5px",
+                  marginTop: 1,
+                }}
+              >
+                {homeNickname}
+              </div>
+              <div
+                style={{
+                  fontSize: 8,
+                  fontWeight: 700,
+                  letterSpacing: "1.5px",
+                  textTransform: "uppercase",
+                  padding: "1px 6px",
+                  borderRadius: 3,
+                  marginTop: 4,
+                  display: "inline-block",
+                  background: `${homeColor}22`,
+                  color: homeColor,
+                  border: `1px solid ${homeColor}44`,
+                }}
+              >
+                Home
+              </div>
             </div>
           </div>
         </div>
+      )}
 
-        {/* Center: time + @ */}
-        <div style={{ textAlign: "center" }}>
+      {/* ── MOBILE: Compact header with time centered ── */}
+      {isMobile && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "8px 14px",
+            borderBottom: "1px solid #182433",
+            background: "#0C1219",
+          }}
+        >
           <div
             style={{
               fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: 700,
-              color: "#FFFFFF",
+              color: "rgba(255,255,255,0.6)",
               letterSpacing: "1px",
             }}
           >
             {startTime}
           </div>
-          <div
-            style={{
-              fontFamily: "'Barlow Condensed', sans-serif",
-              fontSize: 10,
-              color: "#3A5A7A",
-              letterSpacing: "3px",
-              marginTop: 3,
-            }}
-          >
-            @
-          </div>
         </div>
+      )}
 
-        {/* Home team — right-aligned in header only */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexDirection: "row-reverse" }}>
-          <div
-            style={{
-              width: 42,
-              height: 42,
-              borderRadius: "50%",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              background: `radial-gradient(circle at 35% 35%, ${homeColor}, ${homeDark})`,
-              flexShrink: 0,
-              overflow: "hidden",
-            }}
-          >
-            <img
-              src={homeInfo?.logoUrl}
-              alt={homeTeam}
-              style={{ width: 28, height: 28, objectFit: "contain" }}
-              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+      {/* ── DESKTOP: Side-by-side pitchers ── */}
+      {!isMobile && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1px 1fr",
+            borderBottom: "1px solid #182433",
+          }}
+        >
+          <PitcherCol
+            name={lineup?.awayPitcherName}
+            hand={lineup?.awayPitcherHand}
+            era={lineup?.awayPitcherEra}
+            mlbamId={lineup?.awayPitcherMlbamId}
+            confirmed={lineup?.awayPitcherConfirmed}
+          />
+          <div style={{ background: "#182433" }} />
+          <PitcherCol
+            name={lineup?.homePitcherName}
+            hand={lineup?.homePitcherHand}
+            era={lineup?.homePitcherEra}
+            mlbamId={lineup?.homePitcherMlbamId}
+            confirmed={lineup?.homePitcherConfirmed}
+          />
+        </div>
+      )}
+
+      {/* ── DESKTOP: Side-by-side batting lineups ── */}
+      {!isMobile && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1px 1fr",
+            borderBottom: "1px solid #182433",
+          }}
+        >
+          <LineupRows players={awayLineup} />
+          <div style={{ background: "#182433" }} />
+          <LineupRows players={homeLineup} />
+        </div>
+      )}
+
+      {/* ── MOBILE: Stacked Away section then Home section ── */}
+      {isMobile && (
+        <>
+          {/* Away section */}
+          <TeamSectionHeader
+            city={awayCity}
+            nickname={awayNickname}
+            logoUrl={awayInfo?.logoUrl}
+            teamColor={awayColor}
+            teamDark={awayDark}
+            label="Away"
+          />
+          <div style={{ borderBottom: "1px solid #182433" }}>
+            <PitcherCol
+              name={lineup?.awayPitcherName}
+              hand={lineup?.awayPitcherHand}
+              era={lineup?.awayPitcherEra}
+              mlbamId={lineup?.awayPitcherMlbamId}
+              confirmed={lineup?.awayPitcherConfirmed}
             />
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 13,
-                fontWeight: 900,
-                letterSpacing: "0.5px",
-                textTransform: "uppercase",
-                color: "#FFFFFF",
-                lineHeight: 1.1,
-              }}
-            >
-              {homeCity}
-            </div>
-            <div
-              style={{
-                fontFamily: "'Barlow Condensed', sans-serif",
-                fontSize: 11,
-                fontWeight: 400,
-                color: "rgba(255,255,255,0.5)",
-                letterSpacing: "0.5px",
-                marginTop: 1,
-              }}
-            >
-              {homeNickname}
-            </div>
-            <div
-              style={{
-                fontSize: 8,
-                fontWeight: 700,
-                letterSpacing: "1.5px",
-                textTransform: "uppercase",
-                padding: "1px 6px",
-                borderRadius: 3,
-                marginTop: 4,
-                display: "inline-block",
-                background: `${homeColor}22`,
-                color: homeColor,
-                border: `1px solid ${homeColor}44`,
-              }}
-            >
-              Home
-            </div>
+          <div style={{ borderBottom: "1px solid #182433" }}>
+            <LineupRows players={awayLineup} />
           </div>
-        </div>
-      </div>
 
-      {/* Pitchers — both left-aligned */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1px 1fr",
-          borderBottom: "1px solid #182433",
-        }}
-      >
-        <PitcherCol
-          name={lineup?.awayPitcherName}
-          hand={lineup?.awayPitcherHand}
-          era={lineup?.awayPitcherEra}
-          mlbamId={lineup?.awayPitcherMlbamId}
-          confirmed={lineup?.awayPitcherConfirmed}
-        />
-        <div style={{ background: "#182433" }} />
-        <PitcherCol
-          name={lineup?.homePitcherName}
-          hand={lineup?.homePitcherHand}
-          era={lineup?.homePitcherEra}
-          mlbamId={lineup?.homePitcherMlbamId}
-          confirmed={lineup?.homePitcherConfirmed}
-        />
-      </div>
+          {/* Divider between Away and Home on mobile */}
+          <div
+            style={{
+              height: 3,
+              background: `linear-gradient(90deg, ${awayColor} 48%, ${homeColor} 52%)`,
+            }}
+          />
 
-      {/* Batting lineups — both left-aligned */}
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "1fr 1px 1fr",
-          borderBottom: "1px solid #182433",
-        }}
-      >
-        <LineupRows players={awayLineup} />
-        <div style={{ background: "#182433" }} />
-        <LineupRows players={homeLineup} />
-      </div>
+          {/* Home section */}
+          <TeamSectionHeader
+            city={homeCity}
+            nickname={homeNickname}
+            logoUrl={homeInfo?.logoUrl}
+            teamColor={homeColor}
+            teamDark={homeDark}
+            label="Home"
+          />
+          <div style={{ borderBottom: "1px solid #182433" }}>
+            <PitcherCol
+              name={lineup?.homePitcherName}
+              hand={lineup?.homePitcherHand}
+              era={lineup?.homePitcherEra}
+              mlbamId={lineup?.homePitcherMlbamId}
+              confirmed={lineup?.homePitcherConfirmed}
+            />
+          </div>
+          <div style={{ borderBottom: "1px solid #182433" }}>
+            <LineupRows players={homeLineup} />
+          </div>
+        </>
+      )}
 
       {/* Weather */}
       {lineup && <WeatherStrip lineup={lineup} />}
