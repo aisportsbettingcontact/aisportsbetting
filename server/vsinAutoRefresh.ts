@@ -1024,24 +1024,31 @@ async function refreshAnApiOdds(
         const openHomeML = teamsSwapped ? anGame.openAwayML : anGame.openHomeML;
 
         // Populate DK NJ current lines + Open lines
+        // fmtSpread: converts numeric spread/total to signed string (e.g. 1.5 → "+1.5", -1.5 → "-1.5", 7 → "7")
+        // Totals are never signed (always positive), but spreads must be signed for display correctness.
+        const fmtSpread = (v: number | null): string | null =>
+          v === null ? null : v > 0 ? `+${v}` : `${v}`;
+        const fmtTotal = (v: number | null): string | null =>
+          v === null ? null : `${v}`;
+
         await updateAnOdds(dbGame.id, {
           // DK NJ current line
-          awayBookSpread: dkAwaySpread !== null ? String(dkAwaySpread) : null,
+          awayBookSpread: fmtSpread(dkAwaySpread),
           awaySpreadOdds: dkAwaySpreadOdds,
-          homeBookSpread: dkHomeSpread !== null ? String(dkHomeSpread) : null,
+          homeBookSpread: fmtSpread(dkHomeSpread),
           homeSpreadOdds: dkHomeSpreadOdds,
-          bookTotal: anGame.dkTotal !== null ? String(anGame.dkTotal) : null,
+          bookTotal: fmtTotal(anGame.dkTotal),
           overOdds: anGame.dkOverOdds,
           underOdds: anGame.dkUnderOdds,
           awayML: dkAwayML,
           homeML: dkHomeML,
           // Open line (only update if AN has open data)
           ...(openAwaySpread !== null ? {
-            openAwaySpread: openAwaySpread !== null ? String(openAwaySpread) : null,
+            openAwaySpread: fmtSpread(openAwaySpread),
             openAwaySpreadOdds: openAwaySpreadOdds,
-            openHomeSpread: openHomeSpread !== null ? String(openHomeSpread) : null,
+            openHomeSpread: fmtSpread(openHomeSpread),
             openHomeSpreadOdds: openHomeSpreadOdds,
-            openTotal: anGame.openTotal !== null ? String(anGame.openTotal) : null,
+            openTotal: fmtTotal(anGame.openTotal),
             openAwayML: openAwayML,
             openHomeML: openHomeML,
           } : {}),
@@ -1053,11 +1060,11 @@ async function refreshAnApiOdds(
           dbSport,
           source,
           {
-            awaySpread: dkAwaySpread !== null ? String(dkAwaySpread) : null,
+            awaySpread: fmtSpread(dkAwaySpread),
             awaySpreadOdds: dkAwaySpreadOdds,
-            homeSpread: dkHomeSpread !== null ? String(dkHomeSpread) : null,
+            homeSpread: fmtSpread(dkHomeSpread),
             homeSpreadOdds: dkHomeSpreadOdds,
-            total: anGame.dkTotal !== null ? String(anGame.dkTotal) : null,
+            total: fmtTotal(anGame.dkTotal),
             overOdds: anGame.dkOverOdds,
             underOdds: anGame.dkUnderOdds,
             awayML: dkAwayML,

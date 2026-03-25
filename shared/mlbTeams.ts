@@ -454,6 +454,8 @@ export const VSIN_MLB_HREF_ALIASES: Record<string, string> = {
 const MLB_AN_SLUG_ALIASES: Record<string, string> = {
   // Athletics relocated from Oakland to Sacramento; AN still uses oakland slug
   "sacramento-athletics": "oakland-athletics",
+  // AN sometimes uses "st.-louis-cardinals" (with period) instead of "st-louis-cardinals"
+  "st.-louis-cardinals": "st-louis-cardinals",
 };
 
 /** Get team by Action Network url_slug (from AN API or page) */
