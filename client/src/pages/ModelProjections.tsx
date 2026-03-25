@@ -1166,17 +1166,6 @@ export default function ModelProjections() {
                   <div style={{ padding: '10px 10px 0' }}>
                     {sortedDates.map((date) => (
                       <div key={date}>
-                        {/* Date header */}
-                        <div style={{
-                          padding: '8px 6px 6px',
-                          fontSize: 10,
-                          fontWeight: 700,
-                          letterSpacing: '2px',
-                          textTransform: 'uppercase',
-                          color: 'rgba(255,255,255,0.35)',
-                        }}>
-                          {formatDateHeader(date)}
-                        </div>
                         {gamesByDate[date]!.map((game) => (
                           <MlbLineupCard
                             key={game!.id}

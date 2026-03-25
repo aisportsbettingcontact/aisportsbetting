@@ -14,10 +14,8 @@
  * Desktop row design (≥640px):
  *   [num] [avatar:36px] [pos] [name] [bats] — single line, larger font
  *
- * Photo crop: objectPosition "center 35%" — pixel-verified on 5 MLB players.
- * MLB /headshot/67/ is 180x270. In a 28px circle (objectFit:cover), image
- * scales to 28x42 (14px overflow). Y=35% → offset=4.9px → shows rows 5-33
- * of 42px displayed, which frames the face correctly.
+ * Photo: transparent-background PNG via Cloudinary e_background_removal,f_png.
+ * Rounded bottom corners on avatar images for a polished cutout look.
  */
 
 import { useState, useEffect, useMemo } from "react";
@@ -96,13 +94,11 @@ function useIsMobile(breakpoint = 640): boolean {
 }
 
 // ─── PlayerAvatar ──────────────────────────────────────────────────────────────
-// No circle container — display the raw MLB headshot image directly.
-// The MLB /headshot/67/ CDN already provides a natural circular crop with
-// transparent/gray background. Image is square (1:1 aspect ratio).
+// No circle container — display the raw MLB headshot PNG with transparent bg.
+// Bottom corners are rounded to give a natural cutout look.
 function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; size: number }) {
   const url = mlbPhoto(mlbamId);
   if (!url) {
-    // Fallback: empty square placeholder
     return (
       <div
         style={{
@@ -125,6 +121,7 @@ function PlayerAvatar({ mlbamId, size }: { mlbamId: number | null | undefined; s
         flexShrink: 0,
         display: "block",
         objectFit: "contain",
+        borderRadius: `0 0 ${Math.round(size * 0.35)}px ${Math.round(size * 0.35)}px`,
       }}
       onError={(e) => {
         (e.target as HTMLImageElement).style.display = "none";
@@ -170,7 +167,7 @@ function PitcherSection({
             fontWeight: 600,
             letterSpacing: "1.5px",
             textTransform: "uppercase",
-            color: "#3A5A7A",
+            color: "#FFFFFF",
             marginBottom: 5,
           }}
         >
@@ -207,7 +204,7 @@ function PitcherSection({
                     padding: "1px 4px",
                     borderRadius: 2,
                     background: "#101820",
-                    color: "#3A5A7A",
+                    color: "#FFFFFF",
                     border: "1px solid #182433",
                   }}
                 >
@@ -262,7 +259,7 @@ function PitcherSection({
           fontWeight: 600,
           letterSpacing: "2px",
           textTransform: "uppercase",
-          color: "#3A5A7A",
+          color: "#FFFFFF",
           marginBottom: 5,
         }}
       >
@@ -296,7 +293,7 @@ function PitcherSection({
                   padding: "1px 5px",
                   borderRadius: 3,
                   background: "#101820",
-                  color: "#3A5A7A",
+                  color: "#FFFFFF",
                   border: "1px solid #182433",
                   display: "inline-block",
                 }}
@@ -354,7 +351,7 @@ function LineupRows({ players, isMobile }: { players: LineupPlayer[]; isMobile: 
         <span
           style={{
             fontSize: 9,
-            color: "#3A5A7A",
+            color: "#FFFFFF",
             fontWeight: 600,
             letterSpacing: "1px",
             textTransform: "uppercase",
@@ -368,11 +365,6 @@ function LineupRows({ players, isMobile }: { players: LineupPlayer[]; isMobile: 
 
   if (isMobile) {
     // MOBILE: Two-line compact rows
-    // Budget analysis (iPhone SE 375px):
-    //   col = 167px, padding = 6px each side = 12px total
-    //   usable = 155px
-    //   [num:11px][gap:3px][avatar:28px][gap:4px][flex-col: ~109px]
-    //   name at 11px bold: ~6.5px/char → 109/6.5 = 16.8 chars → fits "Giancarlo Stanton" (17) ✓
     return (
       <div style={{ padding: "4px 6px" }}>
         {players.map((p, i) => (
@@ -392,7 +384,7 @@ function LineupRows({ players, isMobile }: { players: LineupPlayer[]; isMobile: 
                 fontFamily: "'Barlow Condensed', sans-serif",
                 fontSize: 10,
                 fontWeight: 700,
-                color: "#3A5A7A",
+                color: "#FFFFFF",
                 width: 11,
                 flexShrink: 0,
                 textAlign: "right",
@@ -401,7 +393,7 @@ function LineupRows({ players, isMobile }: { players: LineupPlayer[]; isMobile: 
               {p.battingOrder}
             </span>
 
-            {/* Player headshot — 36px on mobile (pixel-verified fits iPhone SE) */}
+            {/* Player headshot — 36px on mobile */}
             <PlayerAvatar mlbamId={p.mlbamId} size={36} />
 
             {/* Two-line text column */}
@@ -448,13 +440,13 @@ function LineupRows({ players, isMobile }: { players: LineupPlayer[]; isMobile: 
                 >
                   {p.position}
                 </span>
-                {/* Handedness indicator */}
+                {/* Handedness indicator — white for all */}
                 <span
                   style={{
                     fontFamily: "'Barlow Condensed', sans-serif",
                     fontSize: 11,
                     fontWeight: 800,
-                    color: p.bats === "L" ? "#F0A500" : p.bats === "S" ? "#39FF14" : "#E0E0E0",
+                    color: "#FFFFFF",
                     letterSpacing: "0.5px",
                   }}
                 >
@@ -488,7 +480,7 @@ function LineupRows({ players, isMobile }: { players: LineupPlayer[]; isMobile: 
               fontFamily: "'Barlow Condensed', sans-serif",
               fontSize: 11,
               fontWeight: 700,
-              color: "#3A5A7A",
+              color: "#FFFFFF",
               width: 14,
               flexShrink: 0,
               textAlign: "right",
@@ -539,13 +531,13 @@ function LineupRows({ players, isMobile }: { players: LineupPlayer[]; isMobile: 
             {p.name}
           </span>
 
-          {/* Bats indicator — colored by handedness */}
+          {/* Bats indicator — white */}
           <span
             style={{
               fontFamily: "'Barlow Condensed', sans-serif",
               fontSize: 12,
               fontWeight: 800,
-              color: p.bats === "L" ? "#F0A500" : p.bats === "S" ? "#39FF14" : "#E0E0E0",
+              color: "#FFFFFF",
               flexShrink: 0,
               width: 12,
               textAlign: "right",
@@ -596,7 +588,7 @@ function WeatherStrip({ lineup }: { lineup: MlbLineupRow }) {
 
   const precipColor =
     weatherPrecip == null
-      ? "#3A5A7A"
+      ? "#FFFFFF"
       : weatherPrecip === 0
       ? "#39FF14"
       : weatherPrecip < 30
@@ -792,7 +784,7 @@ export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLine
                 marginTop: isMobile ? 2 : 4,
                 display: "inline-block",
                 background: `${awayColor}22`,
-                color: awayColor,
+                color: "#FFFFFF",
                 border: `1px solid ${awayColor}44`,
               }}
             >
@@ -819,7 +811,7 @@ export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLine
             style={{
               fontFamily: "'Barlow Condensed', sans-serif",
               fontSize: isMobile ? 9 : 10,
-              color: "#3A5A7A",
+              color: "#FFFFFF",
               letterSpacing: "3px",
               marginTop: 3,
             }}
@@ -891,7 +883,7 @@ export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLine
                 marginTop: isMobile ? 2 : 4,
                 display: "inline-block",
                 background: `${homeColor}22`,
-                color: homeColor,
+                color: "#FFFFFF",
                 border: `1px solid ${homeColor}44`,
               }}
             >
