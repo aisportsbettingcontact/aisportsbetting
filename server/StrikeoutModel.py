@@ -1,11 +1,43 @@
 #!/usr/bin/env python3
 """
-MLB AI DERIVED MARKET ENGINE — STRIKEOUT PROJECTION MODEL
-=========================================================
-Standalone per-pitcher strikeout projection with 6-split architecture.
-Outputs an HTML prop card matching the pitcher_prop_card.html template.
+MLB AI DERIVED MARKET ENGINE — STRIKEOUT PROJECTION MODEL  (Variant D)
+=======================================================================
+Production model as of 2026-03-26. Back-tested on 4,750 starts (2025 season).
 
-Usage:
+ARCHITECTURE — VARIANT D UPGRADES
+-----------------------------------
+  1. NegBin Dispersion (r = 22.20)
+       Replaces the legacy K_VARIANCE_SCALE-derived r. Fitted via Method-of-Moments
+       on 4,750 actual 2025 starter K distributions. Eliminates over-dispersion that
+       previously made the tails too fat and the distribution too flat.
+
+  2. Multiplicative TTO Degradation  [1.0, 0.891, 0.832]
+       Replaces the legacy additive TTO_K_PENALTY. Derived from 2025 Retrosheet:
+         TTO-1: K% = 23.7%  (multiplier = 1.000)
+         TTO-2: K% = 21.1%  (multiplier = 0.891)
+         TTO-3: K% = 19.7%  (multiplier = 0.832)
+       Applied multiplicatively to combined_k so the degradation scales with
+       pitcher strength (elite pitchers degrade more in absolute terms).
+
+  3. OLS Calibration Layer  kProj_cal = 1.0305 * kProj_raw + 0.3314
+       Post-hoc bias correction fitted on 2,350 back-test starts. Eliminates the
+       +0.46 systematic under-projection present in earlier variants.
+       Applied to expected_k before NegBin parameters are computed so the full
+       distribution is centered on the calibrated mean.
+
+  4. Calibrated IP Constants
+       STARTER_IP_MEAN = 5.2804, STARTER_IP_STD = 1.2431 (from 2025 Retrosheet)
+       PA_PER_INNING   = 4.05   (130,204 PAs / 32,158 starter-inning-slots, inn 1-6)
+
+BACK-TEST RESULTS (2025 season, n=4,750 starts)
+-------------------------------------------------
+  MAE   : 1.714  (vs. 2.000 Baseline, 1.953 Variant C)
+  RMSE  : 2.142  (vs. 2.561 Baseline, 2.499 Variant C)
+  Bias  : 0.000  (vs. +1.502 Baseline, -1.470 Variant C)
+  PropAcc: 79.3% (vs. 76.6% Baseline, 77.3% Variant C)
+
+USAGE
+------
     python StrikeoutModel.py \\
         --plays         /path/to/plays.csv \\
         --statcast      /path/to/statcast.json \\
@@ -17,6 +49,8 @@ Usage:
         --home-pitcher  webbl001 \\
         --away-lineup   grish001 judgea001 bellic001 riceb001 stang001 chisj001 cabaj001 mcmah001 wella001 \\
         --home-lineup   arraez001 chapm001 dever001 adama001 leejh001 ramoh001 schmc001 bailp001 baderh001 \\
+        --away-market   6.5 -115 -105 \\
+        --home-market   5.5 +110 -130 \\
         --output        /path/to/output.html
 """
 import os, sys, json, math, argparse, warnings
@@ -62,10 +96,8 @@ SIG_WT_ARSENAL    = 0.15   # Velo + pitch mix z-score
 VELO_K_ADJ_PER_MPH    = 0.0035
 VELO_BASELINE_MPH     = 93.0
 PITCH_K_WEIGHTS       = {'fastball': 0.30, 'breaking': 0.45, 'offspeed': 0.25}
-TTO_K_PENALTY         = [0.0, 0.018, 0.038]  # legacy additive (kept for display)
-TTO_K_MULT            = [1.0, 0.891, 0.832]  # Variant D: multiplicative TTO (2025 calibrated)
-NEGBIN_R              = 22.20               # Variant D: NegBin dispersion (MoM from 2025 data)
-K_VARIANCE_SCALE      = 0.85               # legacy (superseded by NEGBIN_R)
+TTO_K_MULT            = [1.0, 0.891, 0.832]  # Variant D: multiplicative TTO degradation (2025 calibrated)
+NEGBIN_R              = 22.20               # Variant D: NegBin dispersion r (MoM from 2025, n=4750 starts)
 STARTER_IP_MEAN       = 5.2804             # 2025 calibrated
 STARTER_IP_STD        = 1.2431             # 2025 calibrated
 PA_PER_INNING         = 4.05  # 2025 calibrated: 130,204 PAs / 32,158 starter-inning-slots (inn 1-6)
@@ -620,8 +652,8 @@ class StrikeoutProjectionModel:
             tto       = min(2, inn // 3)
             # EK uses flat combined_k with TTO penalty only (no inning scale)
             r_ek      = max(0.03, combined_k * TTO_K_MULT[tto])  # Variant D: multiplicative TTO
-            # Display rate uses inning scale for granularity
-            r_display = max(0.03, combined_k * inn_scale - TTO_K_PENALTY[tto])
+            # Display rate uses inning scale + multiplicative TTO for granularity
+            r_display = max(0.03, combined_k * inn_scale * TTO_K_MULT[tto])
             inning_rates.append(r_display)
             if inn < full_inn:
                 expected_k += r_ek * pa_per_inn
