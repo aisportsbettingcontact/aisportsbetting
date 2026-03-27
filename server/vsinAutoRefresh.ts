@@ -1672,9 +1672,35 @@ export function startVsinAutoRefresh() {
       console.warn("[MLBCycle] Rotowire lineup scrape failed (non-fatal):", err);
     }
 
+    // Step 5: MLB model — run projections for all modelable games on today + tomorrow
+    // Only runs when starters are confirmed (awayStartingPitcher + homeStartingPitcher populated)
+    // Uses v2 field mapping: modelTotal=book O/U, awayModelSpread=±1.5 book RL, RL odds populated
+    // Post-write validation gate flags any mismatch before publishing
+    try {
+      const { runMlbModelForDate } = await import("./mlbModelRunner");
+      // Run model for today
+      const todayResult = await runMlbModelForDate(todayStr);
+      console.log(
+        `[MLBCycle] Model (today): written=${todayResult.written} skipped=${todayResult.skipped} errors=${todayResult.errors} ` +
+        `validation=${todayResult.validation.passed ? '✅ PASSED' : '❌ FAILED (' + todayResult.validation.issues.length + ' issues)'}`
+      );
+      if (!todayResult.validation.passed) {
+        console.error('[MLBCycle] Validation issues (today):', todayResult.validation.issues);
+      }
+      // Run model for tomorrow (games seeded a day ahead)
+      const tomorrowResult = await runMlbModelForDate(mlbTomorrowStr);
+      console.log(
+        `[MLBCycle] Model (tomorrow): written=${tomorrowResult.written} skipped=${tomorrowResult.skipped} errors=${tomorrowResult.errors} ` +
+        `validation=${tomorrowResult.validation.passed ? '✅ PASSED' : '❌ FAILED (' + tomorrowResult.validation.issues.length + ' issues)'}`
+      );
+      if (!tomorrowResult.validation.passed) {
+        console.error('[MLBCycle] Validation issues (tomorrow):', tomorrowResult.validation.issues);
+      }
+    } catch (err) {
+      console.warn('[MLBCycle] MLB model run failed (non-fatal):', err);
+    }
     console.log(`[MLBCycle] ✅ DONE — ${new Date().toISOString()}`);
   };
-
   // Fire MLB cycle immediately on startup
   void runMlbCycle();
 
