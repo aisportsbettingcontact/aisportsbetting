@@ -1,51 +1,38 @@
 /**
  * vsinBettingSplitsScraper.ts
  *
- * Scrapes VSiN DraftKings betting splits pages:
+ * Scrapes VSiN DraftKings betting splits from the unified page:
  *
- *   NBA/CBB/NHL (combined page):
- *     https://data.vsin.com/betting-splits/?bookid=dk&view=front   (today)
- *     https://data.vsin.com/betting-splits/?bookid=dk&view=tomorrow (tomorrow)
+ *   https://data.vsin.com/betting-splits/?bookid=dk&view=front   (today)
+ *   https://data.vsin.com/betting-splits/?bookid=dk&view=tomorrow (tomorrow)
  *
- *   MLB (dedicated page, different column order):
- *     https://data.vsin.com/mlb/betting-splits/
+ * VSiN migrated from table.freezetable to table.sp-table in March 2026.
+ * The page now contains one sp-table block per sport (NBA, MLB, NHL, CBB)
+ * all on the same unified URL. The MLB-specific URL now redirects here.
  *
- * Extracts ONLY betting splits (Handle % and Bets %) for:
- *   - Spread / Run Line (away handle %, away bets %)
- *   - Total (over handle %, over bets %)
- *   - Moneyline (away handle %, away bets %)
+ * ─── New sp-table row structure (11 <td> cells per game row, 0-indexed) ───
+ *   td[0]:  action cell — contains <button data-gamecode="20260330MLB00008">
+ *   td[1]:  team cell  — contains <a class="sp-team-link" href="/mlb/teams/minnesota-twins">
+ *   td[2]:  spread/run-line value (ignored)
+ *   td[3]:  spread handle %  ← away team row = away handle; home row = home handle
+ *   td[4]:  spread bets %    ← away team row = away bets;   home row = home bets
+ *   td[5]:  total line value (ignored)
+ *   td[6]:  total handle %   ← away row = over handle
+ *   td[7]:  total bets %     ← away row = over bets
+ *   td[8]:  moneyline value (ignored)
+ *   td[9]:  ML handle %      ← away team row = away ML handle
+ *   td[10]: ML bets %        ← away team row = away ML bets
  *
- * Does NOT extract odds values — those come from Action Network.
+ * Column order is IDENTICAL for all sports (NBA, MLB, NHL, CBB).
  *
- * ─── NBA/CBB/NHL table structure (10 <td> cells per game row) ───
- *   td[0]: team names (away/home) + game ID in data-param2
- *   td[1]: spread (away/home) — ignored
- *   td[2]: spread handle % (away/home) ← away = first value
- *   td[3]: spread bets % (away/home)   ← away = first value
- *   td[4]: total (over/under) — ignored
- *   td[5]: total handle % (over/under)  ← over = first value
- *   td[6]: total bets % (over/under)    ← over = first value
- *   td[7]: moneyline (away/home) — ignored
- *   td[8]: ML handle % (away/home)      ← away = first value
- *   td[9]: ML bets % (away/home)        ← away = first value
+ * Game rows come in pairs: away row first, home row second.
+ * We only need the away row for all percentages (handle/bets are always
+ * expressed as the away-team or over-side percentage).
  *
- * ─── MLB table structure (10 <td> cells per game row) ───
- *   td[0]: team names (away/home) + game ID in data-param2
- *   td[1]: moneyline (away/home) — ignored
- *   td[2]: ML handle % (away/home)      ← away = first value
- *   td[3]: ML bets % (away/home)        ← away = first value
- *   td[4]: total (over/under) — ignored
- *   td[5]: total handle % (over/under)  ← over = first value
- *   td[6]: total bets % (over/under)    ← over = first value
- *   td[7]: run line (away/home) — ignored
- *   td[8]: RL handle % (away/home)      ← away = first value
- *   td[9]: RL bets % (away/home)        ← away = first value
+ * Sport detection: from data-gamecode value (e.g. "20260330MLB00008" → MLB).
  *
- * Team matching: VSiN uses href="/nba/teams/new-york-knicks" or
- *   "/mlb/teams/new-york-yankees" — we extract the last path segment
- *   as the vsinSlug.
- *
- * Game ID format: 20260313NBA00073 or 20260325MLB00029
+ * Team matching: slug extracted from href last segment
+ *   e.g. "/mlb/teams/minnesota-twins" → "minnesota-twins"
  *
  * Auth: No authentication required — data is publicly accessible.
  */
@@ -55,21 +42,21 @@ import * as cheerio from "cheerio";
 export type VsinSplitsSport = "NBA" | "CBB" | "NHL" | "MLB";
 
 export interface VsinSplitsGame {
-  /** VSiN game ID, e.g. "20260313NBA00073" */
+  /** VSiN game ID, e.g. "20260330MLB00008" */
   gameId: string;
-  /** Sport: "NBA" | "CBB" | "NHL" */
+  /** Sport: "NBA" | "CBB" | "NHL" | "MLB" */
   sport: VsinSplitsSport;
-  /** Away team VSiN slug, e.g. "new-york-knicks" */
+  /** Away team VSiN slug, e.g. "minnesota-twins" */
   awayVsinSlug: string;
-  /** Home team VSiN slug, e.g. "indiana-pacers" */
+  /** Home team VSiN slug, e.g. "kansas-city-royals" */
   homeVsinSlug: string;
   /** Away team display name from VSiN */
   awayName: string;
   /** Home team display name from VSiN */
   homeName: string;
-  /** % of spread handle on away team (0-100), null if not available */
+  /** % of spread/run-line handle on away team (0-100), null if not available */
   spreadAwayMoneyPct: number | null;
-  /** % of spread bets on away team (0-100), null if not available */
+  /** % of spread/run-line bets on away team (0-100), null if not available */
   spreadAwayBetsPct: number | null;
   /** % of total handle on Over (0-100), null if not available */
   totalOverMoneyPct: number | null;
@@ -82,7 +69,6 @@ export interface VsinSplitsGame {
 }
 
 const VSIN_BASE = "https://data.vsin.com/betting-splits/?bookid=dk";
-const VSIN_MLB_URL = "https://data.vsin.com/mlb/betting-splits/";
 const HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -92,36 +78,36 @@ const HEADERS = {
 };
 
 /**
- * Extract the first percentage integer from a <td> element.
- * Looks for text matching "XX%" in child divs.
+ * Extract the first integer percentage from a <td> element.
+ * Looks for text matching "XX%" inside sp-badge spans.
+ * Strips arrow indicators (▲▼) before parsing.
  * Returns null if not found.
  */
-function getFirstPct($: cheerio.CheerioAPI, td: any): number | null {
-  const divs = $(td).children("div");
-  for (let i = 0; i < divs.length; i++) {
-    const text = $(divs[i]).text().trim().replace(/\s+/g, "");
-    const m = text.match(/^(\d+)%/);
-    if (m) return parseInt(m[1], 10);
-  }
-  return null;
+function extractPctFromTd($: cheerio.CheerioAPI, td: any): number | null {
+  const badge = $(td).find("span.sp-badge").first();
+  if (!badge.length) return null;
+  // Get text content, strip HTML entities and arrow spans
+  const raw = badge.clone().find("span").remove().end().text().trim();
+  const m = raw.match(/(\d+)%/);
+  return m ? parseInt(m[1], 10) : null;
 }
 
 /**
- * Extract a VSiN team slug from an anchor href.
+ * Extract VSiN team slug from an anchor href.
+ * e.g. "/mlb/teams/minnesota-twins" → "minnesota-twins"
  * e.g. "/nba/teams/new-york-knicks" → "new-york-knicks"
- * e.g. "/cbb/teams/duke" → "duke"
  */
 function extractVsinSlug(href: string): string {
-  const parts = href.split("/");
+  const parts = href.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? "";
 }
 
 /**
  * Detect sport from a VSiN game ID string.
+ * e.g. "20260330MLB00008" → "MLB"
  * e.g. "20260313NBA00073" → "NBA"
  * e.g. "20260313CBB00891" → "CBB"
  * e.g. "20260313NHL00094" → "NHL"
- * e.g. "20260325MLB00001" → "MLB"
  */
 function detectSportFromGameId(gameId: string): VsinSplitsSport | null {
   const m = gameId.match(/^\d{8}([A-Z]+)\d+$/);
@@ -135,125 +121,109 @@ function detectSportFromGameId(gameId: string): VsinSplitsSport | null {
 }
 
 /**
- * Parse game rows from a VSiN splits table.
+ * Parse game rows from a single sp-table block.
  *
- * @param $ - Cheerio API instance
- * @param table - The freezetable element
- * @param isMlb - If true, use MLB column order (ML→Total→RL); otherwise use NBA/CBB/NHL order (Spread→Total→ML)
- * @param logTag - Prefix for log messages
- * @returns Array of VsinSplitsGame objects
+ * Rows come in pairs (away, home). We read the away row for all percentages
+ * and the home row only for the home team name/slug.
+ *
+ * New column layout (same for ALL sports):
+ *   td[3] = spread handle % (away)
+ *   td[4] = spread bets %   (away)
+ *   td[6] = total handle %  (over)
+ *   td[7] = total bets %    (over)
+ *   td[9] = ML handle %     (away)
+ *   td[10]= ML bets %       (away)
  */
-function parseGameRows(
+function parseSpTable(
   $: cheerio.CheerioAPI,
   table: cheerio.Cheerio<any>,
-  isMlb: boolean,
-  logTag: string
+  logTag: string,
+  filterSport?: VsinSplitsSport
 ): VsinSplitsGame[] {
   const results: VsinSplitsGame[] = [];
-  let currentSport: VsinSplitsSport = isMlb ? "MLB" : "NBA";
-  let rowsProcessed = 0;
-  let rowsSkipped = 0;
 
-  table.find("tr").each((_i, row) => {
-    const ths = $(row).find("th");
-    if (ths.length > 0) {
-      // Header row — detect sport from first th text (date header like "Wednesday,Mar 25")
-      const headerText = $(ths[0]).text().trim();
-      if (!isMlb) {
-        if (headerText.includes("NBA")) currentSport = "NBA";
-        else if (headerText.includes("CBB") || headerText.includes("College Basketball")) currentSport = "CBB";
-        else if (headerText.includes("NHL")) currentSport = "NHL";
-      }
-      // MLB page always has MLB sport; header rows just show the date
-      return; // continue to next row
-    }
+  // Collect only sp-row rows (skip header rows which have sp-sport-header class)
+  const gameRows: cheerio.Cheerio<any>[] = [];
+  table.find("tr.sp-row").each((_i, row) => {
+    gameRows.push($(row));
+  });
 
-    const tds = $(row).find("td");
-    if (tds.length < 10) {
-      rowsSkipped++;
-      return;
-    }
+  console.log(`${logTag} Found ${gameRows.length} sp-row rows (${gameRows.length / 2} games)`);
 
-    rowsProcessed++;
+  let gamesProcessed = 0;
+  let gamesSkipped = 0;
 
-    // td[0]: team names + game ID in data-param2 attribute
-    const td0 = tds[0];
-    const gameIdEl = $(td0).find("a[data-param2]").first();
-    const gameId = gameIdEl.attr("data-param2") ?? "";
+  for (let i = 0; i < gameRows.length - 1; i += 2) {
+    const awayRow = gameRows[i];
+    const homeRow = gameRows[i + 1];
+
+    // ── Extract game ID from action cell button ──────────────────────────────
+    const gameId = awayRow.find("button[data-gamecode]").attr("data-gamecode") ?? "";
     if (!gameId) {
-      console.warn(`${logTag} Row ${rowsProcessed}: no game ID found, skipping`);
-      return;
+      console.warn(`${logTag} Row pair ${i}: no data-gamecode found, skipping`);
+      gamesSkipped++;
+      continue;
     }
 
-    // Detect sport from game ID (most reliable — e.g. "20260325MLB00029" → MLB)
-    const detectedSport = detectSportFromGameId(gameId);
-    const sport: VsinSplitsSport = detectedSport ?? currentSport;
-
-    // Extract team links — exclude "VSiN Pick" anchor links
-    const teamLinks = $(td0).find("a.txt-color-vsinred").filter((_j, a) => {
-      const text = $(a).text().trim();
-      return !text.includes("VSiN Pick") && !text.includes("Pick");
-    });
-
-    if (teamLinks.length < 2) {
-      console.warn(`${logTag} Game ${gameId}: found ${teamLinks.length} team links (expected 2), skipping`);
-      return;
+    // ── Detect sport ─────────────────────────────────────────────────────────
+    const sport = detectSportFromGameId(gameId);
+    if (!sport) {
+      console.warn(`${logTag} Game ${gameId}: unrecognized sport code, skipping`);
+      gamesSkipped++;
+      continue;
     }
 
-    const awayLink = teamLinks[0];
-    const homeLink = teamLinks[1];
-    const awayName = $(awayLink).text().trim();
-    const homeName = $(homeLink).text().trim().replace(/\s+/g, " ");
-    const awayHref = $(awayLink).attr("href") ?? "";
-    const homeHref = $(homeLink).attr("href") ?? "";
+    // Apply sport filter if requested
+    if (filterSport && sport !== filterSport) {
+      continue; // silently skip — different sport block
+    }
+
+    // ── Extract team names and slugs ─────────────────────────────────────────
+    const awayLink = awayRow.find("a.sp-team-link").first();
+    const homeLink = homeRow.find("a.sp-team-link").first();
+
+    if (!awayLink.length || !homeLink.length) {
+      console.warn(`${logTag} Game ${gameId}: missing sp-team-link (away=${awayLink.length} home=${homeLink.length}), skipping`);
+      gamesSkipped++;
+      continue;
+    }
+
+    const awayName = awayLink.text().trim();
+    const homeName = homeLink.text().trim();
+    const awayHref = awayLink.attr("href") ?? "";
+    const homeHref = homeLink.attr("href") ?? "";
     const awayVsinSlug = extractVsinSlug(awayHref);
     const homeVsinSlug = extractVsinSlug(homeHref);
 
     if (!awayVsinSlug || !homeVsinSlug) {
-      console.warn(`${logTag} Game ${gameId}: could not extract team slugs (away="${awayVsinSlug}" home="${homeVsinSlug}"), skipping`);
-      return;
+      console.warn(`${logTag} Game ${gameId}: could not extract slugs (away="${awayVsinSlug}" home="${homeVsinSlug}"), skipping`);
+      gamesSkipped++;
+      continue;
     }
 
-    let spreadAwayMoneyPct: number | null;
-    let spreadAwayBetsPct: number | null;
-    let totalOverMoneyPct: number | null;
-    let totalOverBetsPct: number | null;
-    let mlAwayMoneyPct: number | null;
-    let mlAwayBetsPct: number | null;
+    // ── Extract percentages from away row (new unified column order) ─────────
+    // td[0]=action, td[1]=team, td[2]=spread_line,
+    // td[3]=spread_handle%, td[4]=spread_bets%,
+    // td[5]=total_line, td[6]=total_handle%, td[7]=total_bets%,
+    // td[8]=ml_line, td[9]=ml_handle%, td[10]=ml_bets%
+    const awayTds = awayRow.find("td");
 
-    if (isMlb) {
-      // MLB column order: ML(1-3) → Total(4-6) → Run Line(7-9)
-      // td[2]: ML handle % — first value = away
-      mlAwayMoneyPct = getFirstPct($, tds[2]);
-      // td[3]: ML bets % — first value = away
-      mlAwayBetsPct = getFirstPct($, tds[3]);
-      // td[5]: total handle % — first value = over
-      totalOverMoneyPct = getFirstPct($, tds[5]);
-      // td[6]: total bets % — first value = over
-      totalOverBetsPct = getFirstPct($, tds[6]);
-      // td[8]: run line handle % — first value = away (maps to spreadAwayMoneyPct)
-      spreadAwayMoneyPct = getFirstPct($, tds[8]);
-      // td[9]: run line bets % — first value = away (maps to spreadAwayBetsPct)
-      spreadAwayBetsPct = getFirstPct($, tds[9]);
-    } else {
-      // NBA/CBB/NHL column order: Spread(1-3) → Total(4-6) → ML(7-9)
-      // td[2]: spread handle % — first value = away
-      spreadAwayMoneyPct = getFirstPct($, tds[2]);
-      // td[3]: spread bets % — first value = away
-      spreadAwayBetsPct = getFirstPct($, tds[3]);
-      // td[5]: total handle % — first value = over
-      totalOverMoneyPct = getFirstPct($, tds[5]);
-      // td[6]: total bets % — first value = over
-      totalOverBetsPct = getFirstPct($, tds[6]);
-      // td[8]: ML handle % — first value = away
-      mlAwayMoneyPct = getFirstPct($, tds[8]);
-      // td[9]: ML bets % — first value = away
-      mlAwayBetsPct = getFirstPct($, tds[9]);
+    if (awayTds.length < 11) {
+      console.warn(`${logTag} Game ${gameId}: expected 11 tds, got ${awayTds.length}, skipping`);
+      gamesSkipped++;
+      continue;
     }
+
+    const spreadAwayMoneyPct = extractPctFromTd($, awayTds.eq(3));
+    const spreadAwayBetsPct  = extractPctFromTd($, awayTds.eq(4));
+    const totalOverMoneyPct  = extractPctFromTd($, awayTds.eq(6));
+    const totalOverBetsPct   = extractPctFromTd($, awayTds.eq(7));
+    const mlAwayMoneyPct     = extractPctFromTd($, awayTds.eq(9));
+    const mlAwayBetsPct      = extractPctFromTd($, awayTds.eq(10));
 
     console.log(
       `${logTag} ✅ ${gameId} | ${sport} | ${awayName} @ ${homeName}` +
-      ` | RL/Spread: ${spreadAwayMoneyPct}%H ${spreadAwayBetsPct}%B` +
+      ` | Spread: ${spreadAwayMoneyPct}%H ${spreadAwayBetsPct}%B` +
       ` | Total: ${totalOverMoneyPct}%H ${totalOverBetsPct}%B` +
       ` | ML: ${mlAwayMoneyPct}%H ${mlAwayBetsPct}%B`
     );
@@ -272,25 +242,32 @@ function parseGameRows(
       mlAwayMoneyPct,
       mlAwayBetsPct,
     });
-  });
+
+    gamesProcessed++;
+  }
 
   console.log(
-    `${logTag} Processed ${rowsProcessed} rows, skipped ${rowsSkipped}, parsed ${results.length} games`
+    `${logTag} Parsed ${gamesProcessed} games, skipped ${gamesSkipped} pairs`
   );
   return results;
 }
 
 /**
- * Scrapes the VSiN NBA/CBB/NHL betting splits page.
+ * Scrapes the VSiN unified betting splits page for NBA/CBB/NHL/MLB.
+ *
+ * VSiN now serves all sports from a single page with one sp-table block
+ * per sport. The old freezetable format is gone as of March 2026.
  *
  * @param view - "front" for today, "tomorrow" for tomorrow
- * @returns Array of VsinSplitsGame objects for NBA, CBB, and NHL
+ * @param filterSport - Optional: only return games for this sport
+ * @returns Array of VsinSplitsGame objects
  */
 export async function scrapeVsinBettingSplits(
-  view: "front" | "tomorrow" = "front"
+  view: "front" | "tomorrow" = "front",
+  filterSport?: VsinSplitsSport
 ): Promise<VsinSplitsGame[]> {
   const url = `${VSIN_BASE}&view=${view}`;
-  const logTag = `[VSiNSplits][${view}]`;
+  const logTag = `[VSiNSplits][${view}${filterSport ? `/${filterSport}` : ""}]`;
   console.log(`${logTag} Fetching ${url}...`);
   const startTime = Date.now();
 
@@ -301,50 +278,64 @@ export async function scrapeVsinBettingSplits(
   const html = await resp.text();
   const $ = cheerio.load(html);
 
-  const table = $("table.freezetable");
-  if (!table.length) {
-    console.warn(`${logTag} No freezetable found — page may have changed`);
+  // New format: one sp-table per sport block
+  const tables = $("table.sp-table");
+  if (!tables.length) {
+    // Fallback: check for old freezetable (in case VSiN reverts)
+    const legacyTable = $("table.freezetable");
+    if (legacyTable.length) {
+      console.warn(`${logTag} Found legacy freezetable — VSiN may have reverted to old format`);
+      // Legacy parsing not supported in this version — return empty and log
+      console.error(`${logTag} Legacy freezetable parsing removed. Update scraper to re-add support.`);
+      return [];
+    }
+    console.error(`${logTag} No sp-table or freezetable found — page structure unknown`);
+    console.error(`${logTag} Page HTML snippet: ${html.substring(0, 800)}`);
     return [];
   }
 
-  console.log(`${logTag} Found freezetable, parsing rows (NBA/CBB/NHL column order)...`);
-  const results = parseGameRows($, table, false, logTag);
+  console.log(`${logTag} Found ${tables.length} sp-table block(s)`);
+
+  const allResults: VsinSplitsGame[] = [];
+  tables.each((_i, table) => {
+    // Detect which sport this table block covers from the sport header
+    const sportHeader = $(table).find("th.sp-sport-name").text().trim();
+    const blockSport = sportHeader.includes("NBA") ? "NBA"
+      : sportHeader.includes("MLB") ? "MLB"
+      : sportHeader.includes("NHL") ? "NHL"
+      : sportHeader.includes("CBB") || sportHeader.includes("College") ? "CBB"
+      : null;
+
+    const blockTag = `${logTag}[${blockSport ?? "UNKNOWN"}]`;
+    console.log(`${blockTag} Parsing sp-table block (header: "${sportHeader.substring(0, 60)}")`);
+
+    const parsed = parseSpTable($, $(table), blockTag, filterSport);
+    allResults.push(...parsed);
+  });
 
   console.log(
-    `${logTag} ✅ DONE — ${results.length} games parsed in ${Date.now() - startTime}ms`
+    `${logTag} ✅ DONE — ${allResults.length} total games parsed in ${Date.now() - startTime}ms`
   );
-  return results;
+  return allResults;
 }
 
 /**
- * Scrapes the VSiN MLB betting splits page (dedicated URL, different column order).
+ * Scrapes VSiN MLB betting splits specifically.
  *
- * MLB column order: Moneyline(1-3) → Total(4-6) → Run Line(7-9)
- * The run line splits are mapped to spreadAwayMoneyPct / spreadAwayBetsPct.
+ * Previously used a dedicated MLB URL (https://data.vsin.com/mlb/betting-splits/)
+ * which now redirects to the unified page. This function is maintained for
+ * backward compatibility with callers in vsinAutoRefresh.ts.
  *
- * @returns Array of VsinSplitsGame objects for MLB
+ * @returns Array of VsinSplitsGame objects for MLB only
  */
 export async function scrapeVsinMlbBettingSplits(): Promise<VsinSplitsGame[]> {
   const logTag = `[VSiNSplits][MLB]`;
-  console.log(`${logTag} Fetching ${VSIN_MLB_URL}...`);
+  console.log(`${logTag} Fetching MLB splits from unified page (old MLB URL now redirects)...`);
   const startTime = Date.now();
 
-  const resp = await fetch(VSIN_MLB_URL, { headers: HEADERS });
-  if (!resp.ok) {
-    throw new Error(`${logTag} HTTP ${resp.status} fetching ${VSIN_MLB_URL}`);
-  }
-  const html = await resp.text();
-  const $ = cheerio.load(html);
-
-  const table = $("table.freezetable");
-  if (!table.length) {
-    console.warn(`${logTag} No freezetable found on MLB page — page may have changed`);
-    console.warn(`${logTag} Page HTML snippet (first 500 chars): ${html.substring(0, 500)}`);
-    return [];
-  }
-
-  console.log(`${logTag} Found freezetable, parsing rows (MLB column order: ML→Total→RL)...`);
-  const results = parseGameRows($, table, true, logTag);
+  // Use the unified page with MLB filter — the old /mlb/betting-splits/ URL
+  // redirects to /betting-splits/?source=DK&sport=MLB which is the same page
+  const results = await scrapeVsinBettingSplits("front", "MLB");
 
   console.log(
     `${logTag} ✅ DONE — ${results.length} MLB games parsed in ${Date.now() - startTime}ms`
