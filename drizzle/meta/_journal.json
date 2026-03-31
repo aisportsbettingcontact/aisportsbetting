@@ -323,6 +323,20 @@
       "when": 1774981289648,
       "tag": "0045_marvelous_black_cat",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "5",
+      "when": 1774983545835,
+      "tag": "0046_swift_swordsman",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "5",
+      "when": 1774984841993,
+      "tag": "0047_true_slapstick",
+      "breakpoints": true
     }
   ]
 }

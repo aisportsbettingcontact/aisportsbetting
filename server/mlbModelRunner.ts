@@ -19,11 +19,12 @@
  */
 
 import { spawn } from "child_process";
+import https from "https";
 import path from "path";
 import { fileURLToPath } from "url";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getDb } from "./db";
-import { games, mlbPitcherStats, mlbPitcherRolling5, mlbTeamBattingSplits } from "../drizzle/schema";
+import { games, mlbPitcherStats, mlbPitcherRolling5, mlbTeamBattingSplits, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers } from "../drizzle/schema";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -260,6 +261,207 @@ interface ValidationResult {
 function fmtMl(val: number): string {
   const rounded = Math.round(val);
   return rounded >= 0 ? `+${rounded}` : `${rounded}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PRECISION SIGNAL HELPERS: Park Factors, Bullpen Stats, Umpire Modifiers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Default bullpen stats (league-average fallback) */
+const DEFAULT_BULLPEN: Record<string, number> = {
+  era: 4.20, fip: 4.10, k9: 9.0, bb9: 3.2, hr9: 1.2, whip: 1.28,
+  kBbRatio: 2.8, relieverCount: 7, totalIp: 300,
+};
+
+/**
+ * Fetch park factors for all home teams in today's games from DB.
+ * Returns a Map<teamAbbrev, parkFactor3yr>.
+ */
+async function fetchParkFactors(
+  homeTeams: string[],
+  dbInstance: Awaited<ReturnType<typeof getDb>>
+): Promise<Map<string, number>> {
+  const TAG = '[ParkFactors]';
+  const result = new Map<string, number>();
+  if (homeTeams.length === 0) return result;
+
+  try {
+    const rows = await dbInstance.select({
+      teamAbbrev: mlbParkFactors.teamAbbrev,
+      parkFactor3yr: mlbParkFactors.parkFactor3yr,
+      pf2026: mlbParkFactors.pf2026,
+      pf2025: mlbParkFactors.pf2025,
+      pf2024: mlbParkFactors.pf2024,
+      venueName: mlbParkFactors.venueName,
+    }).from(mlbParkFactors)
+      .where(inArray(mlbParkFactors.teamAbbrev, homeTeams));
+
+    for (const row of rows) {
+      const pf = row.parkFactor3yr ?? 1.0;
+      result.set(row.teamAbbrev.toUpperCase(), pf);
+      console.log(
+        `${TAG} ${row.teamAbbrev} (${row.venueName}): ` +
+        `3yr=${pf.toFixed(4)} | 2024=${row.pf2024?.toFixed(4) ?? 'N/A'} ` +
+        `2025=${row.pf2025?.toFixed(4) ?? 'N/A'} 2026=${row.pf2026?.toFixed(4) ?? 'N/A'}`
+      );
+    }
+    console.log(`${TAG} [INPUT] Loaded ${rows.length}/${homeTeams.length} park factors from DB`);
+  } catch (err) {
+    console.error(`${TAG} DB error — using neutral (1.0) for all:`, err);
+  }
+  return result;
+}
+
+/**
+ * Fetch bullpen stats for all teams in today's games from DB.
+ * Returns a Map<teamAbbrev, bullpenStatsRecord>.
+ */
+async function fetchBullpenStats(
+  teams: string[],
+  dbInstance: Awaited<ReturnType<typeof getDb>>
+): Promise<Map<string, Record<string, number>>> {
+  const TAG = '[BullpenStats]';
+  const result = new Map<string, Record<string, number>>();
+  if (teams.length === 0) return result;
+
+  try {
+    const rows = await dbInstance.select({
+      teamAbbrev: mlbBullpenStats.teamAbbrev,
+      eraBullpen: mlbBullpenStats.eraBullpen,
+      fipBullpen: mlbBullpenStats.fipBullpen,
+      k9Bullpen: mlbBullpenStats.k9Bullpen,
+      bb9Bullpen: mlbBullpenStats.bb9Bullpen,
+      hr9Bullpen: mlbBullpenStats.hr9Bullpen,
+      whipBullpen: mlbBullpenStats.whipBullpen,
+      kBbRatio: mlbBullpenStats.kBbRatio,
+      relieverCount: mlbBullpenStats.relieverCount,
+      totalIp: mlbBullpenStats.totalIp,
+    }).from(mlbBullpenStats)
+      .where(inArray(mlbBullpenStats.teamAbbrev, teams));
+
+    for (const row of rows) {
+      const stats: Record<string, number> = {
+        era:          row.eraBullpen   ?? DEFAULT_BULLPEN.era,
+        fip:          row.fipBullpen   ?? DEFAULT_BULLPEN.fip,
+        k9:           row.k9Bullpen    ?? DEFAULT_BULLPEN.k9,
+        bb9:          row.bb9Bullpen   ?? DEFAULT_BULLPEN.bb9,
+        hr9:          row.hr9Bullpen   ?? DEFAULT_BULLPEN.hr9,
+        whip:         row.whipBullpen  ?? DEFAULT_BULLPEN.whip,
+        kBbRatio:     row.kBbRatio     ?? DEFAULT_BULLPEN.kBbRatio,
+        relieverCount: row.relieverCount ?? DEFAULT_BULLPEN.relieverCount,
+        totalIp:      row.totalIp      ?? DEFAULT_BULLPEN.totalIp,
+      };
+      result.set(row.teamAbbrev.toUpperCase(), stats);
+      console.log(
+        `${TAG} ${row.teamAbbrev}: ERA=${stats.era.toFixed(2)} FIP=${stats.fip.toFixed(2)} ` +
+        `K/9=${stats.k9.toFixed(2)} BB/9=${stats.bb9.toFixed(2)} ` +
+        `K/BB=${stats.kBbRatio.toFixed(2)} relievers=${stats.relieverCount}`
+      );
+    }
+    console.log(`${TAG} [INPUT] Loaded ${rows.length}/${teams.length} bullpen rows from DB`);
+  } catch (err) {
+    console.error(`${TAG} DB error — using league-average defaults:`, err);
+  }
+  return result;
+}
+
+/**
+ * Fetch HP umpire assignments for today's games from MLB Stats API,
+ * then look up kModifier/bbModifier from DB.
+ * Returns a Map<mlbGamePk, { umpireName, kMod, bbMod }>.
+ */
+async function fetchUmpireModifiers(
+  gamePks: number[],
+  dbInstance: Awaited<ReturnType<typeof getDb>>
+): Promise<Map<number, { umpireName: string; kMod: number; bbMod: number }>> {
+  const TAG = '[UmpireModifiers]';
+  const result = new Map<number, { umpireName: string; kMod: number; bbMod: number }>();
+  if (gamePks.length === 0) return result;
+
+  // Step 1: Fetch HP umpire assignments from MLB Stats API
+  const pksStr = gamePks.join(',');
+  const apiUrl = `https://statsapi.mlb.com/api/v1/schedule?gamePks=${pksStr}&hydrate=officials`;
+  console.log(`${TAG} [STEP] Fetching HP umpires for ${gamePks.length} games from MLB API...`);
+
+  let scheduleData: Record<string, unknown>;
+  try {
+    scheduleData = await new Promise<Record<string, unknown>>((resolve, reject) => {
+      https.get(apiUrl, (res) => {
+        let raw = '';
+        res.on('data', (d: Buffer) => { raw += d.toString(); });
+        res.on('end', () => {
+          try { resolve(JSON.parse(raw)); }
+          catch (e) { reject(e); }
+        });
+      }).on('error', reject);
+    });
+  } catch (err) {
+    console.error(`${TAG} MLB API error — no umpire modifiers applied:`, err);
+    return result;
+  }
+
+  // Step 2: Extract HP umpire ID per gamePk
+  const umpireIdMap = new Map<number, { id: number; name: string }>();
+  const dates = (scheduleData as Record<string, unknown[]>).dates ?? [];
+  for (const d of dates as Record<string, unknown>[]) {
+    for (const g of (d.games ?? []) as Record<string, unknown>[]) {
+      const pk = g.gamePk as number;
+      const officials = (g.officials ?? []) as Record<string, unknown>[];
+      const hp = officials.find((o) => o.officialType === 'Home Plate');
+      if (hp) {
+        const official = hp.official as Record<string, unknown>;
+        umpireIdMap.set(pk, { id: official.id as number, name: official.fullName as string });
+      }
+    }
+  }
+  console.log(`${TAG} [STATE] HP umpires found: ${umpireIdMap.size}/${gamePks.length} games`);
+
+  // Step 3: Batch-fetch umpire modifiers from DB
+  const umpireIds = Array.from(new Set(Array.from(umpireIdMap.values()).map(u => u.id)));
+  if (umpireIds.length === 0) {
+    console.warn(`${TAG} No HP umpires assigned yet — using league-average (kMod=1.0, bbMod=1.0)`);
+    return result;
+  }
+
+  let dbRows: Array<{ umpireId: number; umpireName: string; kModifier: number | null; bbModifier: number | null; gamesHp: number }> = [];
+  try {
+    dbRows = await dbInstance.select({
+      umpireId: mlbUmpireModifiers.umpireId,
+      umpireName: mlbUmpireModifiers.umpireName,
+      kModifier: mlbUmpireModifiers.kModifier,
+      bbModifier: mlbUmpireModifiers.bbModifier,
+      gamesHp: mlbUmpireModifiers.gamesHp,
+    }).from(mlbUmpireModifiers)
+      .where(inArray(mlbUmpireModifiers.umpireId, umpireIds));
+  } catch (err) {
+    console.error(`${TAG} DB error fetching umpire modifiers:`, err);
+    return result;
+  }
+
+  const umpireDbMap = new Map(dbRows.map(r => [r.umpireId, r]));
+
+  // Step 4: Build result map per gamePk
+  for (const [pk, ump] of Array.from(umpireIdMap)) {
+    const dbRow = umpireDbMap.get(ump.id);
+    if (dbRow) {
+      const kMod  = dbRow.kModifier  ?? 1.0;
+      const bbMod = dbRow.bbModifier ?? 1.0;
+      result.set(pk, { umpireName: dbRow.umpireName, kMod, bbMod });
+      console.log(
+        `${TAG} gamePk=${pk} HP=${dbRow.umpireName} (id=${ump.id}) ` +
+        `kMod=${kMod.toFixed(4)} bbMod=${bbMod.toFixed(4)} games=${dbRow.gamesHp}`
+      );
+    } else {
+      // Umpire not in DB (new umpire or insufficient sample) — use league-average
+      result.set(pk, { umpireName: ump.name, kMod: 1.0, bbMod: 1.0 });
+      console.warn(
+        `${TAG} gamePk=${pk} HP=${ump.name} (id=${ump.id}) NOT in DB — using kMod=1.0 bbMod=1.0`
+      );
+    }
+  }
+
+  console.log(`${TAG} [OUTPUT] Umpire modifiers resolved: ${result.size}/${gamePks.length} games`);
+  return result;
 }
 
 /**
@@ -617,6 +819,14 @@ interface EngineInput {
     rl_away: number;
   };
   game_date: string;
+  // ── New precision signals ────────────────────────────────────────────────
+  park_factor_3yr: number;        // 3-year weighted park run factor (1.0 = neutral)
+  away_bullpen: Record<string, number>;  // bullpen ERA/FIP/K9/BB9 for away team
+  home_bullpen: Record<string, number>;  // bullpen ERA/FIP/K9/BB9 for home team
+  umpire_k_mod: number;           // HP umpire K-rate modifier (1.0 = league avg)
+  umpire_bb_mod: number;          // HP umpire BB-rate modifier (1.0 = league avg)
+  umpire_name: string;            // HP umpire name for logging
+  mlb_game_pk: number | null;     // MLB Stats API gamePk for traceability
 }
 
 async function runPythonEngine(inputs: EngineInput[]): Promise<MlbModelResult[]> {
@@ -640,6 +850,13 @@ for inp in inputs:
             home_pitcher_stats=inp['home_pitcher_stats'],
             book_lines=inp['book_lines'],
             game_date=datetime.strptime(inp['game_date'], '%Y-%m-%d'),
+            park_factor_3yr=inp.get('park_factor_3yr', 1.0),
+            away_bullpen=inp.get('away_bullpen'),
+            home_bullpen=inp.get('home_bullpen'),
+            umpire_k_mod=inp.get('umpire_k_mod', 1.0),
+            umpire_bb_mod=inp.get('umpire_bb_mod', 1.0),
+            umpire_name=inp.get('umpire_name', 'UNKNOWN'),
+            mlb_game_pk=inp.get('mlb_game_pk'),
             verbose=True,
         )
         r['db_id'] = inp['db_id']
@@ -821,6 +1038,7 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
     awayStartingPitcher: games.awayStartingPitcher,
     homeStartingPitcher: games.homeStartingPitcher,
     startTimeEst:    games.startTimeEst,
+    mlbGamePk:       games.mlbGamePk,
   }).from(games)
     .where(and(
       eq(games.gameDate, dateStr),
@@ -848,6 +1066,24 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
     console.log(`${TAG} No games to model — exiting`);
     return { date: dateStr, total: dbGames.length, written: 0, skipped: dbGames.length, errors: 0, validation: { passed: true, issues: [], warnings: [] } };
   }
+
+  // ── Step 2b: Batch-fetch precision signals (park factors, bullpen, umpires) ──
+  const homeTeams: string[]  = Array.from(new Set(modelable.map((g: typeof dbGames[0]) => g.homeTeam!.toUpperCase())));
+  const allTeams: string[]   = Array.from(new Set(modelable.flatMap((g: typeof dbGames[0]) => [g.awayTeam!.toUpperCase(), g.homeTeam!.toUpperCase()])));
+  const gamePks    = modelable.map((g: typeof dbGames[0]) => g.mlbGamePk).filter((pk: number | null | undefined): pk is number => pk !== null && pk !== undefined);
+
+  console.log(`${TAG} [STEP] Fetching precision signals: ${homeTeams.length} park factors, ${allTeams.length} bullpens, ${gamePks.length} umpires...`);
+
+  const [parkFactorMap, bullpenMap, umpireMap] = await Promise.all([
+    fetchParkFactors(homeTeams, db),
+    fetchBullpenStats(allTeams, db),
+    fetchUmpireModifiers(gamePks, db),
+  ]);
+
+  console.log(
+    `${TAG} [STATE] Signals loaded: parkFactors=${parkFactorMap.size}/${homeTeams.length} ` +
+    `bullpens=${bullpenMap.size}/${allTeams.length} umpires=${umpireMap.size}/${gamePks.length}`
+  );
 
   // ── Step 3: Batch-fetch pitcher stats from DB, then build engine inputs ────────
   // Collect all unique pitcher/team pairs for a single DB round-trip
@@ -940,12 +1176,28 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
         }
       : homeBaseStats;
 
+    // ── Precision signals: park factor, bullpen, umpire ─────────────────────────────────
+    const parkFactor3yr = parkFactorMap.get(homeAbbrev.toUpperCase()) ?? 1.0;
+    const awayBullpen   = bullpenMap.get(awayAbbrev.toUpperCase()) ?? { ...DEFAULT_BULLPEN };
+    const homeBullpen   = bullpenMap.get(homeAbbrev.toUpperCase()) ?? { ...DEFAULT_BULLPEN };
+    const umpireData    = g.mlbGamePk ? umpireMap.get(g.mlbGamePk) : undefined;
+    const umpireKMod    = umpireData?.kMod  ?? 1.0;
+    const umpireBBMod   = umpireData?.bbMod ?? 1.0;
+    const umpireName    = umpireData?.umpireName ?? 'UNKNOWN (league-avg)';
+
     console.log(
       `${TAG} [${g.id}] ${awayAbbrev}@${homeAbbrev} | ` +
       `SP: ${awayPitcher}(${awayHand}) vs ${homePitcher}(${homeHand}) | ` +
       `RL home: ${rlHomeSpread} | O/U: ${bookLines.ou_line} | ` +
       `away split: vs${homeHand}=${awayBattingSplit ? `avg=${awayBattingSplit.avg?.toFixed(3)} wOBA=${awayBattingSplit.woba?.toFixed(3)}` : 'season'} | ` +
       `home split: vs${awayHand}=${homeBattingSplit ? `avg=${homeBattingSplit.avg?.toFixed(3)} wOBA=${homeBattingSplit.woba?.toFixed(3)}` : 'season'}`
+    );
+    console.log(
+      `${TAG} [${g.id}] PRECISION: ` +
+      `parkFactor=${parkFactor3yr.toFixed(4)} (${parkFactorMap.has(homeAbbrev.toUpperCase()) ? 'DB' : 'neutral'}) | ` +
+      `awayBullpen ERA=${awayBullpen.era.toFixed(2)} FIP=${awayBullpen.fip.toFixed(2)} (${bullpenMap.has(awayAbbrev.toUpperCase()) ? 'DB' : 'default'}) | ` +
+      `homeBullpen ERA=${homeBullpen.era.toFixed(2)} FIP=${homeBullpen.fip.toFixed(2)} (${bullpenMap.has(homeAbbrev.toUpperCase()) ? 'DB' : 'default'}) | ` +
+      `umpire=${umpireName} kMod=${umpireKMod.toFixed(4)} bbMod=${umpireBBMod.toFixed(4)}`
     );
 
     return {
@@ -960,6 +1212,14 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
       home_pitcher_stats: homePitcherStats,
       book_lines:         bookLines,
       game_date:          dateStr,
+      // ── Precision signals ──
+      park_factor_3yr:    parkFactor3yr,
+      away_bullpen:       awayBullpen,
+      home_bullpen:       homeBullpen,
+      umpire_k_mod:       umpireKMod,
+      umpire_bb_mod:      umpireBBMod,
+      umpire_name:        umpireName,
+      mlb_game_pk:        g.mlbGamePk ?? null,
     };
   });
 

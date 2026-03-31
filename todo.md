@@ -2088,3 +2088,16 @@
 - [x] Engine: rolling-5 hot/cold starter weighting
 - [x] Daily cron: refresh all three new tables
 - [x] Validate: zero unknown-pitcher warnings, correct splits applied
+
+## MLB Model Precision Enhancements v2 (2026-03-31)
+- [ ] Schema: mlb_park_factors table (3-year rolling run factor per venue)
+- [ ] Schema: mlb_bullpen_stats table (ERA, K/BB, leverage, rest per team)
+- [ ] Schema: mlb_umpire_modifiers table (K/BB rate modifier per umpire)
+- [ ] Seed: park factors from MLB Stats API (3-season run-scoring data)
+- [ ] Seed: bullpen stats from MLB Stats API (relief pitcher aggregates)
+- [ ] Seed: umpire modifiers from MLB Stats API historical game data
+- [ ] Engine: replace static park_run_factor with live DB lookup
+- [ ] Engine: replace _default_bullpen() with real team bullpen stats
+- [ ] Engine: apply umpire K/BB modifier to pitcher features pre-simulation
+- [ ] Daily cron: refresh all 3 new tables
+- [ ] Validate: all 3 signals active in [ENGINE] log per game

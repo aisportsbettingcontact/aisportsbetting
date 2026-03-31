@@ -889,3 +889,123 @@ export const mlbPitcherRolling5 = mysqlTable("mlb_pitcher_rolling5", {
 }));
 export type MlbPitcherRolling5Row = typeof mlbPitcherRolling5.$inferSelect;
 export type InsertMlbPitcherRolling5 = typeof mlbPitcherRolling5.$inferInsert;
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MLB PARK FACTORS
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * mlbParkFactors — 3-year rolling park run factor per MLB venue (2024/2025/2026).
+ *
+ * Methodology:
+ *   - Fetch all regular-season games per venue for 2024, 2025, 2026
+ *     via schedule?hydrate=linescore endpoint
+ *   - Sum total runs scored in all completed games at that venue per season
+ *   - park_factor_yr = avg_rpg_venue / league_avg_rpg
+ *   - 3yr_park_factor = weighted avg (2026*0.50 + 2025*0.35 + 2024*0.15)
+ */
+export const mlbParkFactors = mysqlTable("mlb_park_factors", {
+  id: int("id").autoincrement().primaryKey(),
+  venueId: int("venueId").notNull(),
+  venueName: varchar("venueName", { length: 128 }).notNull(),
+  teamAbbrev: varchar("teamAbbrev", { length: 8 }).notNull(),
+  runs2024: int("runs2024"),
+  games2024: int("games2024"),
+  avgRpg2024: double("avgRpg2024"),
+  pf2024: double("pf2024"),
+  runs2025: int("runs2025"),
+  games2025: int("games2025"),
+  avgRpg2025: double("avgRpg2025"),
+  pf2025: double("pf2025"),
+  runs2026: int("runs2026"),
+  games2026: int("games2026"),
+  avgRpg2026: double("avgRpg2026"),
+  pf2026: double("pf2026"),
+  parkFactor3yr: double("parkFactor3yr").notNull(),
+  leagueAvgRpg: double("leagueAvgRpg"),
+  lastFetchedAt: bigint("lastFetchedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  uqVenue: uniqueIndex("uq_park_venue").on(t.venueId),
+  idxTeam: index("idx_park_team").on(t.teamAbbrev),
+}));
+export type MlbParkFactorRow = typeof mlbParkFactors.$inferSelect;
+export type InsertMlbParkFactor = typeof mlbParkFactors.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MLB BULLPEN STATS
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * mlbBullpenStats — Aggregated relief pitcher stats per MLB team.
+ *
+ * Methodology:
+ *   - Fetch all pitchers per team via stats?group=pitching&season=2025&teamId=X
+ *   - Filter: gamesStarted = 0 AND inningsPitched >= 1
+ *   - Aggregate ERA, K/9, BB/9, HR/9, WHIP, K/BB, FIP across all relievers
+ */
+export const mlbBullpenStats = mysqlTable("mlb_bullpen_stats", {
+  id: int("id").autoincrement().primaryKey(),
+  teamAbbrev: varchar("teamAbbrev", { length: 8 }).notNull(),
+  mlbTeamId: int("mlbTeamId").notNull(),
+  season: int("season").notNull(),
+  relieverCount: int("relieverCount").notNull(),
+  totalIp: double("totalIp").notNull(),
+  totalEr: int("totalEr"),
+  totalK: int("totalK"),
+  totalBb: int("totalBb"),
+  totalHr: int("totalHr"),
+  totalH: int("totalH"),
+  eraBullpen: double("eraBullpen"),
+  k9Bullpen: double("k9Bullpen"),
+  bb9Bullpen: double("bb9Bullpen"),
+  hr9Bullpen: double("hr9Bullpen"),
+  whipBullpen: double("whipBullpen"),
+  kBbRatio: double("kBbRatio"),
+  fipBullpen: double("fipBullpen"),
+  lastFetchedAt: bigint("lastFetchedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  uqTeamSeason: uniqueIndex("uq_bullpen_team_season").on(t.teamAbbrev, t.season),
+  idxTeam: index("idx_bullpen_team").on(t.teamAbbrev),
+}));
+export type MlbBullpenStatsRow = typeof mlbBullpenStats.$inferSelect;
+export type InsertMlbBullpenStats = typeof mlbBullpenStats.$inferInsert;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MLB UMPIRE MODIFIERS
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * mlbUmpireModifiers — Per-umpire K and BB rate modifiers from 2023/2024/2025.
+ *
+ * Methodology:
+ *   - For each completed game, fetch boxscore: HP umpire ID + total K + total BB + total H
+ *   - Accumulate per umpire across all games in 2023/2024/2025
+ *   - k_rate = totalK / (totalK + totalBb + totalH)
+ *   - k_modifier = umpire_k_rate / league_avg_k_rate
+ *   - Applied in engine: effective_k_pct = pitcher_k_pct * k_modifier
+ */
+export const mlbUmpireModifiers = mysqlTable("mlb_umpire_modifiers", {
+  id: int("id").autoincrement().primaryKey(),
+  umpireId: int("umpireId").notNull(),
+  umpireName: varchar("umpireName", { length: 128 }).notNull(),
+  gamesHp: int("gamesHp").notNull(),
+  totalK: int("totalK").notNull(),
+  totalBb: int("totalBb").notNull(),
+  totalH: int("totalH"),
+  totalR: int("totalR"),
+  kRate: double("kRate"),
+  bbRate: double("bbRate"),
+  kModifier: double("kModifier"),
+  bbModifier: double("bbModifier"),
+  seasonsIncluded: varchar("seasonsIncluded", { length: 32 }),
+  lastFetchedAt: bigint("lastFetchedAt", { mode: "number" }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  uqUmpire: uniqueIndex("uq_umpire_id").on(t.umpireId),
+  idxName: index("idx_umpire_name").on(t.umpireName),
+}));
+export type MlbUmpireModifierRow = typeof mlbUmpireModifiers.$inferSelect;
+export type InsertMlbUmpireModifier = typeof mlbUmpireModifiers.$inferInsert;

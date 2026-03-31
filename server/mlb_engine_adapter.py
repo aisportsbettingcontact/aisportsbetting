@@ -1169,12 +1169,20 @@ def project_game(
     weather: Optional[dict] = None,
     seed: int = 42,
     verbose: bool = False,
+    # ── Precision signals ───────────────────────────────────────────────────────────────────────────────
+    park_factor_3yr: float = 1.0,      # 3-year weighted park run factor
+    away_bullpen: Optional[dict] = None,  # Real bullpen stats for away team
+    home_bullpen: Optional[dict] = None,  # Real bullpen stats for home team
+    umpire_k_mod: float = 1.0,         # HP umpire K-rate modifier
+    umpire_bb_mod: float = 1.0,        # HP umpire BB-rate modifier
+    umpire_name: str = 'UNKNOWN',      # HP umpire name for logging
+    mlb_game_pk: Optional[int] = None, # MLB Stats API gamePk for traceability
 ) -> dict:
     t0 = time.time()
     game_label = f"{away_abbrev}@{home_abbrev}"
     logger = EngineLogger(game_label, verbose=verbose)
 
-    logger.input(f"Game: {game_label} | Date: {game_date.date()} | Sims: {SIMULATIONS}")
+    logger.input(f"Game: {game_label} | Date: {game_date.date()} | Sims: {SIMULATIONS} | gamePk={mlb_game_pk}")
     logger.input(f"Away stats: rpg={away_team_stats.get('rpg'):.2f} era={away_team_stats.get('era'):.2f}")
     logger.input(f"Home stats: rpg={home_team_stats.get('rpg'):.2f} era={home_team_stats.get('era'):.2f}")
     logger.input(f"Book lines: {book_lines}")
@@ -1182,16 +1190,82 @@ def project_game(
     # Step 1: Build environment features
     logger.step("Step 1: Input Engine — Environment Features")
     env = get_environment_features(home_abbrev, game_date.month, weather)
-    logger.state(f"Park run factor: {env['park_run_factor']} | HFA: {env['hfa_weight']}")
+
+    # ── SIGNAL 1: Override park_run_factor with 3-year DB value ─────────────────────────────────
+    static_pf = env.get('park_run_factor', 1.0)
+    if park_factor_3yr != 1.0:
+        env['park_run_factor'] = park_factor_3yr
+        logger.state(
+            f"[PARK] Overriding static parkFactor={static_pf:.4f} → DB 3yr={park_factor_3yr:.4f} "
+            f"(venue={home_abbrev})"
+        )
+    else:
+        logger.state(
+            f"[PARK] Using static parkFactor={static_pf:.4f} (no DB value for {home_abbrev})"
+        )
+    logger.state(f"Park run factor (final): {env['park_run_factor']:.4f} | HFA: {env['hfa_weight']}")
 
     # Step 1: Build feature dicts
     away_lineup_feat = team_stats_to_batter_features(away_team_stats)
     home_lineup_feat = team_stats_to_batter_features(home_team_stats)
     away_sp_feat = pitcher_stats_to_features(away_pitcher_stats, away_team_stats.get('era', 4.50))
     home_sp_feat = pitcher_stats_to_features(home_pitcher_stats, home_team_stats.get('era', 4.50))
+
+    # ── SIGNAL 3: Apply umpire K/BB modifiers to SP features ──────────────────────────────────────
+    if umpire_k_mod != 1.0 or umpire_bb_mod != 1.0:
+        orig_away_k  = away_sp_feat['k_pct']
+        orig_away_bb = away_sp_feat['bb_pct']
+        orig_home_k  = home_sp_feat['k_pct']
+        orig_home_bb = home_sp_feat['bb_pct']
+        away_sp_feat['k_pct']  = min(away_sp_feat['k_pct']  * umpire_k_mod,  0.50)
+        away_sp_feat['bb_pct'] = min(away_sp_feat['bb_pct'] * umpire_bb_mod, 0.20)
+        home_sp_feat['k_pct']  = min(home_sp_feat['k_pct']  * umpire_k_mod,  0.50)
+        home_sp_feat['bb_pct'] = min(home_sp_feat['bb_pct'] * umpire_bb_mod, 0.20)
+        logger.state(
+            f"[UMPIRE] {umpire_name}: kMod={umpire_k_mod:.4f} bbMod={umpire_bb_mod:.4f} | "
+            f"Away SP k_pct: {orig_away_k:.4f}→{away_sp_feat['k_pct']:.4f} "
+            f"bb_pct: {orig_away_bb:.4f}→{away_sp_feat['bb_pct']:.4f} | "
+            f"Home SP k_pct: {orig_home_k:.4f}→{home_sp_feat['k_pct']:.4f} "
+            f"bb_pct: {orig_home_bb:.4f}→{home_sp_feat['bb_pct']:.4f}"
+        )
+    else:
+        logger.state(f"[UMPIRE] {umpire_name}: kMod=1.0 bbMod=1.0 (league-avg, no adjustment)")
+
     away_lineup = [away_lineup_feat] * 9
     home_lineup = [home_lineup_feat] * 9
-    bullpen = _default_bullpen()
+
+    # ── SIGNAL 2: Build bullpen from DB stats (replace _default_bullpen) ───────────────────────────
+    def _build_bullpen_from_db(bp: Optional[dict], team: str) -> dict:
+        """Convert DB bullpen stats to engine bullpen feature dict."""
+        if not bp:
+            logger.state(f"[BULLPEN] {team}: no DB data — using league-average defaults")
+            return _default_bullpen()
+        # FIP is the primary quality signal; fall back to ERA if FIP not available
+        fip_val  = bp.get('fip', bp.get('era', 4.10))
+        era_val  = bp.get('era', 4.20)
+        k9_val   = bp.get('k9', 9.0)
+        bb9_val  = bp.get('bb9', 3.2)
+        k_pct    = k9_val / 27.0   # approximate K% from K/9 (27 batters/9 IP)
+        bb_pct   = bb9_val / 27.0  # approximate BB% from BB/9
+        result = {
+            'fatigue_score':    0.3,                    # no rest data yet — neutral
+            'leverage_arms':    int(bp.get('relieverCount', 2)),
+            'bullpen_k_bb':     k_pct - bb_pct,         # K-BB% (quality signal)
+            'bullpen_xfip':     fip_val,                # use FIP as xFIP proxy
+            'total_bp_outs_5d': 0,                      # no rest data yet — neutral
+        }
+        logger.state(
+            f"[BULLPEN] {team}: ERA={era_val:.2f} FIP={fip_val:.2f} "
+            f"K/9={k9_val:.2f} BB/9={bb9_val:.2f} "
+            f"K-BB%={result['bullpen_k_bb']:.4f} relievers={result['leverage_arms']}"
+        )
+        return result
+
+    # Build separate bullpens for each team (away bullpen faces home lineup, vice versa)
+    away_bullpen_feat = _build_bullpen_from_db(away_bullpen, away_abbrev)
+    home_bullpen_feat = _build_bullpen_from_db(home_bullpen, home_abbrev)
+    # For game state building: home lineup faces away SP + away bullpen; away lineup faces home SP + home bullpen
+    bullpen = _default_bullpen()  # kept as legacy fallback, overridden per-state below
 
     # Step 1: Deep diagnostic logging for pitcher features
     logger.step("Step 1b: Pitcher Feature Diagnostics")
@@ -1229,9 +1303,22 @@ def project_game(
     )
 
     # Step 1: Build game states
+    # home_state: home lineup faces away SP + away bullpen (away team's pen)
+    # away_state: away lineup faces home SP + home bullpen (home team's pen)
+    logger.step("Step 1c: Bullpen Feature Diagnostics")
+    logger.state(
+        f"[BULLPEN] {away_abbrev} pen: xFIP={away_bullpen_feat['bullpen_xfip']:.2f} "
+        f"K-BB%={away_bullpen_feat['bullpen_k_bb']:.4f} "
+        f"leverage_arms={away_bullpen_feat['leverage_arms']}"
+    )
+    logger.state(
+        f"[BULLPEN] {home_abbrev} pen: xFIP={home_bullpen_feat['bullpen_xfip']:.2f} "
+        f"K-BB%={home_bullpen_feat['bullpen_k_bb']:.4f} "
+        f"leverage_arms={home_bullpen_feat['leverage_arms']}"
+    )
     gs_builder = GameStateBuilder()
-    home_state = gs_builder.build(home_lineup, away_sp_feat, bullpen, env, quality_mult=1.0)
-    away_state = gs_builder.build(away_lineup, home_sp_feat, bullpen, env, quality_mult=1.0)
+    home_state = gs_builder.build(home_lineup, away_sp_feat, away_bullpen_feat, env, quality_mult=1.0)
+    away_state = gs_builder.build(away_lineup, home_sp_feat, home_bullpen_feat, env, quality_mult=1.0)
     logger.state(f"Home state: mu={home_state['mu']:.4f} var={home_state['variance']:.4f} "
                  f"starter_ip={home_state['starter_ip']:.2f}")
     logger.state(f"Away state: mu={away_state['mu']:.4f} var={away_state['variance']:.4f} "
