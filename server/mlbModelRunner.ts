@@ -345,6 +345,8 @@ print(json.dumps(results))
 `], {
       env: {
         ...process.env,
+        // Unset PYTHONHOME so python3.11 uses its own stdlib (not uv's python3.13 home)
+        PYTHONHOME: undefined,
         PYTHONPATH: "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages",
         PYTHONDONTWRITEBYTECODE: "1",
       },

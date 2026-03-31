@@ -2054,3 +2054,11 @@
 - [x] Remove "AI MODEL PROJECTIONS" / "BETTING SPLITS" two-tab row from ModelProjections header
 - [x] Delete BettingSplits.tsx standalone page from codebase
 - [x] Remove /betting-splits route from App.tsx
+
+## MLB Engine MAX SPEC Rebuild (March 31, 2026)
+- [ ] Audit current mlb_engine_adapter.py vs MAX SPEC blueprint (12-step gap analysis)
+- [ ] Rebuild mlb_engine_adapter.py: 250k sims, NB-Gamma Mixture, extra innings ghost runner, bullpen fatigue, lineup dynamic weights
+- [ ] Implement Steps 4-10: totals origination, ML origination, RL origination, conditional validation, cross-market consistency, inverse symmetry, market shaping
+- [ ] Implement Step 12: full mandatory logging (distribution shapes, key number mass, cross-market flags)
+- [ ] Test rebuilt engine on today's MLB games and validate output
+- [ ] Integrate into mlbModelRunner.ts and run full pipeline validation
