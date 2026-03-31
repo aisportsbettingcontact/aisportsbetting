@@ -10,18 +10,22 @@ import UserManagement from "./pages/UserManagement";
 import PublishProjections from "./pages/PublishProjections";
 import IngestAnOdds from "./pages/IngestAnOdds";
 import ModelProjections from "./pages/ModelProjections";
+import BettingSplitsPage from "./pages/BettingSplits";
 
 function Router() {
   return (
     <Switch>
       {/* Public paywall landing — default entry point */}
       <Route path="/" component={Home} />
-      {/* Legacy redirects — /projections and /splits both go to /feed */}
+      {/* Legacy redirects */}
       <Route path="/dashboard">{() => <Redirect to="/feed" />}</Route>
       <Route path="/projections">{() => <Redirect to="/feed" />}</Route>
-      <Route path="/splits">{() => <Redirect to="/feed" />}</Route>
-      {/* Unified feed page */}
+      {/* /splits → dedicated Betting Splits page */}
+      <Route path="/splits">{() => <Redirect to="/betting-splits" />}</Route>
+      {/* Unified feed page (AI Model Projections) */}
       <Route path="/feed" component={ModelProjections} />
+      {/* Dedicated Betting Splits page — all 4 sports */}
+      <Route path="/betting-splits" component={BettingSplitsPage} />
       {/* Legacy /login redirect to home */}
       <Route path="/login">{() => <Redirect to="/" />}</Route>
       <Route path="/admin/users" component={UserManagement} />

@@ -2037,3 +2037,15 @@
 - [ ] Audit NHL puck line/total odds display in GameCard for exact layout reference
 - [ ] Fix MLB game card run line and total odds to match NHL display style
 - [ ] Verify all 11 March 26 MLB games display correctly in the feed
+
+## VSiN Betting Splits Pipeline Audit & Streamlining (March 31, 2026)
+- [x] Fix cron schedule: all sports (NBA/NHL/NCAAM/MLB) now refresh every 10 min from 14:01–04:59 UTC (6:01 AM–11:59 PM EST)
+- [x] Lock NCAAM to Final Four only: Illinois, Connecticut, Michigan, Arizona on 04/04/2026 (refreshNcaam + runTomorrowSplitsUpdate)
+- [x] Fix MLB team colors: getTeamColors MLB branch now queries by abbrev (e.g. NYY, BOS) matching games table storage
+- [x] Add /betting-splits route to App.tsx (standalone BettingSplits page)
+- [x] Add NHL and MLB to BettingSplits page sport selector (was only NCAAM + NBA)
+- [x] Add page-level tab bar to ModelProjections linking to /betting-splits
+- [x] Validate splits coverage: 48/49 games today+tomorrow (1 missing = MIN@KC, VSiN data availability)
+- [x] Validate team colors: 8/8 pass across NBA/NHL/MLB/NCAAM with correct hex codes
+- [x] Validate scheduler: 10-min tick confirmed firing, last refresh 5 min ago, active window correct
+- [x] Validate NCAAM Final Four filter: CLEAN (no non-FF games on today/tomorrow)

@@ -899,6 +899,27 @@ export default function ModelProjections() {
           </div>
         </div>
 
+        {/* Row 2: Page-level tab bar — AI MODEL PROJECTIONS (active) | BETTING SPLITS */}
+        <div className="flex w-full" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
+          <button
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
+            style={{ color: "#ffffff" }}
+          >
+            <img src={CDN_TEST_TUBE} alt="Test tube" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)" }} />
+            <span>AI MODEL PROJECTIONS</span>
+            <span className="absolute bottom-0 left-0 right-0 h-[2px] rounded-t-full" style={{ background: "#39FF14" }} />
+          </button>
+          <Link href="/betting-splits" className="flex-1">
+            <button
+              className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
+              style={{ color: "rgba(255,255,255,0.45)" }}
+            >
+              <img src={CDN_MONEY_BAG} alt="Money bag" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)", opacity: 0.45 }} />
+              <span>BETTING SPLITS</span>
+            </button>
+          </Link>
+        </div>
+
         {/* Row 3: Unified filter bar — FAVORITES | DATE | NCAAM | NBA | Search */}
         {/* Mobile: gap-1 px-2 to keep all pills + search on one row within 375-430px screens */}
         {/* sm+: gap-2 px-3 (unchanged from original) */}

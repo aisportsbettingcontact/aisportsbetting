@@ -733,7 +733,21 @@ export async function getTeamColors(dbSlug: string, sport: string): Promise<Team
       .limit(1);
     return rows[0] ?? null;
   } else if (sport === "MLB") {
+    // MLB games store teams as abbreviations (e.g. "NYY", "SEA") not dbSlugs.
+    // Try abbrev lookup first; fall back to dbSlug lookup for flexibility.
     const rows = await db
+      .select({
+        primaryColor: mlbTeams.primaryColor,
+        secondaryColor: mlbTeams.secondaryColor,
+        tertiaryColor: mlbTeams.tertiaryColor,
+        abbrev: mlbTeams.abbrev,
+      })
+      .from(mlbTeams)
+      .where(eq(mlbTeams.abbrev, dbSlug))
+      .limit(1);
+    if (rows[0]) return rows[0];
+    // Fallback: try dbSlug (short vsinSlug like "yankees")
+    const rows2 = await db
       .select({
         primaryColor: mlbTeams.primaryColor,
         secondaryColor: mlbTeams.secondaryColor,
@@ -743,7 +757,7 @@ export async function getTeamColors(dbSlug: string, sport: string): Promise<Team
       .from(mlbTeams)
       .where(eq(mlbTeams.dbSlug, dbSlug))
       .limit(1);
-    return rows[0] ?? null;
+    return rows2[0] ?? null;
   } else {
     // NCAAM (default)
     const rows = await db
