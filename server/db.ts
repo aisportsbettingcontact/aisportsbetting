@@ -1,7 +1,7 @@
 import { and, desc, eq, gte, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
-import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, mlbTeams, appUsers as appUsersTable, oddsHistory, mlbLineups, mlbStrikeoutProps, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam, type OddsHistoryRow, type MlbLineupRow, type InsertMlbLineup, type MlbStrikeoutPropRow, type InsertMlbStrikeoutProp } from "../drizzle/schema";
+import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, mlbTeams, appUsers as appUsersTable, oddsHistory, mlbLineups, mlbStrikeoutProps, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam, type OddsHistoryRow, type MlbLineupRow, type InsertMlbLineup, type MlbStrikeoutPropRow, type InsertMlbStrikeoutProp, type MlbParkFactorRow, type MlbBullpenStatsRow, type MlbUmpireModifierRow } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1538,4 +1538,94 @@ export async function getStrikeoutPropsByGames(gameIds: number[]): Promise<Map<n
   }
 
   return result;
+}
+
+// ─── MLB Environment Signal Helpers ──────────────────────────────────────────
+// Fetch park factor, bullpen, and umpire data for game card detail display.
+
+/**
+ * Fetch park factor row for a home team abbreviation.
+ * Returns null if no data exists yet (seeder hasn't run).
+ */
+export async function getMlbParkFactor(homeTeamAbbrev: string): Promise<MlbParkFactorRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const rows = await db
+      .select()
+      .from(mlbParkFactors)
+      .where(eq(mlbParkFactors.teamAbbrev, homeTeamAbbrev))
+      .limit(1);
+    return (rows[0] as MlbParkFactorRow) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch bullpen stats for a team abbreviation (current season).
+ * Returns null if no data exists yet.
+ */
+export async function getMlbBullpenStats(teamAbbrev: string): Promise<MlbBullpenStatsRow | null> {
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const rows = await db
+      .select()
+      .from(mlbBullpenStats)
+      .where(eq(mlbBullpenStats.teamAbbrev, teamAbbrev))
+      .limit(1);
+    return (rows[0] as MlbBullpenStatsRow) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch umpire modifier row by umpire name (exact match first, then last-name partial).
+ * Returns null if umpire not found in DB.
+ */
+export async function getMlbUmpireModifier(umpireName: string): Promise<MlbUmpireModifierRow | null> {
+  if (!umpireName) return null;
+  const db = await getDb();
+  if (!db) return null;
+  try {
+    const exact = await db
+      .select()
+      .from(mlbUmpireModifiers)
+      .where(eq(mlbUmpireModifiers.umpireName, umpireName))
+      .limit(1);
+    if (exact.length > 0) return (exact[0] as MlbUmpireModifierRow);
+    const lastName = umpireName.split(' ').pop() ?? umpireName;
+    const partial = await db
+      .select()
+      .from(mlbUmpireModifiers)
+      .where(sql`LOWER(${mlbUmpireModifiers.umpireName}) LIKE LOWER(${`%${lastName}%`})`)
+      .limit(1);
+    return (partial[0] as MlbUmpireModifierRow) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch all three environment signals for a single MLB game in one parallel call.
+ */
+export async function getMlbGameEnvSignals(params: {
+  homeTeam: string;
+  awayTeam: string;
+  umpireName: string | null;
+}): Promise<{
+  parkFactor: MlbParkFactorRow | null;
+  awayBullpen: MlbBullpenStatsRow | null;
+  homeBullpen: MlbBullpenStatsRow | null;
+  umpire: MlbUmpireModifierRow | null;
+}> {
+  const [parkFactor, awayBullpen, homeBullpen, umpire] = await Promise.all([
+    getMlbParkFactor(params.homeTeam),
+    getMlbBullpenStats(params.awayTeam),
+    getMlbBullpenStats(params.homeTeam),
+    params.umpireName ? getMlbUmpireModifier(params.umpireName) : Promise.resolve(null),
+  ]);
+  return { parkFactor, awayBullpen, homeBullpen, umpire };
 }

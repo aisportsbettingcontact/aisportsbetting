@@ -92,7 +92,7 @@ async function fetchVenueSeasonData(venueId: number, season: number): Promise<Ve
   return { totalRuns, games, avgRpg };
 }
 
-async function seedParkFactors(): Promise<void> {
+export async function seedParkFactors(): Promise<{ inserted: number; updated: number; errors: number }> {
   console.log('[INPUT] Starting park factor seeder — 2024/2025/2026 rolling seasons');
   console.log(`[INPUT] Weights: 2026=${WEIGHTS[2026]} 2025=${WEIGHTS[2025]} 2024=${WEIGHTS[2024]}`);
   console.log(`[INPUT] Venues: ${TEAM_VENUES.length} MLB home venues`);
@@ -252,11 +252,14 @@ async function seedParkFactors(): Promise<void> {
     console.log(`[VERIFY] PASS — ${inserted + updated} park factors seeded with 0 errors`);
   } else {
     console.error(`[VERIFY] FAIL — ${errors} errors during seeding`);
-    process.exit(1);
   }
+  return { inserted, updated, errors };
 }
 
-seedParkFactors().catch(e => {
-  console.error('[ERROR] Fatal:', e.message);
-  process.exit(1);
-});
+// Self-invoke only when run directly (tsx seedParkFactors.ts)
+if (process.argv[1]?.endsWith('seedParkFactors.ts') || process.argv[1]?.endsWith('seedParkFactors.js')) {
+  seedParkFactors().catch(e => {
+    console.error('[ERROR] Fatal:', e.message);
+    process.exit(1);
+  });
+}

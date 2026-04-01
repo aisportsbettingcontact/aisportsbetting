@@ -1752,10 +1752,19 @@ export function startVsinAutoRefresh() {
     void runMlbCycle();
   }, MLB_INTERVAL_MS);
 
-  // ─── Daily pitcher stats refresh ────────────────────────────────────────────
-  // Refreshes 2025 MLB pitcher stats from MLB Stats API once per day at startup
-  // and then every 24 hours. Ensures new starters and updated season stats are
-  // always available for the MLB model engine (zero default-stat fallbacks).
+  // ─── Daily MLB data seeders ───────────────────────────────────────────────
+  // Schedule:
+  //   • Pitcher stats (MLB Stats API)  — every 24h
+  //   • Bullpen stats (MLB Stats API)  — every 24h
+  //   • Pitcher rolling-5 blend        — every 24h
+  //   • Team batting splits            — every 24h
+  //   • Park factors (3yr rolling)     — every 7 days (slow-moving data)
+  //   • Umpire modifiers (historical)  — every 7 days (slow-moving data)
+  //
+  // All fire immediately on startup so data is never stale after a restart.
+  // Non-fatal: errors in one seeder do not block the others.
+
+  // ── Pitcher stats (24h) ──────────────────────────────────────────────────
   const runPitcherStatsRefresh = async () => {
     try {
       const { seedPitcherStats } = await import("./seedPitcherStats");
@@ -1768,17 +1777,91 @@ export function startVsinAutoRefresh() {
       console.warn("[PitcherStats] Daily refresh failed (non-fatal):", err);
     }
   };
-  // Fire once on startup
   void runPitcherStatsRefresh();
-  // Then refresh every 24 hours
-  setInterval(() => {
-    void runPitcherStatsRefresh();
-  }, 24 * 60 * 60 * 1000);
+  setInterval(() => void runPitcherStatsRefresh(), 24 * 60 * 60 * 1000);
+
+  // ── Bullpen stats (24h) ──────────────────────────────────────────────────
+  const runBullpenStatsRefresh = async () => {
+    try {
+      const { seedBullpenStats } = await import("./seedBullpenStats");
+      const result = await seedBullpenStats();
+      console.log(
+        `[BullpenStats] Daily refresh: inserted=${result.inserted} updated=${result.updated} errors=${result.errors}`
+      );
+    } catch (err) {
+      console.warn("[BullpenStats] Daily refresh failed (non-fatal):", err);
+    }
+  };
+  void runBullpenStatsRefresh();
+  setInterval(() => void runBullpenStatsRefresh(), 24 * 60 * 60 * 1000);
+
+  // ── Pitcher rolling-5 blend (24h) ────────────────────────────────────────
+  const runPitcherRolling5Refresh = async () => {
+    try {
+      const { seedPitcherRolling5 } = await import("./seedPitcherRolling5");
+      const result = await seedPitcherRolling5();
+      console.log(
+        `[PitcherRolling5] Daily refresh: total=${result.total} upserted=${result.upserted} noStarts=${result.noStarts} errors=${result.errors}`
+      );
+    } catch (err) {
+      console.warn("[PitcherRolling5] Daily refresh failed (non-fatal):", err);
+    }
+  };
+  void runPitcherRolling5Refresh();
+  setInterval(() => void runPitcherRolling5Refresh(), 24 * 60 * 60 * 1000);
+
+  // ── Team batting splits (24h) ────────────────────────────────────────────
+  const runTeamBattingSplitsRefresh = async () => {
+    try {
+      const { seedTeamBattingSplits } = await import("./seedTeamBattingSplits");
+      const result = await seedTeamBattingSplits();
+      console.log(
+        `[TeamBattingSplits] Daily refresh: total=${result.total} upserted=${result.upserted} errors=${result.errors}`
+      );
+    } catch (err) {
+      console.warn("[TeamBattingSplits] Daily refresh failed (non-fatal):", err);
+    }
+  };
+  void runTeamBattingSplitsRefresh();
+  setInterval(() => void runTeamBattingSplitsRefresh(), 24 * 60 * 60 * 1000);
+
+  // ── Park factors — 3yr rolling (7 days) ─────────────────────────────────
+  // Park factors change slowly (season-level data). Weekly refresh is sufficient.
+  const runParkFactorsRefresh = async () => {
+    try {
+      const { seedParkFactors } = await import("./seedParkFactors");
+      const result = await seedParkFactors();
+      console.log(
+        `[ParkFactors] Weekly refresh: inserted=${result.inserted} updated=${result.updated} errors=${result.errors}`
+      );
+    } catch (err) {
+      console.warn("[ParkFactors] Weekly refresh failed (non-fatal):", err);
+    }
+  };
+  void runParkFactorsRefresh();
+  setInterval(() => void runParkFactorsRefresh(), 7 * 24 * 60 * 60 * 1000);
+
+  // ── Umpire modifiers — historical (7 days) ───────────────────────────────
+  // Umpire data is historical and changes only when new games are completed.
+  // Weekly refresh keeps it current without hammering the MLB Stats API.
+  const runUmpireModifiersRefresh = async () => {
+    try {
+      const { seedUmpireModifiers } = await import("./seedUmpireModifiers");
+      const result = await seedUmpireModifiers();
+      console.log(
+        `[UmpireModifiers] Weekly refresh: inserted=${result.inserted} updated=${result.updated} errors=${result.errors}`
+      );
+    } catch (err) {
+      console.warn("[UmpireModifiers] Weekly refresh failed (non-fatal):", err);
+    }
+  };
+  void runUmpireModifiersRefresh();
+  setInterval(() => void runUmpireModifiersRefresh(), 7 * 24 * 60 * 60 * 1000);
 
   console.log(
     "[VSiNAutoRefresh] Scheduler started \u2014 " +
     "ALL SPORTS (NCAAM/NBA/NHL/MLB): every 10 min (14:01\u201304:59 UTC / 6:01 AM\u201311:59 PM EST) | " +
     "Score refresh: every 15 sec (NCAAM/NBA/NHL) | MLB: every 10 min (scores + splits + AN odds) | " +
-    "Pitcher stats: daily refresh"
+    "MLB seeders: pitcher/bullpen/rolling5/batting-splits=24h | park-factors/umpires=7d"
   );
 }

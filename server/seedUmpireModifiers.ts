@@ -125,7 +125,7 @@ async function processBatch(batch: GameRef[]): Promise<BoxscoreResult[]> {
   return Promise.all(batch.map(ref => fetchBoxscore(ref)));
 }
 
-async function seedUmpireModifiers(): Promise<void> {
+export async function seedUmpireModifiers(): Promise<{ inserted: number; updated: number; errors: number }> {
   console.log('[INPUT] Starting umpire modifier seeder');
   console.log(`[INPUT] Seasons: ${SEASONS.join(', ')} | Concurrency: ${CONCURRENCY}`);
 
@@ -296,11 +296,14 @@ async function seedUmpireModifiers(): Promise<void> {
     console.log(`[VERIFY] PASS — ${inserted + updated} umpire modifiers seeded with 0 DB errors`);
   } else {
     console.error(`[VERIFY] FAIL — ${dbErrors} DB errors during seeding`);
-    process.exit(1);
   }
+  return { inserted, updated, errors: dbErrors };
 }
 
-seedUmpireModifiers().catch(e => {
-  console.error('[ERROR] Fatal:', e.message);
-  process.exit(1);
-});
+// Self-invoke only when run directly (tsx seedUmpireModifiers.ts)
+if (process.argv[1]?.endsWith('seedUmpireModifiers.ts') || process.argv[1]?.endsWith('seedUmpireModifiers.js')) {
+  seedUmpireModifiers().catch(e => {
+    console.error('[ERROR] Fatal:', e.message);
+    process.exit(1);
+  });
+}

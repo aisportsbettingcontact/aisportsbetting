@@ -20,6 +20,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { MLB_BY_ABBREV } from "@shared/mlbTeams";
+import { trpc } from "@/lib/trpc";
 
 // Types matching the DB schema
 export interface LineupPlayer {
@@ -664,6 +665,108 @@ function WeatherStrip({ lineup }: { lineup: MlbLineupRow }) {
   );
 }
 
+// ─── EnvSignalsStrip ──────────────────────────────────────────────────────────
+// Displays park factor, bullpen ERA/FIP, and umpire K/BB modifiers.
+// Fetches data via trpc.games.mlbEnvSignals — renders nothing if all nulls.
+function EnvSignalsStrip({
+  awayTeam,
+  homeTeam,
+  umpireName,
+}: {
+  awayTeam: string;
+  homeTeam: string;
+  umpireName: string | null | undefined;
+}) {
+  const { data } = trpc.games.mlbEnvSignals.useQuery(
+    { homeTeam, awayTeam, umpireName: umpireName ?? null },
+    { staleTime: 5 * 60 * 1000, retry: false }
+  );
+
+  if (!data) return null;
+  const { parkFactor, awayBullpen, homeBullpen, umpire } = data;
+  if (!parkFactor && !awayBullpen && !homeBullpen && !umpire) return null;
+
+  // Park factor color: >1.05 = hitter park (red), <0.95 = pitcher park (green), else neutral
+  const pf = parkFactor?.parkFactor3yr ?? null;
+  const pfColor = pf == null ? '#888' : pf > 1.05 ? '#FF5C5C' : pf < 0.95 ? '#39FF14' : '#FFCC00';
+  const pfLabel = pf == null ? '—' : pf.toFixed(3);
+  const pfTag = pf == null ? '' : pf > 1.05 ? 'HITTER' : pf < 0.95 ? 'PITCHER' : 'NEUTRAL';
+
+  // Umpire modifier arrows
+  const kMod = umpire?.kModifier ?? null;
+  const bbMod = umpire?.bbModifier ?? null;
+  const kArrow = kMod == null ? '' : kMod > 1.05 ? ' ▲' : kMod < 0.95 ? ' ▼' : ' ─';
+  const bbArrow = bbMod == null ? '' : bbMod > 1.05 ? ' ▲' : bbMod < 0.95 ? ' ▼' : ' ─';
+  const kColor = kMod == null ? '#888' : kMod > 1.05 ? '#FF5C5C' : kMod < 0.95 ? '#39FF14' : '#FFCC00';
+  const bbColor = bbMod == null ? '#888' : bbMod > 1.05 ? '#FF5C5C' : bbMod < 0.95 ? '#39FF14' : '#FFCC00';
+
+  const cell = (label: string, value: string, color: string, sub?: string) => (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+      <div style={{ fontFamily: "'Barlow Condensed', sans-serif", fontSize: 13, fontWeight: 700, color }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.3)', letterSpacing: '0.8px', textTransform: 'uppercase' }}>{sub}</div>}
+      <div style={{ fontSize: 8, color: 'rgba(255,255,255,0.25)', letterSpacing: '1px', textTransform: 'uppercase', marginTop: 1 }}>
+        {label}
+      </div>
+    </div>
+  );
+
+  const divider = <div style={{ width: 1, height: 32, background: '#1E3048', flexShrink: 0 }} />;
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexWrap: 'wrap',
+        gap: 16,
+        padding: '10px 18px',
+        background: '#080C12',
+        borderTop: '1px solid #182433',
+      }}
+    >
+      {/* Park Factor */}
+      {pf != null && (
+        <>
+          {cell(`${parkFactor?.venueName?.split(' ').slice(-2).join(' ') ?? 'PARK'} PF`, pfLabel, pfColor, pfTag)}
+          {(awayBullpen || homeBullpen || umpire) && divider}
+        </>
+      )}
+
+      {/* Away Bullpen */}
+      {awayBullpen?.eraBullpen != null && (
+        <>
+          {cell(`${awayTeam} BULL ERA`, awayBullpen.eraBullpen.toFixed(2), '#A0C4FF')}
+          {divider}
+          {cell(`${awayTeam} BULL FIP`, (awayBullpen.fipBullpen ?? 0).toFixed(2), '#A0C4FF')}
+          {(homeBullpen || umpire) && divider}
+        </>
+      )}
+
+      {/* Home Bullpen */}
+      {homeBullpen?.eraBullpen != null && (
+        <>
+          {cell(`${homeTeam} BULL ERA`, homeBullpen.eraBullpen.toFixed(2), '#FFD580')}
+          {divider}
+          {cell(`${homeTeam} BULL FIP`, (homeBullpen.fipBullpen ?? 0).toFixed(2), '#FFD580')}
+          {umpire && divider}
+        </>
+      )}
+
+      {/* Umpire */}
+      {umpire && (
+        <>
+          {cell('HP UMP K-MOD', `${(kMod ?? 1).toFixed(3)}${kArrow}`, kColor, umpire.umpireName.split(' ').pop())}
+          {divider}
+          {cell('HP UMP BB-MOD', `${(bbMod ?? 1).toFixed(3)}${bbArrow}`, bbColor)}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Component ────────────────────────────────────────────────────────────
 
 export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLineupCardProps) {
@@ -949,6 +1052,13 @@ export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLine
 
       {/* Weather */}
       {lineup && <WeatherStrip lineup={lineup} />}
+
+      {/* Environment Signals: park factor, bullpen ERA/FIP, umpire K/BB modifiers */}
+      <EnvSignalsStrip
+        awayTeam={awayTeam}
+        homeTeam={homeTeam}
+        umpireName={lineup?.umpire ?? null}
+      />
     </div>
   );
 }

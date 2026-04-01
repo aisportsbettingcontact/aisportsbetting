@@ -71,7 +71,7 @@ function parseIp(ipStr: string | number | null | undefined): number {
   return full + thirds / 3;
 }
 
-async function seedBullpenStats(): Promise<void> {
+export async function seedBullpenStats(): Promise<{ inserted: number; updated: number; errors: number }> {
   console.log('[INPUT] Starting bullpen stats seeder');
   console.log(`[INPUT] Season: ${SEASON} | Teams: ${MLB_TEAMS.length} | Filter: gamesStarted=0 AND ip>=1.0`);
 
@@ -236,11 +236,14 @@ async function seedBullpenStats(): Promise<void> {
     console.log(`[VERIFY] PASS — ${inserted + updated} bullpen rows seeded with 0 errors`);
   } else {
     console.error(`[VERIFY] FAIL — ${errors} errors during seeding`);
-    process.exit(1);
   }
+  return { inserted, updated, errors };
 }
 
-seedBullpenStats().catch(e => {
-  console.error('[ERROR] Fatal:', e.message);
-  process.exit(1);
-});
+// Self-invoke only when run directly (tsx seedBullpenStats.ts)
+if (process.argv[1]?.endsWith('seedBullpenStats.ts') || process.argv[1]?.endsWith('seedBullpenStats.js')) {
+  seedBullpenStats().catch(e => {
+    console.error('[ERROR] Fatal:', e.message);
+    process.exit(1);
+  });
+}

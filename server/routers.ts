@@ -25,7 +25,7 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
-import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory, getBracketGames, auditAndAdvanceAllBracketWinners, getMlbLineupsByGameIds, getStrikeoutPropsByGame, getStrikeoutPropsByGames } from "./db";
+import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory, getBracketGames, auditAndAdvanceAllBracketWinners, getMlbLineupsByGameIds, getStrikeoutPropsByGame, getStrikeoutPropsByGames, getMlbGameEnvSignals } from "./db";
 import { runStrikeoutModel, type StrikeoutRunnerInput } from "./strikeoutModelRunner";
 import { getLastRefreshResult, runVsinRefresh, runVsinRefreshManual, refreshAllScoresNow } from "./vsinAutoRefresh";
 import { syncNbaModelFromSheet, getLastNbaModelSyncResult } from "./nbaModelSync";
@@ -660,6 +660,24 @@ export const appRouter = router({
           result[gameId] = row;
         }
         return result;
+      }),
+    /**
+     * Fetch MLB environment signals (park factor, bullpen ERA/FIP, umpire K/BB modifiers)
+     * for a single game. Used by the MlbLineupCard detail view.
+     * Returns nulls for any signal not yet seeded.
+     */
+    mlbEnvSignals: publicProcedure
+      .input(z.object({
+        homeTeam: z.string().min(2).max(8),
+        awayTeam: z.string().min(2).max(8),
+        umpireName: z.string().nullable().optional(),
+      }))
+      .query(async ({ input }) => {
+        return getMlbGameEnvSignals({
+          homeTeam: input.homeTeam,
+          awayTeam: input.awayTeam,
+          umpireName: input.umpireName ?? null,
+        });
       }),
   }),
 
