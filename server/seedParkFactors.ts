@@ -11,7 +11,22 @@
  *   4. Compute league_avg_rpg = sum(all venue runs) / sum(all venue games) per season
  *   5. pf_yr = avg_rpg_venue / league_avg_rpg
  *   6. 3yr weighted: pf3yr = (pf2026*w26 + pf2025*w25 + pf2024*w24) / (w26+w25+w24)
- *      Weights: 2026=0.50, 2025=0.35, 2024=0.15 (normalized to available seasons)
+ *      Weights: 2026=0.50, 2025=0.30, 2024=0.20 (normalized to available seasons)
+ *
+ * WEIGHT RATIONALE (50/30/20):
+ *   - Park factors are venue-stable year-to-year (Coors doesn't change). A 3-year
+ *     sample reduces single-season noise from weather, lineup composition, and
+ *     scheduling variance.
+ *   - 2026 (50%): Most recent season. Captures any venue modifications, new
+ *     fences, humidor changes, or turf/surface changes that affect run scoring.
+ *   - 2025 (30%): Full 162-game sample. High statistical reliability. Bridges
+ *     recency and stability.
+ *   - 2024 (20%): Full 162-game sample. Provides long-run baseline. Weighted
+ *     lower than 2025 for recency but meaningfully above zero to prevent
+ *     over-fitting to small 2026 early-season samples.
+ *   - Normalization: When a season has 0 games (e.g. 2026 pre-season), its
+ *     weight is dropped and remaining weights are re-normalized to sum to 1.0.
+ *     This ensures the formula is always a proper weighted average.
  *
  * LOGGING FORMAT: [INPUT] [STEP] [STATE] [OUTPUT] [VERIFY]
  */
@@ -22,7 +37,17 @@ import { eq } from 'drizzle-orm';
 
 const MLB_STATS_BASE = 'https://statsapi.mlb.com/api/v1';
 const SEASONS = [2024, 2025, 2026] as const;
-const WEIGHTS = { 2024: 0.15, 2025: 0.35, 2026: 0.50 };
+// Weight scheme: 2026=50%, 2025=30%, 2024=20%
+// Rationale: recency-biased but gives meaningful weight to full 162-game seasons.
+// Weights are normalized at runtime to available seasons (handles pre-season 2026 = 0 games).
+const WEIGHTS = { 2024: 0.20, 2025: 0.30, 2026: 0.50 };
+
+// Minimum home games required before a season's park factor is included in the weighted average.
+// Rationale: A park factor computed from fewer than 10 home games has extremely high variance.
+// Early-season samples (3-5 games) can produce pf values of 0.40-1.60 purely from random scoring.
+// At 10 games, the standard error of the PF estimate drops below ~0.15 (acceptable for weighting).
+// Teams below this threshold fall back to prior-year data only (still a valid estimate).
+const MIN_GAMES_FOR_PF = 10;
 
 // 30 MLB teams with their 2026 venue IDs
 const TEAM_VENUES: Array<{ abbrev: string; teamId: number; venueId: number; venueName: string }> = [
@@ -156,15 +181,23 @@ export async function seedParkFactors(): Promise<{ inserted: number; updated: nu
     const pf2026 = sd[2026].avgRpg > 0 && leagueAvgRpg[2026] > 0 ? sd[2026].avgRpg / leagueAvgRpg[2026] : null;
 
     // Weighted 3-year park factor (normalize weights to available seasons)
+    // 2026 is only included if the team has played at least MIN_GAMES_FOR_PF home games.
+    // This prevents small early-season samples from contaminating the weighted average.
+    // Example: 3 home games with 0.47 PF would drag a 1.28 Coors down to 0.87 — statistically invalid.
+    const games2026 = sd[2026].games;
+    const include2026 = pf2026 !== null && games2026 >= MIN_GAMES_FOR_PF;
     const available: Array<{ pf: number; w: number }> = [];
     if (pf2024 !== null) available.push({ pf: pf2024, w: WEIGHTS[2024] });
     if (pf2025 !== null) available.push({ pf: pf2025, w: WEIGHTS[2025] });
-    if (pf2026 !== null) available.push({ pf: pf2026, w: WEIGHTS[2026] });
+    if (include2026)     available.push({ pf: pf2026!, w: WEIGHTS[2026] });
 
     let parkFactor3yr = 1.0; // neutral default
     if (available.length > 0) {
       const totalWeight = available.reduce((s, x) => s + x.w, 0);
       parkFactor3yr = available.reduce((s, x) => s + x.pf * (x.w / totalWeight), 0);
+    }
+    if (!include2026 && pf2026 !== null) {
+      console.log(`[STATE] ${tv.abbrev}: pf2026=${pf2026.toFixed(4)} excluded (games2026=${games2026} < MIN_GAMES_FOR_PF=${MIN_GAMES_FOR_PF}) — using prior years only`);
     }
 
     const leagueAvgDisplay = leagueAvgRpg[2026] > 0 ? leagueAvgRpg[2026] : leagueAvgRpg[2025];

@@ -902,7 +902,8 @@ export type InsertMlbPitcherRolling5 = typeof mlbPitcherRolling5.$inferInsert;
  *     via schedule?hydrate=linescore endpoint
  *   - Sum total runs scored in all completed games at that venue per season
  *   - park_factor_yr = avg_rpg_venue / league_avg_rpg
- *   - 3yr_park_factor = weighted avg (2026*0.50 + 2025*0.35 + 2024*0.15)
+ *   - 3yr_park_factor = weighted avg (2026*0.50 + 2025*0.30 + 2024*0.20)
+ *     Weights normalized to available seasons at seed time.
  */
 export const mlbParkFactors = mysqlTable("mlb_park_factors", {
   id: int("id").autoincrement().primaryKey(),

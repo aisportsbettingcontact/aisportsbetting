@@ -19,9 +19,118 @@ Rigorous audit of every calculation layer:
   15. Validation layer completeness
 """
 
-import sys, math, json
+import sys, math, json, os, re
 import numpy as np
 sys.path.insert(0, '/home/ubuntu/ai-sports-betting/server')
+
+# ─────────────────────────────────────────────────────────────────────────────
+# LIVE DB HELPER — Park Factor Query
+# ─────────────────────────────────────────────────────────────────────────────
+# Weights MUST match seedParkFactors.ts exactly (50/30/20)
+_PF_WEIGHTS = {2024: 0.20, 2025: 0.30, 2026: 0.50}
+
+# Minimum home games before pf2026 is included in the weighted average.
+# MUST match MIN_GAMES_FOR_PF in seedParkFactors.ts exactly.
+_MIN_GAMES_FOR_PF = 10
+
+def _get_db_conn():
+    """Open a pymysql connection using DATABASE_URL from .env."""
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(dotenv_path='/home/ubuntu/ai-sports-betting/.env')
+        import pymysql
+        url = os.environ.get('DATABASE_URL', '')
+        m = re.match(r'mysql[^:]*://([^:]+):([^@]+)@([^:/]+)(?::(\d+))?/([^?]+)', url)
+        if not m:
+            return None
+        user, pw, host, port, db = m.groups()
+        return pymysql.connect(
+            host=host, user=user, password=pw, database=db,
+            port=int(port or 3306), ssl={'ssl': {}}, connect_timeout=10
+        )
+    except Exception as e:
+        print(f'  [WARN] DB connection failed: {e}')
+        return None
+
+def _compute_pf3yr(pf2024, pf2025, pf2026, games2026=None):
+    """
+    Compute weighted 3-year park factor using the canonical 50/30/20 formula.
+    Normalizes weights to available seasons (handles null/missing years).
+    pf2026 is only included if games2026 >= _MIN_GAMES_FOR_PF (default 10).
+    This prevents small early-season samples from contaminating the weighted average.
+    Returns 1.0 (neutral) if no seasons available.
+    MUST match the logic in seedParkFactors.ts exactly.
+    """
+    include_2026 = (pf2026 is not None and games2026 is not None and games2026 >= _MIN_GAMES_FOR_PF)
+    avail = []
+    if pf2024 is not None: avail.append((pf2024, _PF_WEIGHTS[2024]))
+    if pf2025 is not None: avail.append((pf2025, _PF_WEIGHTS[2025]))
+    if include_2026:        avail.append((pf2026, _PF_WEIGHTS[2026]))
+    if not avail:
+        return 1.0
+    total_w = sum(w for _, w in avail)
+    return sum(pf * (w / total_w) for pf, w in avail)
+
+def get_db_park_factors():
+    """
+    Query mlb_park_factors table and return a dict:
+      { teamAbbrev: { 'pf2024': float|None, 'pf2025': float|None, 'pf2026': float|None,
+                      'pf3yr_db': float, 'pf3yr_formula': float, 'games2026': int|None } }
+    Falls back to empty dict if DB unavailable.
+    """
+    conn = _get_db_conn()
+    if conn is None:
+        print('  [WARN] DB unavailable — park factor DB checks will be skipped')
+        return {}
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT teamAbbrev, pf2024, pf2025, pf2026, parkFactor3yr, games2026 '
+            'FROM mlb_park_factors'
+        )
+        result = {}
+        for row in cur.fetchall():
+            abbrev, pf24, pf25, pf26, pf3yr_db, g26 = row
+            g26_int = int(g26) if g26 is not None else None
+            pf3yr_formula = _compute_pf3yr(pf24, pf25, pf26, games2026=g26_int)
+            result[abbrev] = {
+                'pf2024':       float(pf24)  if pf24  is not None else None,
+                'pf2025':       float(pf25)  if pf25  is not None else None,
+                'pf2026':       float(pf26)  if pf26  is not None else None,
+                'pf3yr_db':     float(pf3yr_db),
+                'pf3yr_formula': pf3yr_formula,
+                'games2026':    int(g26) if g26 is not None else None,
+            }
+        return result
+    except Exception as e:
+        print(f'  [WARN] DB query failed: {e}')
+        return {}
+    finally:
+        conn.close()
+
+# Load park factors once at audit startup
+print('[INPUT] Loading live park factors from DB...')
+DB_PARK_FACTORS = get_db_park_factors()
+def _fmt_pf(v):
+    return f'{v:.4f}' if v is not None else 'N/A'
+
+if DB_PARK_FACTORS:
+    col = DB_PARK_FACTORS.get('COL', {})
+    sd  = DB_PARK_FACTORS.get('SD', {})
+    print(f'[INPUT] COL: pf2024={_fmt_pf(col.get("pf2024"))} '
+          f'pf2025={_fmt_pf(col.get("pf2025"))} '
+          f'pf2026={_fmt_pf(col.get("pf2026"))} '
+          f'games2026={col.get("games2026", 0)} '
+          f'→ pf3yr_db={col.get("pf3yr_db", 1.0):.6f} '
+          f'pf3yr_formula={col.get("pf3yr_formula", 1.0):.6f}')
+    print(f'[INPUT] SD:  pf2024={_fmt_pf(sd.get("pf2024"))} '
+          f'pf2025={_fmt_pf(sd.get("pf2025"))} '
+          f'pf2026={_fmt_pf(sd.get("pf2026"))} '
+          f'games2026={sd.get("games2026", 0)} '
+          f'→ pf3yr_db={sd.get("pf3yr_db", 1.0):.6f} '
+          f'pf3yr_formula={sd.get("pf3yr_formula", 1.0):.6f}')
+else:
+    print('[WARN] DB_PARK_FACTORS is empty — DB checks will be skipped')
 
 from mlb_engine_adapter import (
     LEAGUE_K_PCT, LEAGUE_BB_PCT, LEAGUE_HR_PCT, LEAGUE_1B_PCT,
@@ -236,12 +345,18 @@ chk(0.0 < exp_runs_avg < base_re, "expected_runs_per_inning is positive and < RE
 chk(0.25 <= exp_runs_avg <= 0.55, "expected_runs_per_inning in realistic per-PA range [0.25, 0.55]",
     f"model={exp_runs_avg:.4f} (MLB 2025 actual per-PA RE contribution ~0.37)")
 
-# Park factor scaling: Coors (1.27) should increase runs by ~27%
-exp_runs_coors = rc_model.expected_runs_per_inning(probs_avg, run_factor=1.27)
+# Park factor scaling: use live Coors 3yr value from DB (updated every seed run)
+# Falls back to 1.27 only if DB is unavailable
+_pf_col_live = DB_PARK_FACTORS.get('COL', {}).get('pf3yr_db', 1.27) if DB_PARK_FACTORS else 1.27
+exp_runs_coors = rc_model.expected_runs_per_inning(probs_avg, run_factor=_pf_col_live)
 coors_ratio = exp_runs_coors / exp_runs_avg
-print(f"\n  [STATE]  Coors park factor (1.27): {exp_runs_avg:.4f} → {exp_runs_coors:.4f} (ratio={coors_ratio:.4f})")
-chk(1.20 <= coors_ratio <= 1.35, "Coors park factor scales runs correctly",
-    f"ratio={coors_ratio:.4f} expected ~1.27")
+print(f"\n  [STATE]  Coors live pf3yr={_pf_col_live:.6f} (from DB, 50/30/20 weighted): "
+      f"{exp_runs_avg:.4f} → {exp_runs_coors:.4f} (ratio={coors_ratio:.4f})")
+# The ratio should be approximately equal to the park factor itself
+# (linear scaling: run_factor multiplies RE contribution directly)
+chk(abs(coors_ratio - _pf_col_live) < 0.05,
+    "Coors park factor scales runs proportionally to pf3yr value",
+    f"ratio={coors_ratio:.4f} pf3yr={_pf_col_live:.4f} delta={abs(coors_ratio - _pf_col_live):.4f}")
 
 # Elite pitcher PA probs → lower expected runs
 exp_runs_elite = rc_model.expected_runs_per_inning(probs_elite, run_factor=1.0)
@@ -432,6 +547,64 @@ print(f"  [STATE]  Hot weather_run_adj={env_hot['weather_run_adj']:.4f} | Cool={
 chk(env_hot['weather_run_adj'] > env_cool['weather_run_adj'], "Hot weather increases run factor",
     f"hot={env_hot['weather_run_adj']:.4f} cool={env_cool['weather_run_adj']:.4f}")
 
+# ── DB FORMULA VALIDATION: verify 50/30/20 weighted formula matches DB-stored values ──
+print("\n  [STEP]   DB Formula Validation: 50/30/20 weighted pf3yr vs DB-stored values")
+print(f"  [INPUT]  Weights: 2026={_PF_WEIGHTS[2026]} 2025={_PF_WEIGHTS[2025]} 2024={_PF_WEIGHTS[2024]}")
+print(f"  [INPUT]  Normalization: weights re-normalized to available seasons")
+
+if DB_PARK_FACTORS:
+    formula_errors = []
+    for abbrev, pf in DB_PARK_FACTORS.items():
+        db_val     = pf['pf3yr_db']
+        formula_val = pf['pf3yr_formula']
+        delta = abs(db_val - formula_val)
+        if delta > 1e-4:  # tolerance: 0.0001 (floating-point safe)
+            formula_errors.append((abbrev, db_val, formula_val, delta))
+
+    chk(len(formula_errors) == 0,
+        f"All {len(DB_PARK_FACTORS)} teams: DB-stored pf3yr matches 50/30/20 formula (tol=1e-4)",
+        f"{len(formula_errors)} mismatches: " +
+        ", ".join(f"{a}(db={d:.6f} formula={f:.6f} delta={x:.6f})" for a, d, f, x in formula_errors[:3]))
+
+    # Validate COL specifically: should be highest-ranked park
+    col_pf = DB_PARK_FACTORS.get('COL', {})
+    if col_pf:
+        all_pf3yr = [v['pf3yr_db'] for v in DB_PARK_FACTORS.values()]
+        col_rank = sorted(all_pf3yr, reverse=True).index(col_pf['pf3yr_db']) + 1
+        print(f"  [STATE]  COL pf3yr_db={col_pf['pf3yr_db']:.6f} "
+              f"pf2024={_fmt_pf(col_pf['pf2024'])} pf2025={_fmt_pf(col_pf['pf2025'])} "
+              f"pf2026={_fmt_pf(col_pf['pf2026'])} games2026={col_pf['games2026']} "
+              f"rank={col_rank}/{len(DB_PARK_FACTORS)}")
+        chk(col_rank <= 3, "Coors Field ranked top-3 hitter-friendly park (pf3yr)",
+            f"rank={col_rank} pf3yr={col_pf['pf3yr_db']:.6f}")
+
+    # Validate SD: should be pitcher-friendly (pf3yr < 1.0)
+    sd_pf = DB_PARK_FACTORS.get('SD', {})
+    if sd_pf:
+        print(f"  [STATE]  SD  pf3yr_db={sd_pf['pf3yr_db']:.6f} "
+              f"pf2024={_fmt_pf(sd_pf['pf2024'])} pf2025={_fmt_pf(sd_pf['pf2025'])} "
+              f"pf2026={_fmt_pf(sd_pf['pf2026'])} games2026={sd_pf['games2026']}")
+        chk(sd_pf['pf3yr_db'] < 1.0, "Petco Park is pitcher-friendly (pf3yr < 1.0)",
+            f"pf3yr={sd_pf['pf3yr_db']:.6f}")
+
+    # Validate 2026 data freshness: teams with 2026 games should have pf2026 populated
+    teams_with_2026 = [(a, v) for a, v in DB_PARK_FACTORS.items() if v.get('games2026', 0) and v['games2026'] > 0]
+    teams_missing_pf2026 = [(a, v) for a, v in teams_with_2026 if v['pf2026'] is None]
+    print(f"  [STATE]  Teams with 2026 game data: {len(teams_with_2026)} "
+          f"| Teams missing pf2026 despite having games: {len(teams_missing_pf2026)}")
+    chk(len(teams_missing_pf2026) == 0,
+        "All teams with 2026 games have pf2026 computed",
+        f"Missing: {[a for a, _ in teams_missing_pf2026]}")
+
+    # Validate range: all pf3yr values should be in [0.70, 1.55]
+    out_of_range = [(a, v['pf3yr_db']) for a, v in DB_PARK_FACTORS.items()
+                    if not (0.70 <= v['pf3yr_db'] <= 1.55)]
+    chk(len(out_of_range) == 0,
+        "All pf3yr values in valid range [0.70, 1.55]",
+        f"Out-of-range: {out_of_range}")
+else:
+    print("  [WARN] DB unavailable — skipping DB formula validation checks")
+
 checkpoint("Section 7 complete")
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -572,13 +745,21 @@ chk(result_b['proj_away_runs'] > result_b['proj_home_runs'], "Dominant team proj
 
 # ── SCENARIO C: Park factor impact (Coors vs Petco) ────────────────────────
 print("\n  [STEP]   Scenario C: Park factor impact (Coors vs Petco)")
+# Live DB values — updated every seed run (weekly). No hardcoded values.
+# Falls back to historically stable approximations only if DB is unavailable.
+_pf_col = DB_PARK_FACTORS.get('COL', {}).get('pf3yr_db', 1.274) if DB_PARK_FACTORS else 1.274
+_pf_sd  = DB_PARK_FACTORS.get('SD',  {}).get('pf3yr_db', 0.865) if DB_PARK_FACTORS else 0.865
+print(f"  [INPUT]  COL pf3yr={_pf_col:.6f} (live DB, 50/30/20 weighted, "
+      f"2026 games={DB_PARK_FACTORS.get('COL', {}).get('games2026', 'N/A') if DB_PARK_FACTORS else 'DB unavailable'})")
+print(f"  [INPUT]  SD  pf3yr={_pf_sd:.6f} (live DB, 50/30/20 weighted, "
+      f"2026 games={DB_PARK_FACTORS.get('SD', {}).get('games2026', 'N/A') if DB_PARK_FACTORS else 'DB unavailable'})")
 result_coors = project_game(
     away_abbrev='LAD', home_abbrev='COL',
     away_team_stats=avg_team, home_team_stats=avg_team,
     away_pitcher_stats=avg_stats, home_pitcher_stats=avg_stats,
     book_lines={'ml_home': -105, 'ml_away': -115, 'ou_line': 11.0},
     game_date=game_date, seed=42, verbose=False,
-    park_factor_3yr=1.274,  # Coors 3yr DB value
+    park_factor_3yr=_pf_col,  # live DB value: 2026*0.50 + 2025*0.30 + 2024*0.20 (normalized)
 )
 result_petco = project_game(
     away_abbrev='LAD', home_abbrev='SD',
@@ -586,14 +767,17 @@ result_petco = project_game(
     away_pitcher_stats=avg_stats, home_pitcher_stats=avg_stats,
     book_lines={'ml_home': -105, 'ml_away': -115, 'ou_line': 7.5},
     game_date=game_date, seed=42, verbose=False,
-    park_factor_3yr=0.865,  # Petco 3yr DB value
+    park_factor_3yr=_pf_sd,   # live DB value: 2026*0.50 + 2025*0.30 + 2024*0.20 (normalized)
 )
-print(f"  [OUTPUT] Coors total={result_coors['proj_total']:.2f} | Petco total={result_petco['proj_total']:.2f}")
+print(f"  [OUTPUT] Coors total={result_coors['proj_total']:.2f} (pf3yr={_pf_col:.4f}) | "
+      f"Petco total={result_petco['proj_total']:.2f} (pf3yr={_pf_sd:.4f})")
 chk(result_coors['proj_total'] > result_petco['proj_total'], "Coors produces more runs than Petco",
     f"coors={result_coors['proj_total']:.2f} petco={result_petco['proj_total']:.2f}")
 diff_pf = result_coors['proj_total'] - result_petco['proj_total']
-chk(diff_pf > 1.5, "Park factor difference > 1.5 runs (meaningful signal)",
-    f"diff={diff_pf:.2f}")
+# Minimum expected difference scales with the actual PF spread between the two parks
+_min_diff = max(0.8, (_pf_col - _pf_sd) * 5.0)  # at least 0.8 runs; scales with PF gap
+chk(diff_pf > _min_diff, f"Park factor difference > {_min_diff:.2f} runs (scaled to live PF gap)",
+    f"diff={diff_pf:.2f} pf_gap={_pf_col - _pf_sd:.4f} min_required={_min_diff:.2f}")
 
 # ── SCENARIO D: Umpire modifier impact ─────────────────────────────────────
 print("\n  [STEP]   Scenario D: Umpire modifier impact (high-K vs low-K umpire)")
