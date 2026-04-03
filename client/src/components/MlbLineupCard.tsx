@@ -213,30 +213,28 @@ function PitcherSection({
                   {hand}HP
                 </span>
               )}
-              {confirmed && (
+              <span
+                style={{
+                  fontSize: 8,
+                  fontWeight: 600,
+                  letterSpacing: "0.5px",
+                  color: confirmed ? "#39FF14" : "#FFFF33",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 3,
+                }}
+              >
                 <span
                   style={{
-                    fontSize: 8,
-                    fontWeight: 600,
-                    letterSpacing: "0.5px",
-                    color: "#39FF14",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 3,
+                    width: 4,
+                    height: 4,
+                    borderRadius: "50%",
+                    background: confirmed ? "#39FF14" : "#FFFF33",
+                    display: "inline-block",
                   }}
-                >
-                  <span
-                    style={{
-                      width: 4,
-                      height: 4,
-                      borderRadius: "50%",
-                      background: "#39FF14",
-                      display: "inline-block",
-                    }}
-                  />
-                  Conf
-                </span>
-              )}
+                />
+                {confirmed ? "Conf" : "Expected"}
+              </span>
             </div>
           </div>
         </div>
@@ -303,34 +301,83 @@ function PitcherSection({
                 {hand}HP
               </span>
             )}
-            {confirmed && (
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 9,
+                fontWeight: 600,
+                letterSpacing: "1px",
+                textTransform: "uppercase",
+                color: confirmed ? "#39FF14" : "#FFFF33",
+              }}
+            >
               <span
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 4,
-                  fontSize: 9,
-                  fontWeight: 600,
-                  letterSpacing: "1px",
-                  textTransform: "uppercase",
-                  color: "#39FF14",
+                  width: 5,
+                  height: 5,
+                  borderRadius: "50%",
+                  background: confirmed ? "#39FF14" : "#FFFF33",
+                  display: "inline-block",
                 }}
-              >
-                <span
-                  style={{
-                    width: 5,
-                    height: 5,
-                    borderRadius: "50%",
-                    background: "#39FF14",
-                    display: "inline-block",
-                  }}
-                />
-                Confirmed
-              </span>
-            )}
+              />
+              {confirmed ? "Confirmed" : "Expected"}
+            </span>
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─── BattingOrderHeader ───────────────────────────────────────────────────────
+function BattingOrderHeader({ confirmed, isMobile }: { confirmed: boolean | null | undefined; isMobile: boolean }) {
+  const isConfirmed = confirmed === true;
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: isMobile ? "5px 8px 3px" : "7px 12px 4px",
+        borderBottom: "1px solid rgba(24,36,51,0.6)",
+      }}
+    >
+      <span
+        style={{
+          fontSize: isMobile ? 7 : 8,
+          fontWeight: 700,
+          letterSpacing: "1.5px",
+          textTransform: "uppercase",
+          color: "rgba(255,255,255,0.5)",
+        }}
+      >
+        Batting Order
+      </span>
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 3,
+          fontSize: isMobile ? 7 : 8,
+          fontWeight: 600,
+          letterSpacing: "0.5px",
+          textTransform: "uppercase",
+          color: isConfirmed ? "#39FF14" : "#FFFF33",
+        }}
+      >
+        <span
+          style={{
+            width: isMobile ? 4 : 5,
+            height: isMobile ? 4 : 5,
+            borderRadius: "50%",
+            background: isConfirmed ? "#39FF14" : "#FFFF33",
+            display: "inline-block",
+          }}
+        />
+        {isConfirmed ? "Confirmed" : "Expected"}
+      </span>
     </div>
   );
 }
@@ -1058,9 +1105,15 @@ export function MlbLineupCard({ awayTeam, homeTeam, startTime, lineup }: MlbLine
           borderBottom: "1px solid #182433",
         }}
       >
-        <LineupRows players={awayLineup} isMobile={isMobile} />
+        <div>
+          <BattingOrderHeader confirmed={lineup?.awayLineupConfirmed} isMobile={isMobile} />
+          <LineupRows players={awayLineup} isMobile={isMobile} />
+        </div>
         <div style={{ background: "#182433" }} />
-        <LineupRows players={homeLineup} isMobile={isMobile} />
+        <div>
+          <BattingOrderHeader confirmed={lineup?.homeLineupConfirmed} isMobile={isMobile} />
+          <LineupRows players={homeLineup} isMobile={isMobile} />
+        </div>
       </div>
 
       {/* Weather */}

@@ -55,12 +55,18 @@ export interface StrikeoutPropRow {
   updatedAt: Date;
 }
 
+interface LineupConfirmedFlags {
+  awayPitcherConfirmed?: boolean | null;
+  homePitcherConfirmed?: boolean | null;
+}
+
 interface MlbPropsCardProps {
   awayTeam: string;
   homeTeam: string;
   startTime: string;
   gameDate?: string;
   props: StrikeoutPropRow[] | null | undefined;
+  lineup?: LineupConfirmedFlags | null;
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -242,9 +248,10 @@ interface PitcherPanelProps {
   teamAbbrev: string;
   side: "away" | "home";
   isRight?: boolean;
+  pitcherConfirmed?: boolean | null;
 }
 
-function PitcherPanel({ prop, teamAbbrev, side, isRight = false }: PitcherPanelProps) {
+function PitcherPanel({ prop, teamAbbrev, side, isRight = false, pitcherConfirmed }: PitcherPanelProps) {
   const primary = teamPrimary(teamAbbrev);
 
   // Parse JSON fields
@@ -310,7 +317,7 @@ function PitcherPanel({ prop, teamAbbrev, side, isRight = false }: PitcherPanelP
             {prop.pitcherHand && (
               <Pill label={`${prop.pitcherHand}HP`} bg="#101820" color="#FFFFFF" border="#182433" />
             )}
-            <StatusPill confirmed={false} />
+            <StatusPill confirmed={pitcherConfirmed === true} />
           </div>
         </div>
       </div>
@@ -458,7 +465,7 @@ function PitcherPanel({ prop, teamAbbrev, side, isRight = false }: PitcherPanelP
 
 // ─── Main Card ─────────────────────────────────────────────────────────────────
 
-export default function MlbPropsCard({ awayTeam, homeTeam, startTime, gameDate, props }: MlbPropsCardProps) {
+export default function MlbPropsCard({ awayTeam, homeTeam, startTime, gameDate, props, lineup }: MlbPropsCardProps) {
   const awayProp = props?.find(p => p.side === "away");
   const homeProp = props?.find(p => p.side === "home");
 
@@ -541,11 +548,11 @@ export default function MlbPropsCard({ awayTeam, homeTeam, startTime, gameDate, 
         <div style={{ display: "flex", borderBottom: "1px solid #182433" }}>
           {/* Away pitcher */}
           <div style={{ flex: 1, minWidth: 0, borderRight: "1px solid #182433" }}>
-            <PitcherPanel prop={awayProp} teamAbbrev={awayTeam} side="away" isRight={false} />
+            <PitcherPanel prop={awayProp} teamAbbrev={awayTeam} side="away" isRight={false} pitcherConfirmed={lineup?.awayPitcherConfirmed} />
           </div>
           {/* Home pitcher */}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <PitcherPanel prop={homeProp} teamAbbrev={homeTeam} side="home" isRight={true} />
+            <PitcherPanel prop={homeProp} teamAbbrev={homeTeam} side="home" isRight={true} pitcherConfirmed={lineup?.homePitcherConfirmed} />
           </div>
         </div>
       ) : (

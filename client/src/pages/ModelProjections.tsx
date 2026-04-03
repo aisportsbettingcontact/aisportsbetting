@@ -1225,6 +1225,7 @@ export default function ModelProjections() {
                             homeTeam={game!.homeTeam}
                             startTime={game!.startTimeEst ? formatMilitaryTime(game!.startTimeEst) : 'TBD'}
                             props={mlbPropsMap.get(game!.id) as StrikeoutPropRow[] | undefined}
+                            lineup={mlbLineupsMap.get(game!.id) as { awayPitcherConfirmed?: boolean | null; homePitcherConfirmed?: boolean | null } | undefined}
                           />
                         ))}
                       </div>

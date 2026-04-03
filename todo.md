@@ -2110,3 +2110,8 @@
 - [x] Fix umpire extraction to grab only name (not R/G + K/G stats block)
 - [x] Restore correct April 3, 2026 lineups to DB (overwritten by April 4 scrape)
 - [x] Verify all 14 April 3 games have correct pitchers in DB (Sheehan, McGreevy, Perez, King, etc.)
+- [x] Deep audit entire Rotowire lineup pipeline for accuracy and bulletproofing
+- [x] Ensure 10-minute auto-refresh cycle for MLB lineups with maximum logging (MLB_INTERVAL_MS = 10min, confirmed running)
+- [x] Wire StatusPill to awayPitcherConfirmed/homePitcherConfirmed in MlbLineupCard and MlbPropsCard
+- [x] Re-run K-Props insert with correct April 3 lineups (28 records, all correct pitchers)
+- [x] End-to-end verification of scrape → DB → frontend display (all 14 games verified, 10 CONF / 4 EXP)
