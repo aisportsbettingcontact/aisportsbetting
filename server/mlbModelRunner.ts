@@ -958,10 +958,11 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
       issues.push(`${label}: modelTotal=${modelT} ≠ bookTotal=${bookT}`);
     }
 
-    // 2. RL spread must be ±1.5
+    // 2. RL spread must be ±1.5 or 0 (pick'em — DK occasionally posts even-spread RL)
     const awayRL = String(g.awayModelSpread ?? "");
-    if (!awayRL.includes("1.5")) {
-      issues.push(`${label}: awayModelSpread="${awayRL}" — expected ±1.5`);
+    const validRL = awayRL.includes("1.5") || ["0", "0.0", "+0", "-0"].includes(awayRL);
+    if (!validRL) {
+      issues.push(`${label}: awayModelSpread="${awayRL}" — expected ±1.5 or 0 (pick'em)`);
     }
 
     // 3. RL odds must be populated
