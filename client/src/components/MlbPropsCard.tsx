@@ -319,15 +319,12 @@ function PitcherPanel({ prop, teamAbbrev, side, isRight = false }: PitcherPanelP
       }}>
         {/* K Projection row */}
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-          <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 42, fontWeight: 800, color: primary, lineHeight: 1 }}>
+          <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 42, fontWeight: 800, color: "#ffffff", lineHeight: 1 }}>
             {fmtNum(prop.kProj, 1)}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-            <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 11, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(255,255,255,0.5)" }}>
-              K PROJ
-            </div>
-            <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.5px" }}>
-              {fmtNum(prop.kP5, 1)}–{fmtNum(prop.kP95, 1)} range
+            <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 11, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase", color: "#a6a6a6" }}>
+              TOTAL STRIKEOUTS PROJECTED
             </div>
           </div>
         </div>
@@ -336,7 +333,7 @@ function PitcherPanel({ prop, teamAbbrev, side, isRight = false }: PitcherPanelP
         {bookLine !== null && (
           <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10 }}>
             <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 11, fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase", color: "rgba(255,255,255,0.45)" }}>
-              CONSENSUS
+              BOOK LINE:
             </div>
             <div style={{ fontFamily: '"Barlow Condensed", sans-serif', fontSize: 16, fontWeight: 800, color: "#FFFFFF" }}>
               {bookLine.toFixed(1)} Ks
@@ -493,7 +490,7 @@ export default function MlbPropsCard({ awayTeam, homeTeam, startTime, gameDate, 
             <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.5px", textTransform: "uppercase", color: "#FFFFFF", lineHeight: 1.1 }}>
               {teamCity(awayTeam)}
             </div>
-            <div style={{ fontSize: 11, color: awayPrimary, fontWeight: 700, letterSpacing: "0.5px", marginTop: 1 }}>
+            <div style={{ fontSize: 11, color: "#ffffff", fontWeight: 700, letterSpacing: "0.5px", marginTop: 1 }}>
               {teamNickname(awayTeam)}
             </div>
             <div style={{ marginTop: 4 }}>
@@ -524,7 +521,7 @@ export default function MlbPropsCard({ awayTeam, homeTeam, startTime, gameDate, 
             <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: "0.5px", textTransform: "uppercase", color: "#FFFFFF", lineHeight: 1.1 }}>
               {teamCity(homeTeam)}
             </div>
-            <div style={{ fontSize: 11, color: homePrimary, fontWeight: 700, letterSpacing: "0.5px", marginTop: 1 }}>
+            <div style={{ fontSize: 11, color: "#ffffff", fontWeight: 700, letterSpacing: "0.5px", marginTop: 1 }}>
               {teamNickname(homeTeam)}
             </div>
             <div style={{ marginTop: 4, display: "flex", justifyContent: "flex-end" }}>
