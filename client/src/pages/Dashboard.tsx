@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock } from "lucide-react";
+import { User, LogOut, BarChart3, FlaskConical, Loader2, Crown, Send, Search, X, Clock } from "lucide-react";
 import { GameCard } from "@/components/GameCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -465,13 +465,13 @@ export default function Dashboard() {
                             className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Send className="w-3.5 h-3.5 text-green-400" /> Publish Projections
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/model-results"); }}
-                            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                            <BarChart3 className="w-3.5 h-3.5 text-blue-400" /> Model Results
-                          </button>
                           <button onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }}
                             className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Crown className="w-3.5 h-3.5 text-yellow-400" /> User Management
+                          </button>
+                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/model-results"); }}
+                            className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                            <FlaskConical className="w-3.5 h-3.5 text-blue-400" /> THE MODEL
                           </button>
                         </>
                       )}

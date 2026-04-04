@@ -106,14 +106,14 @@ describe("MlbPropsCard component", () => {
   it("MlbPropsCard.tsx exports MlbPropsCard and StrikeoutPropRow", () => {
     const componentPath = path.join(__dirname, "../client/src/components/MlbPropsCard.tsx");
     const content = fs.readFileSync(componentPath, "utf-8");
-    expect(content).toContain("export function MlbPropsCard");
+    expect(content).toContain("export default function MlbPropsCard");
     expect(content).toContain("export interface StrikeoutPropRow");
   });
 
   it("ModelProjections.tsx imports MlbPropsCard and has K PROPS tab", () => {
     const pagePath = path.join(__dirname, "../client/src/pages/ModelProjections.tsx");
     const content = fs.readFileSync(pagePath, "utf-8");
-    expect(content).toContain("import { MlbPropsCard");
+    expect(content).toContain("import MlbPropsCard");
     expect(content).toContain("K PROPS");
     expect(content).toContain("feedMobileTab === 'props'");
     expect(content).toContain("mlbPropsMap");
