@@ -604,7 +604,7 @@ export const appRouter = router({
 
         // Run VSiN odds/lines refresh first (manual variant tags history rows as source='manual'),
         // then immediately refresh all scores
-        const [result] = await Promise.allSettled([runVsinRefreshManual(sport as "NCAAM" | "NBA" | "NHL" | "MLB" | undefined)]);
+        const [result] = await Promise.allSettled([runVsinRefreshManual(sport)]);
 
         // Always refresh scores regardless of whether VSiN succeeded
         console.log(`[tRPC][triggerRefresh] Refreshing scores (all sports, always)…`);
