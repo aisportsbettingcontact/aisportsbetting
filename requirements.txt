@@ -1,0 +1,7 @@
+# Python dependencies for NCAAM model engine (model_v10_engine.py)
+# Install with: sudo pip3 install -r requirements.txt
+kenpompy
+scipy
+numpy
+pandas
+requests
