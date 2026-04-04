@@ -13,9 +13,10 @@ const queryClient = new QueryClient({
     queries: {
       // Cache data for 5 minutes — prevents redundant refetches on navigation
       staleTime: 5 * 60 * 1000,
-      // Only retry once (not 3 times) to avoid 30s+ spinner on slow connections
-      retry: 1,
-      retryDelay: 1000,
+      // Retry up to 2 times for transient network errors (Failed to fetch)
+      // with exponential backoff: 1s, 2s. Avoids 30s+ spinners on slow connections.
+      retry: 2,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
       // Show stale data while refetching (no spinner flash on navigation)
       refetchOnWindowFocus: false,
     },
@@ -64,6 +65,10 @@ queryClient.getQueryCache().subscribe(event => {
     // silently not fire once auth state resolves.
     const isUnauthorized = error instanceof TRPCClientError && error.message === UNAUTHED_ERR_MSG;
     if (isOptionalAuthQuery(event.query.queryKey) && isUnauthorized) return; // suppress
+    // Suppress transient network errors (Failed to fetch) — these are browser-level
+    // connection blips that auto-retry. Logging them causes false-positive error reports.
+    const isNetworkBlip = error instanceof TRPCClientError && error.message === "Failed to fetch";
+    if (isNetworkBlip) return;
     console.error("[API Query Error]", error);
   }
 });
