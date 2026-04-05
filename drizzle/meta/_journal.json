@@ -351,6 +351,13 @@
       "when": 1775266556758,
       "tag": "0049_powerful_marvel_boy",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "5",
+      "when": 1775376465173,
+      "tag": "0050_rapid_crusher_hogan",
+      "breakpoints": true
     }
   ]
 }
