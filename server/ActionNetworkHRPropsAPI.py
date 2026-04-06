@@ -140,6 +140,7 @@ def parse_hr_props(
     raw: dict,
     db_game_map: dict[str, int],  # "AWAY@HOME|YYYY-MM-DD" → db_game_id
     lineup_map: dict[int, dict],  # db_game_id → {awayLineup: [...], homeLineup: [...], awayLineupConfirmed, homeLineupConfirmed}
+    date_str: str = "",  # YYYYMMDD — used as fallback for UTC date-shifted West Coast games
 ) -> list[dict]:
     """
     Parse raw AN HR props response into structured records.
@@ -253,8 +254,16 @@ def parse_hr_props(
         # Look up our DB game_id
         lookup_key = f"{away_abbr}@{home_abbr}|{game_date}"
         db_game_id = db_game_map.get(lookup_key)
+        if db_game_id is None and date_str:
+            # Fallback: West Coast late games have UTC start_time on next day
+            # Try the passed date_str (YYYYMMDD → YYYY-MM-DD)
+            fallback_date = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:8]}"
+            fallback_key = f"{away_abbr}@{home_abbr}|{fallback_date}"
+            db_game_id = db_game_map.get(fallback_key)
+            if db_game_id is not None:
+                game_date = fallback_date  # Update game_date for record output
+                lookup_key = fallback_key
         if db_game_id is None:
-            # Try alternate key formats
             log_err(f"  [WARN] No DB game found for key={lookup_key}")
             skipped_no_game += 1
             continue
@@ -403,7 +412,7 @@ if __name__ == "__main__":
     raw = fetch_hr_props_raw(date_str)
 
     # Parse with DB context
-    results = parse_hr_props(raw, db_game_map, lineup_map)
+    results = parse_hr_props(raw, db_game_map, lineup_map, date_str)
 
     # Output to stdout
     output = json.dumps(results, ensure_ascii=False)

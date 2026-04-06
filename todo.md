@@ -2163,3 +2163,9 @@
 - [x] Rewrite MlbF5NrfiCard.tsx: add edge% + EV text display for all markets (F5 ML/RL/Total + NRFI/YRFI), fix YRFI model odds rendering bug
 - [x] DB audit April 6: 26/26 K-Props modeled, 25 edges, 169/169 HR Props modeled, 38 edges
 - [x] All 441 vitest tests passing (24 test files, 0 regressions)
+- [x] DB audit: enumerate all MLB games March 25–April 5 and identify data gaps across all 4 markets
+- [x] Fetch actual outcomes from MLB Stats API: F5 scores (inning-by-inning), 1st inning runs, pitcher Ks, batter HRs for all games
+- [x] Build full historical backtest engine (all 4 markets: F5, NRFI/YRFI, K-Props, HR Props)
+- [x] Run full backtest pipeline March 25–April 5 with deep logging and calibration metrics
+- [x] Generate per-game + aggregate backtest report with accuracy, ROI, edge distribution
+- [x] Save checkpoint and deliver full backtest report

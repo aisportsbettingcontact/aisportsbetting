@@ -443,3 +443,20 @@ export async function updateKPropsFromAN(
 
   return result;
 }
+
+// ── Convenience wrapper: upsertKPropsForDate ──────────────────────────────────
+/**
+ * Fetch AN K-Props for a date and upsert into DB.
+ * This is the primary entry point for the pipeline.
+ *
+ * @param anDateStr - YYYYMMDD format (e.g. "20260327")
+ * @returns UpsertKPropsResult
+ */
+export async function upsertKPropsForDate(
+  anDateStr: string
+): Promise<UpsertKPropsResult> {
+  const { fetchANKProps } = await import("./anKPropsService");
+  const gameDate = `${anDateStr.slice(0, 4)}-${anDateStr.slice(4, 6)}-${anDateStr.slice(6, 8)}`;
+  const anResult = await fetchANKProps(anDateStr);
+  return upsertKPropsFromAN(anResult, gameDate);
+}
