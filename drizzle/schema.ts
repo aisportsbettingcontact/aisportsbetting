@@ -617,6 +617,17 @@ export const mlbPlayers = mysqlTable("mlb_players", {
   currentTeamBrAbbrev: varchar("currentTeamBrAbbrev", { length: 8 }),
   /** Whether this player is currently on an active MLB roster */
   isActive: boolean("isActive").notNull().default(true),
+  // ── Statcast 2025 season metrics (Baseball Savant leaderboard, min 50 PA) ──
+  /** Isolated power (SLG - AVG) — primary per-player HR power indicator */
+  iso: double("iso"),
+  /** Barrel rate (%) — % of batted balls classified as barrels (EV ≥ 98 mph, LA 26–30°) */
+  barrelPct: double("barrelPct"),
+  /** Hard-hit rate (%) — % of batted balls with exit velocity ≥ 95 mph */
+  hardHitPct: double("hardHitPct"),
+  /** Expected slugging percentage based on exit velocity + launch angle */
+  xSlg: double("xSlg"),
+  /** UTC timestamp (ms) when Statcast data was last fetched from Baseball Savant */
+  statcastFetchedAt: bigint("statcastFetchedAt", { mode: "number" }),
   /** UTC timestamp (ms) when this record was last synced from Baseball Reference */
   lastSyncedAt: bigint("lastSyncedAt", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

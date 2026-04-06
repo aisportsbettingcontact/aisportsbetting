@@ -1,351 +1,582 @@
 /**
  * MlbF5NrfiCard
  *
- * Displays F5 (First 5 Innings) and NRFI/YRFI model projections for a single MLB game.
+ * Displays First Five Innings (F5) and NRFI/YRFI market projections for a single MLB game.
  *
- * Book sources (enforced in scrapers):
- *   - F5 ML, F5 Total, F5 RL → FanDuel NJ (book_id=69)
- *   - NRFI/YRFI → FanDuel NJ (book_id=69)
+ * Data sources:
+ *   F5 ML / RL / Total odds → FanDuel NJ (Action Network book_id=69)
+ *   NRFI / YRFI odds        → FanDuel NJ (Action Network book_id=69)
+ *   Model projections       → MLBAIModel.py (400K Monte Carlo simulations)
  *
  * Layout:
- *   ┌─────────────────────────────────────────────────────┐
- *   │  AWAY TEAM          vs          HOME TEAM           │
- *   │  SP: Away Pitcher       SP: Home Pitcher            │
- *   ├─────────────────────────────────────────────────────┤
- *   │  F5 MONEY LINE                                      │
- *   │  Away ML   Model Away ML   Home ML   Model Home ML  │
- *   ├─────────────────────────────────────────────────────┤
- *   │  F5 TOTAL                                           │
- *   │  Book Line  Book Over  Book Under  Model Total      │
- *   │  Model Over  Model Under  Edge                      │
- *   ├─────────────────────────────────────────────────────┤
- *   │  NRFI / YRFI                                        │
- *   │  NRFI Odds  YRFI Odds  Model P(NRFI)  Model Odds   │
- *   └─────────────────────────────────────────────────────┘
+ *   ┌─────────────────────────────────────────────────────────┐
+ *   │  TEAM GRADIENT BAR (away ← → home)                     │
+ *   │  MATCHUP HEADER: away @ home + start time              │
+ *   ├─────────────────────────────────────────────────────────┤
+ *   │  F5 SECTION                                             │
+ *   │    ML:  away odds | model pct | home odds               │
+ *   │    RL:  away line+odds | model pct | home line+odds     │
+ *   │    TOT: over odds | model total | under odds            │
+ *   ├─────────────────────────────────────────────────────────┤
+ *   │  NRFI / YRFI SECTION                                    │
+ *   │    NRFI: FD odds | model pct | edge% | EV               │
+ *   │    YRFI: FD odds | model pct | edge% | EV               │
+ *   └─────────────────────────────────────────────────────────┘
  */
 import { useMemo } from "react";
 import { MLB_BY_ABBREV } from "@shared/mlbTeams";
+import { teamLogoGradient } from "@/lib/teamLogoCircle";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-export interface F5NrfiGameRow {
+// ─── Types ─────────────────────────────────────────────────────────────────────
+export interface F5NrfiGame {
   id: number;
   awayTeam: string;
   homeTeam: string;
   startTimeEst: string | null;
-  awayStartingPitcher?: string | null;
-  homeStartingPitcher?: string | null;
-  awayPitcherConfirmed?: boolean | null;
-  homePitcherConfirmed?: boolean | null;
+  sport: string;
   // F5 book odds (FanDuel NJ)
-  f5Total?: string | null;
-  f5OverOdds?: string | null;
-  f5UnderOdds?: string | null;
-  f5AwayML?: string | null;
-  f5HomeML?: string | null;
-  // F5 model values
-  modelF5AwayScore?: string | null;
-  modelF5HomeScore?: string | null;
-  modelF5Total?: string | null;
-  modelF5OverRate?: string | null;
-  modelF5UnderRate?: string | null;
-  modelF5AwayWinPct?: string | null;
-  modelF5HomeWinPct?: string | null;
-  modelF5AwayML?: string | null;
-  modelF5HomeML?: string | null;
-  modelF5AwayRLCoverPct?: string | null;
-  modelF5HomeRLCoverPct?: string | null;
-  modelF5OverOdds?: string | null;
-  modelF5UnderOdds?: string | null;
+  f5AwayML: string | null;
+  f5HomeML: string | null;
+  f5AwayRunLine: string | null;
+  f5HomeRunLine: string | null;
+  f5AwayRunLineOdds: string | null;
+  f5HomeRunLineOdds: string | null;
+  f5Total: string | null;
+  f5OverOdds: string | null;
+  f5UnderOdds: string | null;
+  // F5 model projections
+  modelF5AwayScore: string | null;
+  modelF5HomeScore: string | null;
+  modelF5Total: string | null;
+  modelF5OverRate: string | null;
+  modelF5UnderRate: string | null;
+  modelF5AwayWinPct: string | null;
+  modelF5HomeWinPct: string | null;
+  modelF5AwayRLCoverPct: string | null;
+  modelF5HomeRLCoverPct: string | null;
+  modelF5OverOdds: string | null;
+  modelF5UnderOdds: string | null;
   // NRFI/YRFI book odds (FanDuel NJ)
-  nrfiOverOdds?: string | null;
-  yrfiUnderOdds?: string | null;
-  // NRFI/YRFI model values
-  modelPNrfi?: string | null;
-  modelNrfiOdds?: string | null;
-  modelYrfiOdds?: string | null;
+  nrfiOverOdds: string | null;
+  yrfiUnderOdds: string | null;
+  // NRFI/YRFI model
+  modelPNrfi: string | null;
+  modelNrfiOdds: string | null;
+  modelYrfiOdds: string | null;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-const CARD_BG = '#090E14';
-const BORDER = '#182433';
-const NEON = '#39FF14';
-const AMBER = '#f59e0b';
-const BLUE = '#60a5fa';
-const MUTED = 'rgba(255,255,255,0.45)';
-const WHITE = 'rgba(255,255,255,0.92)';
-
-function americanOddsToProb(odds: string | null | undefined): number | null {
-  if (!odds) return null;
-  const n = parseFloat(odds.replace('+', ''));
-  if (isNaN(n)) return null;
-  if (n < 0) return -n / (-n + 100);
-  return 100 / (n + 100);
+interface MlbF5NrfiCardProps {
+  game: F5NrfiGame;
 }
 
-function edgeColor(edge: number): string {
-  if (edge >= 0.05) return NEON;
-  if (edge >= 0.02) return '#86efac';
-  if (edge <= -0.05) return '#f87171';
-  return MUTED;
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+function fmtOdds(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
 }
 
-function EdgeBadge({ model, book }: { model: string | null | undefined; book: string | null | undefined }) {
-  const modelP = americanOddsToProb(model);
-  const bookP = americanOddsToProb(book);
-  if (modelP == null || bookP == null) return null;
-  const edge = modelP - bookP;
-  const sign = edge >= 0 ? '+' : '';
-  return (
-    <span style={{ fontSize: 9, fontWeight: 700, color: edgeColor(edge), letterSpacing: '0.04em' }}>
-      {sign}{(edge * 100).toFixed(1)}%
-    </span>
-  );
+function fmtPct(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return "—";
+  return `${n.toFixed(1)}%`;
 }
 
-function OddsCell({ label, book, model }: { label: string; book?: string | null; model?: string | null }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 56 }}>
-      <span style={{ fontSize: 9, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
-      <span style={{ fontSize: 13, fontWeight: 700, color: WHITE, fontFamily: "'Barlow Condensed', sans-serif" }}>
-        {book ?? '—'}
-      </span>
-      {model && (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-          <span style={{ fontSize: 10, color: BLUE, fontWeight: 600 }}>{model}</span>
-          <EdgeBadge model={model} book={book} />
-        </div>
-      )}
-    </div>
-  );
+function fmtScore(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return "—";
+  return n.toFixed(2);
 }
 
-function SectionHeader({ label }: { label: string }) {
+function fmtLine(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+function fmtTotal(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return "—";
+  return n.toFixed(1);
+}
+
+function formatTime(t: string | null | undefined): string {
+  if (!t) return "TBD";
+  const [h, m] = t.split(":").map(Number);
+  if (isNaN(h) || isNaN(m)) return t;
+  const suffix = h >= 12 ? "PM" : "AM";
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2, "0")} ${suffix}`;
+}
+
+/**
+ * Convert American odds to implied probability (no-vig not applied — raw book implied).
+ */
+function americanToImplied(odds: number): number {
+  return odds < 0 ? (-odds) / (-odds + 100) : 100 / (odds + 100);
+}
+
+/**
+ * Compute edge and EV between model probability and book implied probability.
+ * modelPct: percentage string (e.g. "62.5" for 62.5%)
+ * bookOdds: American odds string (e.g. "-110" or "+130")
+ * Returns: { edge (decimal), ev (per $100), isEdge (|edge| >= 3%) }
+ */
+function computeEdgeEV(
+  modelPct: string | null | undefined,
+  bookOdds: string | null | undefined
+): { edge: number; ev: number; isEdge: boolean } | null {
+  if (!modelPct || !bookOdds) return null;
+  const modelProb = parseFloat(modelPct) / 100;
+  const odds = parseFloat(bookOdds);
+  if (isNaN(modelProb) || isNaN(odds)) return null;
+
+  const implied = americanToImplied(odds);
+  const edge = modelProb - implied;
+
+  // EV per $100 bet: edge × (payout per unit)
+  // Payout per unit = odds > 0 ? odds/100 : 100/(-odds)
+  const payoutPerUnit = odds > 0 ? odds / 100 : 100 / (-odds);
+  const ev = edge * payoutPerUnit * 100;
+
+  return { edge, ev, isEdge: Math.abs(edge) >= 0.03 };
+}
+
+/** Format edge as "+3.2%" or "-1.8%" */
+function fmtEdge(edge: number): string {
+  const pct = (edge * 100).toFixed(1);
+  return edge >= 0 ? `+${pct}%` : `${pct}%`;
+}
+
+/** Format EV as "+$4.20" or "-$2.10" */
+function fmtEV(ev: number): string {
+  const abs = Math.abs(ev).toFixed(1);
+  return ev >= 0 ? `+$${abs}` : `-$${abs}`;
+}
+
+/** Edge color: neon green if positive edge, red if negative, muted if neutral */
+function edgeColor(edge: number | null | undefined, isEdge: boolean): string {
+  if (edge == null) return "rgba(255,255,255,0.85)";
+  if (isEdge && edge >= 0.03) return "#39FF14";
+  if (isEdge && edge <= -0.03) return "#FF4444";
+  return "rgba(255,255,255,0.85)";
+}
+
+// ─── Sub-components ────────────────────────────────────────────────────────────
+
+interface MarketRowProps {
+  label: string;
+  awayVal: string;
+  awayOdds?: string;
+  modelVal: string;
+  modelLabel?: string;
+  homeVal: string;
+  homeOdds?: string;
+  awayEdgeEV?: { edge: number; ev: number; isEdge: boolean } | null;
+  homeEdgeEV?: { edge: number; ev: number; isEdge: boolean } | null;
+}
+
+function MarketRow({ label, awayVal, awayOdds, modelVal, modelLabel, homeVal, homeOdds, awayEdgeEV, homeEdgeEV }: MarketRowProps) {
   return (
     <div style={{
-      padding: '5px 10px 3px',
-      borderTop: `1px solid ${BORDER}`,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 6,
+      display: "grid",
+      gridTemplateColumns: "48px 1fr 80px 1fr",
+      alignItems: "center",
+      padding: "5px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      gap: 4,
     }}>
-      <span style={{ fontSize: 9, fontWeight: 800, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+      {/* Label */}
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(255,255,255,0.45)", textTransform: "uppercase" }}>
         {label}
       </span>
-      <span style={{ fontSize: 8, color: MUTED, opacity: 0.6 }}>FanDuel NJ</span>
+      {/* Away */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{
+          fontSize: 13, fontWeight: 700,
+          color: awayEdgeEV?.isEdge ? edgeColor(awayEdgeEV.edge, awayEdgeEV.isEdge) : "rgba(255,255,255,0.9)",
+          fontFamily: "'Barlow Condensed', sans-serif"
+        }}>
+          {awayVal}
+        </span>
+        {awayOdds && (
+          <span style={{ display: "block", fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>
+            {awayOdds}
+          </span>
+        )}
+        {awayEdgeEV && awayEdgeEV.isEdge && (
+          <span style={{ display: "block", fontSize: 9, color: edgeColor(awayEdgeEV.edge, awayEdgeEV.isEdge), marginTop: 1, fontWeight: 700 }}>
+            {fmtEdge(awayEdgeEV.edge)} · {fmtEV(awayEdgeEV.ev)}
+          </span>
+        )}
+      </div>
+      {/* Model center */}
+      <div style={{ textAlign: "center", background: "rgba(255,255,255,0.04)", borderRadius: 4, padding: "3px 4px" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif" }}>
+          {modelVal}
+        </span>
+        {modelLabel && (
+          <span style={{ display: "block", fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
+            {modelLabel}
+          </span>
+        )}
+      </div>
+      {/* Home */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{
+          fontSize: 13, fontWeight: 700,
+          color: homeEdgeEV?.isEdge ? edgeColor(homeEdgeEV.edge, homeEdgeEV.isEdge) : "rgba(255,255,255,0.9)",
+          fontFamily: "'Barlow Condensed', sans-serif"
+        }}>
+          {homeVal}
+        </span>
+        {homeOdds && (
+          <span style={{ display: "block", fontSize: 10, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>
+            {homeOdds}
+          </span>
+        )}
+        {homeEdgeEV && homeEdgeEV.isEdge && (
+          <span style={{ display: "block", fontSize: 9, color: edgeColor(homeEdgeEV.edge, homeEdgeEV.isEdge), marginTop: 1, fontWeight: 700 }}>
+            {fmtEdge(homeEdgeEV.edge)} · {fmtEV(homeEdgeEV.ev)}
+          </span>
+        )}
+      </div>
     </div>
   );
 }
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-interface MlbF5NrfiCardProps {
-  game: F5NrfiGameRow;
+interface NrfiRowProps {
+  label: string;
+  bookOdds: string | null | undefined;
+  modelPct: string | null | undefined;
+  modelOdds: string | null | undefined;
+  isNrfi: boolean;
 }
 
-export default function MlbF5NrfiCard({ game }: MlbF5NrfiCardProps) {
-  const awayInfo = useMemo(() => MLB_BY_ABBREV.get(game.awayTeam), [game.awayTeam]);
-  const homeInfo = useMemo(() => MLB_BY_ABBREV.get(game.homeTeam), [game.homeTeam]);
+function NrfiRow({ label, bookOdds, modelPct, modelOdds, isNrfi }: NrfiRowProps) {
+  const modelPctNum = modelPct ? parseFloat(modelPct) : null;
 
-  const awayColor = awayInfo?.primaryColor ?? '#4B5563';
-  const homeColor = homeInfo?.primaryColor ?? '#4B5563';
+  // For NRFI: use modelPNrfi directly
+  // For YRFI: use 100 - modelPNrfi (complement)
+  const effectivePct = modelPctNum != null
+    ? isNrfi ? String(modelPctNum) : String(100 - modelPctNum)
+    : null;
 
-  // F5 Total edge computation
-  const f5TotalEdge = useMemo(() => {
-    if (!game.f5Total || !game.modelF5Total) return null;
-    const bookLine = parseFloat(game.f5Total);
-    const modelLine = parseFloat(String(game.modelF5Total));
-    if (isNaN(bookLine) || isNaN(modelLine)) return null;
-    return modelLine - bookLine;
-  }, [game.f5Total, game.modelF5Total]);
-
-  // NRFI edge computation
-  const nrfiEdge = useMemo(() => {
-    const modelP = game.modelPNrfi ? parseFloat(String(game.modelPNrfi)) / 100 : null;
-    const bookP = americanOddsToProb(game.nrfiOverOdds);
-    if (modelP == null || bookP == null) return null;
-    return modelP - bookP;
-  }, [game.modelPNrfi, game.nrfiOverOdds]);
-
-  const nrfiModelPct = game.modelPNrfi ? parseFloat(String(game.modelPNrfi)) : null;
-  const nrfiVerdict = nrfiEdge != null && nrfiEdge >= 0.03 ? 'NRFI' : nrfiEdge != null && nrfiEdge <= -0.03 ? 'YRFI' : null;
-
-  const hasF5Data = game.f5AwayML || game.f5HomeML || game.f5Total || game.f5OverOdds;
-  const hasNrfiData = game.nrfiOverOdds || game.yrfiUnderOdds || game.modelPNrfi;
-
-  if (!hasF5Data && !hasNrfiData) {
-    return (
-      <div style={{
-        background: CARD_BG, border: `1px solid ${BORDER}`, borderRadius: 10,
-        marginBottom: 10, padding: '12px 14px',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>
-        <span style={{ fontSize: 11, color: MUTED }}>F5/NRFI data not yet available for this game</span>
-      </div>
-    );
-  }
+  const edgeEV = computeEdgeEV(effectivePct, bookOdds);
+  const hasEdge = edgeEV?.isEdge ?? false;
 
   return (
     <div style={{
-      background: CARD_BG,
-      border: `1px solid ${BORDER}`,
+      display: "grid",
+      gridTemplateColumns: "60px 1fr 1fr 1fr",
+      alignItems: "center",
+      padding: "6px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      gap: 4,
+    }}>
+      {/* Label */}
+      <span style={{
+        fontSize: 11, fontWeight: 800, letterSpacing: "0.06em",
+        color: isNrfi ? "#39FF14" : "#FF6B35",
+        textTransform: "uppercase",
+        fontFamily: "'Barlow Condensed', sans-serif",
+      }}>
+        {label}
+      </span>
+      {/* FD Book odds */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>FD ODDS</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+          {fmtOdds(bookOdds)}
+        </span>
+      </div>
+      {/* Model probability */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>MODEL %</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif" }}>
+          {effectivePct != null ? `${parseFloat(effectivePct).toFixed(1)}%` : "—"}
+        </span>
+        {/* Model fair-value odds */}
+        <span style={{ display: "block", fontSize: 10, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
+          {fmtOdds(modelOdds)}
+        </span>
+      </div>
+      {/* Edge + EV */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>EDGE · EV</span>
+        {edgeEV ? (
+          <>
+            <span style={{
+              fontSize: 12, fontWeight: 800,
+              color: hasEdge ? edgeColor(edgeEV.edge, edgeEV.isEdge) : "rgba(255,255,255,0.5)",
+              fontFamily: "'Barlow Condensed', sans-serif",
+            }}>
+              {fmtEdge(edgeEV.edge)}
+            </span>
+            <span style={{
+              display: "block", fontSize: 10, fontWeight: 700,
+              color: hasEdge ? edgeColor(edgeEV.edge, edgeEV.isEdge) : "rgba(255,255,255,0.35)",
+              marginTop: 1,
+            }}>
+              {fmtEV(edgeEV.ev)}
+            </span>
+          </>
+        ) : (
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── F5 Total row with edge/EV ─────────────────────────────────────────────────
+
+interface F5TotalRowProps {
+  f5Total: string | null;
+  f5OverOdds: string | null;
+  f5UnderOdds: string | null;
+  modelF5AwayScore: string | null;
+  modelF5HomeScore: string | null;
+  modelF5Total: string | null;
+  modelF5OverRate: string | null;
+  modelF5UnderRate: string | null;
+}
+
+function F5TotalRow({ f5Total, f5OverOdds, f5UnderOdds, modelF5AwayScore, modelF5HomeScore, modelF5Total, modelF5OverRate, modelF5UnderRate }: F5TotalRowProps) {
+  const overEdgeEV = useMemo(() => computeEdgeEV(modelF5OverRate, f5OverOdds), [modelF5OverRate, f5OverOdds]);
+  const underEdgeEV = useMemo(() => computeEdgeEV(modelF5UnderRate, f5UnderOdds), [modelF5UnderRate, f5UnderOdds]);
+
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "48px 1fr 80px 1fr",
+      alignItems: "center",
+      padding: "5px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      gap: 4,
+    }}>
+      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", color: "rgba(255,255,255,0.45)", textTransform: "uppercase" }}>
+        TOT
+      </span>
+      {/* Over */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>O {fmtTotal(f5Total)}</span>
+        <span style={{
+          fontSize: 13, fontWeight: 700,
+          color: overEdgeEV?.isEdge ? edgeColor(overEdgeEV.edge, overEdgeEV.isEdge) : "rgba(255,255,255,0.9)",
+          fontFamily: "'Barlow Condensed', sans-serif"
+        }}>
+          {fmtOdds(f5OverOdds)}
+        </span>
+        {overEdgeEV && overEdgeEV.isEdge && (
+          <span style={{ display: "block", fontSize: 9, color: edgeColor(overEdgeEV.edge, overEdgeEV.isEdge), marginTop: 1, fontWeight: 700 }}>
+            {fmtEdge(overEdgeEV.edge)} · {fmtEV(overEdgeEV.ev)}
+          </span>
+        )}
+      </div>
+      {/* Model total */}
+      <div style={{ textAlign: "center", background: "rgba(255,255,255,0.04)", borderRadius: 4, padding: "3px 4px" }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif" }}>
+          {fmtScore(modelF5AwayScore)} – {fmtScore(modelF5HomeScore)}
+        </span>
+        <span style={{ display: "block", fontSize: 9, color: "rgba(255,255,255,0.4)", marginTop: 1 }}>
+          TOT {fmtTotal(modelF5Total)}
+        </span>
+      </div>
+      {/* Under */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>U {fmtTotal(f5Total)}</span>
+        <span style={{
+          fontSize: 13, fontWeight: 700,
+          color: underEdgeEV?.isEdge ? edgeColor(underEdgeEV.edge, underEdgeEV.isEdge) : "rgba(255,255,255,0.9)",
+          fontFamily: "'Barlow Condensed', sans-serif"
+        }}>
+          {fmtOdds(f5UnderOdds)}
+        </span>
+        {underEdgeEV && underEdgeEV.isEdge && (
+          <span style={{ display: "block", fontSize: 9, color: edgeColor(underEdgeEV.edge, underEdgeEV.isEdge), marginTop: 1, fontWeight: 700 }}>
+            {fmtEdge(underEdgeEV.edge)} · {fmtEV(underEdgeEV.ev)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main component ────────────────────────────────────────────────────────────
+export default function MlbF5NrfiCard({ game }: MlbF5NrfiCardProps) {
+  const awayInfo = MLB_BY_ABBREV.get(game.awayTeam);
+  const homeInfo = MLB_BY_ABBREV.get(game.homeTeam);
+  const awayName = awayInfo?.city ?? game.awayTeam;
+  const homeName = homeInfo?.city ?? game.homeTeam;
+  const awayColor = awayInfo?.primaryColor ?? "#666";
+  const homeColor = homeInfo?.primaryColor ?? "#888";
+  const awayLogo = awayInfo ? teamLogoGradient(game.awayTeam) : null;
+  const homeLogo = homeInfo ? teamLogoGradient(game.homeTeam) : null;
+
+  // F5 ML edge computation
+  const awayF5MlEdgeEV = useMemo(() => computeEdgeEV(game.modelF5AwayWinPct, game.f5AwayML), [game.modelF5AwayWinPct, game.f5AwayML]);
+  const homeF5MlEdgeEV = useMemo(() => computeEdgeEV(game.modelF5HomeWinPct, game.f5HomeML), [game.modelF5HomeWinPct, game.f5HomeML]);
+
+  // F5 RL edge computation
+  const awayF5RlEdgeEV = useMemo(() => computeEdgeEV(game.modelF5AwayRLCoverPct, game.f5AwayRunLineOdds), [game.modelF5AwayRLCoverPct, game.f5AwayRunLineOdds]);
+  const homeF5RlEdgeEV = useMemo(() => computeEdgeEV(game.modelF5HomeRLCoverPct, game.f5HomeRunLineOdds), [game.modelF5HomeRLCoverPct, game.f5HomeRunLineOdds]);
+
+  const hasF5Data = game.f5AwayML || game.f5Total || game.modelF5AwayScore;
+  const hasNrfiData = game.nrfiOverOdds || game.modelPNrfi;
+
+  return (
+    <div style={{
+      background: "#090E14",
+      border: "1px solid #182433",
       borderRadius: 10,
       marginBottom: 10,
-      overflow: 'hidden',
-      fontFamily: "'Barlow Condensed', 'Inter', sans-serif",
+      overflow: "hidden",
+      fontFamily: "'Barlow Condensed', 'Barlow', sans-serif",
     }}>
-      {/* Team color gradient top bar */}
+      {/* Team gradient bar */}
       <div style={{
-        height: 3,
-        background: `linear-gradient(to right, ${awayColor} 0%, ${awayColor} 50%, ${homeColor} 50%, ${homeColor} 100%)`,
+        height: 4,
+        background: `linear-gradient(to right, ${awayColor}, ${homeColor})`,
       }} />
 
-      {/* Header: teams + starting pitchers */}
+      {/* Matchup header */}
       <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 12px 6px',
-        borderBottom: `1px solid ${BORDER}`,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        padding: "8px 12px 6px",
+        borderBottom: "1px solid rgba(255,255,255,0.08)",
       }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: WHITE, letterSpacing: '0.04em' }}>
-            {game.awayTeam}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {awayLogo && <img src={awayLogo} alt={game.awayTeam} style={{ width: 22, height: 22, objectFit: "contain" }} />}
+          <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.9)", letterSpacing: "0.04em" }}>
+            {awayName}
           </span>
-          {game.awayStartingPitcher && (
-            <span style={{ fontSize: 10, color: MUTED }}>
-              {game.awayStartingPitcher}{!game.awayPitcherConfirmed ? ' *' : ''}
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-          <span style={{ fontSize: 9, color: MUTED, letterSpacing: '0.1em' }}>F5 / NRFI</span>
-          <span style={{ fontSize: 10, color: MUTED }}>@</span>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-          <span style={{ fontSize: 15, fontWeight: 800, color: WHITE, letterSpacing: '0.04em' }}>
-            {game.homeTeam}
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.35)", margin: "0 2px" }}>@</span>
+          {homeLogo && <img src={homeLogo} alt={game.homeTeam} style={{ width: 22, height: 22, objectFit: "contain" }} />}
+          <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.9)", letterSpacing: "0.04em" }}>
+            {homeName}
           </span>
-          {game.homeStartingPitcher && (
-            <span style={{ fontSize: 10, color: MUTED }}>
-              {game.homeStartingPitcher}{!game.homePitcherConfirmed ? ' *' : ''}
-            </span>
-          )}
         </div>
+        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>
+          {formatTime(game.startTimeEst)}
+        </span>
       </div>
 
-      {/* ── F5 MONEY LINE ── */}
-      {(game.f5AwayML || game.f5HomeML || game.modelF5AwayML || game.modelF5HomeML) && (
-        <>
-          <SectionHeader label="F5 Money Line" />
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr',
-            gap: 8, padding: '6px 12px 10px',
-          }}>
-            <OddsCell label={`${game.awayTeam} ML`} book={game.f5AwayML} model={game.modelF5AwayML} />
-            <OddsCell label={`${game.homeTeam} ML`} book={game.f5HomeML} model={game.modelF5HomeML} />
-          </div>
-          {/* Model projected scores */}
-          {(game.modelF5AwayScore || game.modelF5HomeScore) && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, padding: '0 12px 8px' }}>
-              <span style={{ fontSize: 10, color: MUTED }}>Model F5 Score:</span>
-              <span style={{ fontSize: 10, fontWeight: 700, color: BLUE }}>
-                {game.awayTeam} {Number(game.modelF5AwayScore).toFixed(2)} — {Number(game.modelF5HomeScore).toFixed(2)} {game.homeTeam}
-              </span>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ── F5 TOTAL ── */}
-      {(game.f5Total || game.f5OverOdds || game.modelF5Total) && (
-        <>
-          <SectionHeader label="F5 Total" />
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
-            gap: 6, padding: '6px 12px 8px',
-          }}>
-            <OddsCell label="Book Line" book={game.f5Total} />
-            <OddsCell label="Over" book={game.f5OverOdds} model={game.modelF5OverOdds} />
-            <OddsCell label="Under" book={game.f5UnderOdds} model={game.modelF5UnderOdds} />
-          </div>
-          {game.modelF5Total && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, padding: '0 12px 8px' }}>
-              <span style={{ fontSize: 10, color: MUTED }}>Model Total:</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: BLUE }}>
-                {Number(game.modelF5Total).toFixed(1)}
-              </span>
-              {f5TotalEdge != null && (
-                <span style={{
-                  fontSize: 9, fontWeight: 700,
-                  color: Math.abs(f5TotalEdge) >= 0.5 ? NEON : MUTED,
-                  letterSpacing: '0.04em',
-                }}>
-                  ({f5TotalEdge >= 0 ? '+' : ''}{f5TotalEdge.toFixed(2)} vs book)
-                </span>
-              )}
-            </div>
-          )}
-          {/* Over/Under rates */}
-          {(game.modelF5OverRate || game.modelF5UnderRate) && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: 16, padding: '0 12px 8px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                <span style={{ fontSize: 9, color: MUTED }}>Model Over%</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: WHITE }}>{Number(game.modelF5OverRate).toFixed(1)}%</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                <span style={{ fontSize: 9, color: MUTED }}>Model Under%</span>
-                <span style={{ fontSize: 12, fontWeight: 700, color: WHITE }}>{Number(game.modelF5UnderRate).toFixed(1)}%</span>
-              </div>
-            </div>
-          )}
-        </>
-      )}
-
-      {/* ── NRFI / YRFI ── */}
-      {hasNrfiData && (
-        <>
-          <SectionHeader label="NRFI / YRFI (1st Inning)" />
-          <div style={{
-            display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr',
-            gap: 6, padding: '6px 12px 10px',
-          }}>
-            <OddsCell label="NRFI" book={game.nrfiOverOdds} model={game.modelNrfiOdds} />
-            <OddsCell label="YRFI" book={game.yrfiUnderOdds} model={game.modelYrfiOdds} />
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 56 }}>
-              <span style={{ fontSize: 9, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Model P(NRFI)</span>
-              <span style={{ fontSize: 13, fontWeight: 700, color: WHITE, fontFamily: "'Barlow Condensed', sans-serif" }}>
-                {nrfiModelPct != null ? `${nrfiModelPct.toFixed(1)}%` : '—'}
-              </span>
-              {nrfiEdge != null && (
-                <span style={{ fontSize: 9, fontWeight: 700, color: edgeColor(nrfiEdge) }}>
-                  {nrfiEdge >= 0 ? '+' : ''}{(nrfiEdge * 100).toFixed(1)}%
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, minWidth: 56 }}>
-              <span style={{ fontSize: 9, color: MUTED, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Verdict</span>
-              {nrfiVerdict ? (
-                <span style={{
-                  fontSize: 11, fontWeight: 800, letterSpacing: '0.08em',
-                  color: nrfiVerdict === 'NRFI' ? NEON : AMBER,
-                  border: `1px solid ${nrfiVerdict === 'NRFI' ? NEON : AMBER}`,
-                  borderRadius: 4, padding: '1px 5px',
-                }}>
-                  {nrfiVerdict}
-                </span>
-              ) : (
-                <span style={{ fontSize: 11, color: MUTED }}>PASS</span>
-              )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* Footer: data source */}
+      {/* Column headers */}
       <div style={{
-        padding: '4px 12px',
-        borderTop: `1px solid ${BORDER}`,
-        display: 'flex', justifyContent: 'flex-end',
+        display: "grid",
+        gridTemplateColumns: "48px 1fr 80px 1fr",
+        padding: "4px 10px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        gap: 4,
       }}>
-        <span style={{ fontSize: 8, color: MUTED, opacity: 0.5 }}>
-          F5 + NRFI/YRFI odds: FanDuel NJ · Model: MLBAIModel 400K sims
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", textTransform: "uppercase" }}></span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", textAlign: "center" }}>
+          {game.awayTeam}
+        </span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", textAlign: "center" }}>
+          MODEL
+        </span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", textAlign: "center" }}>
+          {game.homeTeam}
+        </span>
+      </div>
+
+      {/* F5 Section */}
+      {hasF5Data ? (
+        <>
+          <div style={{ padding: "4px 10px 2px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", color: "#39FF14", textTransform: "uppercase" }}>
+              F5 · FANDUEL NJ
+            </span>
+          </div>
+
+          {/* F5 ML */}
+          <MarketRow
+            label="ML"
+            awayVal={fmtOdds(game.f5AwayML)}
+            modelVal={fmtPct(game.modelF5AwayWinPct)}
+            modelLabel="AWAY WIN"
+            homeVal={fmtOdds(game.f5HomeML)}
+            awayEdgeEV={awayF5MlEdgeEV}
+            homeEdgeEV={homeF5MlEdgeEV}
+          />
+
+          {/* F5 RL */}
+          <MarketRow
+            label="RL"
+            awayVal={fmtLine(game.f5AwayRunLine)}
+            awayOdds={fmtOdds(game.f5AwayRunLineOdds)}
+            modelVal={fmtPct(game.modelF5AwayRLCoverPct)}
+            modelLabel="AWAY CVR"
+            homeVal={fmtLine(game.f5HomeRunLine)}
+            homeOdds={fmtOdds(game.f5HomeRunLineOdds)}
+            awayEdgeEV={awayF5RlEdgeEV}
+            homeEdgeEV={homeF5RlEdgeEV}
+          />
+
+          {/* F5 Total */}
+          <F5TotalRow
+            f5Total={game.f5Total}
+            f5OverOdds={game.f5OverOdds}
+            f5UnderOdds={game.f5UnderOdds}
+            modelF5AwayScore={game.modelF5AwayScore}
+            modelF5HomeScore={game.modelF5HomeScore}
+            modelF5Total={game.modelF5Total}
+            modelF5OverRate={game.modelF5OverRate}
+            modelF5UnderRate={game.modelF5UnderRate}
+          />
+        </>
+      ) : (
+        <div style={{ padding: "12px 10px", textAlign: "center" }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>F5 odds not yet available</span>
+        </div>
+      )}
+
+      {/* NRFI / YRFI Section */}
+      {hasNrfiData ? (
+        <>
+          <div style={{ padding: "4px 10px 2px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", color: "#FF6B35", textTransform: "uppercase" }}>
+              NRFI / YRFI · FANDUEL NJ
+            </span>
+          </div>
+
+          {/* NRFI row */}
+          <NrfiRow
+            label="NRFI"
+            bookOdds={game.nrfiOverOdds}
+            modelPct={game.modelPNrfi}
+            modelOdds={game.modelNrfiOdds}
+            isNrfi={true}
+          />
+
+          {/* YRFI row */}
+          <NrfiRow
+            label="YRFI"
+            bookOdds={game.yrfiUnderOdds}
+            modelPct={game.modelPNrfi}
+            modelOdds={game.modelYrfiOdds}
+            isNrfi={false}
+          />
+        </>
+      ) : (
+        <div style={{ padding: "12px 10px", textAlign: "center" }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>NRFI/YRFI odds not yet available</span>
+        </div>
+      )}
+
+      {/* Source footer */}
+      <div style={{ padding: "4px 10px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", letterSpacing: "0.04em" }}>
+          F5 + NRFI/YRFI odds: FanDuel NJ · Model: 400K Monte Carlo · Edge threshold: ±3%
         </span>
       </div>
     </div>

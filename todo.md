@@ -2136,3 +2136,30 @@
 - [x] Build ModelResults.tsx owner-only backtest results page (styled like Publish Projections)
 - [x] Wire /admin/model-results route in App.tsx
 - [x] Add Model Results link to owner admin menu in Dashboard.tsx
+- [x] Fix 5 pipeline bugs: F5 fields missing from project_game(), F5/NRFI date format 400 error, HR Props log→stdout JSON parse error, SQL game_id column mismatch, modelResult.modeled→.written
+- [x] Verify all 16 April 5 games fully populated across all markets (MODEL+F5-MODEL+NRFI-MODEL+F5-ODDS+NRFI-ODDS+HR-PROPS)
+- [x] Confirm book source routing: DK NJ (68) for full game ML/RL/Total, FanDuel NJ (69) for F5/NRFI, Consensus (15) for HR/K-Props
+- [x] Build mlbHrPropsModelService.ts: mlbamId resolution via MLB Stats API + mlb_players name-match, calibrated per-player HR probability model (dampened pitcher adjustment, park factor, PA-per-game), EV computation (modelPHr, modelOverOdds, edgeOver, evOver, verdict)
+- [x] Add getHrPropsByGames DB helper to db.ts
+- [x] Add hrProps.getByGames tRPC procedure to routers.ts
+- [x] Build MlbF5NrfiCard.tsx: F5 ML/RL/Total + NRFI/YRFI display with FanDuel NJ book odds and model projections
+- [x] Build MlbHrPropsCard.tsx: HR Props display with consensus odds, model P(HR), edge, EV, verdict badges
+- [x] Add F5/NRFI and HR PROPS tabs to ModelProjections.tsx (6-tab MLB feed: PROJECTIONS | SPLITS | LINEUPS | K PROPS | F5/NRFI | HR PROPS)
+- [x] Wire mlbHrPropsMap and trpc.hrProps.getByGames query into ModelProjections.tsx
+- [x] Add Step 7 (F5/NRFI scrape, FanDuel NJ) to runMlbCycle() in vsinAutoRefresh.ts
+- [x] Add Step 8 (HR Props scrape + model EV computation) to runMlbCycle() in vsinAutoRefresh.ts
+- [x] Verify 277/277 HR Props records: mlbamId resolved, modelPHr computed, 73 OVER edges, 204 PASS
+- [x] Verify 16/16 F5/NRFI games: all book odds + model fields populated in DB
+- [x] All 441 vitest tests passing (24 test files, 0 regressions)
+- [x] Fix K-Props date format bug: run_april6_full_pipeline.ts was passing YYYY-MM-DD instead of YYYYMMDD to fetchANKProps
+- [x] Build upsertKPropsFromAN: insert-or-update K-Props rows from AN scrape (was update-only before)
+- [x] Seed 26/26 K-Props records for April 6, 2026 via upsertKPropsFromAN
+- [x] Build mlbKPropsModelService.ts: Poisson lambda model (pitcher K9 + xFIP adj + opp K-rate adj + IP estimate), pOver, edge, EV, verdict
+- [x] Wire K-Props model into vsinAutoRefresh.ts (runs after each upsert in 10-min cycle)
+- [x] Wire K-Props model into run_april6_full_pipeline.ts (Step 6b)
+- [x] Build mlbHrPropsBacktestService.ts: fetch actual HR results from MLB Stats API box score, populate actualHr + backtestResult in mlb_hr_props
+- [x] Wire HR Props backtest into vsinAutoRefresh.ts (runs in K-Props pipeline after upsert)
+- [x] Run HR Props backtest for April 5: 273/277 props updated, 0 errors
+- [x] Rewrite MlbF5NrfiCard.tsx: add edge% + EV text display for all markets (F5 ML/RL/Total + NRFI/YRFI), fix YRFI model odds rendering bug
+- [x] DB audit April 6: 26/26 K-Props modeled, 25 edges, 169/169 HR Props modeled, 38 edges
+- [x] All 441 vitest tests passing (24 test files, 0 regressions)

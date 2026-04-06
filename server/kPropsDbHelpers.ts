@@ -1,12 +1,18 @@
 /**
  * kPropsDbHelpers.ts
  *
- * Helper functions for updating mlb_strikeout_props rows with live AN line data.
+ * Helper functions for upserting mlb_strikeout_props rows with live AN line data.
  * Called by MLBCycle every 10 minutes to keep book lines fresh.
  *
- * Matching strategy:
- *   1. Primary: exact pitcherName match (case-insensitive) within gameDate window
- *   2. Fallback: last-name match within same team + gameDate
+ * upsertKPropsFromAN (PRIMARY):
+ *   - Matches each AN prop to a DB game by awayTeam/homeTeam + gameDate
+ *   - Determines side (away/home) based on which team the pitcher belongs to
+ *   - Inserts new rows if none exist, updates existing rows with latest book lines
+ *   - This is the primary seeder for K-Props (no StrikeoutModel.py required)
+ *
+ * updateKPropsFromAN (LEGACY):
+ *   - Only updates existing rows — does NOT insert new ones
+ *   - Kept for backward compatibility with the 10-min automation cycle
  *
  * Logging format:
  *   [KPropsDB][STEP]   operation description
@@ -18,8 +24,8 @@
 
 import { getDb } from "./db";
 import { mlbStrikeoutProps, games } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
-import type { ANKPropsResult } from "./anKPropsService";
+import { eq, and, inArray } from "drizzle-orm";
+import type { ANKPropsResult, ANKPropLine } from "./anKPropsService";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -35,6 +41,22 @@ export interface UpdateKPropsResult {
   }>;
 }
 
+export interface UpsertKPropsResult {
+  inserted: number;
+  updated: number;
+  skipped: number;
+  errors: number;
+  details: Array<{
+    pitcherName: string;
+    teamAbbr: string;
+    side: string;
+    gameId: number;
+    anLine: number;
+    action: "inserted" | "updated" | "skipped" | "error";
+    reason?: string;
+  }>;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function normalizeName(name: string): string {
@@ -46,11 +68,243 @@ function getLastName(name: string): string {
   return parts[parts.length - 1];
 }
 
-// ── Main export ───────────────────────────────────────────────────────────────
+// AN team abbreviations → DB team abbreviations mapping
+// AN uses standard MLB abbreviations; our DB uses the same format
+// Only special cases need mapping
+const AN_TO_DB_TEAM: Record<string, string> = {
+  // AN uses these, DB uses these (most are identical)
+  // Add overrides here if needed
+  WSH: "WSH",
+  CWS: "CWS",
+  KC: "KC",
+  TB: "TB",
+  SF: "SF",
+  SD: "SD",
+  LAD: "LAD",
+  LAA: "LAA",
+  NYY: "NYY",
+  NYM: "NYM",
+};
+
+function mapTeamAbbr(anAbbr: string): string {
+  return AN_TO_DB_TEAM[anAbbr] ?? anAbbr;
+}
+
+// ── Primary export: upsertKPropsFromAN ────────────────────────────────────────
+
+/**
+ * Upsert mlb_strikeout_props rows from AN K-prop lines.
+ *
+ * For each AN prop:
+ *   1. Find the matching DB game by awayTeam/homeTeam + gameDate
+ *   2. Determine side (away/home) based on pitcher's team
+ *   3. Insert new row if none exists, update existing row with latest book lines
+ *
+ * This is the primary seeder — no StrikeoutModel.py required.
+ * Model fields (kProj, kLine, etc.) are left null on insert; they get populated
+ * when StrikeoutModel.py runs later.
+ */
+export async function upsertKPropsFromAN(
+  anResult: ANKPropsResult,
+  gameDate: string
+): Promise<UpsertKPropsResult> {
+  const TAG = "[KPropsDB]";
+  console.log(
+    `${TAG}[STEP] upsertKPropsFromAN: date=${gameDate} | ${anResult.props.length} AN props`
+  );
+
+  const db = await getDb();
+
+  // ── Step 1: Load all DB games for this date ──────────────────────────────
+  const dbGames = await db
+    .select({
+      id: games.id,
+      awayTeam: games.awayTeam,
+      homeTeam: games.homeTeam,
+    })
+    .from(games)
+    .where(and(eq(games.gameDate, gameDate), eq(games.sport, "MLB")));
+
+  console.log(`${TAG}[STATE] Found ${dbGames.length} MLB games in DB for ${gameDate}`);
+
+  // Build lookup: "AWAY@HOME" → game row
+  const gameByMatchup = new Map<string, { id: number; awayTeam: string; homeTeam: string }>();
+  for (const g of dbGames as Array<{ id: number; awayTeam: string; homeTeam: string }>) {
+    gameByMatchup.set(`${g.awayTeam}@${g.homeTeam}`, g);
+  }
+
+  // ── Step 2: Load existing K-Props rows for this date ────────────────────
+  const gameIds = (dbGames as Array<{ id: number; awayTeam: string; homeTeam: string }>).map((g) => g.id);
+  const existingRows =
+    gameIds.length > 0
+      ? await db
+          .select({
+            id: mlbStrikeoutProps.id,
+            gameId: mlbStrikeoutProps.gameId,
+            side: mlbStrikeoutProps.side,
+            pitcherName: mlbStrikeoutProps.pitcherName,
+          })
+          .from(mlbStrikeoutProps)
+          .where(inArray(mlbStrikeoutProps.gameId, gameIds))
+      : [];
+
+  console.log(`${TAG}[STATE] Found ${existingRows.length} existing K-Props rows`);
+
+  // Build lookup: "gameId:side" → existing row
+  const existingByKey = new Map<string, typeof existingRows[0]>();
+  for (const row of existingRows) {
+    existingByKey.set(`${row.gameId}:${row.side}`, row);
+  }
+
+  // ── Step 3: Process each AN prop ────────────────────────────────────────
+  const result: UpsertKPropsResult = {
+    inserted: 0,
+    updated: 0,
+    skipped: 0,
+    errors: 0,
+    details: [],
+  };
+
+  // Deduplicate: one entry per pitcher (AN may have separate OVER/UNDER rows)
+  const processedPitchers = new Set<string>();
+
+  for (const anProp of anResult.props) {
+    const anNameNorm = normalizeName(anProp.pitcherName);
+    if (processedPitchers.has(anNameNorm)) continue;
+    processedPitchers.add(anNameNorm);
+
+    const dbTeam = mapTeamAbbr(anProp.teamAbbr);
+
+    // Find the matching DB game: pitcher's team is either away or home
+    let matchedGame: typeof dbGames[0] | undefined;
+    let side: "away" | "home" | undefined;
+
+    for (const g of dbGames as Array<{ id: number; awayTeam: string; homeTeam: string }>) {
+      if (g.awayTeam === dbTeam) {
+        matchedGame = g;
+        side = "away";
+        break;
+      }
+      if (g.homeTeam === dbTeam) {
+        matchedGame = g;
+        side = "home";
+        break;
+      }
+    }
+
+    if (!matchedGame || !side) {
+      console.log(
+        `${TAG}[WARN] No DB game found for AN pitcher: ${anProp.pitcherName} (team: ${anProp.teamAbbr} → ${dbTeam})`
+      );
+      result.skipped++;
+      result.details.push({
+        pitcherName: anProp.pitcherName,
+        teamAbbr: anProp.teamAbbr,
+        side: "unknown",
+        gameId: 0,
+        anLine: anProp.line,
+        action: "skipped",
+        reason: `No DB game found for team ${dbTeam}`,
+      });
+      continue;
+    }
+
+    const key = `${matchedGame.id}:${side}`;
+    const existingRow = existingByKey.get(key);
+
+    const bookLine = anProp.line !== null ? String(anProp.line) : null;
+    const bookOverOdds = anProp.overOdds !== null ? String(Math.round(anProp.overOdds)) : null;
+    const bookUnderOdds = anProp.underOdds !== null ? String(Math.round(anProp.underOdds)) : null;
+    const anNoVigOverPct =
+      anProp.noVigOverPct !== null ? anProp.noVigOverPct.toFixed(4) : null;
+    const anPlayerId = anProp.anPlayerId !== null ? Number(anProp.anPlayerId) : null;
+
+    try {
+      if (existingRow) {
+        // UPDATE existing row — only update book line fields, preserve model data
+        await db
+          .update(mlbStrikeoutProps)
+          .set({
+            pitcherName: anProp.pitcherName, // refresh name from AN
+            bookLine,
+            bookOverOdds,
+            bookUnderOdds,
+            anNoVigOverPct,
+            anPlayerId,
+          })
+          .where(eq(mlbStrikeoutProps.id, existingRow.id));
+
+        result.updated++;
+        console.log(
+          `${TAG}[OUTPUT] UPDATED ${anProp.pitcherName} (${side}) | gameId=${matchedGame.id} | line=${anProp.line} | over=${bookOverOdds} | under=${bookUnderOdds} | noVig=${anNoVigOverPct}`
+        );
+        result.details.push({
+          pitcherName: anProp.pitcherName,
+          teamAbbr: anProp.teamAbbr,
+          side,
+          gameId: matchedGame.id,
+          anLine: anProp.line,
+          action: "updated",
+        });
+      } else {
+        // INSERT new row — book lines from AN, model fields null (populated later by StrikeoutModel.py)
+        await db.insert(mlbStrikeoutProps).values({
+          gameId: matchedGame.id,
+          side,
+          pitcherName: anProp.pitcherName,
+          bookLine,
+          bookOverOdds,
+          bookUnderOdds,
+          anNoVigOverPct,
+          anPlayerId,
+        });
+
+        result.inserted++;
+        console.log(
+          `${TAG}[OUTPUT] INSERTED ${anProp.pitcherName} (${side}) | gameId=${matchedGame.id} | line=${anProp.line} | over=${bookOverOdds} | under=${bookUnderOdds} | noVig=${anNoVigOverPct}`
+        );
+        result.details.push({
+          pitcherName: anProp.pitcherName,
+          teamAbbr: anProp.teamAbbr,
+          side,
+          gameId: matchedGame.id,
+          anLine: anProp.line,
+          action: "inserted",
+        });
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const cause = (err as { cause?: unknown })?.cause;
+      const causeMsg = cause instanceof Error ? ` | cause: ${cause.message}` : "";
+      console.error(
+        `${TAG}[ERROR] Failed to upsert ${anProp.pitcherName} (${side}): ${msg}${causeMsg}`
+      );
+      result.errors++;
+      result.details.push({
+        pitcherName: anProp.pitcherName,
+        teamAbbr: anProp.teamAbbr,
+        side: side ?? "unknown",
+        gameId: matchedGame?.id ?? 0,
+        anLine: anProp.line,
+        action: "error",
+        reason: msg,
+      });
+    }
+  }
+
+  console.log(
+    `${TAG}[OUTPUT] upsertKPropsFromAN complete: inserted=${result.inserted} updated=${result.updated} skipped=${result.skipped} errors=${result.errors}`
+  );
+  return result;
+}
+
+// ── Legacy export: updateKPropsFromAN ─────────────────────────────────────────
 
 /**
  * Update mlb_strikeout_props rows with live AN line data.
  * Matches by pitcherName (case-insensitive) within the given gameDate.
+ * ONLY updates existing rows — does NOT insert new ones.
+ * Use upsertKPropsFromAN for full insert+update behavior.
  */
 export async function updateKPropsFromAN(
   anResult: ANKPropsResult,
@@ -126,11 +380,9 @@ export async function updateKPropsFromAN(
     }
 
     // Find the AN prop for this pitcher (one entry per pitcher with both odds)
-    const anPropFull = anResult.props.find(
-      (p) => normalizeName(p.pitcherName) === anNameNorm
-    ) ?? anResult.props.find(
-      (p) => getLastName(p.pitcherName) === getLastName(anName)
-    );
+    const anPropFull =
+      anResult.props.find((p) => normalizeName(p.pitcherName) === anNameNorm) ??
+      anResult.props.find((p) => getLastName(p.pitcherName) === getLastName(anName));
 
     if (!anPropFull) {
       result.notFound++;
@@ -171,7 +423,7 @@ export async function updateKPropsFromAN(
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         const cause = (err as { cause?: unknown })?.cause;
-        const causeMsg = cause instanceof Error ? ` | cause: ${cause.message}` : '';
+        const causeMsg = cause instanceof Error ? ` | cause: ${cause.message}` : "";
         console.error(`[KPropsDB][ERROR] Failed to update row ${row.id}: ${msg}${causeMsg}`);
         result.errors++;
       }

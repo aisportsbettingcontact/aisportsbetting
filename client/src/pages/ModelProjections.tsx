@@ -16,7 +16,7 @@ const CDN_NBA = "https://d2xsxph8kpxj0f.cloudfront.net/310519663397752079/MW3Fic
 import { GameCard } from "@/components/GameCard";
 import { MlbLineupCard } from "@/components/MlbLineupCard";
 import MlbPropsCard, { type StrikeoutPropRow } from "@/components/MlbPropsCard";
-import MlbF5NrfiCard, { type F5NrfiGameRow } from "@/components/MlbF5NrfiCard";
+import MlbF5NrfiCard, { type F5NrfiGame } from "@/components/MlbF5NrfiCard";
 import MlbHrPropsCard, { type HrPropRow } from "@/components/MlbHrPropsCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -308,13 +308,15 @@ export default function ModelProjections() {
   // ── Main page tab: projections | splits ───────────────────────────────────
 
   // ── Feed-wide mobile tab filter ───────────────────────────────────────────
-  // Two tabs: MODEL PROJECTIONS (dual) | BETTING SPLITS (splits) | LINEUPS (lineups, MLB only) | PROPS (props, MLB only)
-  type FeedMobileTab = 'dual' | 'splits' | 'lineups' | 'props' | 'f5nrfi' | 'hr';
-  const FEED_TAB_KEY = 'prez_bets_mobile_tab_v3';
+  // Tabs: MODEL PROJECTIONS (dual) | BETTING SPLITS (splits) | LINEUPS (lineups, MLB only)
+  //       K PROPS (props, MLB only) | F5/NRFI (f5nrfi, MLB only) | HR PROPS (hrprops, MLB only)
+  type FeedMobileTab = 'dual' | 'splits' | 'lineups' | 'props' | 'f5nrfi' | 'hrprops';
+  const FEED_TAB_KEY = 'prez_bets_mobile_tab_v4';
   const getPersistedFeedTab = (): FeedMobileTab => {
     try {
       const stored = localStorage.getItem(FEED_TAB_KEY);
-      if (stored === 'dual' || stored === 'splits' || stored === 'lineups' || stored === 'props' || stored === 'f5nrfi' || stored === 'hr') return stored as FeedMobileTab;
+      const valid: FeedMobileTab[] = ['dual', 'splits', 'lineups', 'props', 'f5nrfi', 'hrprops'];
+      if (valid.includes(stored as FeedMobileTab)) return stored as FeedMobileTab;
     } catch { /* ignore */ }
     return 'dual';
   };
@@ -324,7 +326,7 @@ export default function ModelProjections() {
     try { localStorage.setItem(FEED_TAB_KEY, next); } catch { /* ignore */ }
   };
   const feedIsDual = feedMobileTab === 'dual';
-  // Tabs: MODEL PROJECTIONS | BETTING SPLITS | LINEUPS (MLB only) | PROPS (MLB only)
+  // Tabs: MODEL PROJECTIONS | BETTING SPLITS | LINEUPS (MLB only) | K PROPS (MLB only) | F5/NRFI (MLB only) | HR PROPS (MLB only)
   const FEED_TABS: { id: FeedMobileTab; label: string }[] = selectedSport === 'MLB'
     ? [
         { id: 'dual',    label: 'PROJECTIONS' },
@@ -332,7 +334,7 @@ export default function ModelProjections() {
         { id: 'lineups', label: 'LINEUPS' },
         { id: 'props',   label: 'K PROPS' },
         { id: 'f5nrfi',  label: 'F5/NRFI' },
-        { id: 'hr',      label: 'HR PROPS' },
+        { id: 'hrprops', label: 'HR PROPS' },
       ]
     : [
         { id: 'dual',   label: 'MODEL PROJECTIONS' },
@@ -507,26 +509,6 @@ export default function ModelProjections() {
     return new Map(Object.entries(mlbLineupsRaw).map(([k, v]) => [Number(k), v]));
   }, [mlbLineupsRaw]);
 
-  // ── MLB HR Props ─────────────────────────────────────────────────────────────
-  // Fetch HR props for all MLB games when HR tab is active.
-  const { data: mlbHrPropsRaw } = trpc.hrProps.getByGames.useQuery(
-    { gameIds: mlbGameIds },
-    {
-      enabled: selectedSport === 'MLB' && feedMobileTab === 'hr' && mlbGameIds.length > 0,
-      refetchOnWindowFocus: false,
-      refetchInterval: 10 * 60 * 1000,
-      staleTime: 5 * 60 * 1000,
-    }
-  );
-
-  // Map of gameId → HrPropRow[] for fast lookup
-  const mlbHrPropsMap = useMemo(() => {
-    if (!mlbHrPropsRaw?.propsByGame) return new Map<number, HrPropRow[]>();
-    return new Map(
-      Object.entries(mlbHrPropsRaw.propsByGame).map(([k, v]) => [Number(k), v as HrPropRow[]])
-    );
-  }, [mlbHrPropsRaw]);
-
   // ── MLB Strikeout Props ──────────────────────────────────────────────────────
   // Fetch K props for all MLB games when Props tab is active.
   const { data: mlbPropsRaw } = trpc.strikeoutProps.getByGames.useQuery(
@@ -546,6 +528,30 @@ export default function ModelProjections() {
       Object.entries(mlbPropsRaw.propsByGame).map(([k, v]) => [Number(k), v as StrikeoutPropRow[]])
     );
   }, [mlbPropsRaw]);
+
+  // ── MLB F5/NRFI — games data already in listGames, no extra query needed ─────
+  // F5/NRFI fields are returned as part of the games.list query (all columns selected).
+  // We just cast the game rows to F5NrfiGame for the card component.
+
+  // ── MLB HR Props ─────────────────────────────────────────────────────────────
+  // Fetch HR props for all MLB games when HR Props tab is active.
+  const { data: mlbHrPropsRaw } = trpc.hrProps.getByGames.useQuery(
+    { gameIds: mlbGameIds },
+    {
+      enabled: selectedSport === 'MLB' && feedMobileTab === 'hrprops' && mlbGameIds.length > 0,
+      refetchOnWindowFocus: false,
+      refetchInterval: 10 * 60 * 1000,
+      staleTime: 5 * 60 * 1000,
+    }
+  );
+
+  // Map of gameId → HrPropRow[] for fast lookup
+  const mlbHrPropsMap = useMemo(() => {
+    if (!mlbHrPropsRaw?.propsByGame) return new Map<number, HrPropRow[]>();
+    return new Map(
+      Object.entries(mlbHrPropsRaw.propsByGame).map(([k, v]) => [Number(k), v as HrPropRow[]])
+    );
+  }, [mlbHrPropsRaw]);
 
   const toggleStatus = (status: "upcoming" | "live" | "final") => {
     setSelectedStatuses(prev => {
@@ -1185,7 +1191,7 @@ export default function ModelProjections() {
                         onToggleFavorite={handleToggleFavorite}
                         onFavoriteNotify={handleFavoriteNotify}
                         isAppAuthed={Boolean(appUser)}
-                        mobileTab={(feedMobileTab === 'lineups' || feedMobileTab === 'props' || feedMobileTab === 'f5nrfi' || feedMobileTab === 'hr') ? 'dual' : feedMobileTab as 'dual' | 'splits'}
+                        mobileTab={(feedMobileTab === 'lineups' || feedMobileTab === 'props') ? 'dual' : feedMobileTab as 'dual' | 'splits'}
                         onMobileTabChange={(t) => handleFeedTabChange(t)}
                       />
                     </div>
@@ -1226,74 +1232,6 @@ export default function ModelProjections() {
                     ))}
                   </div>
                 )
-              ) : feedMobileTab === 'f5nrfi' && selectedSport === 'MLB' ? (
-                /* ── F5 / NRFI VIEW ── */
-                gamesLoading ? (
-                  <div className="flex flex-col items-center justify-center py-24 gap-3">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">Loading F5/NRFI data…</p>
-                  </div>
-                ) : sortedDates.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
-                    <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
-                    <div>
-                      <p className="text-sm font-semibold text-foreground mb-1">No MLB games found</p>
-                      <p className="text-xs text-muted-foreground">Check back on game day.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '10px 10px 0' }}>
-                    {sortedDates.map((date) => (
-                      <div key={date}>
-                        {gamesByDate[date]!.map((game) => (
-                          <MlbF5NrfiCard
-                            key={game!.id}
-                            game={game! as unknown as F5NrfiGameRow}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )
-              ) : feedMobileTab === 'hr' && selectedSport === 'MLB' ? (
-                /* ── HR PROPS VIEW ── */
-                gamesLoading ? (
-                  <div className="flex flex-col items-center justify-center py-24 gap-3">
-                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">Loading HR props…</p>
-                  </div>
-                ) : sortedDates.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
-                    <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
-                    <div>
-                      <p className="text-sm font-semibold text-foreground mb-1">No MLB games found</p>
-                      <p className="text-xs text-muted-foreground">Check back on game day.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div style={{ padding: '10px 10px 0' }}>
-                    {sortedDates.map((date) => (
-                      <div key={date}>
-                        {gamesByDate[date]!.map((game) => (
-                          <MlbHrPropsCard
-                            key={game!.id}
-                            game={{
-                              id: game!.id,
-                              awayTeam: game!.awayTeam,
-                              homeTeam: game!.homeTeam,
-                              startTimeEst: game!.startTimeEst,
-                              awayStartingPitcher: (game as any).awayStartingPitcher,
-                              homeStartingPitcher: (game as any).homeStartingPitcher,
-                              awayPitcherConfirmed: (game as any).awayPitcherConfirmed,
-                              homePitcherConfirmed: (game as any).homePitcherConfirmed,
-                            }}
-                            props={mlbHrPropsMap.get(game!.id) as HrPropRow[] | undefined}
-                          />
-                        ))}
-                      </div>
-                    ))}
-                  </div>
-                )
               ) : feedMobileTab === 'props' && selectedSport === 'MLB' ? (
                 /* ── K PROPS VIEW ── */
                 gamesLoading ? (
@@ -1321,6 +1259,67 @@ export default function ModelProjections() {
                             startTime={game!.startTimeEst ? formatMilitaryTime(game!.startTimeEst) : 'TBD'}
                             props={mlbPropsMap.get(game!.id) as StrikeoutPropRow[] | undefined}
                             lineup={mlbLineupsMap.get(game!.id) as { awayPitcherConfirmed?: boolean | null; homePitcherConfirmed?: boolean | null } | undefined}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : feedMobileTab === 'f5nrfi' && selectedSport === 'MLB' ? (
+                /* ── F5 / NRFI VIEW ── */
+                gamesLoading ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-3">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    <p className="text-sm text-muted-foreground">Loading F5/NRFI data…</p>
+                  </div>
+                ) : sortedDates.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
+                    <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground mb-1">No MLB games found</p>
+                      <p className="text-xs text-muted-foreground">Check back on game day.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '10px 10px 0' }}>
+                    {sortedDates.map((date) => (
+                      <div key={date}>
+                        {gamesByDate[date]!.map((game) => (
+                          <MlbF5NrfiCard
+                            key={game!.id}
+                            game={game as unknown as F5NrfiGame}
+                          />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )
+              ) : feedMobileTab === 'hrprops' && selectedSport === 'MLB' ? (
+                /* ── HR PROPS VIEW ── */
+                gamesLoading ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-3">
+                    <Loader2 className="w-8 h-8 text-primary animate-spin" />
+                    <p className="text-sm text-muted-foreground">Loading HR props…</p>
+                  </div>
+                ) : sortedDates.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
+                    <BarChart3 className="w-10 h-10 text-muted-foreground/40" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground mb-1">No MLB games found</p>
+                      <p className="text-xs text-muted-foreground">Check back on game day.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ padding: '10px 10px 0' }}>
+                    {sortedDates.map((date) => (
+                      <div key={date}>
+                        {gamesByDate[date]!.map((game) => (
+                          <MlbHrPropsCard
+                            key={game!.id}
+                            awayTeam={game!.awayTeam}
+                            homeTeam={game!.homeTeam}
+                            startTime={game!.startTimeEst ?? ''}
+                            props={mlbHrPropsMap.get(game!.id) as HrPropRow[] | undefined}
                           />
                         ))}
                       </div>
@@ -1359,7 +1358,7 @@ export default function ModelProjections() {
                               onToggleFavorite={handleToggleFavorite}
                               onFavoriteNotify={handleFavoriteNotify}
                               isAppAuthed={Boolean(appUser)}
-                              mobileTab={(feedMobileTab === 'lineups' || feedMobileTab === 'props' || feedMobileTab === 'f5nrfi' || feedMobileTab === 'hr') ? 'dual' : feedMobileTab as 'dual' | 'splits'}
+                              mobileTab={(['lineups', 'props', 'f5nrfi', 'hrprops'].includes(feedMobileTab)) ? 'dual' : feedMobileTab as 'dual' | 'splits'}
                               onMobileTabChange={(t) => handleFeedTabChange(t)}
                             />
                           </div>

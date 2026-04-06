@@ -1812,43 +1812,6 @@ export function startVsinAutoRefresh() {
     } catch (err) {
       console.warn('[MLBCycle] MLB model fallback run failed (non-fatal):', err);
     }
-    // ── F5/NRFI odds: scrape FanDuel NJ lines for today ──────────────────────
-    try {
-      const { scrapeAndStoreF5Nrfi } = await import('./mlbF5NrfiScraper');
-      const f5Result = await scrapeAndStoreF5Nrfi(todayStr);
-      console.log(
-        `[MLBCycle] F5/NRFI odds (FanDuel NJ): processed=${f5Result.processed} ` +
-        `matched=${f5Result.matched} unmatched=${f5Result.unmatched.length} errors=${f5Result.errors.length}`
-      );
-      if (f5Result.errors.length > 0) {
-        console.warn('[MLBCycle] F5/NRFI scrape errors:', f5Result.errors);
-      }
-    } catch (err) {
-      console.warn('[MLBCycle] F5/NRFI scrape failed (non-fatal):', err);
-    }
-    // ── HR Props: scrape Consensus lines + run model EV computation ──────────
-    try {
-      const { scrapeHrPropsForDate } = await import('./mlbHrPropsScraper');
-      const hrScrapeResult = await scrapeHrPropsForDate(todayStr);
-      console.log(
-        `[MLBCycle] HR Props scrape (Consensus): inserted=${hrScrapeResult.inserted} ` +
-        `updated=${hrScrapeResult.updated} skipped=${hrScrapeResult.skipped} errors=${hrScrapeResult.errors}`
-      );
-    } catch (err) {
-      console.warn('[MLBCycle] HR Props scrape failed (non-fatal):', err);
-    }
-    // ── HR Props model EV: resolve mlbamId + compute pHr/edge/EV for all props ─
-    try {
-      const { resolveAndModelHrProps } = await import('./mlbHrPropsModelService');
-      const hrModelResult = await resolveAndModelHrProps(todayStr);
-      console.log(
-        `[MLBCycle] HR Props model EV: resolved=${hrModelResult.resolved} ` +
-        `modeled=${hrModelResult.modeled} edges=${hrModelResult.edges} ` +
-        `errors=${hrModelResult.errors}`
-      );
-    } catch (err) {
-      console.warn('[MLBCycle] HR Props model EV failed (non-fatal):', err);
-    }
     // ── K-Props: fetch live AN lines + run backtest for completed games ────────
     try {
       const { fetchANKProps, formatANDate } = await import("./anKPropsService");
@@ -1864,10 +1827,16 @@ export function startVsinAutoRefresh() {
       // 2. Update bookLine, bookOverOdds, bookUnderOdds, anNoVigOverPct, anPlayerId
       //    in mlb_strikeout_props rows that match by pitcherName + gameDate
       if (anResult.props.length > 0) {
-        const { updateKPropsFromAN } = await import("./kPropsDbHelpers");
-        const updateResult = await updateKPropsFromAN(anResult, todayStr);
+        const { upsertKPropsFromAN } = await import("./kPropsDbHelpers");
+        const upsertResult = await upsertKPropsFromAN(anResult, todayStr);
         console.log(
-          `[MLBCycle] K-Props AN update: updated=${updateResult.updated} notFound=${updateResult.notFound}`
+          `[MLBCycle] K-Props upsert: inserted=${upsertResult.inserted} updated=${upsertResult.updated} skipped=${upsertResult.skipped} errors=${upsertResult.errors}`
+        );
+        // Run K-Props model EV after upsert
+        const { modelKPropsForDate } = await import('./mlbKPropsModelService');
+        const kModelResult = await modelKPropsForDate(todayStr);
+        console.log(
+          `[MLBCycle] K-Props model EV: modeled=${kModelResult.modeled} edges=${kModelResult.edges} skipped=${kModelResult.skipped} errors=${kModelResult.errors}`
         );
       }
 
@@ -1880,6 +1849,16 @@ export function startVsinAutoRefresh() {
         );
       }
        await runKPropsBacktest(todayStr);
+      // 4. Fetch actual HR results for completed games (populates actualHr in mlb_hr_props)
+      try {
+        const { fetchAndStoreActualHrResults } = await import('./mlbHrPropsBacktestService');
+        const hrBacktestResult = await fetchAndStoreActualHrResults(todayStr);
+        console.log(
+          `[MLBCycle] HR Props backtest: gamesProcessed=${hrBacktestResult.gamesProcessed} propsUpdated=${hrBacktestResult.propsUpdated} skipped=${hrBacktestResult.propsSkipped} errors=${hrBacktestResult.errors}`
+        );
+      } catch (hrErr) {
+        console.warn('[MLBCycle] HR Props backtest failed (non-fatal):', hrErr);
+      }
     } catch (err) {
       console.warn('[MLBCycle] K-Props pipeline failed (non-fatal):', err);
     }
@@ -1929,6 +1908,57 @@ export function startVsinAutoRefresh() {
       } catch (err) {
         console.warn('[MLBCycle] Multi-market backtest pipeline failed (non-fatal):', err);
       }
+    }
+
+    // ── Step 7: F5/NRFI odds scrape (FanDuel NJ) ────────────────────────────
+    // Runs every 10-minute cycle. Idempotent upsert — safe to re-run.
+    // Scrapes FanDuel NJ F5 ML/RL/Total + NRFI/YRFI for today's MLB games.
+    try {
+      const { scrapeAndStoreF5Nrfi } = await import('./mlbF5NrfiScraper');
+      const f5Result = await scrapeAndStoreF5Nrfi(todayStr);
+      console.log(
+        `[MLBCycle] F5/NRFI (FanDuel NJ): processed=${f5Result.processed} ` +
+        `matched=${f5Result.matched} unmatched=${f5Result.unmatched.length} ` +
+        `errors=${f5Result.errors.length}`
+      );
+      if (f5Result.errors.length > 0) {
+        console.warn('[MLBCycle] F5/NRFI scrape errors:', f5Result.errors.slice(0, 3));
+      }
+    } catch (err) {
+      console.warn('[MLBCycle] F5/NRFI scrape failed (non-fatal):', err);
+    }
+
+    // ── Step 8: HR Props scrape (Consensus) + model EV computation ───────────
+    // Runs every 10-minute cycle. Upserts consensus HR prop odds from Action Network,
+    // then resolves mlbamId for each player and computes modelPHr, modelOverOdds,
+    // edgeOver, evOver, verdict using the HR Props model service.
+    try {
+      const { scrapeHrPropsForDate } = await import('./mlbHrPropsScraper');
+      const hrResult = await scrapeHrPropsForDate(todayStr);
+      console.log(
+        `[MLBCycle] HR Props (Consensus): inserted=${hrResult.inserted} ` +
+        `updated=${hrResult.updated} skipped=${hrResult.skipped} errors=${hrResult.errors}`
+      );
+      if (hrResult.errors > 0) {
+        console.warn(`[MLBCycle] HR Props scrape: ${hrResult.errors} errors`);
+      }
+      // Run model EV computation for all HR props on today's date
+      try {
+        const { resolveAndModelHrProps } = await import('./mlbHrPropsModelService');
+        const modelResult = await resolveAndModelHrProps(todayStr);
+        console.log(
+          `[MLBCycle] HR Props model EV: resolved=${modelResult.resolved} ` +
+          `alreadyHad=${modelResult.alreadyHad} modeled=${modelResult.modeled} ` +
+          `edges=${modelResult.edges} errors=${modelResult.errors}`
+        );
+        if (modelResult.errors > 0) {
+          console.warn(`[MLBCycle] HR Props model: ${modelResult.errors} computation errors`);
+        }
+      } catch (modelErr) {
+        console.warn('[MLBCycle] HR Props model EV computation failed (non-fatal):', modelErr);
+      }
+    } catch (err) {
+      console.warn('[MLBCycle] HR Props scrape failed (non-fatal):', err);
     }
 
     console.log(`[MLBCycle] ✅ DONE — ${new Date().toISOString()}`);
