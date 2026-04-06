@@ -18,7 +18,7 @@ Uses 2025 full-season team stats + confirmed starting pitchers.
 import sys, os, json
 sys.path.insert(0, os.path.dirname(__file__))
 
-from mlb_engine_adapter import project_game, fmt_ml
+from MLBAIModel import project_game, fmt_ml
 from datetime import datetime
 
 # ─────────────────────────────────────────────────────────────────────────────

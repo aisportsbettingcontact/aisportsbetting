@@ -3,7 +3,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * Reusable MLB model pipeline:
  *   1. Reads all MLB games for a given date from the DB (with book lines)
- *   2. Calls the Python mlb_engine_adapter.project_game() via child process
+ *   2. Calls the Python MLBAIModel.project_game() via child process
  *   3. Writes results back to DB using the v2 field mapping:
  *      - modelTotal  = book O/U line (NOT proj_total)
  *      - awayModelSpread / homeModelSpread = ±1.5 book RL (NOT raw diff)
@@ -33,7 +33,7 @@ const __dirname  = path.dirname(__filename);
 // CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ENGINE_PATH = path.join(__dirname, "mlb_engine_adapter.py");
+const ENGINE_PATH = path.join(__dirname, "MLBAIModel.py");
 const PYTHON      = "/usr/bin/python3.11";
 
 // 2025 MLB team season stats — used as model inputs
@@ -834,7 +834,7 @@ async function runPythonEngine(inputs: EngineInput[]): Promise<MlbModelResult[]>
     const proc = spawn(PYTHON, ["-c", `
 import sys, json, os
 sys.path.insert(0, "${__dirname.replace(/\\/g, '/')}")
-from mlb_engine_adapter import project_game
+from MLBAIModel import project_game
 from datetime import datetime
 
 inputs = json.load(sys.stdin)

@@ -132,7 +132,7 @@ if DB_PARK_FACTORS:
 else:
     print('[WARN] DB_PARK_FACTORS is empty — DB checks will be skipped')
 
-from mlb_engine_adapter import (
+from MLBAIModel import (
     LEAGUE_K_PCT, LEAGUE_BB_PCT, LEAGUE_HR_PCT, LEAGUE_1B_PCT,
     LEAGUE_2B_PCT, LEAGUE_3B_PCT, LEAGUE_WOBA, LEAGUE_XWOBA,
     STARTER_IP_MEAN, STARTER_IP_MIN, STARTER_IP_MAX,
@@ -337,7 +337,7 @@ print(f"  [STATE]  MLB 2025 actual RPG = {MLB_2025_RPG:.4f} (emerges from MC sim
 # from an empty-base state. The full inning RPG emerges from the Monte Carlo
 # simulation which chains many PAs. Do NOT multiply by 9 and compare to RPG.
 # Correct check: result should be in (0.0, RE(0,0)) range
-from mlb_engine_adapter import RE_MATRIX as _RE
+from MLBAIModel import RE_MATRIX as _RE
 base_re = _RE.get((0, 0), 0.481)
 chk(0.0 < exp_runs_avg < base_re, "expected_runs_per_inning is positive and < RE(0,0)",
     f"model={exp_runs_avg:.4f} RE(0,0)={base_re:.4f}")
@@ -469,7 +469,7 @@ checkpoint("Section 5 complete")
 # ─────────────────────────────────────────────────────────────────────────────
 section(6, "EXTRA INNINGS SIMULATION — GHOST RUNNER RULE")
 
-from mlb_engine_adapter import simulate_extra_innings
+from MLBAIModel import simulate_extra_innings
 
 # Simulate extra innings for 10,000 tied games
 n_tied = 10_000

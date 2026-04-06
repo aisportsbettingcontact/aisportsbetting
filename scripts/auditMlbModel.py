@@ -41,7 +41,7 @@ print("[STEP] SECTION 1: Engine Import Validation")
 print("─" * 60)
 
 try:
-    from mlb_engine_adapter import (
+    from MLBAIModel import (
         project_game,
         GameStateBuilder,
         MonteCarloEngine,

@@ -16,7 +16,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
 from datetime import datetime
-from mlb_engine_adapter import (
+from MLBAIModel import (
     project_game, MonteCarloEngine, MarketDerivation, DistributionEngine,
     GameStateBuilder, prob_to_ml, ml_to_prob, remove_vig,
     team_stats_to_batter_features, team_stats_to_pitcher_features,

@@ -24,7 +24,7 @@ import traceback
 from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
-from mlb_engine_adapter import project_game
+from MLBAIModel import project_game
 
 # ─── TEAM STATS (2025 full season) ───────────────────────────────────────────
 TEAM_STATS_2025 = {
@@ -228,7 +228,7 @@ def run_all():
         log(f"\n{'='*72}", f)
         log(f"  MLB AI DERIVED MARKET ENGINE — March 27, 2026 (8 Games)", f)
         log(f"  Run started: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}", f)
-        log(f"  Engine: mlb_engine_adapter.py (200,000 Monte Carlo simulations)", f)
+        log(f"  Engine: MLBAIModel.py (200,000 Monte Carlo simulations)", f)
         log(f"  Pitcher data: 2025 full season (Baseball Reference / FanGraphs / Savant)", f)
         log(f"  Team data: 2025 full season (MLB.com / Baseball Reference)", f)
         log(f"  DB write: via TypeScript Drizzle ORM adapter (post-run)", f)

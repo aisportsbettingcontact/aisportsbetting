@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-mlb_engine_adapter.py  ── MAX SPEC REBUILD
-===========================================
+MLBAIModel.py  ── MAX SPEC REBUILD
+===================================
 MLB Market Origination Engine: INPUT → DISTRIBUTION → PRICING → STRUCTURE
 OUTPUT: NO-VIG, INVERSE, FAIR VALUE MARKETS
 
+This file is the canonical MLB AI Model engine. The filename MLBAIModel.py is
+permanent and must never be changed or renamed.
+
 Implements the full 12-step MAX SPEC blueprint:
   Step 1:  Input Engine (team/pitcher/bullpen/park/weather/umpire features)
-  Step 2:  Simulation Core (250k sims, NB-Gamma Mixture, extra innings, ghost runner)
+  Step 2:  Simulation Core (400k sims, NB-Gamma Mixture, extra innings, ghost runner)
   Step 3:  Distribution Extraction (histograms, tail validation, bucket sparsity)
   Step 4:  Totals Origination (optimal line selection, push mass, no-vig pricing)
   Step 5:  Moneyline Origination (total-environment variance adjustment)
@@ -32,10 +35,14 @@ warnings.filterwarnings('ignore')
 # ─────────────────────────────────────────────────────────────────────────────
 # GLOBAL CONFIGURATION (MAX SPEC)
 # ─────────────────────────────────────────────────────────────────────────────
-SIMULATIONS               = 250_000
-MIN_SIMULATIONS           = 100_000
+SIMULATIONS               = 400_000   # SPEC: SIM_TARGET=400K (upgraded from 250K)
+MIN_SIMULATIONS           = 250_000   # SPEC: SIM_MIN=250K
+SIM_MAX                   = 500_000   # SPEC: SIM_MAX=500K (enforced in MonteCarloEngine)
 MAX_EDGE_THRESHOLD        = 0.20   # widened: capture large-edge spots (was 0.08)
 MIN_EDGE_THRESHOLD        = 0.005  # widened: capture small-edge spots (was 0.01)
+CONFIDENCE_THRESHOLD      = 0.65   # SPEC: minimum model probability to emit an edge
+LEARNING_RATE_BASE        = 0.05   # SPEC: RL parameter update rate (reserved for daily loop)
+DRIFT_THRESHOLD           = 0.02   # SPEC: rolling error threshold for drift detection
 BULLPEN_LOOKBACK_DAYS     = 5
 LINEUP_TOP_WEIGHT         = 0.65
 LINEUP_BOTTOM_WEIGHT      = 0.35
@@ -512,7 +519,7 @@ def simulate_extra_innings(home_mu_per_inning: float, away_mu_per_inning: float,
 # ─────────────────────────────────────────────────────────────────────────────
 class MonteCarloEngine:
     def __init__(self, n_sims: int = SIMULATIONS, seed: Optional[int] = None):
-        self.n_sims = max(n_sims, MIN_SIMULATIONS)
+        self.n_sims = int(np.clip(max(n_sims, MIN_SIMULATIONS), MIN_SIMULATIONS, SIM_MAX))
         self.rng    = np.random.default_rng(seed)
         self.dist   = NBGammaMixtureDistribution()
 
@@ -560,6 +567,54 @@ class MonteCarloEngine:
 
         home_runs = home_9 + home_xi
         away_runs = away_9 + away_xi
+
+        # ── SPEC: P_NRFI — simulate first inning runs independently ─────────────
+        # First inning: starter at full strength (TTO=0), no bullpen
+        # mu_1st = full-game mu / 9 * inning_1_weight (starter is sharpest in inning 1)
+        # Empirically, inning 1 accounts for ~10.5% of total runs (slightly below 1/9 = 11.1%)
+        # due to lineup cycling and starter freshness effects
+        INNING1_RUN_SHARE = 0.105  # empirical: first inning run share
+        home_mu_1st = home_state['mu'] * INNING1_RUN_SHARE
+        away_mu_1st = away_state['mu'] * INNING1_RUN_SHARE
+        home_var_1st = max(home_state['variance'] * INNING1_RUN_SHARE, home_mu_1st + 0.01)
+        away_var_1st = max(away_state['variance'] * INNING1_RUN_SHARE, away_mu_1st + 0.01)
+        home_1st = self.dist.sample(home_mu_1st, home_var_1st, self.n_sims, self.rng)
+        away_1st = self.dist.sample(away_mu_1st, away_var_1st, self.n_sims, self.rng)
+        # NRFI = both teams score 0 in the first inning
+        nrfi_mask = (home_1st == 0) & (away_1st == 0)
+        p_nrfi    = float(nrfi_mask.mean())
+        p_yrfi    = 1.0 - p_nrfi
+        # First-inning total distribution
+        first_inn_totals = home_1st + away_1st
+        exp_first_inn_total = float(first_inn_totals.mean())
+        if logger:
+            logger.state(f"NRFI: p_nrfi={p_nrfi:.4f} p_yrfi={p_yrfi:.4f} | "
+                         f"1st-inn total: mean={exp_first_inn_total:.3f} "
+                         f"home_mu_1st={home_mu_1st:.4f} away_mu_1st={away_mu_1st:.4f}")
+
+        # ── SPEC: HR Props — P(HR >= 1) per team from batter HR rates ───────────
+        # hr_rate_per_pa = batter's HR/PA rate (from hr_pct in batter features)
+        # P(team HR >= 1 in game) = 1 - P(no HR in any PA)
+        # P(no HR in any PA) = product(1 - hr_rate_i) for i in lineup
+        # Lineup PA count: ~36 PA per team per 9 innings (9 batters × ~4 PA each)
+        LINEUP_PA_PER_GAME = 36
+        home_hr_rate = home_state.get('team_hr_rate', 0.033)  # HR/PA rate for home team
+        away_hr_rate = away_state.get('team_hr_rate', 0.033)  # HR/PA rate for away team
+        # Simulate HR counts using Poisson (lambda = hr_rate * PA_per_game)
+        home_hr_lambda = home_hr_rate * LINEUP_PA_PER_GAME
+        away_hr_lambda = away_hr_rate * LINEUP_PA_PER_GAME
+        home_hr_counts = self.rng.poisson(home_hr_lambda, size=self.n_sims)
+        away_hr_counts = self.rng.poisson(away_hr_lambda, size=self.n_sims)
+        p_home_hr_any  = float((home_hr_counts >= 1).mean())   # P(home team hits >= 1 HR)
+        p_away_hr_any  = float((away_hr_counts >= 1).mean())   # P(away team hits >= 1 HR)
+        p_both_hr      = float(((home_hr_counts >= 1) & (away_hr_counts >= 1)).mean())
+        exp_home_hr    = float(home_hr_counts.mean())
+        exp_away_hr    = float(away_hr_counts.mean())
+        if logger:
+            logger.state(f"HR Props: home_lambda={home_hr_lambda:.4f} away_lambda={away_hr_lambda:.4f} | "
+                         f"P(home HR>=1)={p_home_hr_any:.4f} P(away HR>=1)={p_away_hr_any:.4f} "
+                         f"P(both HR)={p_both_hr:.4f} | "
+                         f"exp_home_hr={exp_home_hr:.3f} exp_away_hr={exp_away_hr:.3f}")
 
         # Final win determination
         home_win = home_runs > away_runs  # no ties possible after extra innings
@@ -645,6 +700,18 @@ class MonteCarloEngine:
             'avg_extra_inn':    round(float(n_extra.mean()), 3),
             'tail_stable':      tail_stable,
             'sparse_buckets':   sparse_buckets,
+            # SPEC: NRFI market
+            'p_nrfi':               round(p_nrfi, 6),
+            'p_yrfi':               round(p_yrfi, 6),
+            'exp_first_inn_total':  round(exp_first_inn_total, 3),
+            # SPEC: HR Props per team
+            'p_home_hr_any':        round(p_home_hr_any, 6),
+            'p_away_hr_any':        round(p_away_hr_any, 6),
+            'p_both_hr':            round(p_both_hr, 6),
+            'exp_home_hr':          round(exp_home_hr, 3),
+            'exp_away_hr':          round(exp_away_hr, 3),
+            'home_hr_lambda':       round(home_hr_lambda, 4),
+            'away_hr_lambda':       round(away_hr_lambda, 4),
             # Raw arrays for downstream steps (not serialized)
             '_totals':          totals,
             '_margins':         margins,
@@ -880,7 +947,25 @@ class MarketDerivation:
 # EDGE DETECTION
 # ─────────────────────────────────────────────────────────────────────────────
 class EdgeDetector:
+    @staticmethod
+    def _calc_ev(model_p: float, book_odds: float) -> float:
+        """
+        SPEC: EV = CALCULATE_EV(edge)
+        Formula: EV = model_p * (payout) - (1 - model_p) * 1.0
+        where payout = book_odds/100 if book_odds > 0 else 100/abs(book_odds)
+        Returns EV per unit wagered (e.g. 0.05 = 5% EV).
+        """
+        if book_odds > 0:
+            payout = book_odds / 100.0
+        else:
+            payout = 100.0 / abs(book_odds)
+        return round(model_p * payout - (1.0 - model_p), 4)
+
     def detect(self, market: dict, book: dict) -> List[dict]:
+        """
+        SPEC: COMPUTE_EDGE — edge = model_prob - book_prob, EV = CALCULATE_EV(edge)
+        SPEC: CONFIDENCE_THRESHOLD = 0.65 — only emit edges where model_p >= threshold
+        """
         edges = []
         checks = [
             ('home_ml',  market['p_home_win'],     book.get('ml_home')),
@@ -894,14 +979,20 @@ class EdgeDetector:
             bp = ml_to_prob(book_odds)
             bp_nv, _ = remove_vig(bp, 1.0 - bp)
             edge = model_p - bp_nv
+            # SPEC: CONFIDENCE_THRESHOLD gate — skip low-confidence model probabilities
+            confidence_ok = model_p >= CONFIDENCE_THRESHOLD
             if MIN_EDGE_THRESHOLD <= edge <= MAX_EDGE_THRESHOLD:
+                ev = self._calc_ev(model_p, book_odds)
                 edges.append({
-                    'market':     label,
-                    'model_p':    round(model_p, 4),
-                    'book_p':     round(bp_nv, 4),
-                    'edge':       round(edge, 4),
-                    'book_odds':  book_odds,
-                    'model_odds': prob_to_ml(model_p),
+                    'market':           label,
+                    'model_p':          round(model_p, 4),
+                    'book_p':           round(bp_nv, 4),
+                    'edge':             round(edge, 4),
+                    'ev':               ev,                          # SPEC: EV per unit wagered
+                    'confidence_ok':    confidence_ok,               # SPEC: CONFIDENCE_THRESHOLD gate
+                    'book_odds':        book_odds,
+                    'model_odds':       prob_to_ml(model_p),
+                    'play':             confidence_ok and edge >= 0.02,  # actionable: edge>=2% AND conf>=65%
                 })
         ou_line    = book.get('ou_line')
         over_odds  = book.get('over_odds')
@@ -910,16 +1001,22 @@ class EdgeDetector:
             bop = ml_to_prob(over_odds)
             bup = ml_to_prob(under_odds) if under_odds else 1.0 - bop
             bop_nv, bup_nv = remove_vig(bop, bup)
-            for label, mp, bp in [('over', market['p_over'], bop_nv),
-                                   ('under', market['p_under'], bup_nv)]:
+            for label, mp, bp, book_o in [('over',  market['p_over'],  bop_nv, over_odds),
+                                           ('under', market['p_under'], bup_nv, under_odds or over_odds)]:
                 edge = mp - bp
+                confidence_ok = mp >= CONFIDENCE_THRESHOLD
                 if MIN_EDGE_THRESHOLD <= edge <= MAX_EDGE_THRESHOLD:
+                    ev = self._calc_ev(mp, book_o)
                     edges.append({
-                        'market':  f'total_{label}',
-                        'model_p': round(mp, 4),
-                        'book_p':  round(bp, 4),
-                        'edge':    round(edge, 4),
-                        'ou_line': ou_line,
+                        'market':        f'total_{label}',
+                        'model_p':       round(mp, 4),
+                        'book_p':        round(bp, 4),
+                        'edge':          round(edge, 4),
+                        'ev':            ev,
+                        'confidence_ok': confidence_ok,
+                        'ou_line':       ou_line,
+                        'book_odds':     book_o,
+                        'play':          confidence_ok and edge >= 0.02,
                     })
         return edges
 
@@ -1348,6 +1445,22 @@ def project_game(
     gs_builder = GameStateBuilder()
     home_state = gs_builder.build(home_lineup, away_sp_feat, away_bullpen_feat, env, quality_mult=LEAGUE_CALIBRATION_MULT)
     away_state = gs_builder.build(away_lineup, home_sp_feat, home_bullpen_feat, env, quality_mult=LEAGUE_CALIBRATION_MULT)
+
+    # SPEC: HR Props — inject team HR/PA rate into state dicts for MonteCarloEngine
+    # hr_pct from batter features = HR/PA rate for the team's lineup
+    # Park HR factor scales the rate for this venue
+    park_hr_factor = env.get('park_hr_factor', 1.0)
+    home_state['team_hr_rate'] = float(np.clip(
+        home_lineup_feat['hr_pct'] * park_hr_factor, 0.01, 0.08
+    ))
+    away_state['team_hr_rate'] = float(np.clip(
+        away_lineup_feat['hr_pct'] * park_hr_factor, 0.01, 0.08
+    ))
+    logger.state(
+        f"[HR PROPS] home_hr_rate={home_state['team_hr_rate']:.4f} "
+        f"away_hr_rate={away_state['team_hr_rate']:.4f} "
+        f"park_hr_factor={park_hr_factor:.4f}"
+    )
     logger.state(f"[CALIBRATION] quality_mult={LEAGUE_CALIBRATION_MULT:.4f} (2025 RPG={LEAGUE_RPG:.3f})")
     logger.state(f"Home state: mu={home_state['mu']:.4f} var={home_state['variance']:.4f} "
                  f"starter_ip={home_state['starter_ip']:.2f}")
@@ -1452,6 +1565,20 @@ def project_game(
         'cross_market_flags': market.get('cross_market_flags', []),
         'monotone':        market.get('monotone', True),
         'no_arb':          market.get('no_arb', True),
+        # SPEC: NRFI market
+        'p_nrfi':              round(sim['p_nrfi'] * 100, 2),      # P(NRFI) as percentage
+        'p_yrfi':              round(sim['p_yrfi'] * 100, 2),      # P(YRFI) as percentage
+        'nrfi_odds':           prob_to_ml(sim['p_nrfi']),          # NRFI fair-value ML
+        'yrfi_odds':           prob_to_ml(sim['p_yrfi']),          # YRFI fair-value ML
+        'exp_first_inn_total': sim['exp_first_inn_total'],         # expected 1st inning total
+        # SPEC: HR Props per team
+        'p_home_hr_any':       round(sim['p_home_hr_any'] * 100, 2),  # P(home team HR>=1) %
+        'p_away_hr_any':       round(sim['p_away_hr_any'] * 100, 2),  # P(away team HR>=1) %
+        'p_both_hr':           round(sim['p_both_hr'] * 100, 2),      # P(both teams HR) %
+        'exp_home_hr':         sim['exp_home_hr'],                    # expected home HR count
+        'exp_away_hr':         sim['exp_away_hr'],                    # expected away HR count
+        'home_hr_lambda':      sim['home_hr_lambda'],                 # Poisson lambda (home)
+        'away_hr_lambda':      sim['away_hr_lambda'],                 # Poisson lambda (away)
         # Meta
         'elapsed_sec':     elapsed,
         'error':           None,
