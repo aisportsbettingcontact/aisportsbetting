@@ -568,7 +568,10 @@ export function BettingSplitsPanel({
   const awayMlLabel     = game.awayML ? `${awayAbbr} (${game.awayML})` : awayAbbr;
   const homeMlLabel     = game.homeML ? `${homeAbbr} (${game.homeML})` : homeAbbr;
 
-  const hasSpreadSplits = game.spreadAwayMoneyPct != null || game.spreadAwayBetsPct != null;
+  // Treat 0%/0% as "no data" — VSIN returns 0/0 when the run-line/spread market
+  // hasn't opened yet (line shows "-"). Displaying it renders a misleading 100% home bar.
+  const spreadBothZero = game.spreadAwayBetsPct === 0 && game.spreadAwayMoneyPct === 0;
+  const hasSpreadSplits = !spreadBothZero && (game.spreadAwayMoneyPct != null || game.spreadAwayBetsPct != null);
   const hasTotalSplits  = game.totalOverMoneyPct  != null || game.totalOverBetsPct  != null;
   const hasMlSplits     = game.mlAwayMoneyPct != null || game.mlAwayBetsPct != null || game.awayML != null;
   const hasAnySplits    = hasSpreadSplits || hasTotalSplits || hasMlSplits;

@@ -174,15 +174,19 @@ async function runTomorrowSplitsUpdate(tomorrowStr: string): Promise<void> {
           if (dbGame) teamsSwapped = true;
         }
         if (!dbGame) continue;
+        const rawSpreadBets = teamsSwapped ? (g.spreadAwayBetsPct != null ? 100 - g.spreadAwayBetsPct : null) : g.spreadAwayBetsPct;
+        const rawSpreadMoney = teamsSwapped ? (g.spreadAwayMoneyPct != null ? 100 - g.spreadAwayMoneyPct : null) : g.spreadAwayMoneyPct;
+        // Skip spread splits when VSIN returns 0/0 — market not yet open
+        const nbaSpreadAvailable = !(rawSpreadBets === 0 && rawSpreadMoney === 0);
         await updateBookOdds(dbGame.id, {
-          spreadAwayBetsPct: teamsSwapped ? (g.spreadAwayBetsPct != null ? 100 - g.spreadAwayBetsPct : null) : g.spreadAwayBetsPct,
-          spreadAwayMoneyPct: teamsSwapped ? (g.spreadAwayMoneyPct != null ? 100 - g.spreadAwayMoneyPct : null) : g.spreadAwayMoneyPct,
+          ...(nbaSpreadAvailable ? { spreadAwayBetsPct: rawSpreadBets, spreadAwayMoneyPct: rawSpreadMoney } : {}),
           totalOverBetsPct: g.totalOverBetsPct,
           totalOverMoneyPct: g.totalOverMoneyPct,
           mlAwayBetsPct: teamsSwapped ? (g.mlAwayBetsPct != null ? 100 - g.mlAwayBetsPct : null) : g.mlAwayBetsPct,
           mlAwayMoneyPct: teamsSwapped ? (g.mlAwayMoneyPct != null ? 100 - g.mlAwayMoneyPct : null) : g.mlAwayMoneyPct,
         });
         if (teamsSwapped) console.log(`[VSiNAutoRefresh][Tomorrow][NBA] Swapped teams for ${awayTeam.dbSlug}@${homeTeam.dbSlug} → matched DB ${dbGame.awayTeam}@${dbGame.homeTeam}`);
+        if (!nbaSpreadAvailable) console.log(`[VSiNAutoRefresh][Tomorrow][NBA] SKIP_SPREAD_ZERO: ${dbGame.awayTeam}@${dbGame.homeTeam} — spread 0/0 not written`);
         updated++;
       }
       console.log(`[VSiNAutoRefresh][Tomorrow][NBA] ${updated} games updated with tomorrow's splits`);
@@ -204,15 +208,19 @@ async function runTomorrowSplitsUpdate(tomorrowStr: string): Promise<void> {
           if (dbGame) teamsSwapped = true;
         }
         if (!dbGame) continue;
+        const rawSpreadBetsNhl = teamsSwapped ? (g.spreadAwayBetsPct != null ? 100 - g.spreadAwayBetsPct : null) : g.spreadAwayBetsPct;
+        const rawSpreadMoneyNhl = teamsSwapped ? (g.spreadAwayMoneyPct != null ? 100 - g.spreadAwayMoneyPct : null) : g.spreadAwayMoneyPct;
+        // Skip spread splits when VSIN returns 0/0 — market not yet open
+        const nhlSpreadAvailable = !(rawSpreadBetsNhl === 0 && rawSpreadMoneyNhl === 0);
         await updateBookOdds(dbGame.id, {
-          spreadAwayBetsPct: teamsSwapped ? (g.spreadAwayBetsPct != null ? 100 - g.spreadAwayBetsPct : null) : g.spreadAwayBetsPct,
-          spreadAwayMoneyPct: teamsSwapped ? (g.spreadAwayMoneyPct != null ? 100 - g.spreadAwayMoneyPct : null) : g.spreadAwayMoneyPct,
+          ...(nhlSpreadAvailable ? { spreadAwayBetsPct: rawSpreadBetsNhl, spreadAwayMoneyPct: rawSpreadMoneyNhl } : {}),
           totalOverBetsPct: g.totalOverBetsPct,
           totalOverMoneyPct: g.totalOverMoneyPct,
           mlAwayBetsPct: teamsSwapped ? (g.mlAwayBetsPct != null ? 100 - g.mlAwayBetsPct : null) : g.mlAwayBetsPct,
           mlAwayMoneyPct: teamsSwapped ? (g.mlAwayMoneyPct != null ? 100 - g.mlAwayMoneyPct : null) : g.mlAwayMoneyPct,
         });
         if (teamsSwapped) console.log(`[VSiNAutoRefresh][Tomorrow][NHL] Swapped teams for ${awayTeam.dbSlug}@${homeTeam.dbSlug} → matched DB ${dbGame.awayTeam}@${dbGame.homeTeam}`);
+        if (!nhlSpreadAvailable) console.log(`[VSiNAutoRefresh][Tomorrow][NHL] SKIP_SPREAD_ZERO: ${dbGame.awayTeam}@${dbGame.homeTeam} — spread 0/0 not written`);
         updated++;
       }
       console.log(`[VSiNAutoRefresh][Tomorrow][NHL] ${updated} games updated with tomorrow's splits`);
@@ -630,11 +638,26 @@ async function refreshMlb(todayStr: string): Promise<{
 
     // For MLB: VSiN's "spread" column is the run line.
     // Write to BOTH spreadAway* (generic display) AND rlAway* (dedicated MLB run line columns).
+    //
+    // GUARD: VSIN returns 0%/0% for run-line splits on tomorrow's games when the market
+    // hasn't opened yet. Writing integer 0 to the DB causes the frontend to render a
+    // misleading 100% home bar (home = 100 - 0 = 100). Skip run-line writes when both
+    // bets AND money are 0 — treat as "not yet available" and preserve any existing DB value.
+    const rlSplitsAvailable = !(spreadAwayBetsPct === 0 && spreadAwayMoneyPct === 0);
+    if (!rlSplitsAvailable) {
+      console.log(
+        `${tag} SKIP_RL_ZERO: ${dbGame.awayTeam} @ ${dbGame.homeTeam} (gameId=${dbGame.id}) ` +
+        `— run-line splits are 0%/0% (market not yet open), preserving existing DB value`
+      );
+    }
     await updateBookOdds(dbGame.id, {
-      spreadAwayBetsPct,       // generic spread column (used by GameCard display)
-      spreadAwayMoneyPct,
-      rlAwayBetsPct: spreadAwayBetsPct,   // dedicated MLB run line column
-      rlAwayMoneyPct: spreadAwayMoneyPct,
+      // Only write run-line splits when VSIN has real non-zero data
+      ...(rlSplitsAvailable ? {
+        spreadAwayBetsPct,       // generic spread column (used by GameCard display)
+        spreadAwayMoneyPct,
+        rlAwayBetsPct: spreadAwayBetsPct,   // dedicated MLB run line column
+        rlAwayMoneyPct: spreadAwayMoneyPct,
+      } : {}),
       totalOverBetsPct: splits.totalOverBetsPct,
       totalOverMoneyPct: splits.totalOverMoneyPct,
       mlAwayBetsPct,
@@ -648,7 +671,7 @@ async function refreshMlb(todayStr: string): Promise<{
     console.log(
       `${tag} Splits updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} ` +
       `(gameId=${dbGame.id}) ` +
-      `| runLine: ${spreadAwayBetsPct}%B/${spreadAwayMoneyPct}%H (→ rlAway* + spreadAway*)` +
+      `| runLine: ${rlSplitsAvailable ? spreadAwayBetsPct + "%B/" + spreadAwayMoneyPct + "%H" : "SKIPPED(0/0)"} (→ rlAway* + spreadAway*)` +
       `| total: ${splits.totalOverBetsPct}%B/${splits.totalOverMoneyPct}%H` +
       `| ml: ${mlAwayBetsPct}%B/${mlAwayMoneyPct}%H`
     );
