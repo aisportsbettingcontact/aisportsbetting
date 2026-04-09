@@ -970,8 +970,14 @@ function DesktopMergedPanel({
   const awayMlLabel = game.awayML ? `${awayAbbr} (${game.awayML})` : awayAbbr;
   const homeMlLabel = game.homeML ? `${homeAbbr} (${game.homeML})` : homeAbbr;
 
-  const spreadTicketsPct = game.spreadAwayBetsPct ?? null;
-  const spreadHandlePct  = game.spreadAwayMoneyPct ?? null;
+  // Treat 0%/0% as null — VSIN returns 0/0 when the spread/run-line market hasn't opened yet.
+  // Prevents the misleading 100% home bar on the desktop SectionCol MergedSplitBar.
+  // Symmetric with BettingSplitsPanel guards on both mobile (CompactMarketRow) and desktop (MarketBlock).
+  const _rawSpreadBets  = game.spreadAwayBetsPct ?? null;
+  const _rawSpreadMoney = game.spreadAwayMoneyPct ?? null;
+  const _spreadBothZero = _rawSpreadBets === 0 && _rawSpreadMoney === 0;
+  const spreadTicketsPct = _spreadBothZero ? null : _rawSpreadBets;
+  const spreadHandlePct  = _spreadBothZero ? null : _rawSpreadMoney;
   const totalTicketsPct  = game.totalOverBetsPct ?? null;
   const totalHandlePct   = game.totalOverMoneyPct ?? null;
   const mlTicketsPct     = game.mlAwayBetsPct ?? null;

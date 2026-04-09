@@ -291,14 +291,20 @@ interface CompactMarketRowProps {
 }
 
 function CompactMarketRow({ title, ticketsPct, handlePct, awayColor, homeColor, awayLineLabel, homeLineLabel }: CompactMarketRowProps) {
-  const hasTickets = ticketsPct != null;
-  const hasHandle  = handlePct  != null;
+  // Treat 0%/0% as "no data" — VSIN returns 0/0 when the market hasn't opened yet.
+  // Symmetric guard with desktop MarketBlock — prevents the misleading 100% home bar.
+  const bothZero = ticketsPct === 0 && handlePct === 0;
+  const effectiveTickets = bothZero ? null : ticketsPct;
+  const effectiveHandle  = bothZero ? null : handlePct;
+
+  const hasTickets = effectiveTickets != null;
+  const hasHandle  = effectiveHandle  != null;
   if (!hasTickets && !hasHandle) return null;
 
-  const awayTickets = hasTickets ? ticketsPct! : null;
-  const homeTickets = hasTickets ? 100 - ticketsPct! : null;
-  const awayHandle  = hasHandle  ? handlePct!  : null;
-  const homeHandle  = hasHandle  ? 100 - handlePct!  : null;
+  const awayTickets = hasTickets ? effectiveTickets! : null;
+  const homeTickets = hasTickets ? 100 - effectiveTickets! : null;
+  const awayHandle  = hasHandle  ? effectiveHandle!  : null;
+  const homeHandle  = hasHandle  ? 100 - effectiveHandle!  : null;
 
   const marketLabel = title === "Moneyline" ? "ML" : title === "Spread" ? "SPR" : "TOT";
 
@@ -490,14 +496,20 @@ interface MarketBlockProps {
 }
 
 function MarketBlock({ title, awayLabel, homeLabel, totalValue, ticketsPct, handlePct, awayColor, homeColor }: MarketBlockProps) {
-  const hasTickets = ticketsPct != null;
-  const hasHandle  = handlePct  != null;
+  // Treat 0%/0% as "no data" — VSIN returns 0/0 when the market hasn't opened yet.
+  // This is the same guard applied on mobile. Prevents the misleading 100% home bar.
+  const ticketsBothZero = ticketsPct === 0 && handlePct === 0;
+  const effectiveTickets = ticketsBothZero ? null : ticketsPct;
+  const effectiveHandle  = ticketsBothZero ? null : handlePct;
+
+  const hasTickets = effectiveTickets != null;
+  const hasHandle  = effectiveHandle  != null;
   // Never return null — always render the column so all 3 fill the full width
 
-  const awayTickets = hasTickets ? ticketsPct! : null;
-  const homeTickets = hasTickets ? 100 - ticketsPct! : null;
-  const awayHandle  = hasHandle  ? handlePct!  : null;
-  const homeHandle  = hasHandle  ? 100 - handlePct!  : null;
+  const awayTickets = hasTickets ? effectiveTickets! : null;
+  const homeTickets = hasTickets ? 100 - effectiveTickets! : null;
+  const awayHandle  = hasHandle  ? effectiveHandle!  : null;
+  const homeHandle  = hasHandle  ? 100 - effectiveHandle!  : null;
   const isTotalMarket = totalValue !== undefined && !isNaN(totalValue);
 
   return (
