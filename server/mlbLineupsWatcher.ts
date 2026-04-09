@@ -356,6 +356,9 @@ export async function runLineupWatcher(
     version: number;
     triggerModel: boolean;
   }> = [];
+  // Pitcher writes: map gameId → { awayPitcherName, homeStartingPitcher }
+  // Written to games table BEFORE model run so mlbModelRunner can read them.
+  const pendingPitcherWrites = new Map<number, { away: string; home: string }>();
 
   for (const g of scrapedGames) {
     const key = `${g.awayAbbrev}@${g.homeAbbrev}`;
@@ -487,6 +490,11 @@ export async function runLineupWatcher(
 
     pendingHashUpdates.push({ gameId, hash: currentHash, version: newVersion, triggerModel: true });
     gamesToModel.push(gameId);
+    // Register pitcher names for games-table write (bridge: Rotowire → games.awayStartingPitcher)
+    pendingPitcherWrites.set(gameId, {
+      away: g.awayPitcher!.name,
+      home: g.homePitcher!.name,
+    });
 
     if (isFirstLineup) {
       result.firstLineup++;
@@ -517,6 +525,42 @@ export async function runLineupWatcher(
       )
     );
     console.log(`${TAG} [STATE] Hash updates applied`);
+  }
+
+  // ── Step 4b: Write pitcher names from Rotowire → games.awayStartingPitcher / homeStartingPitcher ──
+  // This is the critical bridge: mlbModelRunner reads pitchers from games table, not mlb_lineups.
+  // Without this write, games with Rotowire pitchers but no MLB Stats API probable pitcher
+  // (common for tomorrow's games) will be skipped by the model with hasPitchers=false.
+  if (pendingPitcherWrites.size > 0) {
+    console.log(`${TAG} [STEP] Writing ${pendingPitcherWrites.size} pitcher pair(s) to games table`);
+    const db = await getDb();
+    if (db) {
+      const pitcherWriteResults: string[] = [];
+      for (const [gameId, pitchers] of Array.from(pendingPitcherWrites)) {
+        try {
+          await db
+            .update(games)
+            .set({
+              awayStartingPitcher: pitchers.away,
+              homeStartingPitcher: pitchers.home,
+            })
+            .where(eq(games.id, gameId));
+          pitcherWriteResults.push(
+            `gameId=${gameId} awayP="${pitchers.away}" homeP="${pitchers.home}" [WRITTEN]`
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error(`${TAG} [ERROR] Pitcher write failed for gameId=${gameId}: ${msg}`);
+          pitcherWriteResults.push(`gameId=${gameId} [ERROR: ${msg}]`);
+        }
+      }
+      console.log(
+        `${TAG} [OUTPUT] Pitcher writes complete:\n` +
+        pitcherWriteResults.map(r => `  ${r}`).join('\n')
+      );
+    } else {
+      console.warn(`${TAG} [WARN] DB not available — pitcher writes skipped`);
+    }
   }
 
   // ── Step 5: Trigger model for affected games ─────────────────────────────────

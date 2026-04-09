@@ -901,13 +901,21 @@ for inp in inputs:
         })
 print(json.dumps(results))
 `], {
-      env: {
-        ...process.env,
-        // Unset PYTHONHOME so python3.11 uses its own stdlib (not uv's python3.13 home)
-        PYTHONHOME: undefined,
-        PYTHONPATH: "/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages",
-        PYTHONDONTWRITEBYTECODE: "1",
-      },
+      env: (() => {
+        // Build a clean env for python3.11:
+        // 1. Start from process.env (inherits PATH, HOME, etc.)
+        // 2. DELETE PYTHONHOME entirely — setting it to undefined in JS passes the
+        //    string "undefined" to the child process, which breaks stdlib lookup.
+        //    We must use delete to actually remove it from the env object.
+        // 3. Override PYTHONPATH to point at the correct python3.11 site-packages.
+        const env: Record<string, string> = {};
+        for (const [k, v] of Object.entries(process.env)) {
+          if (v !== undefined && k !== 'PYTHONHOME') env[k] = v;
+        }
+        env['PYTHONPATH'] = '/usr/local/lib/python3.11/dist-packages:/usr/lib/python3/dist-packages';
+        env['PYTHONDONTWRITEBYTECODE'] = '1';
+        return env;
+      })(),
       cwd: __dirname,
     });
 
