@@ -467,7 +467,7 @@ export async function updateBookOdds(
     bookTotal?: number | null;
     sortOrder?: number;
     startTimeEst?: string;
-    // Betting splits (NBA: 6 fields + ML odds; NHL/MLB: 4 fields)
+    // Betting splits — shared (spread/total/ML away percentages)
     spreadAwayBetsPct?: number | null;
     spreadAwayMoneyPct?: number | null;
     totalOverBetsPct?: number | null;
@@ -476,6 +476,9 @@ export async function updateBookOdds(
     mlAwayMoneyPct?: number | null;
     awayML?: string | null;
     homeML?: string | null;
+    // MLB run line splits (dedicated columns, separate from generic spreadAway*)
+    rlAwayBetsPct?: number | null;
+    rlAwayMoneyPct?: number | null;
     // MetaBet consensus odds (spread juice + O/U odds)
     awaySpreadOdds?: string | null;
     homeSpreadOdds?: string | null;
@@ -508,6 +511,9 @@ export async function updateBookOdds(
   if (data.mlAwayMoneyPct !== undefined) updateData.mlAwayMoneyPct = data.mlAwayMoneyPct;
   if (data.awayML !== undefined) updateData.awayML = data.awayML;
   if (data.homeML !== undefined) updateData.homeML = data.homeML;
+  // MLB run line splits
+  if (data.rlAwayBetsPct !== undefined) updateData.rlAwayBetsPct = data.rlAwayBetsPct;
+  if (data.rlAwayMoneyPct !== undefined) updateData.rlAwayMoneyPct = data.rlAwayMoneyPct;
   if (data.awaySpreadOdds !== undefined) updateData.awaySpreadOdds = data.awaySpreadOdds;
   if (data.homeSpreadOdds !== undefined) updateData.homeSpreadOdds = data.homeSpreadOdds;
   if (data.overOdds !== undefined) updateData.overOdds = data.overOdds;

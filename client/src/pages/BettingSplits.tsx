@@ -29,6 +29,8 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
+import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
+import { MLB_BY_ABBREV } from "@shared/mlbTeams";
 import { Link } from "wouter";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -85,8 +87,10 @@ function formatDateShort(dateStr: string): string {
 // ─── Team Logo Badge ──────────────────────────────────────────────────────────
 function TeamBadge({ slug, size = 22 }: { slug: string; size?: number }) {
   const nba = getNbaTeamByDbSlug(slug);
-  const logo = nba?.logoUrl;
-  const initials = (nba?.name ?? slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
+  const nhl = !nba ? NHL_BY_DB_SLUG.get(slug) ?? null : null;
+  const mlb = (!nba && !nhl) ? MLB_BY_ABBREV.get(slug) ?? null : null;
+  const logo = nba?.logoUrl ?? nhl?.logoUrl ?? mlb?.logoUrl;
+  const initials = (nba?.name ?? nhl?.name ?? mlb?.name ?? slug.replace(/_/g, " ")).slice(0, 2).toUpperCase();
   return (
     <div className="rounded overflow-hidden bg-secondary flex items-center justify-center flex-shrink-0" style={{ width: size, height: size }}>
       {logo ? <img src={logo} alt={initials} className="w-full h-full object-contain" /> : <span style={{ fontSize: 7 }} className="font-bold text-muted-foreground">{initials}</span>}
@@ -100,10 +104,14 @@ type GameRow = { id: number; awayTeam: string; homeTeam: string; gameDate: strin
 function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void }) {
   const awayNba = getNbaTeamByDbSlug(game.awayTeam);
   const homeNba = getNbaTeamByDbSlug(game.homeTeam);
-  const awaySchool = awayNba?.city ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const awayNick = awayNba?.nickname ?? "";
-  const homeSchool = homeNba?.city ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  const homeNick = homeNba?.nickname ?? "";
+  const awayNhl = !awayNba ? NHL_BY_DB_SLUG.get(game.awayTeam) ?? null : null;
+  const homeNhl = !homeNba ? NHL_BY_DB_SLUG.get(game.homeTeam) ?? null : null;
+  const awayMlb = (!awayNba && !awayNhl) ? MLB_BY_ABBREV.get(game.awayTeam) ?? null : null;
+  const homeMlb = (!homeNba && !homeNhl) ? MLB_BY_ABBREV.get(game.homeTeam) ?? null : null;
+  const awaySchool = awayNba?.city ?? awayNhl?.city ?? awayMlb?.city ?? game.awayTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const awayNick = awayNba?.nickname ?? awayNhl?.nickname ?? awayMlb?.nickname ?? "";
+  const homeSchool = homeNba?.city ?? homeNhl?.city ?? homeMlb?.city ?? game.homeTeam.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const homeNick = homeNba?.nickname ?? homeNhl?.nickname ?? homeMlb?.nickname ?? "";
   const time = formatMilitaryTime(game.startTimeEst);
   const dateShort = formatDateShort(game.gameDate);
   return (
@@ -139,7 +147,7 @@ export default function BettingSplitsPage() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"NBA">("NBA");
+  const [selectedSport, setSelectedSport] = useState<"MLB" | "NHL" | "NBA">("MLB");
   const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>(() => todayUTC());
   const [searchQuery, setSearchQuery] = useState("");
@@ -404,9 +412,23 @@ export default function BettingSplitsPage() {
 
 
 
+          {/* MLB pill — primary sport */}
+          <button onClick={() => setSelectedSport("MLB")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+            style={selectedSport === "MLB" ? { background: "rgba(0,45,114,0.25)", color: "#E31837", border: "1px solid rgba(227,24,55,0.5)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
+            MLB
+          </button>
+
+          {/* NHL pill */}
+          <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+            style={selectedSport === "NHL" ? { background: "rgba(0,100,200,0.18)", color: "#4FC3F7", border: "1px solid rgba(0,100,200,0.5)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            <img src="https://assets.nhle.com/logos/nhl/svg/NHL_light.svg" alt="NHL" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
+            NHL
+          </button>
+
           {/* NBA pill */}
           <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
-            style={selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
+            style={selectedSport === "NBA" ? { background: "rgba(200,16,46,0.15)", color: "#C8102E", border: "1px solid rgba(200,16,46,0.5)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
             <img src={CDN_NBA} alt="NBA" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
             NBA
           </button>
@@ -451,7 +473,7 @@ export default function BettingSplitsPage() {
               <span
                 className="font-semibold"
                 style={{ color: '#a3a3a3', letterSpacing: '0.06em', fontSize: 'clamp(9px, 2.8vw, 17px)', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
-              >NBA BASKETBALL</span>
+              >{selectedSport === "MLB" ? "MLB BASEBALL" : selectedSport === "NHL" ? "NHL HOCKEY" : "NBA BASKETBALL"}</span>
             </div>
             <div className="flex-1" />
           </div>

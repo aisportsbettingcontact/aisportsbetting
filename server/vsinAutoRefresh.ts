@@ -628,9 +628,13 @@ async function refreshMlb(todayStr: string): Promise<{
       ? (splits.mlAwayMoneyPct != null ? 100 - splits.mlAwayMoneyPct : null)
       : splits.mlAwayMoneyPct;
 
+    // For MLB: VSiN's "spread" column is the run line.
+    // Write to BOTH spreadAway* (generic display) AND rlAway* (dedicated MLB run line columns).
     await updateBookOdds(dbGame.id, {
-      spreadAwayBetsPct,
+      spreadAwayBetsPct,       // generic spread column (used by GameCard display)
       spreadAwayMoneyPct,
+      rlAwayBetsPct: spreadAwayBetsPct,   // dedicated MLB run line column
+      rlAwayMoneyPct: spreadAwayMoneyPct,
       totalOverBetsPct: splits.totalOverBetsPct,
       totalOverMoneyPct: splits.totalOverMoneyPct,
       mlAwayBetsPct,
@@ -644,9 +648,9 @@ async function refreshMlb(todayStr: string): Promise<{
     console.log(
       `${tag} Splits updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} ` +
       `(gameId=${dbGame.id}) ` +
-      `| runLine: ${spreadAwayBetsPct}%/${spreadAwayMoneyPct}% ` +
-      `| total: ${splits.totalOverBetsPct}%/${splits.totalOverMoneyPct}% ` +
-      `| ml: ${mlAwayBetsPct}%/${mlAwayMoneyPct}%`
+      `| runLine: ${spreadAwayBetsPct}%B/${spreadAwayMoneyPct}%H (→ rlAway* + spreadAway*)` +
+      `| total: ${splits.totalOverBetsPct}%B/${splits.totalOverMoneyPct}%H` +
+      `| ml: ${mlAwayBetsPct}%B/${mlAwayMoneyPct}%H`
     );
   }
 
