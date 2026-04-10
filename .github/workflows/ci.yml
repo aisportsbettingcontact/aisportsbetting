@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: "[STEP] Setup pnpm"
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # No 'version' key — packageManager in package.json is the single source of truth.
         # Specifying version here conflicts with the packageManager field and causes
         # ERR_PNPM_BAD_PM_VERSION in pnpm/action-setup@v4.
@@ -78,7 +78,7 @@ jobs:
         #   Reason: patched:<0.0.0 — no fix exists upstream. Server-side only.
         #
         # GHSA-379q-355j-w6rj  pnpm self  Lifecycle scripts bypass
-        #   Reason: patched:>=10.26.0 — pnpm/action-setup@v4 misparses sha512 hash
+        #   Reason: patched:>=10.26.0 — pnpm/action-setup@v6 misparses sha512 hash
         #   in packageManager field. Using pnpm@10.33.0 (no hash) as workaround.
         #   pnpm self-CVE is a dev-tool issue, not a runtime vulnerability.
         #
@@ -146,7 +146,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: "[STEP] Setup pnpm"
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # No 'version' key — packageManager in package.json is the single source of truth.
 
       - name: "[STEP] Setup Node.js 22"
@@ -211,7 +211,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: "[STEP] Setup pnpm"
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         # No 'version' key — packageManager in package.json is the single source of truth.
 
       - name: "[STEP] Setup Node.js 22"
