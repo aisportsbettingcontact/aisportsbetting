@@ -198,7 +198,9 @@ export default function SecurityEvents() {
   }
 
   if (!user || !isOwner) {
-    navigate("/admin/users");
+    // [SECURITY] Non-owner attempted to access /admin/security — redirect to home silently
+    console.warn(`[SECURITY] Unauthorized access attempt to /admin/security | user=${user?.username ?? "unauthenticated"} | isOwner=${isOwner}`);
+    navigate("/");
     return null;
   }
 
