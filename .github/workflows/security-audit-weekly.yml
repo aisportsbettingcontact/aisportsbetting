@@ -63,10 +63,11 @@ jobs:
       - name: "[INPUT] Checkout repository at HEAD"
         uses: actions/checkout@v4
 
-      - name: "[STEP] Setup pnpm v10"
+      - name: "[STEP] Setup pnpm"
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
+        # No 'version' key — packageManager in package.json is the single source of truth.
+        # Specifying version here conflicts with the packageManager field and causes
+        # ERR_PNPM_BAD_PM_VERSION in pnpm/action-setup@v4.
 
       - name: "[STEP] Setup Node.js 22 with pnpm cache"
         uses: actions/setup-node@v4
