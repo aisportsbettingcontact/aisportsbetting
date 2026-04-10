@@ -86,7 +86,7 @@ jobs:
 
       - name: "[OUTPUT] Upload audit report as artifact"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: security-audit-report
           path: audit-report.txt
@@ -138,7 +138,7 @@ jobs:
 
       - name: "[OUTPUT] Upload typecheck report as artifact"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: typecheck-report
           path: typecheck-report.txt
@@ -210,7 +210,7 @@ jobs:
 
       - name: "[OUTPUT] Upload test report as artifact"
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-report
           path: test-report.txt
