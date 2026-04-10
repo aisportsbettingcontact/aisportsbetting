@@ -2249,3 +2249,9 @@
 - [x] In-memory dedup guard on RATE_LIMIT events (1 DB write per IP per 60s, auto-prune at 5000 entries)
 - [x] AUTH_FAIL events wired into login mutation (4 failure paths: user_not_found, account_access_disabled, account_expired, invalid_password)
 - [x] Dependabot auto-merge workflow (auto-merge-dependabot.yml): patch-only PRs auto-approved + squash-merged after CI passes; minor/major skipped with explicit log
+
+## Security Hardening Round 5 (2026-04-10)
+- [x] GitHub Actions workflow permissions: default_workflow_permissions=write, can_approve_pull_request_reviews=true (HTTP 204 confirmed)
+- [x] 8 optional GitHub secrets set (HTTP 201 each, total_count=15 verified): DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, KENPOM_EMAIL, KENPOM_PASSWORD, VSIN_EMAIL, VSIN_PASSWORD, METABET_API_KEY
+- [x] securityDigest.ts: daily 08:00 EST cron (13:00 UTC), queries 24h event counts, top-5 IPs, threat level (CLEAN/LOW/MODERATE/HIGH/CRITICAL), fires notifyOwner(), prunes events older than 90 days
+- [x] startSecurityDigestScheduler() wired into server startup in index.ts

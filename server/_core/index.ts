@@ -18,6 +18,7 @@ import { startNhlGoalieWatcher } from "../nhlGoalieWatcher";
 import { startDiscordBot } from "../discord/bot";
 import { startMlbPlayerSyncScheduler } from "../mlbPlayerSync";
 import { insertSecurityEvent } from "../db";
+import { startSecurityDigestScheduler } from "../securityDigest";
 
 // ─── Rate limit event helper ─────────────────────────────────────────────────
 // Fire-and-forget: writes a RATE_LIMIT row to security_events.
@@ -285,6 +286,8 @@ async function startServer() {
     startDiscordBot();
     // MLB player sync — nightly at 08:00 UTC, updates active rosters from MLB Stats API
     startMlbPlayerSyncScheduler();
+    // Security digest — daily at 08:00 EST (13:00 UTC), sends 24h threat summary via notifyOwner()
+    startSecurityDigestScheduler();
   });
 }
 
