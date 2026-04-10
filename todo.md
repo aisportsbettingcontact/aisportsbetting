@@ -2211,3 +2211,13 @@
 - [ ] Wire OddsHistoryPanel into frontend BettingSplitsPanel (Betting Splits tab per game)
 - [ ] Ensure OddsHistoryPanel remains in PublishProjections Odds History dropdown
 - [ ] TypeScript check, vitest, checkpoint
+
+## Security Hardening Round 2 (Apr 10, 2026)
+- [x] Add GitHub Actions CI workflow: pnpm audit --audit-level=high + tsc --noEmit + vitest run
+- [x] Implement CSRF Origin header check in tRPC middleware (trpc.ts) with structured logging
+- [x] Set NBA_SHEET_ID in production secrets via Manus Secrets panel
+- [x] Add startup validation guard in nbaModelSync.ts — fail loudly if NBA_SHEET_ID is missing
+- [x] Add early-return guard in syncNbaModelFromSheet() when CSV_URL is empty
+- [x] Create nbaSheetId.test.ts — validates NBA_SHEET_ID format + live sheet reachability
+- [x] Fix auth.logout.test.ts mock req to include req.get() for CSRF middleware compatibility
+- [x] TypeScript: 0 errors | Vitest: 430/430 passing (23 test files)

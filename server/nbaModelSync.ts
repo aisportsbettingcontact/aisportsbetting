@@ -41,10 +41,23 @@ export function getLastNbaModelSyncResult(): NbaModelSyncResult | null {
   return lastSyncResult;
 }
 
-// Sheet ID sourced from NBA_SHEET_ID environment variable (falls back to known ID)
+// ─── Startup guard: NBA_SHEET_ID must be set ─────────────────────────────────
+// [INPUT]  ENV.nbaSheetId — sourced from NBA_SHEET_ID environment variable
+// [VERIFY] If missing, all NBA model syncs will be skipped with a critical error.
+//          Set NBA_SHEET_ID in the Manus Secrets panel or GitHub repository secrets.
 const SHEET_ID = ENV.nbaSheetId;
+if (!SHEET_ID) {
+  console.error(
+    "[NBAModelSync] [CRITICAL] NBA_SHEET_ID environment variable is NOT SET. " +
+    "The NBA model sync pipeline is DISABLED. " +
+    "All syncNbaModelFromSheet() calls will return immediately with an error. " +
+    "Action required: set NBA_SHEET_ID in the Manus Secrets panel."
+  );
+}
 const GID = "567059198";
-const CSV_URL = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`;
+const CSV_URL = SHEET_ID
+  ? `https://docs.google.com/spreadsheets/d/${SHEET_ID}/export?format=csv&gid=${GID}`
+  : "";
 
 // 3-letter abbreviation → NBA dbSlug mapping
 const ABBREV_TO_SLUG: Record<string, string> = {
@@ -161,6 +174,14 @@ function parseCSVLine(line: string): string[] {
 
 export async function syncNbaModelFromSheet(): Promise<{ synced: number; skipped: number; errors: string[] }> {
   const result = { synced: 0, skipped: 0, errors: [] as string[] };
+
+  // [VERIFY] Guard: abort immediately if NBA_SHEET_ID was not set at startup
+  if (!CSV_URL) {
+    const msg = "[NBAModelSync] ABORTED — NBA_SHEET_ID env var is not set. Set it in the Manus Secrets panel.";
+    console.error(msg);
+    result.errors.push(msg);
+    return result;
+  }
 
   console.log("[NBAModelSync] Fetching sheet CSV...");
   let csvText: string;

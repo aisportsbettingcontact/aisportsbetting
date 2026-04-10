@@ -1,0 +1,211 @@
+# ─── CI Pipeline — aisportsbettingmodels.com ─────────────────────────────────
+#
+# Triggers:
+#   - Every push to main (post-merge validation)
+#   - Every pull request targeting main (pre-merge gate)
+#   - Manual dispatch (on-demand audit)
+#
+# Stages (run in order, each must pass before the next begins):
+#   1. security-audit   — pnpm audit --audit-level=high (blocks on HIGH or CRITICAL CVEs)
+#   2. typecheck        — tsc --noEmit (zero TypeScript errors required)
+#   3. test             — vitest run (all 426 tests must pass)
+#
+# Secrets required in GitHub repository settings:
+#   DATABASE_URL        — PostgreSQL connection string (used by test suite)
+#   JWT_SECRET          — Session signing secret (used by auth tests)
+#   PUBLIC_ORIGIN       — Canonical public origin (used by discordAuth tests)
+#   VITE_APP_ID         — Manus OAuth app ID
+#   OAUTH_SERVER_URL    — Manus OAuth backend base URL
+#   OWNER_OPEN_ID       — Owner's Manus open ID
+#   NBA_SHEET_ID        — Google Sheets ID for NBA model sync
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel any in-progress run for the same ref so pushes don't queue up.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Stage 1: Dependency Security Audit ──────────────────────────────────
+  security-audit:
+    name: Security Audit (pnpm audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: "[INPUT] Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "[STEP] Setup pnpm"
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: "[STEP] Setup Node.js 22"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: "[STEP] Install dependencies (frozen lockfile)"
+        run: pnpm install --frozen-lockfile
+
+      - name: "[STEP] Run security audit — fail on HIGH or CRITICAL CVEs"
+        # --audit-level=high: exits non-zero if any HIGH or CRITICAL vulnerability
+        # is found in the dependency tree. MODERATE and LOW are reported but do
+        # not fail the build (they are transitive and often unfixable).
+        #
+        # [VERIFY] This step is the primary gate against supply-chain attacks.
+        # Any new HIGH/CRITICAL CVE introduced by a dependency update will block
+        # the merge until the dependency is patched or explicitly overridden.
+        run: |
+          echo "[INPUT] Running pnpm audit at level=high..."
+          pnpm audit --audit-level=high 2>&1 | tee audit-report.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "[STATE] Audit exit code: $EXIT_CODE"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "[OUTPUT] FAIL — HIGH or CRITICAL vulnerabilities detected"
+            echo "[VERIFY] Review audit-report.txt for full details"
+            exit $EXIT_CODE
+          fi
+          echo "[OUTPUT] PASS — No HIGH or CRITICAL vulnerabilities found"
+          echo "[VERIFY] All dependencies clear at audit-level=high"
+
+      - name: "[OUTPUT] Upload audit report as artifact"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-report
+          path: audit-report.txt
+          retention-days: 30
+
+  # ─── Stage 2: TypeScript Type Check ──────────────────────────────────────
+  typecheck:
+    name: TypeScript Check (tsc --noEmit)
+    runs-on: ubuntu-latest
+    needs: security-audit
+    steps:
+      - name: "[INPUT] Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "[STEP] Setup pnpm"
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: "[STEP] Setup Node.js 22"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: "[STEP] Install dependencies (frozen lockfile)"
+        run: pnpm install --frozen-lockfile
+
+      - name: "[STEP] Run TypeScript compiler — zero errors required"
+        # tsc --noEmit: type-checks the entire project without emitting output.
+        # Strict mode is enforced via tsconfig.json. Any type error fails the build.
+        #
+        # [VERIFY] This gate ensures no type regressions are merged. Combined with
+        # strict: true in tsconfig, it catches null dereferences, missing props,
+        # and incorrect API call shapes before they reach production.
+        run: |
+          echo "[INPUT] Running tsc --noEmit on full project..."
+          npx tsc --noEmit 2>&1 | tee typecheck-report.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "[STATE] TypeScript exit code: $EXIT_CODE"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "[OUTPUT] FAIL — TypeScript errors detected"
+            cat typecheck-report.txt
+            echo "[VERIFY] Fix all type errors before merging"
+            exit $EXIT_CODE
+          fi
+          echo "[OUTPUT] PASS — TypeScript: 0 errors"
+          echo "[VERIFY] Full project type-checks clean"
+
+      - name: "[OUTPUT] Upload typecheck report as artifact"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: typecheck-report
+          path: typecheck-report.txt
+          retention-days: 30
+
+  # ─── Stage 3: Vitest Test Suite ──────────────────────────────────────────
+  test:
+    name: Vitest (426 tests)
+    runs-on: ubuntu-latest
+    needs: typecheck
+    env:
+      # All secrets required by the test suite are injected from GitHub Secrets.
+      # Tests that require DB connectivity use DATABASE_URL.
+      # Tests that require auth use JWT_SECRET.
+      # Tests that require Discord OAuth use PUBLIC_ORIGIN + DISCORD_* vars.
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+      PUBLIC_ORIGIN: ${{ secrets.PUBLIC_ORIGIN }}
+      VITE_APP_ID: ${{ secrets.VITE_APP_ID }}
+      OAUTH_SERVER_URL: ${{ secrets.OAUTH_SERVER_URL }}
+      OWNER_OPEN_ID: ${{ secrets.OWNER_OPEN_ID }}
+      NBA_SHEET_ID: ${{ secrets.NBA_SHEET_ID }}
+      # Non-secret config values
+      NODE_ENV: test
+    steps:
+      - name: "[INPUT] Checkout repository"
+        uses: actions/checkout@v4
+
+      - name: "[STEP] Setup pnpm"
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: "[STEP] Setup Node.js 22"
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: "[STEP] Install dependencies (frozen lockfile)"
+        run: pnpm install --frozen-lockfile
+
+      - name: "[STEP] Run Vitest test suite — all tests must pass"
+        # vitest run: executes all test files once (non-watch mode).
+        # --reporter=verbose: prints each test name and result for full traceability.
+        # --coverage is intentionally omitted here to keep CI fast; run locally
+        # with `pnpm test --coverage` for coverage reports.
+        #
+        # [VERIFY] All 426 tests must pass. Any failure blocks the merge.
+        # Test categories: auth, fileParser, strikeoutProps, kenpomCredentials,
+        # vsinCredentials, discordAuth, tokenVersion, and more.
+        run: |
+          echo "[INPUT] Running vitest run --reporter=verbose..."
+          pnpm test -- --reporter=verbose 2>&1 | tee test-report.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "[STATE] Vitest exit code: $EXIT_CODE"
+          # Extract pass/fail summary from output
+          PASSED=$(grep -oP '\d+ passed' test-report.txt | tail -1 || echo "unknown")
+          FAILED=$(grep -oP '\d+ failed' test-report.txt | tail -1 || echo "0")
+          echo "[STATE] Tests passed: $PASSED | Tests failed: $FAILED"
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "[OUTPUT] FAIL — One or more tests failed"
+            echo "[VERIFY] Review test-report.txt for failure details"
+            exit $EXIT_CODE
+          fi
+          echo "[OUTPUT] PASS — All tests passed: $PASSED"
+          echo "[VERIFY] Full test suite clean"
+
+      - name: "[OUTPUT] Upload test report as artifact"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-report
+          path: test-report.txt
+          retention-days: 30
