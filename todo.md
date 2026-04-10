@@ -2255,3 +2255,11 @@
 - [x] 8 optional GitHub secrets set (HTTP 201 each, total_count=15 verified): DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, KENPOM_EMAIL, KENPOM_PASSWORD, VSIN_EMAIL, VSIN_PASSWORD, METABET_API_KEY
 - [x] securityDigest.ts: daily 08:00 EST cron (13:00 UTC), queries 24h event counts, top-5 IPs, threat level (CLEAN/LOW/MODERATE/HIGH/CRITICAL), fires notifyOwner(), prunes events older than 90 days
 - [x] startSecurityDigestScheduler() wired into server startup in index.ts
+
+## Discord Security Channel Integration (April 10, 2026)
+- [x] Create server/discord/discordSecurityAlert.ts — structured Discord embeds for CSRF_BLOCK (red), RATE_LIMIT (yellow), AUTH_FAIL (orange) posted to channel 1492280227567501403
+- [x] Wire CSRF_BLOCK → postSecurityAlert() in server/_core/trpc.ts (inside fireCsrfBlockAlert, after DB insert)
+- [x] Wire RATE_LIMIT → postSecurityAlert() in server/_core/index.ts (inside fireRateLimitEvent, after DB insert)
+- [x] Wire AUTH_FAIL → postSecurityAlert() in server/routers/appUsers.ts (inside fireAuthFailEvent, after DB insert)
+- [x] All 3 wires are fire-and-forget (non-blocking), 30s per-IP dedup guard, full structured logging
+- [x] TypeScript: 0 errors | Vitest: 458/458 passing | Build: clean

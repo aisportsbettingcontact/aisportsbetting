@@ -19,6 +19,7 @@ import { startDiscordBot } from "../discord/bot";
 import { startMlbPlayerSyncScheduler } from "../mlbPlayerSync";
 import { insertSecurityEvent } from "../db";
 import { startSecurityDigestScheduler } from "../securityDigest";
+import { postSecurityAlert } from "../discord/discordSecurityAlert";
 
 // ─── Rate limit event helper ─────────────────────────────────────────────────
 // Fire-and-forget: writes a RATE_LIMIT row to security_events.
@@ -68,6 +69,18 @@ function fireRateLimitEvent(
     occurredAt: now,
   }).catch((err) =>
     console.error(`${tag} DB insert failed: ${(err as Error).message}`)
+  );
+  // [STEP] Post structured embed to 🗒️-𝗦𝗘𝗖𝗨𝗥𝗜𝗧𝗬-𝗘𝗩𝗘𝗡𝗧𝗦 Discord channel (async, non-blocking)
+  postSecurityAlert({
+    eventType: "RATE_LIMIT",
+    ip,
+    path,
+    method,
+    userAgent: ua,
+    context: limitType,
+    occurredAt: now,
+  }).catch((err) =>
+    console.error(`${tag} Discord alert failed: ${(err as Error).message}`)
   );
 }
 

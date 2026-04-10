@@ -7,6 +7,7 @@ import { getSessionCookieOptions } from "../_core/cookies";
 import { SignJWT, jwtVerify } from "jose";
 import { ENV } from "../_core/env";
 import type { Request } from "express";
+import { postSecurityAlert } from "../discord/discordSecurityAlert";
 
 import {
   createAppUser,
@@ -144,6 +145,7 @@ export const appUsersRouter = router({
           `${tag} BLOCKED | IP=${ip} reason="${reason}"` +
           ` identifier="${input.emailOrUsername.substring(0, 3)}***" ua="${ua?.substring(0, 60) ?? "none"}"`
         );
+        const authFailAt = Date.now();
         insertSecurityEvent({
           eventType: "AUTH_FAIL",
           ip,
@@ -152,9 +154,21 @@ export const appUsersRouter = router({
           httpMethod: ctx.req.method ?? "POST",
           userAgent: ua,
           context: reason,
-          occurredAt: Date.now(),
+          occurredAt: authFailAt,
         }).catch((err) =>
           console.error(`${tag} DB insert failed: ${(err as Error).message}`)
+        );
+        // [STEP] Post structured embed to 🗒️-𝗦𝗘𝗖𝗨𝗥𝗜𝗧𝗬-𝗘𝗩𝗘𝗡𝗧𝗦 Discord channel (async, non-blocking)
+        postSecurityAlert({
+          eventType: "AUTH_FAIL",
+          ip,
+          path: "appUsers.login",
+          method: ctx.req.method ?? "POST",
+          userAgent: ua,
+          context: reason,
+          occurredAt: authFailAt,
+        }).catch((err) =>
+          console.error(`${tag} Discord alert failed: ${(err as Error).message}`)
         );
       };
 
