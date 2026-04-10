@@ -12,10 +12,13 @@
  *   - activeMarket prop: mirrors the SPREAD/TOTAL/MONEYLINE toggle in the
  *     BettingSplitsPanel — only the selected market's columns are shown.
  *
- * Market column layout:
- *   SPREAD:    Time | Src | Away Spread+Odds | Home Spread+Odds | Away🎟️ | Away💰
- *   TOTAL:     Time | Src | Over Line+Odds   | Under Line+Odds  | Over🎟️ | Over💰
- *   MONEYLINE: Time | Src | Away ML          | Home ML          | Away🎟️ | Away💰
+ * Column layout per market:
+ *   SPREAD:    Time | [AWAY logo] Line 🎟️ 💰 | [HOME logo] Line 🎟️ 💰
+ *   TOTAL:     Time | OVER Line 🎟️ 💰 | UNDER Line 🎟️ 💰
+ *   MONEYLINE: Time | [AWAY logo] ML 🎟️ 💰 | [HOME logo] ML 🎟️ 💰
+ *
+ * Deduplication: consecutive rows with identical values for the active market
+ * are collapsed — only the first occurrence of each unique state is shown.
  *
  * Timestamp format: DD/MM HH:MM AM/PM EST (e.g., "10/04 12:20 AM EDT")
  *
@@ -60,7 +63,6 @@ function logPanel(msg: string, data?: unknown) {
 function fmtTimestamp(epochMs: number): string {
   const d = new Date(epochMs);
 
-  // Day and month in DD/MM format (Eastern time)
   const day = d.toLocaleDateString("en-US", {
     timeZone: "America/New_York",
     day: "2-digit",
@@ -70,7 +72,6 @@ function fmtTimestamp(epochMs: number): string {
     month: "2-digit",
   });
 
-  // Time in HH:MM AM/PM
   const timePart = d.toLocaleTimeString("en-US", {
     timeZone: "America/New_York",
     hour: "2-digit",
@@ -78,7 +79,6 @@ function fmtTimestamp(epochMs: number): string {
     hour12: true,
   });
 
-  // Timezone abbreviation (EST or EDT)
   const tzAbbr =
     new Intl.DateTimeFormat("en-US", {
       timeZone: "America/New_York",
@@ -104,7 +104,7 @@ function fmtSpreadWithOdds(
   return `${line} (${odds})`;
 }
 
-/** Format a total side: "o8.5 (-115)" or "u (-105)" */
+/** Format over side: "o8.5 (-115)" */
 function fmtOverWithOdds(
   total: string | null | undefined,
   odds: string | null | undefined
@@ -116,6 +116,7 @@ function fmtOverWithOdds(
   return odds ? `${base} (${odds})` : base;
 }
 
+/** Format under side: "u8.5 (-105)" */
 function fmtUnderWithOdds(
   total: string | null | undefined,
   odds: string | null | undefined
@@ -140,6 +141,73 @@ function fmtML(val: string | null | undefined): string {
 function fmtPct(val: number | null | undefined): string {
   if (val == null) return "—";
   return `${Math.round(val)}%`;
+}
+
+// ── Deduplication ──────────────────────────────────────────────────────────────
+
+type HistoryRow = {
+  id: number;
+  scrapedAt: number;
+  source: string | null;
+  awaySpread: string | null;
+  homeSpread: string | null;
+  awaySpreadOdds: string | null;
+  homeSpreadOdds: string | null;
+  total: string | null;
+  overOdds: string | null;
+  underOdds: string | null;
+  awayML: string | null;
+  homeML: string | null;
+  spreadAwayBetsPct: number | null;
+  spreadAwayMoneyPct: number | null;
+  totalOverBetsPct: number | null;
+  totalOverMoneyPct: number | null;
+  mlAwayBetsPct: number | null;
+  mlAwayMoneyPct: number | null;
+};
+
+/**
+ * Build a dedup key for the active market.
+ * Consecutive rows with identical keys are collapsed — only the FIRST
+ * occurrence (most recent, since rows are newest-first) is shown.
+ */
+function dedupKey(row: HistoryRow, market: ActiveMarket): string {
+  if (market === "spread") {
+    return [
+      row.awaySpread, row.awaySpreadOdds,
+      row.homeSpread, row.homeSpreadOdds,
+      row.spreadAwayBetsPct, row.spreadAwayMoneyPct,
+    ].join("|");
+  }
+  if (market === "total") {
+    return [
+      row.total, row.overOdds, row.underOdds,
+      row.totalOverBetsPct, row.totalOverMoneyPct,
+    ].join("|");
+  }
+  // ml
+  return [
+    row.awayML, row.homeML,
+    row.mlAwayBetsPct, row.mlAwayMoneyPct,
+  ].join("|");
+}
+
+/**
+ * Filter rows: remove consecutive duplicates for the active market.
+ * Rows are newest-first; we keep a row only when its key differs from
+ * the previous kept row's key.
+ */
+function deduplicateRows(rows: HistoryRow[], market: ActiveMarket): HistoryRow[] {
+  const out: HistoryRow[] = [];
+  let lastKey: string | null = null;
+  for (const row of rows) {
+    const key = dedupKey(row, market);
+    if (key !== lastKey) {
+      out.push(row);
+      lastKey = key;
+    }
+  }
+  return out;
 }
 
 // ── Shared cell styles ─────────────────────────────────────────────────────────
@@ -169,11 +237,45 @@ const MARKET_COLOR: Record<ActiveMarket, string> = {
   ml:     "rgba(180,120,255,0.9)",
 };
 
-const MARKET_LABEL: Record<ActiveMarket, string> = {
-  spread: "Spread / Run Line / Puck Line",
-  total:  "Total (O/U)",
-  ml:     "Moneyline",
-};
+// ── Team logo component ────────────────────────────────────────────────────────
+
+function TeamLogo({
+  logoUrl,
+  abbrev,
+  size = 18,
+}: {
+  logoUrl: string | null | undefined;
+  abbrev: string | null | undefined;
+  size?: number;
+}) {
+  if (logoUrl) {
+    return (
+      <img
+        src={logoUrl}
+        alt={abbrev ?? ""}
+        width={size}
+        height={size}
+        style={{
+          width: size,
+          height: size,
+          objectFit: "contain",
+          display: "inline-block",
+          verticalAlign: "middle",
+          flexShrink: 0,
+        }}
+        onError={(e) => {
+          // Fallback to abbrev text if logo fails to load
+          (e.currentTarget as HTMLImageElement).style.display = "none";
+        }}
+      />
+    );
+  }
+  return (
+    <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>
+      {abbrev ?? "?"}
+    </span>
+  );
+}
 
 // ── Component ──────────────────────────────────────────────────────────────────
 
@@ -191,15 +293,50 @@ export function OddsHistoryPanel({
     { enabled: open, staleTime: 30_000 }
   );
 
-  const rows = data?.history ?? [];
+  // Fetch team logos via the same teamColors query used by BettingSplitsPanel
+  // sport is derived from the game context — we pass awayTeam/homeTeam as slugs
+  // and let the server resolve the correct table. We try MLB first (most common),
+  // then fall back gracefully. The sport prop isn't available here, so we use
+  // a separate query that accepts raw team identifiers.
+  const { data: colors } = trpc.teamColors.getForGame.useQuery(
+    { awayTeam, homeTeam, sport: "MLB" },
+    { staleTime: 1000 * 60 * 60, enabled: open }
+  );
+
+  // Also try NHL and NBA in parallel for non-MLB games
+  const { data: colorsNHL } = trpc.teamColors.getForGame.useQuery(
+    { awayTeam, homeTeam, sport: "NHL" },
+    { staleTime: 1000 * 60 * 60, enabled: open && !colors?.away?.logoUrl }
+  );
+  const { data: colorsNBA } = trpc.teamColors.getForGame.useQuery(
+    { awayTeam, homeTeam, sport: "NBA" },
+    { staleTime: 1000 * 60 * 60, enabled: open && !colors?.away?.logoUrl && !colorsNHL?.away?.logoUrl }
+  );
+
+  // Pick the first color set that has a logo
+  const resolvedColors = colors?.away?.logoUrl ? colors
+    : colorsNHL?.away?.logoUrl ? colorsNHL
+    : colorsNBA?.away?.logoUrl ? colorsNBA
+    : colors; // fallback to MLB even if no logo
+
+  const awayLogo = resolvedColors?.away?.logoUrl;
+  const homeLogo = resolvedColors?.home?.logoUrl;
+  const awayAbbrev = resolvedColors?.away?.abbrev ?? awayTeam;
+  const homeAbbrev = resolvedColors?.home?.abbrev ?? homeTeam;
+
+  const rawRows = (data?.history ?? []) as HistoryRow[];
+
+  // Deduplicate consecutive identical rows for the active market
+  const rows = deduplicateRows(rawRows, activeMarket);
 
   // ── Structured logging ─────────────────────────────────────────────────────
 
-  if (open && !isLoading && !error && rows.length > 0) {
+  if (open && !isLoading && !error && rawRows.length > 0) {
     logPanel(
-      `[RENDER] gameId=${gameId} activeMarket=${activeMarket} rows=${rows.length} | ` +
-        `latest=${fmtTimestamp(rows[0]?.scrapedAt ?? 0)} | ` +
-        `oldest=${fmtTimestamp(rows[rows.length - 1]?.scrapedAt ?? 0)}`
+      `[RENDER] gameId=${gameId} market=${activeMarket} ` +
+      `raw=${rawRows.length} deduped=${rows.length} | ` +
+      `latest=${fmtTimestamp(rawRows[0]?.scrapedAt ?? 0)} | ` +
+      `oldest=${fmtTimestamp(rawRows[rawRows.length - 1]?.scrapedAt ?? 0)}`
     );
   }
   if (open && error) {
@@ -209,15 +346,17 @@ export function OddsHistoryPanel({
   const handleToggle = () => {
     const next = !open;
     logPanel(
-      `[TOGGLE] gameId=${gameId} activeMarket=${activeMarket} | ${next ? "OPEN -> fetching" : "CLOSE"}`
+      `[TOGGLE] gameId=${gameId} market=${activeMarket} | ${next ? "OPEN -> fetching" : "CLOSE"}`
     );
     setOpen(next);
   };
 
-  // ── Column definitions per market ──────────────────────────────────────────
-
   const marketColor = MARKET_COLOR[activeMarket];
-  const marketLabel = MARKET_LABEL[activeMarket];
+
+  const marketBadgeLabel =
+    activeMarket === "spread" ? "SPREAD"
+    : activeMarket === "total" ? "TOTAL"
+    : "ML";
 
   return (
     <div className="border-t" style={{ borderColor: "rgba(57,255,20,0.15)" }}>
@@ -240,11 +379,15 @@ export function OddsHistoryPanel({
           {/* Active market badge */}
           <span
             className="text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase tracking-wider"
-            style={{ background: `${marketColor}22`, color: marketColor, border: `1px solid ${marketColor}55` }}
+            style={{
+              background: `${marketColor}22`,
+              color: marketColor,
+              border: `1px solid ${marketColor}55`,
+            }}
           >
-            {activeMarket === "spread" ? "SPREAD" : activeMarket === "total" ? "TOTAL" : "ML"}
+            {marketBadgeLabel}
           </span>
-          {/* Snapshot count badge */}
+          {/* Snapshot count badge (deduped count) */}
           {rows.length > 0 && (
             <span
               className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
@@ -295,145 +438,229 @@ export function OddsHistoryPanel({
                 <thead>
                   {/* ── Group header row ── */}
                   <tr style={{ background: "rgba(57,255,20,0.05)" }}>
-                    {/* Time + Src spacer */}
-                    <th colSpan={2} className="px-3 py-1 text-left" style={TH_BASE} />
-                    {/* Market group header — spans all market columns */}
+                    {/* Time spacer */}
+                    <th colSpan={1} className="px-3 py-1 text-left" style={TH_BASE} />
+
+                    {/* SPREAD: AWAY group | HOME group */}
                     {activeMarket === "spread" && (
-                      <th
-                        colSpan={4}
-                        className="px-2 py-1 text-center"
-                        style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
-                      >
-                        {marketLabel}
-                      </th>
+                      <>
+                        <th
+                          colSpan={3}
+                          className="px-2 py-1 text-center"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          AWAY
+                        </th>
+                        <th
+                          colSpan={3}
+                          className="px-2 py-1 text-center"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          HOME
+                        </th>
+                      </>
                     )}
+
+                    {/* TOTAL: OVER group | UNDER group */}
                     {activeMarket === "total" && (
-                      <th
-                        colSpan={4}
-                        className="px-2 py-1 text-center"
-                        style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
-                      >
-                        {marketLabel}
-                      </th>
+                      <>
+                        <th
+                          colSpan={3}
+                          className="px-2 py-1 text-center"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          OVER
+                        </th>
+                        <th
+                          colSpan={3}
+                          className="px-2 py-1 text-center"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          UNDER
+                        </th>
+                      </>
                     )}
+
+                    {/* ML: AWAY group | HOME group */}
                     {activeMarket === "ml" && (
-                      <th
-                        colSpan={4}
-                        className="px-2 py-1 text-center"
-                        style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
-                      >
-                        {marketLabel}
-                      </th>
+                      <>
+                        <th
+                          colSpan={3}
+                          className="px-2 py-1 text-center"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          AWAY
+                        </th>
+                        <th
+                          colSpan={3}
+                          className="px-2 py-1 text-center"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          HOME
+                        </th>
+                      </>
                     )}
                   </tr>
 
                   {/* ── Column header row ── */}
                   <tr style={{ background: "rgba(57,255,20,0.08)" }}>
+                    {/* Time */}
                     <th className="text-left px-3 py-2" style={TH_BASE}>
                       Time (ET)
                     </th>
-                    <th className="text-center px-2 py-2" style={TH_BASE}>
-                      Src
-                    </th>
 
-                    {/* SPREAD columns: Away Line+Odds | Home Line+Odds | Away🎟️ | Away💰 */}
+                    {/* ── SPREAD columns ── */}
                     {activeMarket === "spread" && (
                       <>
+                        {/* AWAY: Logo | Line | 🎟️ | 💰 */}
                         <th
                           className="text-center px-2 py-2"
                           style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
-                          title={`${awayTeam} spread + juice`}
                         >
-                          {awayTeam} Line
+                          <div className="flex items-center justify-center gap-1">
+                            <TeamLogo logoUrl={awayLogo} abbrev={awayAbbrev} size={14} />
+                            <span>Line</span>
+                          </div>
                         </th>
                         <th
                           className="text-center px-2 py-2"
-                          style={{ ...TH_BASE, color: marketColor }}
-                          title={`${homeTeam} spread + juice`}
-                        >
-                          {homeTeam} Line
-                        </th>
-                        <th
-                          className="text-center px-2 py-2"
-                          style={TH_BASE}
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
                           title={`${awayTeam} spread tickets %`}
                         >
-                          {awayTeam}&nbsp;🎟️
+                          🎟️
                         </th>
                         <th
                           className="text-center px-2 py-2"
-                          style={TH_BASE}
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
                           title={`${awayTeam} spread money %`}
                         >
-                          {awayTeam}&nbsp;💰
+                          💰
+                        </th>
+                        {/* HOME: Logo | Line | 🎟️ | 💰 */}
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <TeamLogo logoUrl={homeLogo} abbrev={homeAbbrev} size={14} />
+                            <span>Line</span>
+                          </div>
+                        </th>
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
+                          title={`${homeTeam} spread tickets % (inverse of away)`}
+                        >
+                          🎟️
+                        </th>
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
+                          title={`${homeTeam} spread money % (inverse of away)`}
+                        >
+                          💰
                         </th>
                       </>
                     )}
 
-                    {/* TOTAL columns: Over Line+Odds | Under Line+Odds | Over🎟️ | Over💰 */}
+                    {/* ── TOTAL columns ── */}
                     {activeMarket === "total" && (
                       <>
+                        {/* OVER: Line | 🎟️ | 💰 */}
                         <th
                           className="text-center px-2 py-2"
                           style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
-                          title="Over line + juice"
                         >
-                          Over Line
+                          Line
                         </th>
                         <th
                           className="text-center px-2 py-2"
-                          style={{ ...TH_BASE, color: marketColor }}
-                          title="Under line + juice"
-                        >
-                          Under Line
-                        </th>
-                        <th
-                          className="text-center px-2 py-2"
-                          style={TH_BASE}
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
                           title="Over tickets %"
                         >
-                          Over&nbsp;🎟️
+                          🎟️
                         </th>
                         <th
                           className="text-center px-2 py-2"
-                          style={TH_BASE}
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
                           title="Over money %"
                         >
-                          Over&nbsp;💰
+                          💰
+                        </th>
+                        {/* UNDER: Line | 🎟️ | 💰 */}
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          Line
+                        </th>
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
+                          title="Under tickets % (inverse of over)"
+                        >
+                          🎟️
+                        </th>
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
+                          title="Under money % (inverse of over)"
+                        >
+                          💰
                         </th>
                       </>
                     )}
 
-                    {/* ML columns: Away ML | Home ML | Away🎟️ | Away💰 */}
+                    {/* ── ML columns ── */}
                     {activeMarket === "ml" && (
                       <>
+                        {/* AWAY: Logo | ML | 🎟️ | 💰 */}
                         <th
                           className="text-center px-2 py-2"
                           style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
-                          title={`${awayTeam} moneyline`}
                         >
-                          {awayTeam} ML
+                          <div className="flex items-center justify-center gap-1">
+                            <TeamLogo logoUrl={awayLogo} abbrev={awayAbbrev} size={14} />
+                            <span>ML</span>
+                          </div>
                         </th>
                         <th
                           className="text-center px-2 py-2"
-                          style={{ ...TH_BASE, color: marketColor }}
-                          title={`${homeTeam} moneyline`}
-                        >
-                          {homeTeam} ML
-                        </th>
-                        <th
-                          className="text-center px-2 py-2"
-                          style={TH_BASE}
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
                           title={`${awayTeam} ML tickets %`}
                         >
-                          {awayTeam}&nbsp;🎟️
+                          🎟️
                         </th>
                         <th
                           className="text-center px-2 py-2"
-                          style={TH_BASE}
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
                           title={`${awayTeam} ML money %`}
                         >
-                          {awayTeam}&nbsp;💰
+                          💰
+                        </th>
+                        {/* HOME: Logo | ML | 🎟️ | 💰 */}
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, ...GROUP_BORDER_L, color: marketColor }}
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <TeamLogo logoUrl={homeLogo} abbrev={homeAbbrev} size={14} />
+                            <span>ML</span>
+                          </div>
+                        </th>
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
+                          title={`${homeTeam} ML tickets % (inverse of away)`}
+                        >
+                          🎟️
+                        </th>
+                        <th
+                          className="text-center px-2 py-2"
+                          style={{ ...TH_BASE, color: "rgba(255,255,255,0.5)" }}
+                          title={`${homeTeam} ML money % (inverse of away)`}
+                        >
+                          💰
                         </th>
                       </>
                     )}
@@ -442,7 +669,6 @@ export function OddsHistoryPanel({
 
                 <tbody>
                   {rows.map((row, idx) => {
-                    const isManual = row.source === "manual";
                     const isEven = idx % 2 === 0;
 
                     // 0/0 guard per market
@@ -455,6 +681,20 @@ export function OddsHistoryPanel({
                     const mlPending =
                       (row.mlAwayBetsPct == null || row.mlAwayBetsPct === 0) &&
                       (row.mlAwayMoneyPct == null || row.mlAwayMoneyPct === 0);
+
+                    // Inverse splits (home = 100 - away)
+                    const spreadHomeBets = spreadPending ? null
+                      : row.spreadAwayBetsPct != null ? 100 - row.spreadAwayBetsPct : null;
+                    const spreadHomeMoney = spreadPending ? null
+                      : row.spreadAwayMoneyPct != null ? 100 - row.spreadAwayMoneyPct : null;
+                    const totalUnderBets = totalPending ? null
+                      : row.totalOverBetsPct != null ? 100 - row.totalOverBetsPct : null;
+                    const totalUnderMoney = totalPending ? null
+                      : row.totalOverMoneyPct != null ? 100 - row.totalOverMoneyPct : null;
+                    const mlHomeBets = mlPending ? null
+                      : row.mlAwayBetsPct != null ? 100 - row.mlAwayBetsPct : null;
+                    const mlHomeMoney = mlPending ? null
+                      : row.mlAwayMoneyPct != null ? 100 - row.mlAwayMoneyPct : null;
 
                     return (
                       <tr
@@ -470,71 +710,51 @@ export function OddsHistoryPanel({
                         {/* ── Timestamp: DD/MM HH:MM AM/PM TZ ── */}
                         <td
                           className="px-3 py-2 whitespace-nowrap font-mono"
-                          style={{ color: "rgba(255,255,255,0.75)" }}
+                          style={{ color: "rgba(255,255,255,0.75)", fontSize: 10 }}
                         >
                           {fmtTimestamp(row.scrapedAt)}
-                        </td>
-
-                        {/* ── Source badge ── */}
-                        <td className="px-2 py-2 text-center">
-                          <span
-                            className="inline-block px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider"
-                            style={
-                              isManual
-                                ? {
-                                    background: "rgba(251,191,36,0.18)",
-                                    color: "#FBB924",
-                                    border: "1px solid rgba(251,191,36,0.35)",
-                                  }
-                                : {
-                                    background: "rgba(57,255,20,0.1)",
-                                    color: "#39FF14",
-                                    border: "1px solid rgba(57,255,20,0.25)",
-                                  }
-                            }
-                          >
-                            {isManual ? "M" : "A"}
-                          </span>
                         </td>
 
                         {/* ── SPREAD market cells ── */}
                         {activeMarket === "spread" && (
                           <>
-                            {/* Away spread + odds */}
+                            {/* AWAY: Line | 🎟️ | 💰 */}
                             <td
                               className="px-2 py-2 text-center font-mono whitespace-nowrap"
                               style={{ color: marketColor, ...CELL_BORDER_L }}
                             >
                               {fmtSpreadWithOdds(row.awaySpread, row.awaySpreadOdds)}
                             </td>
-                            {/* Home spread + odds */}
-                            <td
-                              className="px-2 py-2 text-center font-mono whitespace-nowrap"
-                              style={{ color: marketColor }}
-                            >
-                              {fmtSpreadWithOdds(row.homeSpread, row.homeSpreadOdds)}
-                            </td>
-                            {/* Away tickets % */}
                             <td
                               className="px-2 py-2 text-center font-mono"
-                              style={{
-                                color: spreadPending
-                                  ? "rgba(255,255,255,0.25)"
-                                  : "rgba(255,255,255,0.9)",
-                              }}
+                              style={{ color: spreadPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
                             >
                               {spreadPending ? "—" : fmtPct(row.spreadAwayBetsPct)}
                             </td>
-                            {/* Away money % */}
                             <td
                               className="px-2 py-2 text-center font-mono"
-                              style={{
-                                color: spreadPending
-                                  ? "rgba(255,255,255,0.25)"
-                                  : "rgba(255,255,255,0.9)",
-                              }}
+                              style={{ color: spreadPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
                             >
                               {spreadPending ? "—" : fmtPct(row.spreadAwayMoneyPct)}
+                            </td>
+                            {/* HOME: Line | 🎟️ | 💰 */}
+                            <td
+                              className="px-2 py-2 text-center font-mono whitespace-nowrap"
+                              style={{ color: marketColor, ...CELL_BORDER_L }}
+                            >
+                              {fmtSpreadWithOdds(row.homeSpread, row.homeSpreadOdds)}
+                            </td>
+                            <td
+                              className="px-2 py-2 text-center font-mono"
+                              style={{ color: spreadPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
+                            >
+                              {spreadPending ? "—" : fmtPct(spreadHomeBets)}
+                            </td>
+                            <td
+                              className="px-2 py-2 text-center font-mono"
+                              style={{ color: spreadPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
+                            >
+                              {spreadPending ? "—" : fmtPct(spreadHomeMoney)}
                             </td>
                           </>
                         )}
@@ -542,83 +762,87 @@ export function OddsHistoryPanel({
                         {/* ── TOTAL market cells ── */}
                         {activeMarket === "total" && (
                           <>
-                            {/* Over line + odds */}
+                            {/* OVER: Line | 🎟️ | 💰 */}
                             <td
                               className="px-2 py-2 text-center font-mono whitespace-nowrap"
                               style={{ color: marketColor, ...CELL_BORDER_L }}
                             >
                               {fmtOverWithOdds(row.total, row.overOdds)}
                             </td>
-                            {/* Under line + odds */}
-                            <td
-                              className="px-2 py-2 text-center font-mono whitespace-nowrap"
-                              style={{ color: marketColor }}
-                            >
-                              {fmtUnderWithOdds(row.total, row.underOdds)}
-                            </td>
-                            {/* Over tickets % */}
                             <td
                               className="px-2 py-2 text-center font-mono"
-                              style={{
-                                color: totalPending
-                                  ? "rgba(255,255,255,0.25)"
-                                  : "rgba(255,255,255,0.9)",
-                              }}
+                              style={{ color: totalPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
                             >
                               {totalPending ? "—" : fmtPct(row.totalOverBetsPct)}
                             </td>
-                            {/* Over money % */}
                             <td
                               className="px-2 py-2 text-center font-mono"
-                              style={{
-                                color: totalPending
-                                  ? "rgba(255,255,255,0.25)"
-                                  : "rgba(255,255,255,0.9)",
-                              }}
+                              style={{ color: totalPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
                             >
                               {totalPending ? "—" : fmtPct(row.totalOverMoneyPct)}
+                            </td>
+                            {/* UNDER: Line | 🎟️ | 💰 */}
+                            <td
+                              className="px-2 py-2 text-center font-mono whitespace-nowrap"
+                              style={{ color: marketColor, ...CELL_BORDER_L }}
+                            >
+                              {fmtUnderWithOdds(row.total, row.underOdds)}
+                            </td>
+                            <td
+                              className="px-2 py-2 text-center font-mono"
+                              style={{ color: totalPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
+                            >
+                              {totalPending ? "—" : fmtPct(totalUnderBets)}
+                            </td>
+                            <td
+                              className="px-2 py-2 text-center font-mono"
+                              style={{ color: totalPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
+                            >
+                              {totalPending ? "—" : fmtPct(totalUnderMoney)}
                             </td>
                           </>
                         )}
 
-                        {/* ── MONEYLINE market cells ── */}
+                        {/* ── ML market cells ── */}
                         {activeMarket === "ml" && (
                           <>
-                            {/* Away ML */}
+                            {/* AWAY: ML | 🎟️ | 💰 */}
                             <td
                               className="px-2 py-2 text-center font-mono whitespace-nowrap"
                               style={{ color: marketColor, ...CELL_BORDER_L }}
                             >
                               {fmtML(row.awayML)}
                             </td>
-                            {/* Home ML */}
-                            <td
-                              className="px-2 py-2 text-center font-mono whitespace-nowrap"
-                              style={{ color: marketColor }}
-                            >
-                              {fmtML(row.homeML)}
-                            </td>
-                            {/* Away tickets % */}
                             <td
                               className="px-2 py-2 text-center font-mono"
-                              style={{
-                                color: mlPending
-                                  ? "rgba(255,255,255,0.25)"
-                                  : "rgba(255,255,255,0.9)",
-                              }}
+                              style={{ color: mlPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
                             >
                               {mlPending ? "—" : fmtPct(row.mlAwayBetsPct)}
                             </td>
-                            {/* Away money % */}
                             <td
                               className="px-2 py-2 text-center font-mono"
-                              style={{
-                                color: mlPending
-                                  ? "rgba(255,255,255,0.25)"
-                                  : "rgba(255,255,255,0.9)",
-                              }}
+                              style={{ color: mlPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
                             >
                               {mlPending ? "—" : fmtPct(row.mlAwayMoneyPct)}
+                            </td>
+                            {/* HOME: ML | 🎟️ | 💰 */}
+                            <td
+                              className="px-2 py-2 text-center font-mono whitespace-nowrap"
+                              style={{ color: marketColor, ...CELL_BORDER_L }}
+                            >
+                              {fmtML(row.homeML)}
+                            </td>
+                            <td
+                              className="px-2 py-2 text-center font-mono"
+                              style={{ color: mlPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
+                            >
+                              {mlPending ? "—" : fmtPct(mlHomeBets)}
+                            </td>
+                            <td
+                              className="px-2 py-2 text-center font-mono"
+                              style={{ color: mlPending ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.9)" }}
+                            >
+                              {mlPending ? "—" : fmtPct(mlHomeMoney)}
                             </td>
                           </>
                         )}
@@ -628,21 +852,19 @@ export function OddsHistoryPanel({
                 </tbody>
               </table>
 
-              {/* ── Legend ── */}
-              <div
-                className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2"
-                style={{ borderTop: "1px solid rgba(57,255,20,0.08)" }}
-              >
-                <span
-                  className="text-[9px] font-bold uppercase tracking-wider"
-                  style={{ color: "rgba(255,255,255,0.3)" }}
+              {/* ── Footer: raw vs deduped count ── */}
+              {rawRows.length !== rows.length && (
+                <div
+                  className="px-3 py-1.5 text-right"
+                  style={{
+                    fontSize: 9,
+                    color: "rgba(255,255,255,0.3)",
+                    borderTop: "1px solid rgba(57,255,20,0.08)",
+                  }}
                 >
-                  Src: A = Auto (10-min) · M = Manual (Refresh Now)
-                </span>
-                <span className="text-[9px]" style={{ color: "rgba(255,255,255,0.25)" }}>
-                  🎟️ = Tickets % · 💰 = Money % · — = market not yet open
-                </span>
-              </div>
+                  Showing {rows.length} unique snapshots ({rawRows.length} total — {rawRows.length - rows.length} consecutive duplicates hidden)
+                </div>
+              )}
             </div>
           )}
         </div>

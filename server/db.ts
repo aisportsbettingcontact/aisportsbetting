@@ -700,6 +700,7 @@ export interface TeamColors {
   secondaryColor: string | null;
   tertiaryColor: string | null;
   abbrev: string | null;
+  logoUrl: string | null;
 }
 
 /**
@@ -720,6 +721,7 @@ export async function getTeamColors(dbSlug: string, sport: string): Promise<Team
         secondaryColor: nbaTeams.secondaryColor,
         tertiaryColor: nbaTeams.tertiaryColor,
         abbrev: nbaTeams.abbrev,
+        logoUrl: nbaTeams.logoUrl,
       })
       .from(nbaTeams)
       .where(eq(nbaTeams.dbSlug, dbSlug))
@@ -732,6 +734,7 @@ export async function getTeamColors(dbSlug: string, sport: string): Promise<Team
         secondaryColor: nhlTeams.secondaryColor,
         tertiaryColor: nhlTeams.tertiaryColor,
         abbrev: nhlTeams.abbrev,
+        logoUrl: nhlTeams.logoUrl,
       })
       .from(nhlTeams)
       .where(eq(nhlTeams.dbSlug, dbSlug))
@@ -746,6 +749,7 @@ export async function getTeamColors(dbSlug: string, sport: string): Promise<Team
         secondaryColor: mlbTeams.secondaryColor,
         tertiaryColor: mlbTeams.tertiaryColor,
         abbrev: mlbTeams.abbrev,
+        logoUrl: mlbTeams.logoUrl,
       })
       .from(mlbTeams)
       .where(eq(mlbTeams.abbrev, dbSlug))
@@ -758,6 +762,7 @@ export async function getTeamColors(dbSlug: string, sport: string): Promise<Team
         secondaryColor: mlbTeams.secondaryColor,
         tertiaryColor: mlbTeams.tertiaryColor,
         abbrev: mlbTeams.abbrev,
+        logoUrl: mlbTeams.logoUrl,
       })
       .from(mlbTeams)
       .where(eq(mlbTeams.dbSlug, dbSlug))
