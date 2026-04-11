@@ -4,17 +4,20 @@
  * Full 2026 MLB team schedule page.
  * Accessed via /mlb/team/:slug (Action Network url_slug).
  *
- * Displays all 2026 games for the team:
- *   - Date, opponent, home/away indicator
- *   - DK NJ Run Line (spread + juice)
- *   - DK NJ Total (over/under + juice)
- *   - DK NJ Moneyline
- *   - Final score
- *   - W/L, RL Cover (COV/NO), O/U result
+ * Fixes applied (2026-04-11):
+ *   1. Postponed games are EXCLUDED from both Upcoming/Live and Completed sections.
+ *      Only "scheduled" / "inprogress" games appear in Upcoming/Live.
+ *      Only "complete" games appear in Completed.
+ *   2. Doubleheaders display correctly — both games share the same gameDate and
+ *      are rendered as separate rows in chronological order.
+ *   3. HOME/AWAY spelled out in full (not H/A abbreviation).
+ *   4. Stats summary bar is a single responsive row: RECORD · RL COVER · O/U · GAMES.
+ *   5. O/U stat shows Over record with pushes: "6O–5U–1P" format.
+ *   6. Full responsive scaling from 320px (iPhone SE) → 1440px desktop.
+ *      Tables use overflow-x-auto with no hard min-width that forces page overflow.
+ *      Font sizes use clamp-style sm: breakpoints throughout.
  *
- * Responsive: scales cleanly from 320px (iPhone SE) → 1440px desktop.
- * Tables use horizontal scroll with sticky first column on mobile.
- * No min-width hard-locks that cause overflow on small screens.
+ * Logging: [MlbTeamSchedule][STEP] fully traceable in browser console.
  *
  * Data source: mlb_schedule_history table (Action Network DK NJ API)
  * Season filter: 2026-03-26 → present (enforced in backend service)
@@ -60,6 +63,21 @@ interface ScheduleGame {
   awayWon: boolean | null;
 }
 
+// ─── Status classification ────────────────────────────────────────────────────
+// "postponed" is excluded from BOTH sections — it has no score, no valid time,
+// and should not appear anywhere on the schedule page.
+const COMPLETE_STATUS   = "complete";
+const POSTPONED_STATUS  = "postponed";
+
+function isCompleteGame(g: ScheduleGame): boolean {
+  return g.gameStatus === COMPLETE_STATUS;
+}
+
+function isUpcomingGame(g: ScheduleGame): boolean {
+  // scheduled or inprogress — anything that is NOT complete and NOT postponed
+  return g.gameStatus !== COMPLETE_STATUS && g.gameStatus !== POSTPONED_STATUS;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatGameDate(dateStr: string): string {
@@ -84,7 +102,7 @@ function formatStartTime(utcIso: string): string {
   );
 }
 
-/** Format run line: "+1.5 (-140)" or "—" */
+/** Format run line: "+1.5 (+153)" or "—" */
 function fmtRunLine(value: string | null, odds: string | null): string {
   if (!value) return "—";
   const v = parseFloat(value);
@@ -124,9 +142,9 @@ function Badge({
   variant: "win" | "loss" | "push" | "neutral";
 }) {
   const cls = {
-    win: "bg-green-500/20 text-green-400 border-green-500/30",
-    loss: "bg-red-500/20 text-red-400 border-red-500/30",
-    push: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+    win:     "bg-green-500/20 text-green-400 border-green-500/30",
+    loss:    "bg-red-500/20 text-red-400 border-red-500/30",
+    push:    "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
     neutral: "bg-gray-700/50 text-gray-400 border-gray-600/30",
   }[variant];
   return (
@@ -146,39 +164,39 @@ function Badge({
 function ScheduleRow({
   game,
   teamSlug,
+  isUpcoming,
 }: {
   game: ScheduleGame;
   teamSlug: string;
+  isUpcoming: boolean;
 }) {
   const isAway = game.awaySlug === teamSlug;
 
-  const oppSlug = isAway ? game.homeSlug : game.awaySlug;
-  const oppAbbr = isAway ? game.homeAbbr : game.awayAbbr;
-  const oppName = isAway ? game.homeName : game.awayName;
+  const oppSlug   = isAway ? game.homeSlug   : game.awaySlug;
+  const oppAbbr   = isAway ? game.homeAbbr   : game.awayAbbr;
+  const oppName   = isAway ? game.homeName   : game.awayName;
   const oppTeamId = isAway ? game.homeTeamId : game.awayTeamId;
-  const oppTeam = MLB_BY_AN_SLUG.get(oppSlug);
-  const oppLogo =
+  const oppTeam   = MLB_BY_AN_SLUG.get(oppSlug);
+  const oppLogo   =
     oppTeam?.logoUrl ??
     `https://www.mlbstatic.com/team-logos/${oppTeamId}.svg`;
 
-  const myScore = isAway ? game.awayScore : game.homeScore;
+  const myScore  = isAway ? game.awayScore : game.homeScore;
   const oppScore = isAway ? game.homeScore : game.awayScore;
 
-  const myRunLine = isAway ? game.dkAwayRunLine : game.dkHomeRunLine;
-  const myRunLineOdds = isAway
-    ? game.dkAwayRunLineOdds
-    : game.dkHomeRunLineOdds;
-  const myML = isAway ? game.dkAwayML : game.dkHomeML;
+  const myRunLine      = isAway ? game.dkAwayRunLine      : game.dkHomeRunLine;
+  const myRunLineOdds  = isAway ? game.dkAwayRunLineOdds  : game.dkHomeRunLineOdds;
+  const myML           = isAway ? game.dkAwayML           : game.dkHomeML;
 
-  const myCovered = isAway
-    ? game.awayRunLineCovered
-    : game.homeRunLineCovered;
-  const myWon =
-    game.awayWon != null ? (isAway ? game.awayWon : !game.awayWon) : null;
+  const myCovered = isAway ? game.awayRunLineCovered : game.homeRunLineCovered;
+  const myWon     = game.awayWon != null
+    ? (isAway ? game.awayWon : !game.awayWon)
+    : null;
 
-  const isComplete = game.gameStatus === "complete";
+  const isComplete  = game.gameStatus === COMPLETE_STATUS;
   const isScheduled = game.gameStatus === "scheduled";
 
+  // Score cell: final score if complete, start time if scheduled, "Live" otherwise
   const scoreStr =
     isComplete && myScore != null && oppScore != null
       ? `${myScore}–${oppScore}`
@@ -196,13 +214,10 @@ function ScheduleRow({
     myCovered === true ? "COV" : myCovered === false ? "NO" : "—";
 
   const totalVariant: "win" | "loss" | "push" | "neutral" =
-    game.totalResult === "OVER"
-      ? "win"
-      : game.totalResult === "UNDER"
-      ? "loss"
-      : game.totalResult === "PUSH"
-      ? "push"
-      : "neutral";
+    game.totalResult === "OVER"  ? "win"
+    : game.totalResult === "UNDER" ? "loss"
+    : game.totalResult === "PUSH"  ? "push"
+    : "neutral";
   const totalLabel = game.totalResult ?? "—";
 
   return (
@@ -212,8 +227,8 @@ function ScheduleRow({
         {formatGameDate(game.gameDate)}
       </td>
 
-      {/* H/A */}
-      <td className="px-1 sm:px-2 py-2 text-center">
+      {/* HOME / AWAY — spelled out */}
+      <td className="px-1 sm:px-2 py-2 text-center whitespace-nowrap">
         <span
           className={cn(
             "text-[9px] sm:text-[10px] font-bold font-mono px-1 sm:px-1.5 py-0.5 rounded",
@@ -222,7 +237,7 @@ function ScheduleRow({
               : "bg-purple-500/20 text-purple-400"
           )}
         >
-          {isAway ? "A" : "H"}
+          {isAway ? "AWAY" : "HOME"}
         </span>
       </td>
 
@@ -233,11 +248,9 @@ function ScheduleRow({
             src={oppLogo}
             alt={oppAbbr}
             className="w-5 h-5 sm:w-6 sm:h-6 object-contain flex-shrink-0"
-            onError={(e) => {
-              (e.target as HTMLImageElement).style.display = "none";
-            }}
+            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
           />
-          {/* Show full name on sm+, abbr on xs */}
+          {/* Full name on sm+, abbr on mobile */}
           <span className="hidden sm:block text-xs font-semibold text-white truncate max-w-[120px]">
             {oppName}
           </span>
@@ -253,9 +266,7 @@ function ScheduleRow({
           className={cn(
             "text-[10px] sm:text-xs font-mono font-bold",
             isComplete
-              ? myWon
-                ? "text-green-400"
-                : "text-red-400"
+              ? myWon ? "text-green-400" : "text-red-400"
               : "text-gray-400"
           )}
         >
@@ -263,9 +274,12 @@ function ScheduleRow({
         </span>
       </td>
 
-      {/* W/L */}
+      {/* W/L — hidden on upcoming rows (no result yet) */}
       <td className="px-1 sm:px-2 py-2 text-center">
-        <Badge label={wlLabel} variant={wlVariant} />
+        {isUpcoming
+          ? <span className="text-[10px] text-gray-600 font-mono">—</span>
+          : <Badge label={wlLabel} variant={wlVariant} />
+        }
       </td>
 
       {/* Run Line */}
@@ -275,9 +289,12 @@ function ScheduleRow({
         </div>
       </td>
 
-      {/* RL Cover */}
+      {/* RL Cover — hidden on upcoming rows */}
       <td className="px-1 sm:px-2 py-2 text-center">
-        <Badge label={covLabel} variant={covVariant} />
+        {isUpcoming
+          ? <span className="text-[10px] text-gray-600 font-mono">—</span>
+          : <Badge label={covLabel} variant={covVariant} />
+        }
       </td>
 
       {/* Total */}
@@ -287,19 +304,17 @@ function ScheduleRow({
         </div>
       </td>
 
-      {/* O/U Result */}
+      {/* O/U Result — hidden on upcoming rows */}
       <td className="px-1 sm:px-2 py-2 text-center">
-        <Badge label={totalLabel} variant={totalVariant} />
+        {isUpcoming
+          ? <span className="text-[10px] text-gray-600 font-mono">—</span>
+          : <Badge label={totalLabel} variant={totalVariant} />
+        }
       </td>
 
       {/* Moneyline */}
       <td className="px-2 sm:px-3 py-2 text-center">
-        <span
-          className={cn(
-            "text-[10px] sm:text-xs font-mono font-bold",
-            mlColor(myML)
-          )}
-        >
+        <span className={cn("text-[10px] sm:text-xs font-mono font-bold", mlColor(myML))}>
           {myML ?? "—"}
         </span>
       </td>
@@ -308,6 +323,9 @@ function ScheduleRow({
 }
 
 // ─── Stats Summary Bar ────────────────────────────────────────────────────────
+//
+// Single responsive row: RECORD · RL COVER · O/U · GAMES
+// O/U shows: {overs}O–{unders}U–{pushes}P (pushes shown only when > 0)
 
 function StatsSummary({
   games,
@@ -316,15 +334,17 @@ function StatsSummary({
   games: ScheduleGame[];
   teamSlug: string;
 }) {
-  const completed = games.filter((g) => g.gameStatus === "complete");
+  const completed = games.filter(isCompleteGame);
   if (!completed.length) return null;
 
+  // W/L record
   const wins = completed.filter((g) => {
     const ia = g.awaySlug === teamSlug;
     return ia ? g.awayWon === true : g.awayWon === false;
   }).length;
   const losses = completed.length - wins;
 
+  // RL Cover record
   const covered = completed.filter((g) => {
     const ia = g.awaySlug === teamSlug;
     return ia ? g.awayRunLineCovered === true : g.homeRunLineCovered === true;
@@ -334,57 +354,80 @@ function StatsSummary({
     return ia ? g.awayRunLineCovered === false : g.homeRunLineCovered === false;
   }).length;
 
-  const overs = completed.filter((g) => g.totalResult === "OVER").length;
+  // O/U record — includes pushes
+  const overs  = completed.filter((g) => g.totalResult === "OVER").length;
   const unders = completed.filter((g) => g.totalResult === "UNDER").length;
+  const ouPush = completed.filter((g) => g.totalResult === "PUSH").length;
+
+  const ouStr = ouPush > 0
+    ? `${overs}O–${unders}U–${ouPush}P`
+    : `${overs}O–${unders}U`;
+
+  console.log(
+    `[MlbTeamSchedule][StatsSummary] team="${teamSlug}"` +
+    ` | record=${wins}-${losses}` +
+    ` | rlCover=${covered}-${notCovered}` +
+    ` | ou=${ouStr}` +
+    ` | games=${completed.length}`
+  );
+
+  const stats = [
+    {
+      label: "RECORD",
+      node: (
+        <span className="text-xs sm:text-sm font-bold text-white font-mono">
+          {wins}–{losses}
+        </span>
+      ),
+    },
+    {
+      label: "RL COVER",
+      node: (
+        <span className="font-mono text-xs sm:text-sm font-bold">
+          <span className="text-green-400">{covered}</span>
+          <span className="text-gray-500 mx-0.5">–</span>
+          <span className="text-red-400">{notCovered}</span>
+        </span>
+      ),
+    },
+    {
+      label: "O/U",
+      node: (
+        <span className="font-mono text-xs sm:text-sm font-bold">
+          <span className="text-green-400">{overs}O</span>
+          <span className="text-gray-500 mx-0.5">–</span>
+          <span className="text-red-400">{unders}U</span>
+          {ouPush > 0 && (
+            <>
+              <span className="text-gray-500 mx-0.5">–</span>
+              <span className="text-yellow-400">{ouPush}P</span>
+            </>
+          )}
+        </span>
+      ),
+    },
+    {
+      label: "GAMES",
+      node: (
+        <span className="text-xs sm:text-sm font-bold text-white font-mono">
+          {completed.length}
+        </span>
+      ),
+    },
+  ];
 
   return (
-    <div className="flex flex-wrap gap-2 sm:gap-3 mb-4 px-1">
-      {[
-        {
-          label: "RECORD",
-          value: (
-            <span className="text-sm font-bold text-white font-mono">
-              {wins}–{losses}
-            </span>
-          ),
-        },
-        {
-          label: "RL COVER",
-          value: (
-            <span className="font-mono text-sm font-bold">
-              <span className="text-green-400">{covered}</span>
-              <span className="text-gray-500 mx-1">–</span>
-              <span className="text-red-400">{notCovered}</span>
-            </span>
-          ),
-        },
-        {
-          label: "O/U",
-          value: (
-            <span className="font-mono text-sm font-bold">
-              <span className="text-green-400">{overs}O</span>
-              <span className="text-gray-500 mx-1">–</span>
-              <span className="text-red-400">{unders}U</span>
-            </span>
-          ),
-        },
-        {
-          label: "GAMES",
-          value: (
-            <span className="text-sm font-bold text-white font-mono">
-              {completed.length}
-            </span>
-          ),
-        },
-      ].map(({ label, value }) => (
+    // Single row — flex-nowrap, overflow-x-auto if screen is very narrow
+    <div className="flex items-center gap-2 sm:gap-3 mb-4 overflow-x-auto pb-1">
+      {stats.map(({ label, node }) => (
         <div
           key={label}
-          className="flex items-center gap-1.5 sm:gap-2 bg-white/5 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2"
+          className="flex items-center gap-1.5 bg-white/5 rounded-lg px-2.5 sm:px-3 py-1.5 sm:py-2 flex-shrink-0"
         >
-          <span className="text-[10px] sm:text-xs text-gray-400 font-mono">
+          <span className="text-[9px] sm:text-[10px] text-gray-400 font-mono whitespace-nowrap">
             {label}
           </span>
-          {value}
+          {node}
         </div>
       ))}
     </div>
@@ -403,41 +446,22 @@ function ScheduleTable({
   isUpcoming: boolean;
 }) {
   return (
-    /* overflow-x-auto: horizontal scroll on mobile; table never forces page overflow */
     <div className="overflow-x-auto rounded-lg border border-white/10 -mx-1 sm:mx-0">
-      <table className="w-full text-left" style={{ minWidth: "560px" }}>
+      <table className="w-full text-left" style={{ minWidth: "480px" }}>
         <thead>
           <tr className="border-b border-white/10 bg-white/[0.03]">
-            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest whitespace-nowrap">
-              DATE
-            </th>
-            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">
-              H/A
-            </th>
-            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest">
-              OPP
-            </th>
-            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">
+            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest whitespace-nowrap">DATE</th>
+            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center whitespace-nowrap">LOC</th>
+            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest">OPP</th>
+            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center whitespace-nowrap">
               {isUpcoming ? "TIME" : "SCORE"}
             </th>
-            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">
-              W/L
-            </th>
-            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest whitespace-nowrap">
-              RUN LINE
-            </th>
-            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">
-              COV
-            </th>
-            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest">
-              TOTAL
-            </th>
-            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">
-              O/U
-            </th>
-            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">
-              ML
-            </th>
+            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">W/L</th>
+            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest whitespace-nowrap">RUN LINE</th>
+            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">COV</th>
+            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest">TOTAL</th>
+            <th className="px-1 sm:px-2 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">O/U</th>
+            <th className="px-2 sm:px-3 py-2 text-[9px] font-bold text-gray-500 font-mono tracking-widest text-center">ML</th>
           </tr>
         </thead>
         <tbody>
@@ -446,6 +470,7 @@ function ScheduleTable({
               key={game.anGameId}
               game={game}
               teamSlug={teamSlug}
+              isUpcoming={isUpcoming}
             />
           ))}
         </tbody>
@@ -470,8 +495,21 @@ export default function MlbTeamSchedule() {
     );
 
   const games = (data?.games ?? []) as ScheduleGame[];
-  const completedGames = games.filter((g) => g.gameStatus === "complete");
-  const upcomingGames = games.filter((g) => g.gameStatus !== "complete");
+
+  // ── Status partitioning ──────────────────────────────────────────────────────
+  // CRITICAL: "postponed" games are excluded from BOTH sections.
+  // They have no score, no valid time, and no betting result to display.
+  const completedGames = games.filter(isCompleteGame);
+  const upcomingGames  = games.filter(isUpcomingGame);
+  const postponedCount = games.filter((g) => g.gameStatus === POSTPONED_STATUS).length;
+
+  console.log(
+    `[MlbTeamSchedule] [STATE] team="${teamSlug}"` +
+    ` | total=${games.length}` +
+    ` | complete=${completedGames.length}` +
+    ` | upcoming=${upcomingGames.length}` +
+    ` | postponed=${postponedCount} (hidden from display)`
+  );
 
   if (!teamSlug) {
     return (
@@ -483,10 +521,12 @@ export default function MlbTeamSchedule() {
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-white">
+
       {/* ── Sticky Header ──────────────────────────────────────────────────── */}
       <div className="sticky top-0 z-20 bg-[#0a0e1a]/95 backdrop-blur-sm border-b border-white/10">
         <div className="max-w-5xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center gap-2 sm:gap-3">
-          {/* Back button */}
+
+          {/* Back */}
           <Button
             variant="ghost"
             size="sm"
@@ -503,24 +543,21 @@ export default function MlbTeamSchedule() {
               src={teamInfo.logoUrl}
               alt={teamInfo.abbrev}
               className="w-7 h-7 sm:w-8 sm:h-8 object-contain flex-shrink-0"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = "none";
-              }}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
             />
           )}
 
           {/* Team name + season label */}
           <div className="flex-1 min-w-0">
             <h1 className="text-xs sm:text-sm font-bold text-white font-mono tracking-wide truncate leading-tight">
-              {teamInfo?.name ??
-                teamSlug.replace(/-/g, " ").toUpperCase()}
+              {teamInfo?.name ?? teamSlug.replace(/-/g, " ").toUpperCase()}
             </h1>
             <p className="text-[9px] sm:text-[10px] text-gray-500 font-mono leading-tight">
               2026 MLB SCHEDULE
             </p>
           </div>
 
-          {/* Refresh button */}
+          {/* Refresh */}
           <Button
             variant="ghost"
             size="sm"
@@ -528,15 +565,8 @@ export default function MlbTeamSchedule() {
             disabled={isFetching}
             className="text-gray-400 hover:text-white gap-1 sm:gap-1.5 flex-shrink-0 px-2 sm:px-3"
           >
-            <RefreshCw
-              className={cn(
-                "w-3 h-3 sm:w-3.5 sm:h-3.5",
-                isFetching && "animate-spin"
-              )}
-            />
-            <span className="text-[10px] sm:text-xs font-mono hidden sm:inline">
-              REFRESH
-            </span>
+            <RefreshCw className={cn("w-3 h-3 sm:w-3.5 sm:h-3.5", isFetching && "animate-spin")} />
+            <span className="text-[10px] sm:text-xs font-mono hidden sm:inline">REFRESH</span>
           </Button>
         </div>
       </div>
@@ -549,9 +579,7 @@ export default function MlbTeamSchedule() {
           <div className="flex items-center justify-center py-16 sm:py-20">
             <div className="text-center">
               <RefreshCw className="w-5 h-5 sm:w-6 sm:h-6 text-blue-400 animate-spin mx-auto mb-3" />
-              <p className="text-gray-400 font-mono text-xs sm:text-sm">
-                Loading schedule...
-              </p>
+              <p className="text-gray-400 font-mono text-xs sm:text-sm">Loading schedule...</p>
             </div>
           </div>
         )}
@@ -578,12 +606,12 @@ export default function MlbTeamSchedule() {
           </div>
         )}
 
-        {/* Stats summary */}
-        {!isLoading && games.length > 0 && (
+        {/* Stats summary — single row */}
+        {!isLoading && completedGames.length > 0 && (
           <StatsSummary games={games} teamSlug={teamSlug} />
         )}
 
-        {/* Upcoming / Live */}
+        {/* Upcoming / Live — excludes postponed */}
         {!isLoading && upcomingGames.length > 0 && (
           <div className="mb-5 sm:mb-6">
             <div className="flex items-center gap-2 mb-2.5 sm:mb-3">
@@ -603,7 +631,7 @@ export default function MlbTeamSchedule() {
           </div>
         )}
 
-        {/* Completed */}
+        {/* Completed Games */}
         {!isLoading && completedGames.length > 0 && (
           <div>
             <div className="flex items-center gap-2 mb-2.5 sm:mb-3">
