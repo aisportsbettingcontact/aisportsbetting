@@ -622,8 +622,9 @@ export default function RecentSchedulePanel({
   );
 
   // ── MLB H2H query ───────────────────────────────────────────────────────────────
+  // H2H: last 5 games between these two teams (2023+ lookback floor)
   const mlbH2HQuery = trpc.mlbSchedule.getH2HGames.useQuery(
-    { slugA: awaySlug, slugB: homeSlug, limit: 10 },
+    { slugA: awaySlug, slugB: homeSlug, limit: 5 },
     { enabled: enabled && sport === "MLB", staleTime: 5 * 60 * 1000, retry: 1 }
   );
 

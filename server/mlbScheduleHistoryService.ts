@@ -57,12 +57,18 @@ import {
   type InsertMlbScheduleHistory,
   type MlbScheduleHistoryRow,
 } from "../drizzle/schema";
-import { eq, and, or, desc, sql } from "drizzle-orm";
+import { eq, and, or, desc, gte, lte, sql } from "drizzle-orm";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TAG = "[MlbScheduleHistory]";
 const AN_V1_BASE = "https://api.actionnetwork.com/web/v1/scoreboard/mlb";
+
+// ─── Season Date Boundaries ───────────────────────────────────────────────────
+// 2026 MLB Opening Day: March 26, 2026
+// H2H lookback floor: 2023 Opening Day (March 30, 2023)
+const SEASON_2026_START = "2026-03-26";
+const H2H_LOOKBACK_START = "2023-03-30"; // earliest H2H game to consider
 const DK_NJ_BOOK_ID = 68;
 const AN_HEADERS = {
   "User-Agent":
@@ -701,22 +707,22 @@ export async function getLastNGamesForTeam(
   limit = 5
 ) {
   console.log(
-    `${TAG}[QUERY] getLastNGamesForTeam | team="${teamSlug}" limit=${limit}`
-  );
-  console.log(
-    `${TAG}[QUERY] [INPUT] teamSlug="${teamSlug}" limit=${limit}`
+    `${TAG}[getLastNGamesForTeam] [INPUT] teamSlug="${teamSlug}" limit=${limit}` +
+    ` | seasonFilter=gte(${SEASON_2026_START})`
   );
 
   const db = await getDb();
 
-  // ── SQL-level filter: only rows where this team appears, status=complete ──────
-  // ORDER BY gameDate DESC + LIMIT pushed to DB — no JS filtering needed
+  // ── SQL-level filter: 2026 season only, status=complete, team appears ─────────
+  // gte(gameDate, SEASON_2026_START) pins results to 2026 Opening Day forward.
+  // ORDER BY gameDate DESC + LIMIT pushed to DB — zero JS filtering.
   const rows = await db
     .select()
     .from(mlbScheduleHistory)
     .where(
       and(
         eq(mlbScheduleHistory.gameStatus, "complete"),
+        gte(mlbScheduleHistory.gameDate, SEASON_2026_START),
         or(
           eq(mlbScheduleHistory.awaySlug, teamSlug),
           eq(mlbScheduleHistory.homeSlug, teamSlug)
@@ -729,18 +735,20 @@ export async function getLastNGamesForTeam(
   const teamGames = rows as MlbScheduleHistoryRow[];
 
   console.log(
-    `${TAG}[QUERY] [OUTPUT] team="${teamSlug}" → ${teamGames.length} completed games returned`
+    `${TAG}[getLastNGamesForTeam] [OUTPUT] team="${teamSlug}"` +
+    ` → ${teamGames.length} 2026 completed games returned (limit=${limit})`
   );
 
   if (teamGames.length > 0) {
     console.log(
-      `${TAG}[QUERY] [STATE] most recent=${teamGames[0].gameDate}` +
+      `${TAG}[getLastNGamesForTeam] [STATE]` +
+      ` mostRecent=${teamGames[0].gameDate}` +
       ` oldest=${teamGames[teamGames.length - 1].gameDate}`
     );
   } else {
     console.log(
-      `${TAG}[QUERY] [VERIFY] WARN — 0 completed games found for team="${teamSlug}"` +
-      ` (DB may not yet have data for this team)`
+      `${TAG}[getLastNGamesForTeam] [VERIFY] WARN — 0 2026 completed games for team="${teamSlug}"` +
+      ` | seasonStart=${SEASON_2026_START} — DB may not yet have 2026 data for this team`
     );
   }
 
@@ -754,43 +762,51 @@ export async function getLastNGamesForTeam(
  * @param teamSlug - AN url_slug, e.g. "arizona-diamondbacks"
  */
 export async function getFullScheduleForTeam(teamSlug: string) {
-  console.log(`${TAG}[QUERY] getFullScheduleForTeam | [INPUT] teamSlug="${teamSlug}"`);
+  console.log(
+    `${TAG}[getFullScheduleForTeam] [INPUT] teamSlug="${teamSlug}"` +
+    ` | seasonFilter=gte(${SEASON_2026_START})`
+  );
 
   const db = await getDb();
 
-  // ── SQL-level filter: only rows where this team appears (any status) ─────────
-  // ORDER BY gameDate DESC — no JS filtering, no JS sorting, no row cap
+  // ── SQL-level filter: 2026 season only, any status, team appears ────────────
+  // gte(gameDate, SEASON_2026_START) pins to 2026 Opening Day forward.
+  // ORDER BY gameDate DESC — no JS filtering, no JS sorting, no row cap.
   const rows = await db
     .select()
     .from(mlbScheduleHistory)
     .where(
-      or(
-        eq(mlbScheduleHistory.awaySlug, teamSlug),
-        eq(mlbScheduleHistory.homeSlug, teamSlug)
+      and(
+        gte(mlbScheduleHistory.gameDate, SEASON_2026_START),
+        or(
+          eq(mlbScheduleHistory.awaySlug, teamSlug),
+          eq(mlbScheduleHistory.homeSlug, teamSlug)
+        )
       )
     )
     .orderBy(desc(mlbScheduleHistory.gameDate));
 
   const teamGames = rows as MlbScheduleHistoryRow[];
 
-  const completed = teamGames.filter((r) => r.gameStatus === "complete").length;
-  const scheduled = teamGames.filter((r) => r.gameStatus === "scheduled").length;
+  const completed  = teamGames.filter((r) => r.gameStatus === "complete").length;
+  const scheduled  = teamGames.filter((r) => r.gameStatus === "scheduled").length;
   const inprogress = teamGames.filter((r) => r.gameStatus === "inprogress").length;
 
   console.log(
-    `${TAG}[QUERY] [OUTPUT] team="${teamSlug}" → ${teamGames.length} total games` +
+    `${TAG}[getFullScheduleForTeam] [OUTPUT] team="${teamSlug}"` +
+    ` → ${teamGames.length} 2026 games` +
     ` | complete=${completed} scheduled=${scheduled} inprogress=${inprogress}`
   );
 
   if (teamGames.length > 0) {
     console.log(
-      `${TAG}[QUERY] [STATE] date range: ${teamGames[teamGames.length - 1].gameDate}` +
-      ` → ${teamGames[0].gameDate}`
+      `${TAG}[getFullScheduleForTeam] [STATE]` +
+      ` dateRange: ${teamGames[teamGames.length - 1].gameDate} → ${teamGames[0].gameDate}`
     );
   } else {
     console.log(
-      `${TAG}[QUERY] [VERIFY] WARN — 0 games found for team="${teamSlug}"` +
-      ` (check that backfill has run for this team)`
+      `${TAG}[getFullScheduleForTeam] [VERIFY] WARN — 0 2026 games for team="${teamSlug}"` +
+      ` | seasonStart=${SEASON_2026_START} — check that 2026 backfill has run`
     );
   }
 
@@ -823,31 +839,38 @@ export async function getLast5ForMatchup(awaySlug: string, homeSlug: string) {
 }
 
 /**
- * Fetch the last N head-to-head games between two specific teams.
- * Returns games sorted newest-first where one team was away and the other was home.
+ * Fetch the last 5 head-to-head games between two specific teams.
+ * Lookback floor: 2023 Opening Day (2023-03-30).
+ * If fewer than 5 games exist since 2023, returns however many are available.
+ * Returns games sorted newest-first.
  *
  * @param slugA - AN url_slug for team A (either away or home)
  * @param slugB - AN url_slug for team B (either away or home)
- * @param limit - Max number of H2H games to return (default: 10)
+ * @param limit - Max H2H games to return (default: 5, max: 20)
  */
 export async function getMlbH2HGames(
   slugA: string,
   slugB: string,
-  limit = 10
+  limit = 5
 ): Promise<MlbScheduleHistoryRow[]> {
-  console.log(`${TAG}[H2H] getMlbH2HGames | [INPUT] slugA="${slugA}" slugB="${slugB}" limit=${limit}`);
+  console.log(
+    `${TAG}[getMlbH2HGames] [INPUT] slugA="${slugA}" slugB="${slugB}"` +
+    ` limit=${limit} | lookbackFloor=${H2H_LOOKBACK_START}`
+  );
 
   const db = await getDb();
 
-  // ── Precise SQL filter: rows where slugA and slugB are BOTH present ────────────
-  // This avoids the broad-OR approach that returns false-positive single-team games.
-  // Pattern: (away=A AND home=B) OR (away=B AND home=A) — covers both orderings.
+  // ── Precise SQL filter: both teams present, 2023+ lookback floor ─────────────
+  // Pattern: (away=A AND home=B) OR (away=B AND home=A) — both orderings.
+  // gte(gameDate, H2H_LOOKBACK_START) = no games before 2023 Opening Day.
+  // LIMIT 5 pushed to DB — returns the 5 most recent H2H matchups.
   const rows = await db
     .select()
     .from(mlbScheduleHistory)
     .where(
       and(
         eq(mlbScheduleHistory.gameStatus, "complete"),
+        gte(mlbScheduleHistory.gameDate, H2H_LOOKBACK_START),
         or(
           and(
             eq(mlbScheduleHistory.awaySlug, slugA),
@@ -866,21 +889,24 @@ export async function getMlbH2HGames(
   const h2h = rows as MlbScheduleHistoryRow[];
 
   console.log(
-    `${TAG}[H2H] [OUTPUT] "${slugA}" vs "${slugB}" → ${h2h.length} H2H games returned`
+    `${TAG}[getMlbH2HGames] [OUTPUT] "${slugA}" vs "${slugB}"` +
+    ` → ${h2h.length} H2H games returned (limit=${limit})`
   );
 
   if (h2h.length > 0) {
     const latest = h2h[0];
     const oldest = h2h[h2h.length - 1];
     console.log(
-      `${TAG}[H2H] [STATE] most recent=${latest.gameDate}` +
-      ` (${latest.awayAbbr}@${latest.homeAbbr} ${latest.awayScore ?? "?"}–${latest.homeScore ?? "?"})` +
-      ` | oldest=${oldest.gameDate}`
+      `${TAG}[getMlbH2HGames] [STATE]` +
+      ` mostRecent=${latest.gameDate}` +
+      ` (${latest.awayAbbr}@${latest.homeAbbr} ${latest.awayScore ?? "?"}\u2013${latest.homeScore ?? "?"})` +
+      ` | oldest=${oldest.gameDate}` +
+      ` | gamesFound=${h2h.length}/${limit} requested`
     );
   } else {
     console.log(
-      `${TAG}[H2H] [VERIFY] WARN — 0 H2H games found between "${slugA}" and "${slugB}"` +
-      ` (teams may not have played each other in the DB date range)`
+      `${TAG}[getMlbH2HGames] [VERIFY] WARN — 0 H2H games found between "${slugA}" and "${slugB}"` +
+      ` since ${H2H_LOOKBACK_START} — teams may not have played each other in DB date range`
     );
   }
 
@@ -901,19 +927,22 @@ export async function getMlbH2HGames(
  */
 export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
   console.log(
-    `${TAG}[SITUATIONAL] getMlbSituationalStats | [INPUT] team="${teamSlug}" limit=${limit}`
+    `${TAG}[getMlbSituationalStats] [INPUT] team="${teamSlug}" limit=${limit}` +
+    ` | seasonFilter=gte(${SEASON_2026_START})`
   );
 
   const db = await getDb();
 
-  // ── SQL-level filter: only completed games for this team, newest first ────────
-  // LIMIT pushed to DB — no full-table scan, no JS filtering, no JS sorting
+  // ── SQL-level filter: 2026 season only, completed games for this team ────────
+  // gte(gameDate, SEASON_2026_START) pins to 2026 Opening Day forward.
+  // LIMIT pushed to DB — no full-table scan, no JS filtering, no JS sorting.
   const rows = await db
     .select()
     .from(mlbScheduleHistory)
     .where(
       and(
         eq(mlbScheduleHistory.gameStatus, "complete"),
+        gte(mlbScheduleHistory.gameDate, SEASON_2026_START),
         or(
           eq(mlbScheduleHistory.awaySlug, teamSlug),
           eq(mlbScheduleHistory.homeSlug, teamSlug)
@@ -926,13 +955,14 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
   const teamGames = rows as MlbScheduleHistoryRow[];
 
   console.log(
-    `${TAG}[SITUATIONAL] [STATE] team="${teamSlug}" → ${teamGames.length} completed games fetched from DB`
+    `${TAG}[getMlbSituationalStats] [STATE] team="${teamSlug}"` +
+    ` → ${teamGames.length} 2026 completed games fetched from DB`
   );
 
   if (teamGames.length === 0) {
     console.log(
-      `${TAG}[SITUATIONAL] [VERIFY] WARN — 0 completed games for team="${teamSlug}"` +
-      ` — all situational records will be 0-0`
+      `${TAG}[getMlbSituationalStats] [VERIFY] WARN — 0 2026 completed games for team="${teamSlug}"` +
+      ` | seasonStart=${SEASON_2026_START} — all situational records will be 0-0`
     );
   }
 
@@ -1023,14 +1053,15 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
     gamesAnalyzed: teamGames.length,
   };
 
-  // ── Comprehensive output log ────────────────────────────────────────────
+  // ── Comprehensive output log ───────────────────────────────────────────────────────────────────────
   console.log(
-    `${TAG}[SITUATIONAL] [OUTPUT] team="${teamSlug}" analyzed=${teamGames.length} games` +
+    `${TAG}[getMlbSituationalStats] [OUTPUT] team="${teamSlug}" 2026 season` +
+    ` | analyzed=${teamGames.length} games` +
     ` | home=${homeGames.length} away=${awayGames.length}` +
     ` | fav=${favGames.length} dog=${dogGames.length} last10=${last10.length}`
   );
   console.log(
-    `${TAG}[SITUATIONAL] [OUTPUT] ML:` +
+    `${TAG}[getMlbSituationalStats] [OUTPUT] ML:` +
     ` overall=${stats.ml.overall.wins}-${stats.ml.overall.losses}` +
     ` last10=${stats.ml.last10.wins}-${stats.ml.last10.losses}` +
     ` home=${stats.ml.home.wins}-${stats.ml.home.losses}` +
@@ -1039,7 +1070,7 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
     ` dog=${stats.ml.underdog.wins}-${stats.ml.underdog.losses}`
   );
   console.log(
-    `${TAG}[SITUATIONAL] [OUTPUT] ATS:` +
+    `${TAG}[getMlbSituationalStats] [OUTPUT] ATS:` +
     ` overall=${stats.spread.overall.wins}-${stats.spread.overall.losses}` +
     ` last10=${stats.spread.last10.wins}-${stats.spread.last10.losses}` +
     ` home=${stats.spread.home.wins}-${stats.spread.home.losses}` +
@@ -1048,7 +1079,7 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
     ` dog=${stats.spread.underdog.wins}-${stats.spread.underdog.losses}`
   );
   console.log(
-    `${TAG}[SITUATIONAL] [OUTPUT] O/U:` +
+    `${TAG}[getMlbSituationalStats] [OUTPUT] O/U:` +
     ` overall=${stats.total.overall.wins}O-${stats.total.overall.losses}U-${stats.total.overall.pushes}P` +
     ` last10=${stats.total.last10.wins}O-${stats.total.last10.losses}U-${stats.total.last10.pushes}P` +
     ` home=${stats.total.home.wins}O-${stats.total.home.losses}U` +
@@ -1059,12 +1090,12 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
   const mlTotal = stats.ml.overall.wins + stats.ml.overall.losses;
   if (mlTotal > teamGames.length) {
     console.error(
-      `${TAG}[SITUATIONAL] [VERIFY] FAIL — ML wins+losses (${mlTotal}) > gamesAnalyzed (${teamGames.length})` +
+      `${TAG}[getMlbSituationalStats] [VERIFY] FAIL — ML wins+losses (${mlTotal}) > gamesAnalyzed (${teamGames.length})` +
       ` — data integrity issue`
     );
   } else {
     console.log(
-      `${TAG}[SITUATIONAL] [VERIFY] PASS — ML total=${mlTotal} ≤ gamesAnalyzed=${teamGames.length}` +
+      `${TAG}[getMlbSituationalStats] [VERIFY] PASS — ML total=${mlTotal} ≤ gamesAnalyzed=${teamGames.length}` +
       ` | null/pending games=${teamGames.length - mlTotal}`
     );
   }
