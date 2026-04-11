@@ -2349,3 +2349,12 @@
 - [ ] Spell out full city names in RecentSchedulePanel team tabs (e.g. "Pittsburgh" not "PITT")
 - [ ] Remove "DK NJ · RUN LINE · Total · ML" label from Recent Schedule header
 - [ ] Build MLB closing-line cron scraper — AN API fires at game start time, stores closing DK NJ lines
+
+## Neutral Site + Doubleheader Hardening (2026-04-11) [URGENT]
+- [ ] [URGENT] Add neutral_site boolean column to mlb_schedule_history schema (migration) — populate from AN API response field
+- [ ] [URGENT] Wire neutral_site → LOCATION column in MlbTeamSchedule.tsx to show "Neutral" for London/Mexico City/neutral games
+- [ ] Harden doubleheader storage: ensure anGameId uniqueness prevents duplicate rows; verify both DH games stored with correct gameDate and distinct anGameId
+- [ ] Verify doubleheader display: two rows with same date render correctly in MlbTeamSchedule (no deduplication, no merging)
+
+## RL Cover Stat Fix (2026-04-11)
+- [x] Remove push tracking from RL COVER chip — MLB 1.5 run line never pushes; notCovered = completed - wins (binary W/N only)

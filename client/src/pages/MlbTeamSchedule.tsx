@@ -329,13 +329,17 @@ function StatsSummary({
   }).length;
   const losses = completed.length - wins;
 
-  // RL Cover (null = push, excluded from W and L counts)
+  // RL Cover — MLB standard 1.5 run line NEVER pushes (binary W/N only).
+  // covered = games where team explicitly covered (true).
+  // notCovered = all other completed games with a line (false or null-no-line).
+  // null means no line was available — excluded from both counts for accuracy.
   const covered = completed.filter((g) => {
     const ia = g.awaySlug === teamSlug;
     return ia ? g.awayRunLineCovered === true : g.homeRunLineCovered === true;
   }).length;
   const notCovered = completed.filter((g) => {
     const ia = g.awaySlug === teamSlug;
+    // Only count explicit false (did not cover) — null means no line, excluded
     return ia ? g.awayRunLineCovered === false : g.homeRunLineCovered === false;
   }).length;
 
