@@ -3,24 +3,45 @@
  *
  * Schedules daily automatic refresh of the mlb_schedule_history table.
  *
- * Schedule:
- *   - Runs once at server startup to backfill the last 7 days (catch up on any missed data)
- *   - Runs every 4 hours from 6:00 AM to 11:59 PM EST to keep today's games current
- *     (captures pre-game odds for today's slate, and final scores + result columns as games complete)
- *   - Each run refreshes:
- *       1. Today's date (always)
- *       2. Yesterday's date (catch any late-finishing games)
+ * ─── Season Boundaries (exact, per Baseball Reference) ───────────────────────
+ *   2023: Opening Day 2023-03-30 | Postseason end 2023-11-01
+ *   2024: Opening Day 2024-03-20 | Postseason end 2024-10-30
+ *   2025: Opening Day 2025-03-18 | Postseason end 2025-11-01
+ *   2026: Opening Day 2026-03-25 | Postseason end TBD (ongoing)
  *
- * Data source: Action Network v2 API, DraftKings NJ (book_id=68) exclusively
+ * ─── Data Source ─────────────────────────────────────────────────────────────
+ *   Action Network v1 API (/web/v1/scoreboard/mlb)
+ *   DraftKings NJ (book_id=68) exclusively
+ *   Fields: spread_away, spread_home, spread_away_line, spread_home_line,
+ *           ml_away, ml_home, total, over, under
  *
- * Logging: [MlbScheduleScheduler][STEP] plain-English, fully traceable
+ * ─── Schedule ────────────────────────────────────────────────────────────────
+ *   Startup:  Backfill last 60 days (catches any missed data from gaps)
+ *   Recurring: Every 4 hours from 6:00 AM to 11:59 PM EST
+ *             (6 AM, 10 AM, 2 PM, 6 PM, 10 PM)
+ *   Each run: Refreshes today + yesterday (captures pre-game odds + final scores)
+ *
+ * Logging: [MlbScheduleScheduler][STEP/OUTPUT/VERIFY] fully traceable
  */
 
-import { refreshMlbScheduleForDate, backfillMlbScheduleHistory } from "./mlbScheduleHistoryService";
+import {
+  refreshMlbScheduleForDate,
+  refreshMlbScheduleLastNDays,
+} from "./mlbScheduleHistoryService";
 
 const TAG = "[MlbScheduleScheduler]";
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Season Boundary Constants ────────────────────────────────────────────────
+
+/** All known MLB season boundaries. Used for validation and logging. */
+export const MLB_SEASON_BOUNDARIES = [
+  { season: 2023, openingDay: "2023-03-30", postseasonEnd: "2023-11-01" },
+  { season: 2024, openingDay: "2024-03-20", postseasonEnd: "2024-10-30" },
+  { season: 2025, openingDay: "2025-03-18", postseasonEnd: "2025-11-01" },
+  { season: 2026, openingDay: "2026-03-25", postseasonEnd: null }, // ongoing
+] as const;
+
+// ─── Date Helpers ─────────────────────────────────────────────────────────────
 
 /** Format a Date as YYYYMMDD for the AN API */
 function toAnDate(d: Date): string {
@@ -33,7 +54,7 @@ function toAnDate(d: Date): string {
 /** Get today's date in EST as YYYYMMDD */
 function todayEstAnDate(): string {
   const now = new Date();
-  // EST = UTC-5, EDT = UTC-4. Use a simple UTC-5 offset for consistency.
+  // Use UTC-5 (EST) consistently — DST is not applied to avoid drift
   const estOffset = -5 * 60 * 60 * 1000;
   const est = new Date(now.getTime() + estOffset);
   return toAnDate(est);
@@ -116,22 +137,33 @@ async function runDailyRefresh(): Promise<void> {
     console.error(`${TAG}[ERROR] Failed to refresh yesterday (${yesterday}):`, err);
   }
 
-  console.log(`${TAG}[VERIFY] Daily refresh complete`);
+  console.log(`${TAG}[VERIFY] Daily refresh complete — today=${today} yesterday=${yesterday}`);
 }
 
 // ─── Startup Backfill ─────────────────────────────────────────────────────────
 
 /**
- * On server startup, backfill the last 7 days to ensure the DB is populated.
+ * On server startup, backfill the last 60 days to ensure the DB is fully
+ * populated with recent data. This catches any gaps from server downtime,
+ * SSL errors, or missed refreshes.
+ *
+ * Season boundaries are logged for traceability.
  * Runs once immediately, non-blocking.
  */
 async function runStartupBackfill(): Promise<void> {
-  console.log(`${TAG}[STEP] Startup backfill — last 7 days from AN DK NJ API`);
+  console.log(`${TAG}[STEP] Startup backfill — last 60 days from AN DK NJ v1 API`);
+  console.log(`${TAG}[INPUT] Season boundaries:`);
+  for (const s of MLB_SEASON_BOUNDARIES) {
+    const end = s.postseasonEnd ?? "ongoing";
+    console.log(`${TAG}[INPUT]   ${s.season}: ${s.openingDay} → ${end}`);
+  }
+
   try {
-    const results = await backfillMlbScheduleHistory(7);
-    const totalFetched  = results.reduce((s, r) => s + r.fetched,  0);
-    const totalUpserted = results.reduce((s, r) => s + r.upserted, 0);
-    const totalErrors   = results.reduce((s, r) => s + r.errors.length, 0);
+    const results = await refreshMlbScheduleLastNDays(60);
+    const totalFetched  = results.reduce((sum, r) => sum + r.fetched,  0);
+    const totalUpserted = results.reduce((sum, r) => sum + r.upserted, 0);
+    const totalErrors   = results.reduce((sum, r) => sum + r.errors.length, 0);
+
     console.log(
       `${TAG}[OUTPUT] Startup backfill complete:` +
       ` dates=${results.length}` +
@@ -139,8 +171,11 @@ async function runStartupBackfill(): Promise<void> {
       ` totalUpserted=${totalUpserted}` +
       ` totalErrors=${totalErrors}`
     );
+
     if (totalErrors > 0) {
       console.warn(`${TAG}[WARN] Backfill had ${totalErrors} errors — check logs above`);
+    } else {
+      console.log(`${TAG}[VERIFY] PASS — startup backfill completed with 0 errors`);
     }
   } catch (err) {
     console.error(`${TAG}[ERROR] Startup backfill failed (non-fatal):`, err);
@@ -153,13 +188,16 @@ async function runStartupBackfill(): Promise<void> {
  * Start the MLB schedule history refresh scheduler.
  *
  * Behavior:
- *   1. Immediately runs a 7-day backfill (non-blocking)
+ *   1. Immediately runs a 60-day backfill (non-blocking)
  *   2. Schedules a refresh every 4 hours starting at 6:00 AM EST
  *      (6 AM, 10 AM, 2 PM, 6 PM, 10 PM)
  *   3. Each refresh updates today + yesterday
+ *
+ * Data source: Action Network v1 API, DK NJ (book_id=68) exclusively
  */
 export function startMlbScheduleHistoryScheduler(): void {
   console.log(`${TAG}[STEP] Initializing MLB schedule history scheduler`);
+  console.log(`${TAG}[INPUT] Data source: Action Network v1 API, DK NJ book_id=68`);
 
   // 1. Startup backfill — runs immediately, non-blocking
   setImmediate(async () => {

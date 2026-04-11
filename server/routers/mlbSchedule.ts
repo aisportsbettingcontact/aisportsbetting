@@ -2,12 +2,14 @@
  * mlbSchedule.ts — tRPC router for MLB schedule history and Last 5 Games data
  *
  * Procedures:
- *   mlbSchedule.getLast5ForMatchup   — public — Last 5 completed games for both teams in a matchup
- *   mlbSchedule.getTeamSchedule      — public — Full schedule for a single team (all games)
- *   mlbSchedule.refreshSchedule      — owner-only — Manually trigger a date range backfill
- *   mlbSchedule.refreshToday         — owner-only — Refresh today's games only
+ *   mlbSchedule.getLast5ForMatchup        — public — Last 5 completed games for both teams in a matchup
+ *   mlbSchedule.getTeamSchedule           — public — Full schedule for a single team (all games)
+ *   mlbSchedule.getSituationalStats       — public — Situational records (ML/RL/Total tabs)
+ *   mlbSchedule.refreshScheduleForDate    — owner-only — Refresh a specific date
+ *   mlbSchedule.backfillSchedule          — owner-only — Rolling window backfill (last N days)
+ *   mlbSchedule.fullHistoricalBackfill    — owner-only — Full Phase 1 backfill (2023-03-30 → today)
  *
- * Data source: Action Network v2 API, DraftKings NJ (book_id=68) exclusively
+ * Data source: Action Network v1 API, DraftKings NJ (book_id=68) exclusively
  *
  * Logging: [MlbScheduleRouter][PROCEDURE] plain-English, fully traceable
  */
@@ -21,6 +23,7 @@ import {
   getFullScheduleForTeam,
   getMlbSituationalStats,
   refreshMlbScheduleForDate,
+  refreshMlbScheduleLastNDays,
   backfillMlbScheduleHistory,
   type MlbScheduleRefreshResult,
 } from "../mlbScheduleHistoryService";
@@ -48,14 +51,6 @@ export const mlbScheduleRouter = router({
   /**
    * Get the last 5 completed games for both teams in a matchup.
    * Powers the "Last 5 Games" panel on each MLB matchup card.
-   *
-   * Input:
-   *   awaySlug — Action Network url_slug for the away team (e.g. "arizona-diamondbacks")
-   *   homeSlug — Action Network url_slug for the home team (e.g. "philadelphia-phillies")
-   *
-   * Returns:
-   *   awayLast5 — Array of up to 5 completed games for the away team (most recent first)
-   *   homeLast5 — Array of up to 5 completed games for the home team (most recent first)
    */
   getLast5ForMatchup: publicProcedure
     .input(
@@ -95,13 +90,6 @@ export const mlbScheduleRouter = router({
   /**
    * Get the full schedule for a single MLB team (all games, any status).
    * Powers the Team Schedule page when a user clicks on a team logo.
-   *
-   * Input:
-   *   teamSlug — Action Network url_slug (e.g. "arizona-diamondbacks")
-   *
-   * Returns:
-   *   games — Array of all games for this team (most recent first)
-   *   teamSlug — Echo back the slug for the frontend to use
    */
   getTeamSchedule: publicProcedure
     .input(
@@ -135,15 +123,6 @@ export const mlbScheduleRouter = router({
   /**
    * Get situational records for a single MLB team.
    * Powers the "Situational Results" panel (ML/Run Line/Total tabs).
-   *
-   * Input:
-   *   teamSlug — Action Network url_slug (e.g. "arizona-diamondbacks")
-   *
-   * Returns:
-   *   ml      — { overall, last10, home, away, favorite, underdog } win/loss records
-   *   spread  — { overall, last10, home, away, favorite, underdog } run line ATS records
-   *   total   — { overall, last10, home, away, favorite, underdog } O/U records
-   *   gamesAnalyzed — Total number of complete games used for computation
    */
   getSituationalStats: publicProcedure
     .input(
@@ -175,9 +154,6 @@ export const mlbScheduleRouter = router({
   /**
    * Owner-only: Refresh MLB schedule history for a specific date.
    * Fetches from AN DK NJ API and upserts into mlb_schedule_history.
-   *
-   * Input:
-   *   date — YYYYMMDD format (e.g. "20260410")
    */
   refreshScheduleForDate: ownerProcedure
     .input(
@@ -211,8 +187,8 @@ export const mlbScheduleRouter = router({
     }),
 
   /**
-   * Owner-only: Backfill MLB schedule history for the last N days.
-   * Runs sequentially, fetching each date from the AN DK NJ API.
+   * Owner-only: Rolling window backfill for the last N days.
+   * Uses refreshMlbScheduleLastNDays (returns array of per-date results).
    *
    * Input:
    *   daysBack — Number of days to backfill (default: 30, max: 60)
@@ -225,11 +201,11 @@ export const mlbScheduleRouter = router({
     )
     .mutation(async ({ input }) => {
       console.log(
-        `${TAG}[backfillSchedule] Manual backfill triggered for last ${input.daysBack} days`
+        `${TAG}[backfillSchedule] Rolling window backfill triggered for last ${input.daysBack} days`
       );
 
       try {
-        const results = await backfillMlbScheduleHistory(input.daysBack);
+        const results = await refreshMlbScheduleLastNDays(input.daysBack);
 
         const totalFetched = results.reduce((s: number, r: MlbScheduleRefreshResult) => s + r.fetched, 0);
         const totalUpserted = results.reduce((s: number, r: MlbScheduleRefreshResult) => s + r.upserted, 0);
@@ -248,6 +224,65 @@ export const mlbScheduleRouter = router({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: `Backfill failed: ${msg}`,
+        });
+      }
+    }),
+
+  /**
+   * Owner-only: Full historical backfill from 2023-03-30 through today.
+   *
+   * This is the Phase 1 backfill covering all MLB seasons with DK NJ odds:
+   *   - 2023: 2023-03-30 → 2023-10-01 (full regular season + postseason)
+   *   - 2024: 2024-03-20 → 2024-09-29 (full regular season)
+   *   - 2025: 2025-03-27 → present
+   *   - 2026: 2026-03-26 → present (if applicable)
+   *
+   * Input:
+   *   startDate — "YYYY-MM-DD" format (default: "2023-03-30")
+   *   endDate   — "YYYY-MM-DD" format (default: today)
+   *   delayMs   — Delay between API calls in ms (default: 400)
+   */
+  fullHistoricalBackfill: ownerProcedure
+    .input(
+      z.object({
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).default("2023-03-30"),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+        delayMs: z.number().int().min(200).max(2000).default(400),
+      })
+    )
+    .mutation(async ({ input }) => {
+      console.log(
+        `${TAG}[fullHistoricalBackfill] Full Phase 1 backfill triggered` +
+        ` | startDate=${input.startDate} endDate=${input.endDate ?? "today"} delayMs=${input.delayMs}`
+      );
+
+      try {
+        const result = await backfillMlbScheduleHistory(
+          input.startDate,
+          input.endDate,
+          input.delayMs
+        );
+
+        console.log(
+          `${TAG}[fullHistoricalBackfill] COMPLETE:` +
+          ` totalDates=${result.totalDates}` +
+          ` totalFetched=${result.totalFetched}` +
+          ` totalUpserted=${result.totalUpserted}` +
+          ` totalErrors=${result.totalErrors}`
+        );
+
+        return {
+          totalDates: result.totalDates,
+          totalFetched: result.totalFetched,
+          totalUpserted: result.totalUpserted,
+          totalErrors: result.totalErrors,
+        };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`${TAG}[fullHistoricalBackfill] ERROR: ${msg}`);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Full historical backfill failed: ${msg}`,
         });
       }
     }),

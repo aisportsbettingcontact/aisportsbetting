@@ -2,23 +2,48 @@
  * mlbScheduleHistoryService.ts
  *
  * Fetches MLB game schedules and DraftKings NJ (book_id=68) odds from the
- * Action Network v2 scoreboard API, then upserts results into the
+ * Action Network v1 scoreboard API, then upserts results into the
  * mlb_schedule_history table.
  *
  * ─── Data Source ─────────────────────────────────────────────────────────────
- *   API: https://api.actionnetwork.com/web/v2/scoreboard/mlb
+ *   API: https://api.actionnetwork.com/web/v1/scoreboard/mlb
  *   Book: DraftKings NJ (book_id=68) — SOLE odds source per user requirement
- *   Odds type: pre-game only (is_live=false filtered)
+ *
+ *   NOTE: v2 API returns HTTP 400 for all requests (platform-level issue).
+ *         v1 API is fully operational and returns flat-field odds structure.
+ *
+ * ─── v1 DK NJ Flat-Field Schema ──────────────────────────────────────────────
+ *   game.odds[] → find entry where book_id === 68
+ *   dk.spread_away        → away run line (e.g. -1.5 or +1.5)
+ *   dk.spread_home        → home run line (e.g. +1.5 or -1.5)
+ *   dk.spread_away_line   → away run line odds (e.g. -140)
+ *   dk.spread_home_line   → home run line odds (e.g. +120)
+ *   dk.ml_away            → away moneyline (e.g. -255)
+ *   dk.ml_home            → home moneyline (e.g. +215)
+ *   dk.total              → game total (e.g. 7.5) — float, NOT a nested object
+ *   dk.over               → over odds (e.g. -115)
+ *   dk.under              → under odds (e.g. -105)
+ *
+ * ─── v1 Team Schema ──────────────────────────────────────────────────────────
+ *   game.teams[]          → array, teams[0]=away, teams[1]=home
+ *   team.abbr             → abbreviation (e.g. "ATL")
+ *   team.url_slug         → slug (e.g. "atlanta-braves")
+ *   team.full_name        → full name (e.g. "Atlanta Braves")
+ *
+ * ─── v1 Score Schema ─────────────────────────────────────────────────────────
+ *   game.boxscore.total_away_points → final away score
+ *   game.boxscore.total_home_points → final home score
  *
  * ─── Result Derivation ───────────────────────────────────────────────────────
- *   awayRunLineCovered  — away score + run line > home score (covers +1.5 or -1.5)
- *   homeRunLineCovered  — home score - run line > away score
- *   totalResult         — 'OVER' | 'UNDER' | 'PUSH' vs dkTotal
- *   awayWon             — away score > home score
+ *   awayRunLineCovered  — awayScore + spread_away > homeScore
+ *   homeRunLineCovered  — homeScore + spread_home > awayScore
+ *   totalResult         — 'OVER' | 'UNDER' | 'PUSH' vs dk.total
+ *   awayWon             — awayScore > homeScore
  *
  * ─── Refresh Cadence ─────────────────────────────────────────────────────────
- *   - Daily at 06:00 EST: backfill last 30 days (catches any missed games)
- *   - Called on-demand for live score updates during game day
+ *   - Server startup: backfill last 30 days
+ *   - Every 4 hours 6AM–midnight EST: refresh today + yesterday
+ *   - Full historical backfill: 2023-03-30 → today (run once via tRPC)
  *
  * ─── Logging Standard ────────────────────────────────────────────────────────
  *   [MlbScheduleHistory][STEP] plain-English description
@@ -27,65 +52,72 @@
 
 import axios from "axios";
 import { getDb } from "./db";
-import { mlbScheduleHistory, type InsertMlbScheduleHistory, type MlbScheduleHistoryRow } from "../drizzle/schema";
-import { eq, and } from "drizzle-orm";
+import {
+  mlbScheduleHistory,
+  type InsertMlbScheduleHistory,
+  type MlbScheduleHistoryRow,
+} from "../drizzle/schema";
+import { eq, and, sql } from "drizzle-orm";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const TAG = "[MlbScheduleHistory]";
-const AN_API_BASE = "https://api.actionnetwork.com/web/v2/scoreboard/mlb";
+const AN_V1_BASE = "https://api.actionnetwork.com/web/v1/scoreboard/mlb";
 const DK_NJ_BOOK_ID = 68;
 const AN_HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   Accept: "application/json",
+  Referer: "https://www.actionnetwork.com/",
 };
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── v1 API Types ─────────────────────────────────────────────────────────────
 
-interface AnV2Outcome {
-  side?: string;
-  team_id?: number;
-  odds?: number;
-  value?: number;
-  is_live?: boolean;
+interface AnV1DkOdds {
+  book_id: number;
+  // Run Line (spread)
+  spread_away?: number | null;
+  spread_home?: number | null;
+  spread_away_line?: number | null;
+  spread_home_line?: number | null;
+  // Moneyline
+  ml_away?: number | null;
+  ml_home?: number | null;
+  // Total — NOTE: this is a float, NOT a nested object
+  total?: number | null;
+  over?: number | null;
+  under?: number | null;
+  // Inserted timestamp
+  inserted?: string;
 }
 
-interface AnV2MarketEvent {
-  spread?: AnV2Outcome[];
-  total?: AnV2Outcome[];
-  moneyline?: AnV2Outcome[];
+interface AnV1Team {
+  id?: number;
+  abbr?: string;
+  short_name?: string;
+  full_name?: string;
+  url_slug?: string;
 }
 
-interface AnV2Market {
-  event?: AnV2MarketEvent;
-}
-
-interface AnV2Team {
-  id: number;
-  abbr: string;
-  full_name: string;
-  url_slug: string;
-}
-
-interface AnV2Boxscore {
+interface AnV1Boxscore {
   total_away_points?: number | null;
   total_home_points?: number | null;
 }
 
-interface AnV2Game {
+interface AnV1Game {
   id: number;
   status: string;
+  real_status?: string;
   start_time: string;
-  away_team_id: number;
-  home_team_id: number;
-  teams: AnV2Team[];
-  boxscore?: AnV2Boxscore;
-  markets?: Record<string, AnV2Market>;
+  away_team_id?: number;
+  home_team_id?: number;
+  teams: AnV1Team[];
+  boxscore?: AnV1Boxscore;
+  odds?: AnV1DkOdds[];
 }
 
-interface AnV2Response {
-  games?: AnV2Game[];
+interface AnV1Response {
+  games?: AnV1Game[];
 }
 
 export interface MlbScheduleRefreshResult {
@@ -99,8 +131,8 @@ export interface MlbScheduleRefreshResult {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Format an American odds integer to a signed string.
- * e.g. 129 → "+129", -156 → "-156"
+ * Format an American odds number to a signed string.
+ * e.g. 129 → "+129", -156 → "-156", null → null
  */
 function fmtOdds(odds: number | null | undefined): string | null {
   if (odds == null) return null;
@@ -110,24 +142,13 @@ function fmtOdds(odds: number | null | undefined): string | null {
 }
 
 /**
- * Find the first pre-game outcome matching the given criteria.
- * Filters out live lines (is_live=true) to ensure we only store opening/pre-game odds.
+ * Format a run line number to a signed string.
+ * e.g. -1.5 → "-1.5", 1.5 → "+1.5"
  */
-function findPreGameOutcome(
-  outcomes: AnV2Outcome[] | undefined,
-  criteria: { side?: string; teamId?: number }
-): AnV2Outcome | null {
-  if (!outcomes?.length) return null;
-  const preGame = outcomes.filter((o) => !o.is_live);
-  if (!preGame.length) return null;
-
-  if (criteria.side) {
-    return preGame.find((o) => o.side === criteria.side) ?? null;
-  }
-  if (criteria.teamId != null) {
-    return preGame.find((o) => o.team_id === criteria.teamId) ?? null;
-  }
-  return null;
+function fmtLine(line: number | null | undefined): string | null {
+  if (line == null) return null;
+  if (line >= 0) return `+${line}`;
+  return String(line);
 }
 
 /**
@@ -147,9 +168,9 @@ function utcToEstDate(utcIso: string): string {
 }
 
 /**
- * Format a date as YYYYMMDD for the AN API date parameter.
+ * Format a Date object as YYYYMMDD for the AN API date parameter.
  */
-function formatAnDate(date: Date): string {
+export function formatAnDate(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
@@ -159,22 +180,19 @@ function formatAnDate(date: Date): string {
 /**
  * Derive the run line cover result for the away team.
  *
- * Run line logic:
- *   - If away has +1.5 (underdog): away covers if (awayScore + 1.5 > homeScore)
- *     i.e. away can lose by 1 and still cover
- *   - If away has -1.5 (favorite): away covers if (awayScore - 1.5 > homeScore)
- *     i.e. away must win by 2+ to cover
+ * Run line logic (MLB standard ±1.5):
+ *   - away spread_away = -1.5 (favorite): away covers if awayScore - 1.5 > homeScore → must win by 2+
+ *   - away spread_away = +1.5 (underdog):  away covers if awayScore + 1.5 > homeScore → can lose by 1
  *
  * Returns null if scores or run line are missing.
  */
 function deriveAwayRunLineCovered(
   awayScore: number | null,
   homeScore: number | null,
-  awayRunLine: number | null
+  spreadAway: number | null
 ): boolean | null {
-  if (awayScore == null || homeScore == null || awayRunLine == null) return null;
-  // awayRunLine is stored as a number: +1.5 for underdog, -1.5 for favorite
-  return awayScore + awayRunLine > homeScore;
+  if (awayScore == null || homeScore == null || spreadAway == null) return null;
+  return awayScore + spreadAway > homeScore;
 }
 
 /**
@@ -195,93 +213,119 @@ function deriveTotalResult(
 // ─── Core Fetch Function ──────────────────────────────────────────────────────
 
 /**
- * Fetch all MLB games for a single date from the AN v2 API (DK NJ book only).
+ * Fetch all MLB games for a single date from the AN v1 API (DK NJ book only).
  * Returns structured game data ready for DB upsert.
+ *
+ * @param dateStr - YYYYMMDD format (e.g. "20230330")
  */
 export async function fetchMlbScheduleForDate(
-  dateStr: string // YYYYMMDD format
+  dateStr: string
 ): Promise<InsertMlbScheduleHistory[]> {
-  const url = `${AN_API_BASE}?bookIds=30,${DK_NJ_BOOK_ID}&date=${dateStr}&periods=event`;
+  const url = `${AN_V1_BASE}?period=game&bookIds=${DK_NJ_BOOK_ID}&date=${dateStr}`;
 
   console.log(
-    `${TAG}[FETCH] Requesting AN API for date=${dateStr} | URL: ${url}`
+    `${TAG}[FETCH] Requesting AN v1 API | date=${dateStr} | URL: ${url}`
   );
 
-  let response: AnV2Response;
+  let response: AnV1Response;
   try {
-    const res = await axios.get<AnV2Response>(url, {
+    const res = await axios.get<AnV1Response>(url, {
       headers: AN_HEADERS,
       timeout: 15_000,
     });
     response = res.data;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`${TAG}[FETCH] AN API request FAILED for date=${dateStr}: ${msg}`);
-    throw new Error(`AN API fetch failed for date=${dateStr}: ${msg}`);
+    console.error(
+      `${TAG}[FETCH] AN v1 API request FAILED for date=${dateStr}: ${msg}`
+    );
+    throw new Error(`AN v1 API fetch failed for date=${dateStr}: ${msg}`);
   }
 
   const games = response.games ?? [];
   console.log(
-    `${TAG}[FETCH] AN API returned ${games.length} games for date=${dateStr}`
+    `${TAG}[FETCH] AN v1 API returned ${games.length} games for date=${dateStr}`
   );
+
+  if (games.length === 0) {
+    console.log(`${TAG}[FETCH] No games for date=${dateStr} — off-day or pre/post-season`);
+    return [];
+  }
 
   const results: InsertMlbScheduleHistory[] = [];
   let skippedNoTeam = 0;
   let skippedNoDk = 0;
+  let gamesWithFullOdds = 0;
 
   for (const game of games) {
     const teams = game.teams ?? [];
-    const awayTeam = teams.find((t) => t.id === game.away_team_id);
-    const homeTeam = teams.find((t) => t.id === game.home_team_id);
+
+    // v1: teams[0] = away, teams[1] = home
+    const awayTeam = teams[0];
+    const homeTeam = teams[1];
 
     if (!awayTeam || !homeTeam) {
       console.warn(
-        `${TAG}[SKIP] Game id=${game.id} — missing team data (away_id=${game.away_team_id}, home_id=${game.home_team_id})`
+        `${TAG}[SKIP] Game id=${game.id} — missing team data (teams.length=${teams.length})`
       );
       skippedNoTeam++;
       continue;
     }
 
-    const gameLabel = `${awayTeam.abbr} @ ${homeTeam.abbr} (anId=${game.id})`;
+    const awayAbbr = awayTeam.abbr ?? awayTeam.short_name ?? "???";
+    const homeAbbr = homeTeam.abbr ?? homeTeam.short_name ?? "???";
+    const awaySlug = awayTeam.url_slug ?? "";
+    const homeSlug = homeTeam.url_slug ?? "";
+    const gameLabel = `${awayAbbr} @ ${homeAbbr} (anId=${game.id})`;
 
-    // ── Extract DK NJ market ──────────────────────────────────────────────────
-    const dkMarket = game.markets?.[String(DK_NJ_BOOK_ID)]?.event;
+    // ── Extract DK NJ odds (flat-field v1 schema) ─────────────────────────────
+    const oddsList = game.odds ?? [];
+    const dk = oddsList.find((o) => o.book_id === DK_NJ_BOOK_ID) ?? null;
 
-    const dkSpreadAway = findPreGameOutcome(dkMarket?.spread, { side: "away" });
-    const dkSpreadHome = findPreGameOutcome(dkMarket?.spread, { side: "home" });
-    const dkTotalOver  = findPreGameOutcome(dkMarket?.total,  { side: "over" });
-    const dkTotalUnder = findPreGameOutcome(dkMarket?.total,  { side: "under" });
-    const dkMlAway     = findPreGameOutcome(dkMarket?.moneyline, { teamId: game.away_team_id });
-    const dkMlHome     = findPreGameOutcome(dkMarket?.moneyline, { teamId: game.home_team_id });
+    // Run Line
+    const spreadAway = dk?.spread_away ?? null;
+    const spreadHome = dk?.spread_home ?? null;
+    const spreadAwayLine = dk?.spread_away_line ?? null;
+    const spreadHomeLine = dk?.spread_home_line ?? null;
 
-    const hasDk = !!(dkSpreadAway || dkTotalOver || dkMlAway);
+    // Moneyline
+    const mlAway = dk?.ml_away ?? null;
+    const mlHome = dk?.ml_home ?? null;
+
+    // Total — NOTE: dk.total is a float (e.g. 7.5), NOT a nested object
+    const totalLine = dk?.total ?? null;
+    const overOdds = dk?.over ?? null;
+    const underOdds = dk?.under ?? null;
+
+    const hasDk = dk != null;
+    const hasFullOdds = spreadAway != null && mlAway != null && totalLine != null;
+
     if (!hasDk) {
       skippedNoDk++;
       console.log(
-        `${TAG}[ODDS] ${gameLabel} — DK NJ has no odds yet (status=${game.status}), storing without odds`
+        `${TAG}[ODDS] ${gameLabel} — No DK NJ entry in odds list (status=${game.status}), storing without odds`
       );
+    } else if (!hasFullOdds) {
+      console.log(
+        `${TAG}[ODDS] ${gameLabel} — DK NJ partial odds: RL=${spreadAway ?? "—"} ML=${mlAway ?? "—"} TOT=${totalLine ?? "—"}`
+      );
+    } else {
+      gamesWithFullOdds++;
     }
 
     // ── Extract final scores ──────────────────────────────────────────────────
     const bs = game.boxscore;
-    const awayScore =
-      bs?.total_away_points != null ? Number(bs.total_away_points) : null;
-    const homeScore =
-      bs?.total_home_points != null ? Number(bs.total_home_points) : null;
+    const awayScore = bs?.total_away_points != null ? Number(bs.total_away_points) : null;
+    const homeScore = bs?.total_home_points != null ? Number(bs.total_home_points) : null;
     const isComplete = game.status === "complete";
-
-    // ── Run line values ───────────────────────────────────────────────────────
-    const awayRunLineVal = dkSpreadAway?.value != null ? Number(dkSpreadAway.value) : null;
-    const homeRunLineVal = dkSpreadHome?.value != null ? Number(dkSpreadHome.value) : null;
-    const totalVal = dkTotalOver?.value != null ? Number(dkTotalOver.value) : null;
 
     // ── Derive result columns (only for complete games with scores) ───────────
     const awayRunLineCovered =
-      isComplete ? deriveAwayRunLineCovered(awayScore, homeScore, awayRunLineVal) : null;
+      isComplete ? deriveAwayRunLineCovered(awayScore, homeScore, spreadAway) : null;
     const homeRunLineCovered =
       isComplete && awayRunLineCovered != null ? !awayRunLineCovered : null;
     const totalResult =
-      isComplete ? deriveTotalResult(awayScore, homeScore, totalVal) : null;
+      isComplete ? deriveTotalResult(awayScore, homeScore, totalLine) : null;
     const awayWon =
       isComplete && awayScore != null && homeScore != null
         ? awayScore > homeScore
@@ -290,194 +334,199 @@ export async function fetchMlbScheduleForDate(
     // ── Determine game date in EST ────────────────────────────────────────────
     const gameDateEst = utcToEstDate(game.start_time);
 
+    // ── Log this game ─────────────────────────────────────────────────────────
     console.log(
-      `${TAG}[GAME] ${gameLabel} | date=${gameDateEst} status=${game.status}` +
+      `${TAG}[GAME] ${gameLabel}` +
+      ` | date=${gameDateEst} status=${game.status}` +
       ` | score=${awayScore ?? "?"}–${homeScore ?? "?"}` +
-      ` | DK RL=${awayRunLineVal != null ? (awayRunLineVal > 0 ? "+" : "") + awayRunLineVal : "—"}` +
-      `(${fmtOdds(dkSpreadAway?.odds) ?? "—"})` +
-      ` total=${totalVal ?? "—"}(${fmtOdds(dkTotalOver?.odds) ?? "—"})` +
-      ` ML=${fmtOdds(dkMlAway?.odds) ?? "—"}/${fmtOdds(dkMlHome?.odds) ?? "—"}` +
+      ` | RL=${fmtLine(spreadAway) ?? "—"}(${fmtOdds(spreadAwayLine) ?? "—"})` +
+      ` ML=${fmtOdds(mlAway) ?? "—"}/${fmtOdds(mlHome) ?? "—"}` +
+      ` TOT=${totalLine ?? "—"}(O:${fmtOdds(overOdds) ?? "—"} U:${fmtOdds(underOdds) ?? "—"})` +
       (isComplete
-        ? ` | RL_covered=${awayRunLineCovered ?? "—"} total=${totalResult ?? "—"} awayWon=${awayWon ?? "—"}`
+        ? ` | result: ${awayWon ? awayAbbr + " W" : homeAbbr + " W"}` +
+          ` ATS=${awayRunLineCovered != null ? (awayRunLineCovered ? awayAbbr + " COV" : homeAbbr + " COV") : "—"}` +
+          ` O/U=${totalResult ?? "—"}`
         : "")
     );
 
     results.push({
-      anGameId:           game.id,
-      gameDate:           gameDateEst,
-      startTimeUtc:       game.start_time,
-      gameStatus:         game.status,
-      awaySlug:           awayTeam.url_slug,
-      awayAbbr:           awayTeam.abbr,
-      awayName:           awayTeam.full_name,
-      awayTeamId:         game.away_team_id,
-      awayScore:          awayScore,
-      homeSlug:           homeTeam.url_slug,
-      homeAbbr:           homeTeam.abbr,
-      homeName:           homeTeam.full_name,
-      homeTeamId:         game.home_team_id,
-      homeScore:          homeScore,
-      dkAwayRunLine:      awayRunLineVal != null ? String(awayRunLineVal) : null,
-      dkAwayRunLineOdds:  fmtOdds(dkSpreadAway?.odds),
-      dkHomeRunLine:      homeRunLineVal != null ? String(homeRunLineVal) : null,
-      dkHomeRunLineOdds:  fmtOdds(dkSpreadHome?.odds),
-      dkTotal:            totalVal != null ? String(totalVal) : null,
-      dkOverOdds:         fmtOdds(dkTotalOver?.odds),
-      dkUnderOdds:        fmtOdds(dkTotalUnder?.odds),
-      dkAwayML:           fmtOdds(dkMlAway?.odds),
-      dkHomeML:           fmtOdds(dkMlHome?.odds),
-      awayRunLineCovered: awayRunLineCovered,
-      homeRunLineCovered: homeRunLineCovered,
-      totalResult:        totalResult,
-      awayWon:            awayWon,
-      lastRefreshedAt:    Date.now(),
+      anGameId: game.id,
+      gameDate: gameDateEst,
+      gameStatus: game.status,
+      startTimeUtc: game.start_time,
+      awaySlug,
+      homeSlug,
+      awayAbbr,
+      homeAbbr,
+      awayName: awayTeam.full_name ?? awayAbbr,
+      homeName: homeTeam.full_name ?? homeAbbr,
+      awayTeamId: awayTeam.id ?? 0,
+      homeTeamId: homeTeam.id ?? 0,
+      awayScore,
+      homeScore,
+      awayWon,
+      // Run Line
+      dkAwayRunLine: fmtLine(spreadAway),
+      dkHomeRunLine: fmtLine(spreadHome),
+      dkAwayRunLineOdds: fmtOdds(spreadAwayLine),
+      dkHomeRunLineOdds: fmtOdds(spreadHomeLine),
+      awayRunLineCovered,
+      homeRunLineCovered,
+      // Moneyline
+      dkAwayML: fmtOdds(mlAway),
+      dkHomeML: fmtOdds(mlHome),
+      // Total
+      dkTotal: totalLine != null ? String(totalLine) : null,
+      dkOverOdds: fmtOdds(overOdds),
+      dkUnderOdds: fmtOdds(underOdds),
+      totalResult,
+      lastRefreshedAt: Date.now(),
     });
   }
 
   console.log(
-    `${TAG}[FETCH] date=${dateStr} — parsed ${results.length} games` +
-    ` | ${results.filter((g) => g.dkAwayRunLine != null).length} with DK NJ run line` +
-    ` | ${skippedNoDk} without DK odds` +
-    ` | ${skippedNoTeam} skipped (no team data)`
+    `${TAG}[FETCH] date=${dateStr} processed ${games.length} games:` +
+    ` ${results.length} valid | ${gamesWithFullOdds} with full odds` +
+    ` | ${skippedNoDk} without DK odds | ${skippedNoTeam} skipped (no team data)`
   );
 
   return results;
 }
 
-// ─── DB Upsert Function ───────────────────────────────────────────────────────
+// ─── Upsert Function ──────────────────────────────────────────────────────────
 
 /**
- * Upsert a batch of MLB schedule history rows into the DB.
- * Uses anGameId as the deduplication key.
- * On conflict: updates all mutable fields (scores, status, odds, results, lastRefreshedAt).
+ * Upsert a batch of MLB schedule history records into the DB.
+ * Uses anGameId as the unique key — updates all fields on conflict.
+ *
+ * @param records - Array of InsertMlbScheduleHistory records to upsert
+ * @returns Number of records upserted
  */
 export async function upsertMlbScheduleHistory(
-  rows: InsertMlbScheduleHistory[]
-): Promise<{ upserted: number; errors: string[] }> {
-  if (!rows.length) {
-    console.log(`${TAG}[UPSERT] No rows to upsert — skipping`);
-    return { upserted: 0, errors: [] };
+  records: InsertMlbScheduleHistory[]
+): Promise<number> {
+  if (records.length === 0) {
+    console.log(`${TAG}[UPSERT] No records to upsert`);
+    return 0;
   }
 
-  let upserted = 0;
-  const errors: string[] = [];
+  console.log(`${TAG}[UPSERT] Upserting ${records.length} records into mlb_schedule_history`);
+
   const db = await getDb();
 
-  for (const row of rows) {
-    try {
-      await db
-        .insert(mlbScheduleHistory)
-        .values(row)
-        .onDuplicateKeyUpdate({
-          set: {
-            gameStatus:         row.gameStatus,
-            awayScore:          row.awayScore,
-            homeScore:          row.homeScore,
-            dkAwayRunLine:      row.dkAwayRunLine,
-            dkAwayRunLineOdds:  row.dkAwayRunLineOdds,
-            dkHomeRunLine:      row.dkHomeRunLine,
-            dkHomeRunLineOdds:  row.dkHomeRunLineOdds,
-            dkTotal:            row.dkTotal,
-            dkOverOdds:         row.dkOverOdds,
-            dkUnderOdds:        row.dkUnderOdds,
-            dkAwayML:           row.dkAwayML,
-            dkHomeML:           row.dkHomeML,
-            awayRunLineCovered: row.awayRunLineCovered,
-            homeRunLineCovered: row.homeRunLineCovered,
-            totalResult:        row.totalResult,
-            awayWon:            row.awayWon,
-            lastRefreshedAt:    row.lastRefreshedAt,
-          },
-        });
-      upserted++;
-    } catch (err) {
-      const msg =
-        `anGameId=${row.anGameId} ${row.awayAbbr}@${row.homeAbbr}: ` +
-        (err instanceof Error ? err.message : String(err));
-      console.error(`${TAG}[UPSERT] ERROR — ${msg}`);
-      errors.push(msg);
-    }
+  // Upsert in batches of 50 to avoid query size limits
+  const BATCH_SIZE = 50;
+  let totalUpserted = 0;
+
+  for (let i = 0; i < records.length; i += BATCH_SIZE) {
+    const batch = records.slice(i, i + BATCH_SIZE);
+    await db
+      .insert(mlbScheduleHistory)
+      .values(batch)
+      .onDuplicateKeyUpdate({
+        set: {
+          gameStatus: sql`VALUES(game_status)`,
+          awayScore: sql`VALUES(away_score)`,
+          homeScore: sql`VALUES(home_score)`,
+          awayWon: sql`VALUES(away_won)`,
+          dkAwayRunLine: sql`VALUES(dk_away_run_line)`,
+          dkHomeRunLine: sql`VALUES(dk_home_run_line)`,
+          dkAwayRunLineOdds: sql`VALUES(dk_away_run_line_odds)`,
+          dkHomeRunLineOdds: sql`VALUES(dk_home_run_line_odds)`,
+          awayRunLineCovered: sql`VALUES(away_run_line_covered)`,
+          homeRunLineCovered: sql`VALUES(home_run_line_covered)`,
+          dkAwayML: sql`VALUES(dk_away_ml)`,
+          dkHomeML: sql`VALUES(dk_home_ml)`,
+          dkTotal: sql`VALUES(dk_total)`,
+          dkOverOdds: sql`VALUES(dk_over_odds)`,
+          dkUnderOdds: sql`VALUES(dk_under_odds)`,
+          totalResult: sql`VALUES(total_result)`,
+        },
+      });
+    totalUpserted += batch.length;
+    console.log(
+      `${TAG}[UPSERT] Batch ${Math.floor(i / BATCH_SIZE) + 1}: upserted ${batch.length} records (total so far: ${totalUpserted})`
+    );
   }
 
-  console.log(
-    `${TAG}[UPSERT] Complete — upserted=${upserted} errors=${errors.length}`
-  );
-  return { upserted, errors };
+  console.log(`${TAG}[UPSERT] Complete — ${totalUpserted} records upserted`);
+  return totalUpserted;
 }
 
-// ─── Main Refresh Function ────────────────────────────────────────────────────
+// ─── Single-Date Refresh ──────────────────────────────────────────────────────
 
 /**
- * Refresh MLB schedule history for a single date.
- * Fetches from AN DK NJ API and upserts into mlb_schedule_history.
+ * Fetch and upsert MLB schedule history for a single date.
+ * This is the atomic unit used by both the scheduler and the backfill.
  *
- * @param dateStr - YYYYMMDD format (e.g. "20260410")
+ * @param dateStr - YYYYMMDD format
  */
 export async function refreshMlbScheduleForDate(
   dateStr: string
 ): Promise<MlbScheduleRefreshResult> {
-  console.log(`${TAG}[REFRESH] ════ Starting refresh for date=${dateStr} ════`);
+  console.log(`${TAG}[REFRESH] Starting refresh for date=${dateStr}`);
 
-  let rows: InsertMlbScheduleHistory[];
+  const errors: string[] = [];
+  let fetched = 0;
+  let upserted = 0;
+  let skipped = 0;
+
   try {
-    rows = await fetchMlbScheduleForDate(dateStr);
+    const records = await fetchMlbScheduleForDate(dateStr);
+    fetched = records.length;
+
+    if (records.length > 0) {
+      upserted = await upsertMlbScheduleHistory(records);
+    }
+
+    console.log(
+      `${TAG}[REFRESH] date=${dateStr} COMPLETE — fetched=${fetched} upserted=${upserted} skipped=${skipped}`
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`${TAG}[REFRESH] Fetch failed for date=${dateStr}: ${msg}`);
-    return { date: dateStr, fetched: 0, upserted: 0, skipped: 0, errors: [msg] };
+    console.error(`${TAG}[REFRESH] date=${dateStr} FAILED: ${msg}`);
+    errors.push(msg);
   }
 
-  const { upserted, errors } = await upsertMlbScheduleHistory(rows);
-
-  const result: MlbScheduleRefreshResult = {
+  return {
     date: dateStr,
-    fetched: rows.length,
+    fetched,
     upserted,
-    skipped: rows.length - upserted,
+    skipped,
     errors,
   };
-
-  console.log(
-    `${TAG}[REFRESH] ════ DONE date=${dateStr}` +
-    ` | fetched=${result.fetched} upserted=${result.upserted}` +
-    ` skipped=${result.skipped} errors=${result.errors.length} ════`
-  );
-
-  return result;
 }
 
+// ─── Rolling Window Refresh ───────────────────────────────────────────────────
+
 /**
- * Backfill MLB schedule history for the last N days (default: 30).
- * Runs sequentially to avoid hammering the AN API.
- * Used by the daily 06:00 EST cron job.
+ * Refresh MLB schedule history for the last N days.
+ * Used by the daily scheduler to keep recent data current.
+ *
+ * @param days - Number of days to backfill (default: 7)
+ * @param delayMs - Delay between API calls in ms (default: 400ms to avoid rate limiting)
  */
-export async function backfillMlbScheduleHistory(
-  daysBack = 30
+export async function refreshMlbScheduleLastNDays(
+  days = 7,
+  delayMs = 400
 ): Promise<MlbScheduleRefreshResult[]> {
   console.log(
-    `${TAG}[BACKFILL] ════ Starting ${daysBack}-day backfill ════`
+    `${TAG}[ROLLING] Starting rolling refresh for last ${days} days`
   );
 
   const results: MlbScheduleRefreshResult[] = [];
-  const now = new Date();
+  const today = new Date();
 
-  for (let i = 0; i <= daysBack; i++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const dateStr = formatAnDate(d);
+  for (let i = 0; i < days; i++) {
+    const date = new Date(today);
+    date.setDate(today.getDate() - i);
+    const dateStr = formatAnDate(date);
 
-    try {
-      const result = await refreshMlbScheduleForDate(dateStr);
-      results.push(result);
+    const result = await refreshMlbScheduleForDate(dateStr);
+    results.push(result);
 
-      // Brief pause between requests to be respectful to the AN API
-      if (i < daysBack) {
-        await new Promise((resolve) => setTimeout(resolve, 200));
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error(`${TAG}[BACKFILL] ERROR on date=${dateStr}: ${msg}`);
-      results.push({ date: dateStr, fetched: 0, upserted: 0, skipped: 0, errors: [msg] });
+    if (i < days - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
     }
   }
 
@@ -486,18 +535,156 @@ export async function backfillMlbScheduleHistory(
   const totalErrors = results.reduce((s, r) => s + r.errors.length, 0);
 
   console.log(
-    `${TAG}[BACKFILL] ════ COMPLETE — ${daysBack} days` +
-    ` | totalFetched=${totalFetched} totalUpserted=${totalUpserted}` +
-    ` totalErrors=${totalErrors} ════`
+    `${TAG}[ROLLING] Complete — ${days} days processed` +
+    ` | totalFetched=${totalFetched} totalUpserted=${totalUpserted} errors=${totalErrors}`
   );
 
   return results;
 }
 
-// ─── DB Query Helpers ─────────────────────────────────────────────────────────
+// ─── Full Historical Backfill ─────────────────────────────────────────────────
 
 /**
- * Get the last N completed games for a specific team (by AN url_slug).
+ * Backfill MLB schedule history for a full date range.
+ *
+ * Phase 1 (full DK NJ odds): 2023-03-30 → today
+ *   - Run line, moneyline, total available for every game
+ *
+ * Skips spring training (pre-season games have no DK NJ odds).
+ * Skips All-Star break dates automatically (API returns 0 games).
+ *
+ * @param startDate - Start date string "YYYY-MM-DD" (default: "2023-03-30")
+ * @param endDate   - End date string "YYYY-MM-DD" (default: today)
+ * @param delayMs   - Delay between API calls in ms (default: 400ms)
+ * @param onProgress - Optional callback for progress updates
+ */
+export async function backfillMlbScheduleHistory(
+  startDate = "2023-03-30",
+  endDate?: string,
+  delayMs = 400,
+  onProgress?: (progress: {
+    current: number;
+    total: number;
+    date: string;
+    fetched: number;
+    upserted: number;
+    errors: number;
+  }) => void
+): Promise<{
+  totalDates: number;
+  totalFetched: number;
+  totalUpserted: number;
+  totalErrors: number;
+  dateResults: MlbScheduleRefreshResult[];
+}> {
+  const start = new Date(startDate + "T00:00:00Z");
+  const end = endDate ? new Date(endDate + "T00:00:00Z") : new Date();
+
+  console.log(
+    `${TAG}[BACKFILL] ═══════════════════════════════════════════════════════`
+  );
+  console.log(
+    `${TAG}[BACKFILL] Starting full historical backfill`
+  );
+  console.log(
+    `${TAG}[BACKFILL] Date range: ${startDate} → ${endDate ?? "today"}`
+  );
+
+  // Build list of all dates in range
+  const allDates: string[] = [];
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    allDates.push(formatAnDate(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  console.log(
+    `${TAG}[BACKFILL] Total dates to process: ${allDates.length}`
+  );
+  console.log(
+    `${TAG}[BACKFILL] Estimated time at ${delayMs}ms delay: ~${Math.ceil(allDates.length * delayMs / 60000)} minutes`
+  );
+  console.log(
+    `${TAG}[BACKFILL] ═══════════════════════════════════════════════════════`
+  );
+
+  const dateResults: MlbScheduleRefreshResult[] = [];
+  let totalFetched = 0;
+  let totalUpserted = 0;
+  let totalErrors = 0;
+  let datesWithGames = 0;
+  let datesWithOdds = 0;
+
+  for (let i = 0; i < allDates.length; i++) {
+    const dateStr = allDates[i];
+    const dateLabel = `${dateStr.slice(0, 4)}-${dateStr.slice(4, 6)}-${dateStr.slice(6, 8)}`;
+
+    console.log(
+      `${TAG}[BACKFILL] [${i + 1}/${allDates.length}] Processing date=${dateLabel}`
+    );
+
+    const result = await refreshMlbScheduleForDate(dateStr);
+    dateResults.push(result);
+
+    totalFetched += result.fetched;
+    totalUpserted += result.upserted;
+    totalErrors += result.errors.length;
+    if (result.fetched > 0) datesWithGames++;
+    if (result.upserted > 0) datesWithOdds++;
+
+    if (onProgress) {
+      onProgress({
+        current: i + 1,
+        total: allDates.length,
+        date: dateLabel,
+        fetched: totalFetched,
+        upserted: totalUpserted,
+        errors: totalErrors,
+      });
+    }
+
+    // Log milestone summaries every 50 dates
+    if ((i + 1) % 50 === 0 || i === allDates.length - 1) {
+      console.log(
+        `${TAG}[BACKFILL] ── Milestone [${i + 1}/${allDates.length}] ──` +
+        ` totalFetched=${totalFetched} totalUpserted=${totalUpserted}` +
+        ` datesWithGames=${datesWithGames} errors=${totalErrors}`
+      );
+    }
+
+    // Delay between requests to avoid rate limiting
+    if (i < allDates.length - 1) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+
+  console.log(
+    `${TAG}[BACKFILL] ═══════════════════════════════════════════════════════`
+  );
+  console.log(`${TAG}[BACKFILL] COMPLETE`);
+  console.log(`${TAG}[BACKFILL] Total dates processed: ${allDates.length}`);
+  console.log(`${TAG}[BACKFILL] Dates with games: ${datesWithGames}`);
+  console.log(`${TAG}[BACKFILL] Dates with upserted records: ${datesWithOdds}`);
+  console.log(`${TAG}[BACKFILL] Total games fetched: ${totalFetched}`);
+  console.log(`${TAG}[BACKFILL] Total records upserted: ${totalUpserted}`);
+  console.log(`${TAG}[BACKFILL] Total errors: ${totalErrors}`);
+  console.log(
+    `${TAG}[BACKFILL] ═══════════════════════════════════════════════════════`
+  );
+
+  return {
+    totalDates: allDates.length,
+    totalFetched,
+    totalUpserted,
+    totalErrors,
+    dateResults,
+  };
+}
+
+// ─── Query Functions ──────────────────────────────────────────────────────────
+
+/**
+ * Get the last N completed games for a team from the schedule history DB.
  * Returns games where the team was either the away or home team.
  * Sorted by gameDate DESC (most recent first).
  *
@@ -516,16 +703,11 @@ export async function getLastNGamesForTeam(
   const rows = await db
     .select()
     .from(mlbScheduleHistory)
-    .where(
-      and(
-        // Only completed games with final scores
-        eq(mlbScheduleHistory.gameStatus, "complete")
-      )
-    )
+    .where(eq(mlbScheduleHistory.gameStatus, "complete"))
     .orderBy(mlbScheduleHistory.gameDate)
-    .limit(200); // Fetch a larger set then filter in JS for flexibility
+    .limit(500);
 
-  // Filter to games involving this team
+  // Filter to games involving this team, sort most recent first
   const teamGames = (rows as MlbScheduleHistoryRow[])
     .filter((r) => r.awaySlug === teamSlug || r.homeSlug === teamSlug)
     .sort((a, b) => b.gameDate.localeCompare(a.gameDate))
@@ -541,7 +723,7 @@ export async function getLastNGamesForTeam(
 
 /**
  * Get the full schedule for a team (all games, any status).
- * Returns games sorted by gameDate ASC (oldest first = chronological order).
+ * Returns games sorted by gameDate DESC (most recent first).
  *
  * @param teamSlug - AN url_slug, e.g. "arizona-diamondbacks"
  */
@@ -555,11 +737,11 @@ export async function getFullScheduleForTeam(teamSlug: string) {
     .select()
     .from(mlbScheduleHistory)
     .orderBy(mlbScheduleHistory.gameDate)
-    .limit(500);
+    .limit(1000);
 
   const teamGames = (rows as MlbScheduleHistoryRow[])
     .filter((r) => r.awaySlug === teamSlug || r.homeSlug === teamSlug)
-    .sort((a, b) => b.gameDate.localeCompare(a.gameDate)); // Most recent first
+    .sort((a, b) => b.gameDate.localeCompare(a.gameDate));
 
   console.log(
     `${TAG}[QUERY] Found ${teamGames.length} total games for team="${teamSlug}"`
@@ -616,7 +798,7 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
     .from(mlbScheduleHistory)
     .where(eq(mlbScheduleHistory.gameStatus, "complete"))
     .orderBy(mlbScheduleHistory.gameDate)
-    .limit(500);
+    .limit(1000);
 
   const teamGames = (rows as MlbScheduleHistoryRow[])
     .filter((r) => r.awaySlug === teamSlug || r.homeSlug === teamSlug)
@@ -643,7 +825,10 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
 
   const wasHome = (g: MlbScheduleHistoryRow): boolean => !isAway(g);
 
-  const computeRecord = (games: MlbScheduleHistoryRow[], wonFn: (g: MlbScheduleHistoryRow) => boolean | null) => {
+  const computeRecord = (
+    games: MlbScheduleHistoryRow[],
+    wonFn: (g: MlbScheduleHistoryRow) => boolean | null
+  ) => {
     let w = 0, l = 0;
     for (const g of games) {
       const won = wonFn(g);
@@ -676,31 +861,31 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
   const last10 = teamGames.slice(0, 10);
   const homeGames = teamGames.filter(wasHome);
   const awayGames = teamGames.filter((g) => !wasHome(g));
-  const favGames  = teamGames.filter(wasFavorite);
-  const dogGames  = teamGames.filter((g) => !wasFavorite(g));
+  const favGames = teamGames.filter(wasFavorite);
+  const dogGames = teamGames.filter((g) => !wasFavorite(g));
 
   const stats = {
     ml: {
-      overall:  computeRecord(teamGames, teamWon),
-      last10:   computeRecord(last10, teamWon),
-      home:     computeRecord(homeGames, teamWon),
-      away:     computeRecord(awayGames, teamWon),
+      overall: computeRecord(teamGames, teamWon),
+      last10: computeRecord(last10, teamWon),
+      home: computeRecord(homeGames, teamWon),
+      away: computeRecord(awayGames, teamWon),
       favorite: computeRecord(favGames, teamWon),
       underdog: computeRecord(dogGames, teamWon),
     },
     spread: {
-      overall:  computeAtsRecord(teamGames),
-      last10:   computeAtsRecord(last10),
-      home:     computeAtsRecord(homeGames),
-      away:     computeAtsRecord(awayGames),
+      overall: computeAtsRecord(teamGames),
+      last10: computeAtsRecord(last10),
+      home: computeAtsRecord(homeGames),
+      away: computeAtsRecord(awayGames),
       favorite: computeAtsRecord(favGames),
       underdog: computeAtsRecord(dogGames),
     },
     total: {
-      overall:  computeOuRecord(teamGames),
-      last10:   computeOuRecord(last10),
-      home:     computeOuRecord(homeGames),
-      away:     computeOuRecord(awayGames),
+      overall: computeOuRecord(teamGames),
+      last10: computeOuRecord(last10),
+      home: computeOuRecord(homeGames),
+      away: computeOuRecord(awayGames),
       favorite: computeOuRecord(favGames),
       underdog: computeOuRecord(dogGames),
     },
