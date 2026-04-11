@@ -65,9 +65,9 @@ const TAG = "[MlbScheduleHistory]";
 const AN_V1_BASE = "https://api.actionnetwork.com/web/v1/scoreboard/mlb";
 
 // ─── Season Date Boundaries ───────────────────────────────────────────────────
-// 2026 MLB Opening Day: March 26, 2026
+// 2026 MLB Opening Day: March 25, 2026 (LAD@CWS Tokyo series)
 // H2H lookback floor: 2023 Opening Day (March 30, 2023)
-const SEASON_2026_START = "2026-03-26";
+const SEASON_2026_START = "2026-03-25";
 const H2H_LOOKBACK_START = "2023-03-30"; // earliest H2H game to consider
 const DK_NJ_BOOK_ID = 68;
 
