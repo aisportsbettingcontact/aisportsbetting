@@ -115,6 +115,7 @@ interface AnV1Game {
   status: string;
   real_status?: string;
   start_time: string;
+  // Authoritative home/away team IDs — use these, NOT teams[] array position
   away_team_id?: number;
   home_team_id?: number;
   teams: AnV1Team[];
@@ -266,9 +267,44 @@ export async function fetchMlbScheduleForDate(
   for (const game of games) {
     const teams = game.teams ?? [];
 
-    // v1: teams[0] = away, teams[1] = home
-    const awayTeam = teams[0];
-    const homeTeam = teams[1];
+    // ── CRITICAL: Use away_team_id / home_team_id for authoritative home/away assignment.
+    // The teams[] array order is NOT guaranteed to be [away, home] — the AN API sometimes
+    // returns teams in home/away order depending on the game. The only reliable source of
+    // truth is game.away_team_id and game.home_team_id.
+    // VERIFIED: Apr 10 PHI@ARI — teams[0]=PHI but away_team_id=ARI(205), home_team_id=PHI(212)
+    let awayTeam: AnV1Team | undefined;
+    let homeTeam: AnV1Team | undefined;
+
+    if (game.away_team_id && game.home_team_id) {
+      // Authoritative path: match by team id
+      awayTeam = teams.find((t) => t.id === game.away_team_id);
+      homeTeam = teams.find((t) => t.id === game.home_team_id);
+      if (!awayTeam || !homeTeam) {
+        // Fallback: ids didn't match any team entry — use positional as last resort
+        console.warn(
+          `${TAG}[WARN] Game id=${game.id} — away_team_id=${game.away_team_id} home_team_id=${game.home_team_id}` +
+          ` did not match any teams[] entry (ids: ${teams.map(t=>t.id).join(',')}) — falling back to teams[0]/[1]`
+        );
+        awayTeam = teams[0];
+        homeTeam = teams[1];
+      } else {
+        // Log when teams[] order differs from away_team_id assignment (the bug we fixed)
+        if (teams[0]?.id !== game.away_team_id) {
+          console.log(
+            `${TAG}[FIX] Game id=${game.id} — teams[] order mismatch corrected:` +
+            ` teams[0]=${teams[0]?.abbr}(id=${teams[0]?.id}) but away_team_id=${game.away_team_id}` +
+            ` → AWAY=${awayTeam.abbr} HOME=${homeTeam.abbr}`
+          );
+        }
+      }
+    } else {
+      // No away_team_id/home_team_id present — fall back to positional (legacy)
+      console.warn(
+        `${TAG}[WARN] Game id=${game.id} — no away_team_id/home_team_id in response, using teams[0]/[1]`
+      );
+      awayTeam = teams[0];
+      homeTeam = teams[1];
+    }
 
     if (!awayTeam || !homeTeam) {
       console.warn(
@@ -280,8 +316,11 @@ export async function fetchMlbScheduleForDate(
 
     const awayAbbr = awayTeam.abbr ?? awayTeam.short_name ?? "???";
     const homeAbbr = homeTeam.abbr ?? homeTeam.short_name ?? "???";
-    const awaySlug = awayTeam.url_slug ?? "";
-    const homeSlug = homeTeam.url_slug ?? "";
+    // Normalize slugs: AN sometimes returns "st.-louis-cardinals" (with period).
+    // Canonical form is "st-louis-cardinals" (no period). Normalize at ingest.
+    const normalizeSlug = (s: string) => s.replace(/\./g, "");
+    const awaySlug = normalizeSlug(awayTeam.url_slug ?? "");
+    const homeSlug = normalizeSlug(homeTeam.url_slug ?? "");
     const gameLabel = `${awayAbbr} @ ${homeAbbr} (anId=${game.id})`;
 
     // ── Extract DK NJ odds (flat-field v1 schema) ─────────────────────────────
