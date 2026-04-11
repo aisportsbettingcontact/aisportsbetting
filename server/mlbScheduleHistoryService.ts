@@ -70,6 +70,13 @@ const AN_V1_BASE = "https://api.actionnetwork.com/web/v1/scoreboard/mlb";
 const SEASON_2026_START = "2026-03-26";
 const H2H_LOOKBACK_START = "2023-03-30"; // earliest H2H game to consider
 const DK_NJ_BOOK_ID = 68;
+
+// ─── Odds Book Fallback Chain ─────────────────────────────────────────────────
+// AN API returns DK NJ (book_id=68) for live/recent games.
+// For completed games older than ~2 days, book 68 disappears retroactively.
+// Fallback priority: 68 (DK NJ) → 15 (DK national) → 21 (Pinnacle) → 30
+// All books carry the same DraftKings line family — acceptable fallback.
+const BOOK_FALLBACK_CHAIN = [68, 15, 21, 30];
 const AN_HEADERS = {
   "User-Agent":
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -323,9 +330,26 @@ export async function fetchMlbScheduleForDate(
     const homeSlug = normalizeSlug(homeTeam.url_slug ?? "");
     const gameLabel = `${awayAbbr} @ ${homeAbbr} (anId=${game.id})`;
 
-    // ── Extract DK NJ odds (flat-field v1 schema) ─────────────────────────────
+    // ── Extract odds via fallback chain: DK NJ (68) → 15 → 21 → 30 ────────────
+    // Book 68 (DK NJ) disappears retroactively for completed games after ~2 days.
+    // We walk the fallback chain and use the first book that has ml_away populated.
     const oddsList = game.odds ?? [];
-    const dk = oddsList.find((o) => o.book_id === DK_NJ_BOOK_ID) ?? null;
+    let dk: typeof oddsList[0] | null = null;
+    let usedBookId: number | null = null;
+    for (const bookId of BOOK_FALLBACK_CHAIN) {
+      const candidate = oddsList.find((o) => o.book_id === bookId);
+      if (candidate && candidate.ml_away != null) {
+        dk = candidate;
+        usedBookId = bookId;
+        break;
+      }
+    }
+    if (usedBookId !== null && usedBookId !== DK_NJ_BOOK_ID) {
+      console.log(
+        `${TAG}[ODDS_FALLBACK] ${awayAbbr}@${homeAbbr} — DK NJ (68) absent, using book_id=${usedBookId} as fallback` +
+        ` | ml_away=${dk?.ml_away} ml_home=${dk?.ml_home} spread=${dk?.spread_away} total=${dk?.total}`
+      );
+    }
 
     // Run Line
     const spreadAway = dk?.spread_away ?? null;
@@ -347,8 +371,10 @@ export async function fetchMlbScheduleForDate(
 
     if (!hasDk) {
       skippedNoDk++;
+      const availableBooks = oddsList.map((o) => o.book_id).join(",") || "none";
       console.log(
-        `${TAG}[ODDS] ${gameLabel} — No DK NJ entry in odds list (status=${game.status}), storing without odds`
+        `${TAG}[ODDS] ${gameLabel} — No usable odds in fallback chain [${BOOK_FALLBACK_CHAIN.join(",")}]` +
+        ` (status=${game.status}) | available books: ${availableBooks} — storing without odds`
       );
     } else if (!hasFullOdds) {
       console.log(
@@ -1017,10 +1043,15 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
     return g.homeRunLineCovered ?? null;
   };
 
-  const wasFavorite = (g: MlbScheduleHistoryRow): boolean => {
+  // wasFavoriteOrNull: returns true=fav, false=dog, null=no ML odds available.
+  // CRITICAL: null-ML games must be excluded from BOTH fav and dog pools.
+  // Previously, wasFavorite() returned false for null-ML games, polluting dogGames.
+  const wasFavoriteOrNull = (g: MlbScheduleHistoryRow): boolean | null => {
     const ml = isAway(g) ? g.dkAwayML : g.dkHomeML;
-    if (!ml) return false;
-    return parseInt(ml, 10) < 0;
+    if (!ml) return null; // no odds — exclude from fav/dog classification
+    const mlNum = parseInt(ml, 10);
+    if (isNaN(mlNum)) return null;
+    return mlNum < 0; // negative ML = favorite
   };
 
   const wasHome = (g: MlbScheduleHistoryRow): boolean => !isAway(g);
@@ -1061,8 +1092,18 @@ export async function getMlbSituationalStats(teamSlug: string, limit = 162) {
   const last10 = teamGames.slice(0, 10);
   const homeGames = teamGames.filter(wasHome);
   const awayGames = teamGames.filter((g) => !wasHome(g));
-  const favGames = teamGames.filter(wasFavorite);
-  const dogGames = teamGames.filter((g) => !wasFavorite(g));
+  // Exclude null-ML games from both fav and dog pools (no odds = unclassifiable)
+  const favGames = teamGames.filter((g) => wasFavoriteOrNull(g) === true);
+  const dogGames = teamGames.filter((g) => wasFavoriteOrNull(g) === false);
+  const noOddsGames = teamGames.filter((g) => wasFavoriteOrNull(g) === null);
+
+  if (noOddsGames.length > 0) {
+    console.log(
+      `${TAG}[getMlbSituationalStats] [VERIFY] WARN — ${noOddsGames.length} games have no ML odds` +
+      ` for team="${teamSlug}" — excluded from fav/dog classification` +
+      ` | games: ${noOddsGames.map(g => `${g.awayAbbr}@${g.homeAbbr}(${g.gameDate})`).join(", ")}`
+    );
+  }
 
   const stats = {
     ml: {
