@@ -88,6 +88,8 @@ export interface RecentSchedulePanelProps {
   awayLogoUrl?: string;
   homeLogoUrl?: string;
   borderColor?: string;
+  /** When true, the panel starts collapsed. Defaults to false (expanded). */
+  defaultCollapsed?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -608,10 +610,12 @@ export default function RecentSchedulePanel({
   awayLogoUrl,
   homeLogoUrl,
   borderColor = "hsl(var(--border))",
+  defaultCollapsed = false,
 }: RecentSchedulePanelProps) {
   const [, navigate] = useLocation();
   const [tab, setTab] = useState<TabView>("away");
-  const [isExpanded, setIsExpanded] = useState(true);
+  // defaultCollapsed=true → starts collapsed; false → starts expanded (legacy default)
+  const [isExpanded, setIsExpanded] = useState(!defaultCollapsed);
 
   const enabled = !!awaySlug && !!homeSlug;
 

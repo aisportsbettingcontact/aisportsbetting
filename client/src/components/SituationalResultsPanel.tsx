@@ -74,6 +74,8 @@ export interface SituationalResultsPanelProps {
   awayLogoUrl?: string;
   homeLogoUrl?: string;
   borderColor?: string;
+  /** When true, the panel starts collapsed. Defaults to false (expanded). */
+  defaultCollapsed?: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -359,9 +361,11 @@ export default function SituationalResultsPanel({
   awayLogoUrl,
   homeLogoUrl,
   borderColor = "hsl(var(--border))",
+  defaultCollapsed = false,
 }: SituationalResultsPanelProps) {
   const [tab, setTab] = useState<SitTab>("ml");
-  const [isExpanded, setIsExpanded] = useState(true);
+  // defaultCollapsed=true → starts collapsed; false → starts expanded (legacy default)
+  const [isExpanded, setIsExpanded] = useState(!defaultCollapsed);
 
   const sLabel = spreadTabLabel(sport);
 
