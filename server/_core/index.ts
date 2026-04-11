@@ -24,6 +24,7 @@ import { postSecurityAlert } from "../discord/discordSecurityAlert";
 import { startMlbScheduleHistoryScheduler } from "../mlbScheduleHistoryScheduler";
 import { startNbaScheduleHistoryScheduler } from "../nbaScheduleHistoryScheduler";
 import { startNhlScheduleHistoryScheduler } from "../nhlScheduleHistoryScheduler";
+import { startMlbNightlyTrendsScheduler } from "../mlbNightlyTrendsRefresh";
 
 // ─── Rate limit event helper ─────────────────────────────────────────────────
 // Fire-and-forget: writes a RATE_LIMIT row to security_events.
@@ -305,6 +306,9 @@ async function startServer() {
     startMlbPlayerSyncScheduler();
     // MLB schedule history — startup 7-day backfill + refresh every 4h (6AM–midnight EST)
     startMlbScheduleHistoryScheduler();
+    // MLB TRENDS nightly refresh — fires at 2:59 AM EST (11:59 PM PST) every night
+    // Re-ingests yesterday + today, runs 30-team cross-validation, notifies owner
+    startMlbNightlyTrendsScheduler();
     // NBA schedule history — startup 7-day backfill + refresh every 4h (6AM–midnight EST)
     startNbaScheduleHistoryScheduler();
     // NHL schedule history — startup 7-day backfill + refresh every 4h (6AM–midnight EST)

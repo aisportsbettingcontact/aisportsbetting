@@ -2358,3 +2358,8 @@
 
 ## RL Cover Stat Fix (2026-04-11)
 - [x] Remove push tracking from RL COVER chip — MLB 1.5 run line never pushes; notCovered = completed - wins (binary W/N only)
+
+## MLB TRENDS Automation (2026-04-11)
+- [x] Automated nightly MLB TRENDS refresh: cron job fires at 2:59 AM EST (11:59 PM PST) nightly, re-ingests yesterday+today, per-row validation, 30-team cross-validation, owner notification, manual trigger via tRPC triggerNightlyTrendsRefresh
+- [x] Manual on-demand backfill tRPC procedure for owner-triggered date re-ingestion
+- [x] Full 30-team cross-validation audit after nightly refresh confirms accuracy

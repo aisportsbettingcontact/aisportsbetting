@@ -28,6 +28,7 @@ import {
   backfillMlbScheduleHistory,
   type MlbScheduleRefreshResult,
 } from "../mlbScheduleHistoryService";
+import { runMlbNightlyTrendsRefresh } from "../mlbNightlyTrendsRefresh";
 
 const TAG = "[MlbScheduleRouter]";
 
@@ -317,6 +318,44 @@ export const mlbScheduleRouter = router({
         throw new TRPCError({
           code: "INTERNAL_SERVER_ERROR",
           message: `Full historical backfill failed: ${msg}`,
+        });
+      }
+    }),
+
+  /**
+   * Owner-only: Manually trigger the nightly MLB TRENDS refresh for a specific date.
+   *
+   * Runs the full pipeline:
+   *   1. Re-ingests yesterday + today from AN API (fallback book chain 68→15→21→30)
+   *   2. Per-row validation: re-derives awayWon, ATS, O/U from raw scores
+   *   3. 30-team cross-validation across all 3 markets × 6 situations
+   *   4. Sends owner notification with pass/fail summary
+   *
+   * Input:
+   *   targetDate — "YYYYMMDD" format (default: yesterday EST)
+   */
+  triggerNightlyTrendsRefresh: ownerProcedure
+    .input(
+      z.object({
+        targetDate: z.string().regex(/^\d{8}$/).optional(),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const tag = `${TAG}[triggerNightlyTrendsRefresh]`;
+      console.log(
+        `${tag} Manual trigger invoked` +
+        ` | targetDate=${input.targetDate ?? "yesterday EST (default)"}`
+      );
+      try {
+        await runMlbNightlyTrendsRefresh(input.targetDate);
+        console.log(`${tag} COMPLETE`);
+        return { success: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`${tag} ERROR: ${msg}`);
+        throw new TRPCError({
+          code: "INTERNAL_SERVER_ERROR",
+          message: `Nightly TRENDS refresh failed: ${msg}`,
         });
       }
     }),
