@@ -2443,3 +2443,11 @@
 - [x] Fix URL param persistence: setSelectedSport/setSelectedDate use replace:false (push to history)
 - [x] Auto-sport-switch uses isAutoSwitch=true (replace:true) to not pollute history
 - [x] Update GameCard header comment to reflect 3-tier layout (mobile/tablet/desktop)
+
+## Tablet Layout + Sport Pills Session (Apr 13 2026)
+- [x] Verified md: breakpoint CSS generates md:hidden and md:flex at 768px in built CSS
+- [x] EdgeVerdict clamp floor reduced: 150px → 120px (clamp(120px,11.5vw,190px)) — +10px per SectionCol at 768px
+- [x] Sport pills md: breakpoint: px-3, py-2, gap-1.5, logo 14px, font 13px at 768px+
+- [x] Favorites button md: breakpoint: px-3, py-2, gap-2, text-[13px] at 768px+
+- [x] Sport pills container: md:px-4 md:gap-3 for better tablet spacing
+- [x] Pixel-perfect width audit: 768px SectionCol=158px, 820px SectionCol=172px (both above 104px min)

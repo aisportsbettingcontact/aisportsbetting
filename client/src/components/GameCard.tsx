@@ -11,7 +11,7 @@
  *   │  Home logo+name  │  Splits bars below           │                  │
  *   └──────────────────┴──────────────────────────────┴──────────────────┘
  *   ScorePanel: clamp(170px,22vw,260px) — scales 170px@768 → 260px@1182+
- *   EdgeVerdict: clamp(120px,10vw,160px)
+ *   EdgeVerdict: clamp(120px,11.5vw,190px) — floor 120px for tablet readability
  *
  * Mobile (< md / 768px): frozen-panel grid + horizontal scroll
  *   ┌─────────────────────────────────────────────────────────────────────┐
@@ -1234,7 +1234,7 @@ function DesktopMergedPanel({
       <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
       {/* EdgeVerdict column */}
       {showModel ? (
-        <div className="flex flex-col items-start justify-center" style={{ flex: '0 0 clamp(150px,11.5vw,190px)', width: 'clamp(150px,11.5vw,190px)', padding: '10px 12px', gap: 0 }}>
+        <div className="flex flex-col items-start justify-center" style={{ flex: '0 0 clamp(120px,11.5vw,190px)', width: 'clamp(120px,11.5vw,190px)', padding: '10px 12px', gap: 0 }}>
           {/* EDGE header */}
           <span style={{ fontSize: 'clamp(9px,0.7vw,11px)', fontWeight: 800, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8, alignSelf: 'center' }}>EDGE</span>
           {spreadPass && totalPass ? (
