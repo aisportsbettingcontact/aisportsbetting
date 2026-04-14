@@ -2451,3 +2451,10 @@
 - [x] Favorites button md: breakpoint: px-3, py-2, gap-2, text-[13px] at 768px+
 - [x] Sport pills container: md:px-4 md:gap-3 for better tablet spacing
 - [x] Pixel-perfect width audit: 768px SectionCol=158px, 820px SectionCol=172px (both above 104px min)
+
+## Tablet Scaling Session (Apr 13, 2026)
+- [x] md: tab bar scaling — CSS @media (min-width: 768px) override for .feed-tab: padding 10px 18px, font-size 12px, letter-spacing 0.07em
+- [x] md: CalendarPicker scaling — md:gap-2 md:px-3 md:py-2 md:text-[13px] md:w-4 md:h-4 on trigger button
+- [x] ScorePanel team name audit — verified all 80+ MLB/NHL/NBA names fit at 13px within 110px available width at 768px (max "San Francisco" = 79.3px). No overflow. No font size change needed.
+- [x] Dead code removal — removed 102 lines of dead useAutoFontSize/computeAutoFontSize/measureTextWidth/_autoFontCanvas code from GameCard.tsx (was defined but never called)
+- [x] GameCard.tsx reduced from 3,802 → 3,712 lines (-90 lines net after all changes)
