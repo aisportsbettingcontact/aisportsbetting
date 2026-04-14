@@ -2458,3 +2458,8 @@
 - [x] ScorePanel team name audit — verified all 80+ MLB/NHL/NBA names fit at 13px within 110px available width at 768px (max "San Francisco" = 79.3px). No overflow. No font size change needed.
 - [x] Dead code removal — removed 102 lines of dead useAutoFontSize/computeAutoFontSize/measureTextWidth/_autoFontCanvas code from GameCard.tsx (was defined but never called)
 - [x] GameCard.tsx reduced from 3,802 → 3,712 lines (-90 lines net after all changes)
+
+## Tablet Header/Tab Scaling (Apr 13, 2026 — Session 2)
+- [x] Search bar md: scaling — md:text-[13px] on input, md:py-2 md:px-3 on container, md:w-4 md:h-4 on Search/X icons
+- [x] Sticky header height md: scaling — Row 1 md:pt-3 md:pb-2, Row 3 md:pt-2 md:pb-1 (auto-height header expands naturally)
+- [x] Tab bar fade-right gradient scroll indicator — tabsScrollRef + tabsShowFade state + ResizeObserver; fade auto-hides when content fits or user scrolls to end

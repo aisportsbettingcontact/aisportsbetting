@@ -305,6 +305,11 @@ export default function ModelProjections() {
   const [headerHeight, setHeaderHeight] = useState(88);
   const [showModel, setShowModel] = useState(true);
   const toggleModel = () => setShowModel((v) => !v);
+  // ── Tab bar scroll fade indicator ─────────────────────────────────────────
+  // tabsShowFade: true when the tab bar has overflowing content AND user hasn't
+  // scrolled to the end. Drives the fade-right gradient mask in the tab bar wrapper.
+  const tabsScrollRef = useRef<HTMLDivElement>(null);
+  const [tabsShowFade, setTabsShowFade] = useState(false);
 
   // ── Main page tab: projections | splits ───────────────────────────────────
 
@@ -356,6 +361,31 @@ export default function ModelProjections() {
     setHeaderHeight(Math.ceil(headerRef.current.getBoundingClientRect().height));
      return () => obs.disconnect();
   }, []);
+
+  // ── Tab bar scroll fade: show right-edge gradient when content overflows ───────────
+  // Logic: fade is visible when (scrollWidth > clientWidth) AND (not scrolled to end).
+  // Updates on: mount, scroll, resize, and FEED_TABS change (sport switch).
+  useEffect(() => {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const update = () => {
+      // scrollWidth > clientWidth means content overflows
+      const hasOverflow = el.scrollWidth > el.clientWidth + 1; // +1 for sub-pixel rounding
+      // atEnd: within 4px of the right edge (accounts for fractional pixel rounding)
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4;
+      setTabsShowFade(hasOverflow && !atEnd);
+    };
+    update(); // initial check
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  // Re-run when FEED_TABS changes (sport switch changes tab count)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSport]);
 
   // ── Mobile debug logging ──────────────────────────────────────────────────────
   // Logs viewport, scale, safe-area insets, header height, and feed budget
@@ -774,7 +804,7 @@ export default function ModelProjections() {
          * user icon are flex-shrink-0 on the right. Gap between them is handled by
          * flex-1 spacer. This guarantees zero overlap at every viewport width.
          */}
-        <div className="flex items-center gap-2 px-4 pt-2 pb-1 w-full min-w-0">
+        <div className="flex items-center gap-2 px-4 pt-2 pb-1 md:pt-3 md:pb-2 w-full min-w-0">
           {/* ── Brand: left-aligned, shrinks gracefully on narrow screens ── */}
           <div className="flex items-center gap-1.5 flex-shrink-0 min-w-0">
             <BarChart3 className="flex-shrink-0 text-primary" style={{ width: "clamp(14px, 3.5vw, 20px)", height: "clamp(14px, 3.5vw, 20px)" }} />
@@ -926,7 +956,7 @@ export default function ModelProjections() {
         {/* Row 3: Unified filter bar — FAVORITES | DATE | MLB | NHL | NBA | Search */}
         {/* Mobile: gap-1 px-2 to keep all pills + search on one row within 375-430px screens */}
         {/* sm+: gap-2 px-3 (unchanged from original) */}
-        <div ref={searchRef} className="relative px-2 sm:px-3 md:px-4 pt-1 pb-0 flex items-center gap-1 sm:gap-2 md:gap-3">
+        <div ref={searchRef} className="relative px-2 sm:px-3 md:px-4 pt-1 pb-0 md:pt-2 md:pb-1 flex items-center gap-1 sm:gap-2 md:gap-3">
 
           {/* FAVORITES tab — shown when user is authenticated AND has ≥1 active favorite */}
           {/* NOTE: must use isAppAuthedForFav (Boolean(appUser)) — NOT isAuthenticated (Manus OAuth always null) */}
@@ -985,11 +1015,11 @@ export default function ModelProjections() {
           {/* Search bar — always visible, shrinks when Favorites button is present */}
           {/* Mobile: min-w-[28px] so it always shows at least the icon; flex-1 fills remaining space */}
           <div className="flex-1 min-w-0" style={{ minWidth: 28 }}>
-            <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full border transition-all duration-150"
+            <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2.5 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 md:py-2 rounded-full border transition-all duration-150"
               style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
-              <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-              <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none" />
-              {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>}
+              <Search className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground flex-shrink-0" />
+              <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs md:text-[13px] text-foreground placeholder:text-muted-foreground outline-none" />
+              {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3 md:w-4 md:h-4" /></button>}
             </div>
           </div>
 
@@ -1079,7 +1109,10 @@ export default function ModelProjections() {
 
         {/* Row 5: Feed-wide mobile tab filter — MODEL PROJECTIONS | BETTING SPLITS | LINEUPS (MLB) */}
         {/* Tab bar: Fix #9 — flex + overflow-x:auto + scroll-snap for 6-tab MLB row */}
-        <div className="feed-tabs-scroll" style={{
+        {/* Fade wrapper: position:relative so the ::after pseudo-element can be absolutely */}
+        {/* positioned over the right edge. tabsShowFade drives the CSS class. */}
+        <div className="feed-tabs-wrapper" style={{ position: 'relative' }}>
+        <div ref={tabsScrollRef} className="feed-tabs-scroll" style={{
             display: 'flex',
             overflowX: 'auto',
             scrollSnapType: 'x mandatory',
@@ -1123,6 +1156,23 @@ export default function ModelProjections() {
               );
             })}
           </div>
+          {/* Fade-right gradient overlay: visible when tabsShowFade=true (scroll needed) */}
+          {/* Pointer-events:none so clicks pass through to the tab buttons beneath */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 48,
+              background: 'linear-gradient(to right, transparent, hsl(var(--card)))',
+              pointerEvents: 'none',
+              opacity: tabsShowFade ? 1 : 0,
+              transition: 'opacity 0.2s ease',
+            }}
+          />
+        </div>{/* end feed-tabs-wrapper */}
       </header>
 
       {/* ── Sticky global column header (mobile only) — MATCHUP | SPREAD/PUCK LINE | TOTAL | ML ── */}
