@@ -1,29 +1,34 @@
 /**
  * MlbCheatSheetCard — CHEAT SHEETS tab
  *
- * Displays two sections per game:
+ * Layout per game:
  *
  *  ┌─────────────────────────────────────────────────────────────┐
- *  │  MATCHUP HEADER: away @ home + start time                   │
+ *  │  MATCHUP HEADER: away logo + name @ home logo + name + time │
  *  ├─────────────────────────────────────────────────────────────┤
- *  │  F5 SECTION                                                 │
- *  │    Inning distribution: I1–I5 per team (bar chart)          │
- *  │    ML:  AN book away | model pct+odds | AN book home        │
- *  │    RL:  AN book away±0.5 odds | model pct+odds | home       │
- *  │    TOT: AN book over | model exp+odds | AN book under       │
+ *  │  F5 · ACTION NETWORK                                        │
+ *  │    [I1][I2][I3][I4][I5]  ← square score boxes per inning   │
+ *  │    ML:  AN away | model % + model odds | AN home            │
+ *  │    RL:  AN away ±0.5 | model % + model odds | AN home       │
+ *  │    TOT: AN O line | model scores + model odds | AN U line   │
  *  ├─────────────────────────────────────────────────────────────┤
- *  │  NRFI / YRFI SECTION                                        │
- *  │    I1 distribution: away | model | home                     │
+ *  │  NRFI / YRFI · ACTION NETWORK                               │
+ *  │    [I1 box: away EXP + P(≥1)] [P(NRFI)] [I1 box: home]     │
  *  │    NRFI: AN odds | model NRFI% + model odds | edge/EV       │
  *  │    YRFI: AN odds | model YRFI% + model odds | edge/EV       │
  *  └─────────────────────────────────────────────────────────────┘
  *
  * Data sources:
- *   F5 ML / RL / Total book odds → Action Network (FanDuel NJ, book_id=69)
- *   NRFI / YRFI book odds        → Action Network (FanDuel NJ, book_id=69)
- *   Model projections            → MLBAIModel.py (400K Monte Carlo + 3yr Bayesian priors)
- *   Inning distributions         → MLBAIModel.py inning_home_exp / inning_away_exp (I1-I9)
+ *   F5 book odds / NRFI book odds → Action Network (FanDuel NJ)
+ *   Model projections             → MLBAIModel.py 400K Monte Carlo + 3yr Bayesian priors
+ *   Inning distributions          → MLBAIModel.py inning_home_exp / inning_away_exp (I1–I9)
+ *
+ * CRITICAL BUG FIX (2026-04-14):
+ *   modelPNrfi is stored as raw decimal (0.48 = 48%) in DB.
+ *   Must multiply by 100 before display: modelPNrfi * 100 → 48.0%
+ *   Previous code passed 0.48 directly → displayed as "0.5%" (WRONG)
  */
+
 import { useMemo } from "react";
 import { MLB_BY_ABBREV } from "@shared/mlbTeams";
 
@@ -64,7 +69,7 @@ export interface CheatSheetGame {
   // NRFI/YRFI book odds (Action Network / FanDuel NJ)
   nrfiOverOdds: string | null;
   yrfiUnderOdds: string | null;
-  // NRFI/YRFI model (from MLBAIModel.py)
+  // NRFI/YRFI model (from MLBAIModel.py) — stored as raw decimal 0–1
   modelPNrfi: string | null;
   modelNrfiOdds: string | null;
   modelYrfiOdds: string | null;
@@ -102,21 +107,17 @@ function parseNum(val: string | number | null | undefined): number | null {
 
 // ─── Display helpers ───────────────────────────────────────────────────────────
 
-function fmtOdds(val: string | null | undefined): string {
-  if (!val) return "—";
-  const n = parseFloat(val);
-  if (isNaN(n)) return val;
+function fmtOdds(val: string | number | null | undefined): string {
+  if (val == null || val === '') return "—";
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  if (isNaN(n)) return String(val);
   return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
 }
 
+/** val is already on 0–100 scale */
 function fmtPct(val: number | null | undefined, decimals = 1): string {
   if (val == null) return "—";
   return `${val.toFixed(decimals)}%`;
-}
-
-function fmtScore(val: number | null | undefined): string {
-  if (val == null) return "—";
-  return val.toFixed(2);
 }
 
 function fmtLine(val: string | null | undefined): string {
@@ -141,28 +142,28 @@ function formatTime(t: string | null | undefined): string {
 }
 
 // ─── Edge/EV computation ───────────────────────────────────────────────────────
+// modelPct is on 0–100 scale (e.g., 48.0 for 48%)
 
 function americanToDecimal(odds: number): number {
   return odds > 0 ? 1 + odds / 100 : 1 - 100 / odds;
 }
 
 function computeEdgeEV(
-  modelPct: number | null,
+  modelPct: number | null,   // 0–100 scale
   bookOddsStr: string | null | undefined
 ): { edge: number; ev: number; isEdge: boolean } | null {
   if (modelPct == null || !bookOddsStr) return null;
   const bookOdds = parseFloat(bookOddsStr);
   if (isNaN(bookOdds)) return null;
   const impliedProb = bookOdds > 0 ? 100 / (bookOdds + 100) : -bookOdds / (-bookOdds + 100);
-  const modelProb = modelPct / 100;
+  const modelProb = modelPct / 100;  // convert back to 0–1 for math
   const edge = modelProb - impliedProb;
   const decimalOdds = americanToDecimal(bookOdds);
   const ev = modelProb * (decimalOdds - 1) - (1 - modelProb);
   return { edge, ev, isEdge: Math.abs(edge) >= 0.03 };
 }
 
-function edgeColor(edge: number, isEdge: boolean): string {
-  if (!isEdge) return "rgba(255,255,255,0.85)";
+function edgeColor(edge: number): string {
   return edge >= 0.03 ? "#39FF14" : "#FF4444";
 }
 
@@ -175,80 +176,91 @@ function fmtEV(ev: number): string {
   return `${dollars >= 0 ? '+' : ''}$${Math.abs(dollars).toFixed(1)}`;
 }
 
-// ─── Inning Bar Chart ──────────────────────────────────────────────────────────
+// ─── Square Inning Box Grid (F5: I1–I5) ────────────────────────────────────────
 
-interface InningBarChartProps {
+interface InningBoxGridProps {
   awayAbbrev: string;
   homeAbbrev: string;
-  awayExp: number[];   // I1..I5 (or I1..I9)
+  awayExp: number[];
   homeExp: number[];
-  maxInnings: 5 | 9;
+  count: 5 | 9;
   awayColor: string;
   homeColor: string;
 }
 
-function InningBarChart({
+function InningBoxGrid({
   awayAbbrev, homeAbbrev,
   awayExp, homeExp,
-  maxInnings,
+  count,
   awayColor, homeColor,
-}: InningBarChartProps) {
-  const innings = Array.from({ length: maxInnings }, (_, i) => i);
-  const allVals = [...awayExp.slice(0, maxInnings), ...homeExp.slice(0, maxInnings)];
-  const maxVal = Math.max(...allVals, 0.01);
+}: InningBoxGridProps) {
+  const innings = Array.from({ length: count }, (_, i) => i);
 
   return (
-    <div style={{ padding: "8px 10px 6px" }}>
-      {/* Legend */}
-      <div style={{ display: "flex", gap: 12, marginBottom: 6, alignItems: "center" }}>
+    <div style={{ padding: "8px 10px 6px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      {/* Team legend */}
+      <div style={{ display: "flex", gap: 14, marginBottom: 6, alignItems: "center" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <div style={{ width: 8, height: 8, borderRadius: 2, background: awayColor }} />
-          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: "0.06em" }}>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: "0.07em" }}>
             {awayAbbrev}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <div style={{ width: 8, height: 8, borderRadius: 2, background: homeColor }} />
-          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: "0.06em" }}>
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: "0.07em" }}>
             {homeAbbrev}
           </span>
         </div>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)", marginLeft: "auto" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", marginLeft: "auto", letterSpacing: "0.05em" }}>
           EXP RUNS / INNING
         </span>
       </div>
-      {/* Bars */}
-      <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 44 }}>
+
+      {/* Square boxes */}
+      <div style={{ display: "flex", gap: 4 }}>
         {innings.map((i) => {
           const aVal = awayExp[i] ?? 0;
           const hVal = homeExp[i] ?? 0;
-          const aH = Math.round((aVal / maxVal) * 40);
-          const hH = Math.round((hVal / maxVal) * 40);
           return (
-            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
-              {/* Away bar */}
-              <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: 40 }}>
-                <span style={{ fontSize: 7, color: "rgba(255,255,255,0.4)", marginBottom: 1 }}>
-                  {aVal.toFixed(2)}
-                </span>
-                <div style={{
-                  width: "42%", height: aH, background: awayColor,
-                  borderRadius: "2px 2px 0 0", minHeight: 2,
-                }} />
-              </div>
-              {/* Home bar (same column, right side) */}
-              <div style={{ width: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-end", height: 40, marginTop: -40, paddingLeft: "52%" }}>
-                <span style={{ fontSize: 7, color: "rgba(255,255,255,0.4)", marginBottom: 1 }}>
-                  {hVal.toFixed(2)}
-                </span>
-                <div style={{
-                  width: "42%", height: hH, background: homeColor,
-                  borderRadius: "2px 2px 0 0", minHeight: 2,
-                }} />
-              </div>
+            <div key={i} style={{
+              flex: 1,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 5,
+              padding: "5px 2px 4px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 2,
+              minWidth: 0,
+            }}>
               {/* Inning label */}
-              <span style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", marginTop: 2, fontWeight: 700 }}>
+              <span style={{
+                fontSize: 8, fontWeight: 800, letterSpacing: "0.08em",
+                color: "rgba(255,255,255,0.3)", textTransform: "uppercase",
+              }}>
                 I{i + 1}
+              </span>
+              {/* Away expected runs */}
+              <span style={{
+                fontSize: 12, fontWeight: 800,
+                color: awayColor,
+                fontFamily: "'Barlow Condensed', sans-serif",
+                lineHeight: 1,
+              }}>
+                {aVal.toFixed(2)}
+              </span>
+              {/* Divider */}
+              <div style={{ width: "60%", height: 1, background: "rgba(255,255,255,0.08)" }} />
+              {/* Home expected runs */}
+              <span style={{
+                fontSize: 12, fontWeight: 800,
+                color: homeColor,
+                fontFamily: "'Barlow Condensed', sans-serif",
+                lineHeight: 1,
+              }}>
+                {hVal.toFixed(2)}
               </span>
             </div>
           );
@@ -258,7 +270,7 @@ function InningBarChart({
   );
 }
 
-// ─── Market Row (3-column: away | model | home) ────────────────────────────────
+// ─── Market Row (3-column: AWAY | MODEL | HOME) ────────────────────────────────
 
 interface MarketRowProps {
   label: string;
@@ -270,87 +282,95 @@ interface MarketRowProps {
   homeBot?: string;
   awayEdge?: { edge: number; ev: number; isEdge: boolean } | null;
   homeEdge?: { edge: number; ev: number; isEdge: boolean } | null;
-  modelIsEdge?: boolean;
 }
 
 function MarketRow({
   label, awayTop, awayBot, modelTop, modelBot, homeTop, homeBot,
-  awayEdge, homeEdge, modelIsEdge,
+  awayEdge, homeEdge,
 }: MarketRowProps) {
+  const awayHasEdge = awayEdge?.isEdge ?? false;
+  const homeHasEdge = homeEdge?.isEdge ?? false;
+
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "40px 1fr 88px 1fr",
+      gridTemplateColumns: "36px 1fr 96px 1fr",
       alignItems: "center",
-      padding: "5px 10px",
-      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      padding: "7px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.05)",
       gap: 4,
     }}>
       {/* Label */}
       <span style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
-        color: "rgba(255,255,255,0.4)", textTransform: "uppercase",
+        fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+        color: "rgba(255,255,255,0.35)", textTransform: "uppercase",
       }}>
         {label}
       </span>
+
       {/* Away */}
       <div style={{ textAlign: "center" }}>
         <span style={{
-          fontSize: 13, fontWeight: 700,
-          color: awayEdge?.isEdge ? edgeColor(awayEdge.edge, true) : "rgba(255,255,255,0.9)",
+          fontSize: 14, fontWeight: 700,
+          color: awayHasEdge ? edgeColor(awayEdge!.edge) : "rgba(255,255,255,0.85)",
           fontFamily: "'Barlow Condensed', sans-serif",
           display: "block",
         }}>
           {awayTop}
         </span>
         {awayBot && (
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", display: "block", marginTop: 1 }}>
+          <span style={{ fontSize: 10, color: awayHasEdge ? edgeColor(awayEdge!.edge) : "rgba(255,255,255,0.4)", display: "block", marginTop: 1 }}>
             {awayBot}
           </span>
         )}
-        {awayEdge?.isEdge && (
-          <span style={{ fontSize: 9, color: edgeColor(awayEdge.edge, true), display: "block", marginTop: 1, fontWeight: 700 }}>
+        {awayHasEdge && awayEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(awayEdge.edge), display: "block", marginTop: 1 }}>
             {fmtEdge(awayEdge.edge)} · {fmtEV(awayEdge.ev)}
           </span>
         )}
       </div>
+
       {/* Model center */}
       <div style={{
         textAlign: "center",
-        background: modelIsEdge ? "rgba(57,255,20,0.08)" : "rgba(255,255,255,0.04)",
-        borderRadius: 4, padding: "3px 4px",
+        background: "rgba(255,255,255,0.05)",
+        borderRadius: 5,
+        padding: "5px 4px",
+        border: "1px solid rgba(255,255,255,0.08)",
       }}>
         <span style={{
-          fontSize: 11, fontWeight: 700,
-          color: modelIsEdge ? "#39FF14" : "#39FF14",
+          fontSize: 13, fontWeight: 800,
+          color: "#39FF14",
           fontFamily: "'Barlow Condensed', sans-serif",
           display: "block",
+          lineHeight: 1.1,
         }}>
           {modelTop}
         </span>
         {modelBot && (
-          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginTop: 1 }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", display: "block", marginTop: 2 }}>
             {modelBot}
           </span>
         )}
       </div>
+
       {/* Home */}
       <div style={{ textAlign: "center" }}>
         <span style={{
-          fontSize: 13, fontWeight: 700,
-          color: homeEdge?.isEdge ? edgeColor(homeEdge.edge, true) : "rgba(255,255,255,0.9)",
+          fontSize: 14, fontWeight: 700,
+          color: homeHasEdge ? edgeColor(homeEdge!.edge) : "rgba(255,255,255,0.85)",
           fontFamily: "'Barlow Condensed', sans-serif",
           display: "block",
         }}>
           {homeTop}
         </span>
         {homeBot && (
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", display: "block", marginTop: 1 }}>
+          <span style={{ fontSize: 10, color: homeHasEdge ? edgeColor(homeEdge!.edge) : "rgba(255,255,255,0.4)", display: "block", marginTop: 1 }}>
             {homeBot}
           </span>
         )}
-        {homeEdge?.isEdge && (
-          <span style={{ fontSize: 9, color: edgeColor(homeEdge.edge, true), display: "block", marginTop: 1, fontWeight: 700 }}>
+        {homeHasEdge && homeEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(homeEdge.edge), display: "block", marginTop: 1 }}>
             {fmtEdge(homeEdge.edge)} · {fmtEV(homeEdge.ev)}
           </span>
         )}
@@ -359,10 +379,9 @@ function MarketRow({
   );
 }
 
-// ─── Total Row (special layout: O {line} U with model exp total) ───────────────
+// ─── Total Row ─────────────────────────────────────────────────────────────────
 
 interface TotalRowProps {
-  label: string;
   bookLine: string | null;
   bookOverOdds: string | null;
   bookUnderOdds: string | null;
@@ -371,90 +390,111 @@ interface TotalRowProps {
   modelExpTotal: number | null;
   modelOverOdds: string | null;
   modelUnderOdds: string | null;
-  modelOverRate: number | null;
-  modelUnderRate: number | null;
+  modelOverRate: number | null;   // 0–100 scale
+  modelUnderRate: number | null;  // 0–100 scale
 }
 
 function TotalRow({
-  label, bookLine, bookOverOdds, bookUnderOdds,
+  bookLine, bookOverOdds, bookUnderOdds,
   modelExpAway, modelExpHome, modelExpTotal,
   modelOverOdds, modelUnderOdds,
   modelOverRate, modelUnderRate,
 }: TotalRowProps) {
-  const overEdge = computeEdgeEV(modelOverRate != null ? modelOverRate * 100 : null, bookOverOdds);
-  const underEdge = computeEdgeEV(modelUnderRate != null ? modelUnderRate * 100 : null, bookUnderOdds);
-  const line = bookLine ? parseFloat(bookLine) : null;
+  const overEdge = computeEdgeEV(modelOverRate, bookOverOdds);
+  const underEdge = computeEdgeEV(modelUnderRate, bookUnderOdds);
+  const overHasEdge = overEdge?.isEdge ?? false;
+  const underHasEdge = underEdge?.isEdge ?? false;
+
+  const modelScoreStr = (modelExpAway != null && modelExpHome != null)
+    ? `${modelExpAway.toFixed(2)} – ${modelExpHome.toFixed(2)}`
+    : "—";
+  const modelTotStr = modelExpTotal != null ? `TOT ${modelExpTotal.toFixed(1)}` : "—";
 
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "40px 1fr 88px 1fr",
+      gridTemplateColumns: "36px 1fr 96px 1fr",
       alignItems: "center",
-      padding: "5px 10px",
-      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      padding: "7px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.05)",
       gap: 4,
     }}>
       {/* Label */}
       <span style={{
-        fontSize: 10, fontWeight: 700, letterSpacing: "0.08em",
-        color: "rgba(255,255,255,0.4)", textTransform: "uppercase",
+        fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+        color: "rgba(255,255,255,0.35)", textTransform: "uppercase",
       }}>
-        {label}
+        TOT
       </span>
+
       {/* Over (away side) */}
       <div style={{ textAlign: "center" }}>
         <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 1 }}>
-          O {line != null ? line : "—"}
+          O {bookLine ?? "—"}
         </span>
         <span style={{
-          fontSize: 13, fontWeight: 700,
-          color: overEdge?.isEdge ? edgeColor(overEdge.edge, true) : "rgba(255,255,255,0.9)",
+          fontSize: 14, fontWeight: 700,
+          color: overHasEdge ? edgeColor(overEdge!.edge) : "rgba(255,255,255,0.85)",
           fontFamily: "'Barlow Condensed', sans-serif",
           display: "block",
         }}>
           {fmtOdds(bookOverOdds)}
         </span>
-        {overEdge?.isEdge && (
-          <span style={{ fontSize: 9, color: edgeColor(overEdge.edge, true), display: "block", marginTop: 1, fontWeight: 700 }}>
+        {overHasEdge && overEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(overEdge.edge), display: "block", marginTop: 1 }}>
             {fmtEdge(overEdge.edge)} · {fmtEV(overEdge.ev)}
           </span>
         )}
       </div>
+
       {/* Model center */}
       <div style={{
         textAlign: "center",
-        background: "rgba(255,255,255,0.04)",
-        borderRadius: 4, padding: "3px 4px",
+        background: "rgba(255,255,255,0.05)",
+        borderRadius: 5,
+        padding: "5px 4px",
+        border: "1px solid rgba(255,255,255,0.08)",
       }}>
-        {modelExpAway != null && modelExpHome != null ? (
-          <span style={{ fontSize: 10, fontWeight: 700, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif", display: "block" }}>
-            {fmtScore(modelExpAway)} – {fmtScore(modelExpHome)}
-          </span>
-        ) : null}
-        <span style={{ fontSize: 11, fontWeight: 700, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif", display: "block" }}>
-          {modelExpTotal != null ? `TOT ${modelExpTotal.toFixed(1)}` : "—"}
+        <span style={{
+          fontSize: 10, fontWeight: 700,
+          color: "#39FF14",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+          lineHeight: 1.2,
+        }}>
+          {modelScoreStr}
         </span>
-        {modelOverOdds && (
-          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginTop: 1 }}>
+        <span style={{
+          fontSize: 12, fontWeight: 800,
+          color: "#39FF14",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+          lineHeight: 1.2,
+        }}>
+          {modelTotStr}
+        </span>
+        {(modelOverOdds || modelUnderOdds) && (
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginTop: 2 }}>
             O {fmtOdds(modelOverOdds)} / U {fmtOdds(modelUnderOdds)}
           </span>
         )}
       </div>
+
       {/* Under (home side) */}
       <div style={{ textAlign: "center" }}>
         <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 1 }}>
-          U {line != null ? line : "—"}
+          U {bookLine ?? "—"}
         </span>
         <span style={{
-          fontSize: 13, fontWeight: 700,
-          color: underEdge?.isEdge ? edgeColor(underEdge.edge, true) : "rgba(255,255,255,0.9)",
+          fontSize: 14, fontWeight: 700,
+          color: underHasEdge ? edgeColor(underEdge!.edge) : "rgba(255,255,255,0.85)",
           fontFamily: "'Barlow Condensed', sans-serif",
           display: "block",
         }}>
           {fmtOdds(bookUnderOdds)}
         </span>
-        {underEdge?.isEdge && (
-          <span style={{ fontSize: 9, color: edgeColor(underEdge.edge, true), display: "block", marginTop: 1, fontWeight: 700 }}>
+        {underHasEdge && underEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(underEdge.edge), display: "block", marginTop: 1 }}>
             {fmtEdge(underEdge.edge)} · {fmtEV(underEdge.ev)}
           </span>
         )}
@@ -463,70 +503,190 @@ function TotalRow({
   );
 }
 
-// ─── NRFI/YRFI Row ─────────────────────────────────────────────────────────────
+// ─── I1 Distribution Boxes (NRFI section) ─────────────────────────────────────
+
+interface I1BoxRowProps {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  awayI1Exp: number | null;
+  homeI1Exp: number | null;
+  awayI1PScores: number | null;   // raw 0–1 probability
+  homeI1PScores: number | null;   // raw 0–1 probability
+  pNeitherI1: number | null;      // raw 0–1 probability
+  awayColor: string;
+  homeColor: string;
+}
+
+function I1BoxRow({
+  awayAbbrev, homeAbbrev,
+  awayI1Exp, homeI1Exp,
+  awayI1PScores, homeI1PScores,
+  pNeitherI1,
+  awayColor, homeColor,
+}: I1BoxRowProps) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "1fr 80px 1fr",
+      gap: 6,
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      alignItems: "stretch",
+    }}>
+      {/* Away I1 box */}
+      <div style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 5,
+        padding: "6px 6px",
+        textAlign: "center",
+      }}>
+        <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: awayColor, display: "block", marginBottom: 4 }}>
+          {awayAbbrev} · I1
+        </span>
+        <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>EXP</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: awayColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {awayI1Exp != null ? awayI1Exp.toFixed(3) : "—"}
+            </span>
+          </div>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>P(≥1)</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: awayColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {awayI1PScores != null ? fmtPct(awayI1PScores * 100) : "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Center: P(NRFI) */}
+      <div style={{
+        background: "rgba(57,255,20,0.07)",
+        border: "1px solid rgba(57,255,20,0.2)",
+        borderRadius: 5,
+        padding: "6px 4px",
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+      }}>
+        <span style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 2 }}>P(NRFI)</span>
+        <span style={{ fontSize: 16, fontWeight: 900, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif" }}>
+          {pNeitherI1 != null ? fmtPct(pNeitherI1 * 100) : "—"}
+        </span>
+      </div>
+
+      {/* Home I1 box */}
+      <div style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 5,
+        padding: "6px 6px",
+        textAlign: "center",
+      }}>
+        <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: homeColor, display: "block", marginBottom: 4 }}>
+          {homeAbbrev} · I1
+        </span>
+        <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>EXP</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: homeColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {homeI1Exp != null ? homeI1Exp.toFixed(3) : "—"}
+            </span>
+          </div>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>P(≥1)</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: homeColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {homeI1PScores != null ? fmtPct(homeI1PScores * 100) : "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── NRFI / YRFI Row ───────────────────────────────────────────────────────────
 
 interface NrfiYrfiRowProps {
   label: "NRFI" | "YRFI";
-  bookOdds: string | null | undefined;
-  modelPct: number | null;
-  modelOdds: string | null | undefined;
+  bookOdds: string | null;
+  modelPct: number | null;   // 0–100 scale (e.g., 48.0 for 48%)
+  modelOdds: string | null;
 }
 
 function NrfiYrfiRow({ label, bookOdds, modelPct, modelOdds }: NrfiYrfiRowProps) {
-  const isNrfi = label === "NRFI";
+  // computeEdgeEV expects 0–100 scale — correct
   const edgeEV = computeEdgeEV(modelPct, bookOdds);
   const hasEdge = edgeEV?.isEdge ?? false;
+  const isNrfi = label === "NRFI";
 
   return (
     <div style={{
       display: "grid",
-      gridTemplateColumns: "60px 1fr 1fr 1fr",
+      gridTemplateColumns: "36px 1fr 1fr 1fr",
       alignItems: "center",
-      padding: "6px 10px",
-      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.05)",
       gap: 4,
     }}>
       {/* Label */}
       <span style={{
-        fontSize: 11, fontWeight: 800, letterSpacing: "0.06em",
+        fontSize: 10, fontWeight: 900, letterSpacing: "0.06em",
         color: isNrfi ? "#39FF14" : "#FF6B35",
         textTransform: "uppercase",
-        fontFamily: "'Barlow Condensed', sans-serif",
       }}>
         {label}
       </span>
-      {/* Book odds */}
+
+      {/* AN Odds */}
       <div style={{ textAlign: "center" }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>AN ODDS</span>
-        <span style={{ fontSize: 13, fontWeight: 700, color: "rgba(255,255,255,0.9)", fontFamily: "'Barlow Condensed', sans-serif" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", display: "block", marginBottom: 2 }}>AN ODDS</span>
+        <span style={{
+          fontSize: 14, fontWeight: 700,
+          color: "rgba(255,255,255,0.85)",
+          fontFamily: "'Barlow Condensed', sans-serif",
+        }}>
           {fmtOdds(bookOdds)}
         </span>
       </div>
-      {/* Model probability + model odds */}
-      <div style={{ textAlign: "center" }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>MODEL %</span>
+
+      {/* Model % + Model Odds */}
+      <div style={{
+        textAlign: "center",
+        background: "rgba(255,255,255,0.05)",
+        borderRadius: 5,
+        padding: "5px 4px",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", display: "block", marginBottom: 1 }}>MODEL %</span>
         <span style={{
-          fontSize: 14, fontWeight: 800,
-          color: "#39FF14",
+          fontSize: 15, fontWeight: 900,
+          color: isNrfi ? "#39FF14" : "#FF6B35",
           fontFamily: "'Barlow Condensed', sans-serif",
           display: "block",
+          lineHeight: 1.1,
         }}>
+          {/* modelPct is on 0–100 scale — display directly */}
           {modelPct != null ? fmtPct(modelPct) : "—"}
         </span>
         {modelOdds && (
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", display: "block", marginTop: 1 }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", display: "block", marginTop: 2 }}>
             {fmtOdds(modelOdds)}
           </span>
         )}
       </div>
+
       {/* Edge / EV */}
       <div style={{ textAlign: "center" }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginBottom: 1 }}>EDGE · EV</span>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", display: "block", marginBottom: 2 }}>EDGE · EV</span>
         {edgeEV ? (
           <>
             <span style={{
               fontSize: 13, fontWeight: 700,
-              color: hasEdge ? edgeColor(edgeEV.edge, true) : "rgba(255,255,255,0.45)",
+              color: hasEdge ? edgeColor(edgeEV.edge) : "rgba(255,255,255,0.45)",
               fontFamily: "'Barlow Condensed', sans-serif",
               display: "block",
             }}>
@@ -534,100 +694,15 @@ function NrfiYrfiRow({ label, bookOdds, modelPct, modelOdds }: NrfiYrfiRowProps)
             </span>
             <span style={{
               fontSize: 10,
-              color: hasEdge ? edgeColor(edgeEV.edge, true) : "rgba(255,255,255,0.35)",
+              color: hasEdge ? edgeColor(edgeEV.edge) : "rgba(255,255,255,0.3)",
               display: "block", marginTop: 1,
             }}>
               {fmtEV(edgeEV.ev)}
             </span>
           </>
         ) : (
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>—</span>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>—</span>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ─── I1 Distribution Row (for NRFI section) ────────────────────────────────────
-
-interface I1DistRowProps {
-  awayAbbrev: string;
-  homeAbbrev: string;
-  awayI1Exp: number | null;
-  homeI1Exp: number | null;
-  awayI1PScores: number | null;
-  homeI1PScores: number | null;
-  pNeitherI1: number | null;
-  awayColor: string;
-  homeColor: string;
-}
-
-function I1DistRow({
-  awayAbbrev, homeAbbrev,
-  awayI1Exp, homeI1Exp,
-  awayI1PScores, homeI1PScores,
-  pNeitherI1,
-  awayColor, homeColor,
-}: I1DistRowProps) {
-  return (
-    <div style={{
-      display: "grid",
-      gridTemplateColumns: "1fr 80px 1fr",
-      alignItems: "center",
-      padding: "6px 10px",
-      borderBottom: "1px solid rgba(255,255,255,0.06)",
-      gap: 4,
-    }}>
-      {/* Away I1 */}
-      <div style={{ textAlign: "center" }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 2, letterSpacing: "0.06em" }}>
-          {awayAbbrev} · I1
-        </span>
-        <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
-          <div style={{ textAlign: "center" }}>
-            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>EXP</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: awayColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
-              {awayI1Exp != null ? awayI1Exp.toFixed(3) : "—"}
-            </span>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>P(≥1)</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: awayColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
-              {awayI1PScores != null ? fmtPct(awayI1PScores * 100) : "—"}
-            </span>
-          </div>
-        </div>
-      </div>
-      {/* Center: P(NRFI from sim) */}
-      <div style={{
-        textAlign: "center",
-        background: "rgba(255,255,255,0.04)",
-        borderRadius: 4, padding: "4px 2px",
-      }}>
-        <span style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 1 }}>P(NRFI)</span>
-        <span style={{ fontSize: 13, fontWeight: 800, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif" }}>
-          {pNeitherI1 != null ? fmtPct(pNeitherI1 * 100) : "—"}
-        </span>
-      </div>
-      {/* Home I1 */}
-      <div style={{ textAlign: "center" }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 2, letterSpacing: "0.06em" }}>
-          {homeAbbrev} · I1
-        </span>
-        <div style={{ display: "flex", justifyContent: "center", gap: 6 }}>
-          <div style={{ textAlign: "center" }}>
-            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>EXP</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: homeColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
-              {homeI1Exp != null ? homeI1Exp.toFixed(3) : "—"}
-            </span>
-          </div>
-          <div style={{ textAlign: "center" }}>
-            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>P(≥1)</span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: homeColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
-              {homeI1PScores != null ? fmtPct(homeI1PScores * 100) : "—"}
-            </span>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -652,17 +727,20 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
   const pHomeScoresArr = useMemo(() => parseJsonArr(game.modelInningPHomeScores), [game.modelInningPHomeScores]);
   const pAwayScoresArr = useMemo(() => parseJsonArr(game.modelInningPAwayScores), [game.modelInningPAwayScores]);
 
-  // Parse model values
+  // Parse model values — F5 win/RL pcts are stored as 0–100 scale already
   const modelF5AwayScore = parseNum(game.modelF5AwayScore);
   const modelF5HomeScore = parseNum(game.modelF5HomeScore);
   const modelF5Total = parseNum(game.modelF5Total);
-  const modelF5OverRate = parseNum(game.modelF5OverRate);
-  const modelF5UnderRate = parseNum(game.modelF5UnderRate);
-  const modelF5AwayWinPct = parseNum(game.modelF5AwayWinPct);
-  const modelF5HomeWinPct = parseNum(game.modelF5HomeWinPct);
-  const modelF5AwayRLCoverPct = parseNum(game.modelF5AwayRLCoverPct);
-  const modelF5HomeRLCoverPct = parseNum(game.modelF5HomeRLCoverPct);
-  const modelPNrfi = parseNum(game.modelPNrfi);
+  const modelF5OverRate = parseNum(game.modelF5OverRate);     // 0–100 scale
+  const modelF5UnderRate = parseNum(game.modelF5UnderRate);   // 0–100 scale
+  const modelF5AwayWinPct = parseNum(game.modelF5AwayWinPct); // 0–100 scale
+  const modelF5HomeWinPct = parseNum(game.modelF5HomeWinPct); // 0–100 scale
+  const modelF5AwayRLCoverPct = parseNum(game.modelF5AwayRLCoverPct); // 0–100 scale
+  const modelF5HomeRLCoverPct = parseNum(game.modelF5HomeRLCoverPct); // 0–100 scale
+
+  // CRITICAL: modelPNrfi is stored as raw decimal (0.48 = 48%) — multiply by 100
+  const modelPNrfiRaw = parseNum(game.modelPNrfi);
+  const modelPNrfi = modelPNrfiRaw != null ? modelPNrfiRaw * 100 : null;  // now 0–100 scale
   const modelPYrfi = modelPNrfi != null ? 100 - modelPNrfi : null;
 
   // I1 values from inning arrays
@@ -672,7 +750,7 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
   const awayI1PScores = pAwayScoresArr ? pAwayScoresArr[0] ?? null : null;
   const homeI1PScores = pHomeScoresArr ? pHomeScoresArr[0] ?? null : null;
 
-  // Edge/EV computations for F5
+  // Edge/EV for F5 ML and RL
   const awayF5MlEdge = computeEdgeEV(modelF5AwayWinPct, game.f5AwayML);
   const homeF5MlEdge = computeEdgeEV(modelF5HomeWinPct, game.f5HomeML);
   const awayF5RlEdge = computeEdgeEV(modelF5AwayRLCoverPct, game.f5AwayRunLineOdds);
@@ -689,7 +767,7 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
 
   // Gradient bar
   const gradientStyle = {
-    background: `linear-gradient(90deg, ${awayColor}55 0%, transparent 40%, transparent 60%, ${homeColor}55 100%)`,
+    background: `linear-gradient(90deg, ${awayColor}66 0%, transparent 45%, transparent 55%, ${homeColor}66 100%)`,
     height: 3,
     width: "100%",
   };
@@ -706,30 +784,30 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
       {/* Gradient bar */}
       <div style={gradientStyle} />
 
-      {/* Header */}
+      {/* ── HEADER ── */}
       <div style={{
         display: "flex", justifyContent: "space-between", alignItems: "center",
-        padding: "8px 10px 6px",
+        padding: "8px 10px 7px",
         borderBottom: "1px solid rgba(255,255,255,0.07)",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {awayLogo && <img src={awayLogo} alt={game.awayTeam} style={{ width: 22, height: 22, objectFit: "contain" }} />}
-          <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.9)", letterSpacing: "0.04em" }}>
+          {awayLogo && <img src={awayLogo} alt={game.awayTeam} style={{ width: 24, height: 24, objectFit: "contain" }} />}
+          <span style={{ fontSize: 15, fontWeight: 800, color: "rgba(255,255,255,0.92)", letterSpacing: "0.03em" }}>
             {awayName}
           </span>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", margin: "0 2px" }}>@</span>
-          {homeLogo && <img src={homeLogo} alt={game.homeTeam} style={{ width: 22, height: 22, objectFit: "contain" }} />}
-          <span style={{ fontSize: 14, fontWeight: 800, color: "rgba(255,255,255,0.9)", letterSpacing: "0.04em" }}>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", margin: "0 2px" }}>@</span>
+          {homeLogo && <img src={homeLogo} alt={game.homeTeam} style={{ width: 24, height: 24, objectFit: "contain" }} />}
+          <span style={{ fontSize: 15, fontWeight: 800, color: "rgba(255,255,255,0.92)", letterSpacing: "0.03em" }}>
             {homeName}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           {nrfiPass && (
             <span style={{
-              fontSize: 8, fontWeight: 800, letterSpacing: "0.08em",
-              background: "rgba(57,255,20,0.15)", color: "#39FF14",
-              border: "1px solid rgba(57,255,20,0.35)",
-              borderRadius: 3, padding: "1px 5px",
+              fontSize: 8, fontWeight: 900, letterSpacing: "0.08em",
+              background: "rgba(57,255,20,0.12)", color: "#39FF14",
+              border: "1px solid rgba(57,255,20,0.3)",
+              borderRadius: 3, padding: "2px 5px",
             }}>
               NRFI {nrfiSignal != null ? `${(nrfiSignal * 100).toFixed(1)}%` : "✓"}
             </span>
@@ -740,55 +818,58 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
         </div>
       </div>
 
-      {/* Column headers */}
+      {/* ── F5 SECTION HEADER ── */}
       <div style={{
-        display: "grid",
-        gridTemplateColumns: "40px 1fr 88px 1fr",
-        padding: "3px 10px",
-        borderBottom: "1px solid rgba(255,255,255,0.05)",
-        gap: 4,
+        padding: "5px 10px 4px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(57,255,20,0.03)",
       }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)" }} />
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", textAlign: "center" }}>
-          {game.awayTeam}
-        </span>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", textAlign: "center" }}>
-          MODEL
-        </span>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", textAlign: "center" }}>
-          {game.homeTeam}
-        </span>
-      </div>
-
-      {/* ── F5 SECTION ── */}
-      <div style={{ padding: "4px 10px 2px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", color: "#39FF14", textTransform: "uppercase" }}>
+        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: "#39FF14", textTransform: "uppercase" }}>
           F5 · ACTION NETWORK
         </span>
       </div>
 
-      {/* F5 Inning Distribution (I1–I5) */}
+      {/* F5 Inning Distribution: square boxes I1–I5 */}
       {hasInnDist ? (
-        <InningBarChart
+        <InningBoxGrid
           awayAbbrev={game.awayTeam}
           homeAbbrev={game.homeTeam}
           awayExp={awayInnExp!.slice(0, 5)}
           homeExp={homeInnExp!.slice(0, 5)}
-          maxInnings={5}
+          count={5}
           awayColor={awayColor}
           homeColor={homeColor}
         />
       ) : (
-        <div style={{ padding: "6px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", fontStyle: "italic" }}>
+        <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.22)", fontStyle: "italic" }}>
             Inning distribution pending model run
           </span>
         </div>
       )}
 
-      {/* F5 ML */}
+      {/* F5 ML / RL / Total */}
       {hasF5Data ? (
         <>
+          {/* Column headers */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "36px 1fr 96px 1fr",
+            padding: "3px 10px 2px",
+            gap: 4,
+          }}>
+            <span />
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              {game.awayTeam}
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              MODEL
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              {game.homeTeam}
+            </span>
+          </div>
+
           <MarketRow
             label="ML"
             awayTop={fmtOdds(game.f5AwayML)}
@@ -798,7 +879,7 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
             awayEdge={awayF5MlEdge}
             homeEdge={homeF5MlEdge}
           />
-          {/* F5 RL */}
+
           <MarketRow
             label="RL"
             awayTop={fmtLine(game.f5AwayRunLine)}
@@ -810,9 +891,8 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
             awayEdge={awayF5RlEdge}
             homeEdge={homeF5RlEdge}
           />
-          {/* F5 Total */}
+
           <TotalRow
-            label="TOT"
             bookLine={game.f5Total}
             bookOverOdds={game.f5OverOdds}
             bookUnderOdds={game.f5UnderOdds}
@@ -826,21 +906,26 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
           />
         </>
       ) : (
-        <div style={{ padding: "10px 10px", textAlign: "center", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>F5 odds not yet available</span>
+        <div style={{ padding: "10px", textAlign: "center", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>F5 odds not yet posted</span>
         </div>
       )}
 
-      {/* ── NRFI / YRFI SECTION ── */}
-      <div style={{ padding: "4px 10px 2px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-        <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: "0.12em", color: "#FF6B35", textTransform: "uppercase" }}>
+      {/* ── NRFI / YRFI SECTION HEADER ── */}
+      <div style={{
+        padding: "5px 10px 4px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,107,53,0.03)",
+      }}>
+        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: "#FF6B35", textTransform: "uppercase" }}>
           NRFI / YRFI · ACTION NETWORK
         </span>
       </div>
 
-      {/* I1 Distribution */}
+      {/* I1 Distribution boxes */}
       {(awayI1Exp != null || homeI1Exp != null) && (
-        <I1DistRow
+        <I1BoxRow
           awayAbbrev={game.awayTeam}
           homeAbbrev={game.homeTeam}
           awayI1Exp={awayI1Exp}
@@ -853,9 +938,28 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
         />
       )}
 
-      {/* NRFI row */}
+      {/* NRFI/YRFI rows */}
       {hasNrfiData ? (
         <>
+          {/* Column headers */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "36px 1fr 1fr 1fr",
+            padding: "3px 10px 2px",
+            gap: 4,
+          }}>
+            <span />
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              AN ODDS
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              MODEL
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              EDGE · EV
+            </span>
+          </div>
+
           <NrfiYrfiRow
             label="NRFI"
             bookOdds={game.nrfiOverOdds}
@@ -870,14 +974,14 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
           />
         </>
       ) : (
-        <div style={{ padding: "10px 10px", textAlign: "center" }}>
-          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>NRFI/YRFI odds not yet available</span>
+        <div style={{ padding: "10px", textAlign: "center" }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>NRFI/YRFI odds not yet posted</span>
         </div>
       )}
 
       {/* Footer */}
       <div style={{ padding: "4px 10px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
-        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.18)", letterSpacing: "0.04em" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.16)", letterSpacing: "0.04em" }}>
           F5 + NRFI/YRFI: Action Network · Model: 400K Monte Carlo + 3yr Bayesian priors · Edge ≥±3%
         </span>
       </div>
