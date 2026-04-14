@@ -14,6 +14,7 @@ import SecurityEvents from "./pages/SecurityEvents";
 import MlbTeamSchedule from "./pages/MlbTeamSchedule";
 import NbaTeamSchedule from "./pages/NbaTeamSchedule";
 import NhlTeamSchedule from "./pages/NhlTeamSchedule";
+import BetTracker from "./pages/BetTracker";
 
 function Router() {
   return (
@@ -42,6 +43,7 @@ function Router() {
       <Route path="/admin/model-results" component={ModelResults} />
       {/* Owner-only: Security Events dashboard */}
       <Route path="/admin/security" component={SecurityEvents} />
+      <Route path="/bet-tracker" component={BetTracker} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

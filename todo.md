@@ -2492,3 +2492,31 @@
 - [x] Fix tab bar vertical scroll bleed — overflowY:hidden + overscrollBehaviorX:contain + touchAction:pan-x on feed-tabs-scroll; prevents iOS/Android vertical scroll chain on horizontal swipe
 - [x] Add xl: tab bar breakpoint — index.css @media 1280px: font-size:18px + padding:12px 24px + letter-spacing:0.09em (math: 6 MLB tabs=721px ≤ 1280px with 559px spare); 4-tier scale complete: 13→15→17→18px
 - [x] Abbrev in mobile ScorePanel — CompactScorePanel (frozen panel) now shows official abbreviations; ScorePanel (desktop) correctly shows city+nickname in 2 lines; no separate label needed
+
+## HANDICAPPER Role + BET TRACKER Page (Apr 14, 2026 — Session 8)
+- [ ] Add "handicapper" to appUsers.role enum in drizzle/schema.ts
+- [ ] Add tracked_bets table to schema (userId, gameId, sport, betType, team, odds, risk, toWin, book, note, result, createdAt)
+- [ ] Run pnpm db:push to migrate schema
+- [ ] Add handicapperProcedure to server/routers/appUsers.ts (gates on owner|admin|handicapper)
+- [ ] Update createUser/updateUser zod enums to include "handicapper"
+- [ ] Add betTracker router with list/create/update/delete procedures
+- [ ] Update UserManagement.tsx: ROLE_ICONS, ROLE_COLORS, ROLE_ORDER, form select, stats counter for HANDICAPPER
+- [ ] Build client/src/pages/BetTracker.tsx: sport tabs, game slate, bet entry form, saved bets list
+- [ ] Add /bet-tracker route to App.tsx
+- [ ] Add "Bet Tracker" to profile dropdown for owner|admin|handicapper roles
+- [ ] Wire role-based access guard on BetTracker page
+
+## Session: HANDICAPPER Role + Bet Tracker (Apr 13-14, 2026)
+
+- [x] Add 'handicapper' to appUsers.role enum in drizzle/schema.ts
+- [x] Create tracked_bets table (17 columns, 5 indexes) in drizzle/schema.ts
+- [x] Run pnpm db:push — migration applied successfully (drizzle/0061_petite_unus.sql)
+- [x] Add handicapperProcedure to server/routers/appUsers.ts (owner | admin | handicapper)
+- [x] Update createUser/updateUser Zod enums to include 'handicapper'
+- [x] Create server/routers/betTracker.ts — list, create, update, delete, getSlate, getStats procedures
+- [x] Register betTrackerRouter in server/routers.ts
+- [x] Update UserManagement.tsx — AppUserRow type, ROLE_ICONS (BarChart2), ROLE_COLORS (emerald), ROLE_ORDER, FormState, stats counter (5 cols), role select
+- [x] Create client/src/pages/BetTracker.tsx — sport tabs, game slate selector, bet entry form, stats bar, bets list with quick result buttons, edit/delete
+- [x] Add /bet-tracker route to App.tsx
+- [x] Add "Bet Tracker" link to profile dropdown in ModelProjections.tsx (owner | admin | handicapper)
+- [x] 0 TypeScript errors, 458/458 tests passing

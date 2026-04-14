@@ -31,14 +31,14 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Pencil, Trash2, Shield, User, Crown, RefreshCw,
-  Eye, EyeOff, ChevronDown, ArrowUp, ArrowDown, ChevronsUpDown, X, LogOut, ShieldAlert,
+  Eye, EyeOff, ChevronDown, ArrowUp, ArrowDown, ChevronsUpDown, X, LogOut, ShieldAlert, BarChart2,
 } from "lucide-react";
 
 type AppUserRow = {
   id: number;
   email: string;
   username: string;
-  role: "owner" | "admin" | "user";
+  role: "owner" | "admin" | "handicapper" | "user";
   hasAccess: boolean;
   expiryDate: number | null;
   createdAt: Date;
@@ -51,15 +51,17 @@ type AppUserRow = {
 };
 
 const ROLE_ICONS = {
-  owner: <Crown className="w-3 h-3" />,
-  admin: <Shield className="w-3 h-3" />,
-  user: <User className="w-3 h-3" />,
+  owner:       <Crown className="w-3 h-3" />,
+  admin:       <Shield className="w-3 h-3" />,
+  handicapper: <BarChart2 className="w-3 h-3" />,
+  user:        <User className="w-3 h-3" />,
 };
 
 const ROLE_COLORS = {
-  owner: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
-  admin: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  user: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+  owner:       "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+  admin:       "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  handicapper: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  user:        "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
 };
 
 const EST_OPTS: Intl.DateTimeFormatOptions = { timeZone: "America/New_York" };
@@ -88,7 +90,7 @@ type FormState = {
   email: string;
   username: string;
   password: string;
-  role: "owner" | "admin" | "user";
+  role: "owner" | "admin" | "handicapper" | "user";
   hasAccess: boolean;
   expiryType: "lifetime" | "custom";
   expiryDateStr: string;
@@ -257,7 +259,7 @@ function ColFilterDropdown({
 }
 
 // ── Sort helpers ─────────────────────────────────────────────────────────────
-const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, user: 2 };
+const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, handicapper: 2, user: 3 };
 
 function getSortValue(u: AppUserRow, key: ColKey): string | number {
   switch (key) {
@@ -650,11 +652,12 @@ export default function UserManagement() {
 
       {/* Stats bar */}
       <div className="max-w-6xl mx-auto px-4 py-4">
-        <div className="grid grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-5 gap-3 mb-6">
           {[
             { label: "Total Accounts", value: rawUsers.length },
             { label: "Owners", value: rawUsers.filter((u) => u.role === "owner").length },
             { label: "Admins", value: rawUsers.filter((u) => u.role === "admin").length },
+            { label: "Handicappers", value: rawUsers.filter((u) => u.role === "handicapper").length },
             { label: "Active Access", value: rawUsers.filter((u) => u.hasAccess).length },
           ].map((stat) => (
             <div key={stat.label} className="bg-white/4 border border-white/8 rounded-lg px-4 py-3">
@@ -940,6 +943,7 @@ export default function UserManagement() {
                   <SelectContent className="bg-[#1a1a1a] border-white/10">
                     <SelectItem value="owner">Owner</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="handicapper">Handicapper</SelectItem>
                     <SelectItem value="user">User</SelectItem>
                   </SelectContent>
                 </Select>

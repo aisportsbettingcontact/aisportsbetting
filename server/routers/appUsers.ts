@@ -86,6 +86,33 @@ export const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
   return next({ ctx: { ...ctx, appUser: user } });
 });
 
+// Handicapper procedure — grants access to owner, admin, and handicapper roles
+export const handicapperProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const token = getAppCookie(ctx.req);
+  if (!token) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — no app_session cookie`);
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  const payload = await verifyAppUserToken(token);
+  if (!payload) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid session" });
+  const user = await getAppUserById(payload.userId);
+  if (!user || !user.hasAccess) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — user not found or no access`);
+    throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
+  }
+  if (payload.tv !== null && payload.tv !== user.tokenVersion) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — tokenVersion mismatch: jwt.tv=${payload.tv} db.tv=${user.tokenVersion} userId=${user.id}`);
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Session invalidated. Please log in again." });
+  }
+  const allowed = ["owner", "admin", "handicapper"] as const;
+  if (!allowed.includes(user.role as typeof allowed[number])) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — role=${user.role} not in [owner, admin, handicapper]`);
+    throw new TRPCError({ code: "FORBIDDEN", message: "Handicapper access required" });
+  }
+  console.log(`[AppAuth] handicapperProcedure: GRANTED — userId=${user.id} username=${user.username} role=${user.role}`);
+  return next({ ctx: { ...ctx, appUser: user } });
+});
+
 // Authenticated app user middleware — validates tokenVersion against DB to support force-logout
 export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
@@ -308,7 +335,7 @@ export const appUsersRouter = router({
       email: z.string().email(),
       username: z.string().min(2).max(64).regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
       password: z.string().min(8),
-      role: z.enum(["owner", "admin", "user"]).default("user"),
+      role: z.enum(["owner", "admin", "handicapper", "user"]).default("user"),
       hasAccess: z.boolean().default(true),
       expiryDate: z.number().nullable().default(null), // null = lifetime
     }))
@@ -339,7 +366,7 @@ export const appUsersRouter = router({
       email: z.string().email().optional(),
       username: z.string().min(2).max(64).optional(),
       password: z.string().min(8).optional(),
-      role: z.enum(["owner", "admin", "user"]).optional(),
+      role: z.enum(["owner", "admin", "handicapper", "user"]).optional(),
       hasAccess: z.boolean().optional(),
       expiryDate: z.number().nullable().optional(),
     }))

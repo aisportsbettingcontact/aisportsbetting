@@ -8,7 +8,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { useUrlState, type Sport } from "@/hooks/useUrlState";
-import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, Star, Link2, FlaskConical, ShieldAlert } from "lucide-react";
+import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, Star, Link2, FlaskConical, ShieldAlert, BarChart2 } from "lucide-react";
 import { CalendarPicker, todayUTC } from "@/components/CalendarPicker";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -934,6 +934,11 @@ export default function ModelProjections() {
                         </div>
                         <p className="text-[11px] text-muted-foreground truncate">{appUser.email}</p>
                       </div>
+                      {(isOwner || appUser.role === "admin" || appUser.role === "handicapper") && (
+                        <button onClick={() => { setShowUserMenu(false); setLocation("/bet-tracker"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <BarChart2 className="w-3.5 h-3.5 text-emerald-400" /> Bet Tracker
+                        </button>
+                      )}
                       {isOwner && (
                         <>
                           <button onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">

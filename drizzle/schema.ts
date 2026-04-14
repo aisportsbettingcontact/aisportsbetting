@@ -46,7 +46,7 @@ export const appUsers = mysqlTable("app_users", {
   email: varchar("email", { length: 320 }).notNull().unique(),
   username: varchar("username", { length: 64 }).notNull().unique(),
   passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
-  role: mysqlEnum("role", ["owner", "admin", "user"]).default("user").notNull(),
+  role: mysqlEnum("role", ["owner", "admin", "handicapper", "user"]).default("user").notNull(),
   hasAccess: boolean("hasAccess").default(true).notNull(),
   /** NULL means lifetime access; otherwise a UTC timestamp in ms */
   expiryDate: bigint("expiryDate", { mode: "number" }),
@@ -1708,3 +1708,72 @@ export const nhlScheduleHistory = mysqlTable("nhl_schedule_history", {
 }));
 export type NhlScheduleHistoryRow = typeof nhlScheduleHistory.$inferSelect;
 export type InsertNhlScheduleHistory = typeof nhlScheduleHistory.$inferInsert;
+
+// ─── Tracked Bets (Bet Tracker — OWNER/ADMIN/HANDICAPPER only) ───────────────
+
+export const trackedBets = mysqlTable("tracked_bets", {
+  id: int("id").autoincrement().primaryKey(),
+  /** FK to app_users.id — the user who placed/tracked this bet */
+  userId: int("userId").notNull(),
+  /** FK to games.id — the game this bet is on (null for manual/future bets) */
+  gameId: int("gameId"),
+  /** Sport: MLB | NBA | NHL | NCAAM | NFL | CUSTOM */
+  sport: varchar("sport", { length: 16 }).notNull().default("MLB"),
+  /** Game date in YYYY-MM-DD format */
+  gameDate: varchar("gameDate", { length: 20 }).notNull(),
+  /** Away team abbreviation/name, e.g. "TEX" */
+  awayTeam: varchar("awayTeam", { length: 128 }),
+  /** Home team abbreviation/name, e.g. "ATH" */
+  homeTeam: varchar("homeTeam", { length: 128 }),
+  /**
+   * Bet type:
+   *   ML = Moneyline
+   *   RL = Run Line (spread)
+   *   OVER = Total Over
+   *   UNDER = Total Under
+   *   PROP = Player/Game Prop
+   *   PARLAY = Parlay
+   *   TEASER = Teaser
+   *   FUTURE = Futures bet
+   *   CUSTOM = Custom/manual entry
+   */
+  betType: mysqlEnum("betType", ["ML", "RL", "OVER", "UNDER", "PROP", "PARLAY", "TEASER", "FUTURE", "CUSTOM"])
+    .notNull()
+    .default("ML"),
+  /** The pick description, e.g. "TEX -125", "OVER 8.5 -110", "NYY ML +145" */
+  pick: varchar("pick", { length: 255 }).notNull(),
+  /** American odds, e.g. -125, +145, -110 */
+  odds: int("odds").notNull(),
+  /** Risk amount in dollars (decimal, 2 decimal places) */
+  risk: decimal("risk", { precision: 10, scale: 2 }).notNull(),
+  /** To-win amount in dollars (auto-calculated: risk * (100/|odds|) for fav, risk * (odds/100) for dog) */
+  toWin: decimal("toWin", { precision: 10, scale: 2 }).notNull(),
+  /** Sportsbook name, e.g. "DK NJ", "FanDuel NJ", "Caesars NJ" */
+  book: varchar("book", { length: 64 }),
+  /** Optional free-text notes */
+  notes: text("notes"),
+  /**
+   * Bet result:
+   *   PENDING = not yet graded
+   *   WIN = bet won
+   *   LOSS = bet lost
+   *   PUSH = push/tie
+   *   VOID = voided/cancelled
+   */
+  result: mysqlEnum("result", ["PENDING", "WIN", "LOSS", "PUSH", "VOID"])
+    .notNull()
+    .default("PENDING"),
+  /** UTC timestamp (ms) when this bet was created */
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** UTC timestamp (ms) when this bet was last updated */
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  idxUserId:   index("idx_tb_user_id").on(t.userId),
+  idxGameId:   index("idx_tb_game_id").on(t.gameId),
+  idxGameDate: index("idx_tb_game_date").on(t.gameDate),
+  idxSport:    index("idx_tb_sport").on(t.sport),
+  idxResult:   index("idx_tb_result").on(t.result),
+}));
+
+export type TrackedBet = typeof trackedBets.$inferSelect;
+export type InsertTrackedBet = typeof trackedBets.$inferInsert;

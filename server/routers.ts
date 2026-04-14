@@ -37,6 +37,7 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
+import { betTrackerRouter } from "./routers/betTracker";
 import { securityRouter } from "./routers/security";
 import { metricsRouter } from "./routers/metrics";
 import { mlbScheduleRouter } from "./routers/mlbSchedule";
@@ -77,6 +78,7 @@ function isValidGame(awayTeam: string, homeTeam: string, sport?: string | null):
 export const appRouter = router({
   system: systemRouter,
   appUsers: appUsersRouter,
+  betTracker: betTrackerRouter,
   security: securityRouter,
   metrics: metricsRouter,
   mlbSchedule: mlbScheduleRouter,
