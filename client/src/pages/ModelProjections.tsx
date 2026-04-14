@@ -398,7 +398,7 @@ export default function ModelProjections() {
     const raf = requestAnimationFrame(() => {
       const activeBtn = el.querySelector<HTMLElement>('[data-active="true"]');
       if (activeBtn) {
-        activeBtn.scrollIntoView({ inline: 'nearest', block: 'nearest' });
+        activeBtn.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
       } else {
         // Fallback: scroll to start when no active tab found (e.g. tab not in new sport)
         el.scrollTo({ left: 0, behavior: 'smooth' });

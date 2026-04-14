@@ -2468,3 +2468,8 @@
 - [x] Date header Row 4 md: scaling — md:py-2 on container + clamp(8px,2.1vw,14px) league label + favorites header md:py-2 + clamp(11px,2vw,15px)
 - [x] Active tab scroll-into-view on sport switch — useEffect on selectedSport + rAF + data-active attr + querySelector + scrollIntoView inline:nearest
 - [x] Seed Apr 12 MLB games: CWS@KC, PIT@CHC, HOU@SEA — AN API book_id=30 opening lines, patch_apr12_missing.ts, 3/3 patched+verified
+
+## Tab Font Scaling + Smooth Scroll + Apr 12 Model Cycle (Apr 14, 2026 — Session 4)
+- [x] Feed tab bar label md: font scaling — index.css @media 768px font-size: 15px + padding: 10px 20px (math: 6 tabs=640px ≤ 768px)
+- [x] Active tab scroll-into-view smooth behavior — behavior: 'smooth' added to scrollIntoView call
+- [x] Apr 12 MLB model cycle — NO-OP: games purged at 6AM EST Apr 13 per purge schedule; opening lines+publish were correctly set before purge
