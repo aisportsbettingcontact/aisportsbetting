@@ -484,6 +484,13 @@
       "when": 1776162064629,
       "tag": "0068_clammy_kingpin",
       "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "5",
+      "when": 1776200962719,
+      "tag": "0069_big_hellcat",
+      "breakpoints": true
     }
   ]
 }

@@ -376,6 +376,10 @@ export const games = mysqlTable("games", {
   modelF5AwayRLCoverPct: decimal("modelF5AwayRLCoverPct", { precision: 5, scale: 2 }),
   /** Model F5 home run line cover probability (0-100) */
   modelF5HomeRLCoverPct: decimal("modelF5HomeRLCoverPct", { precision: 5, scale: 2 }),
+  /** Model F5 away run line fair value odds, e.g. "-118" */
+  modelF5AwayRlOdds: varchar("modelF5AwayRlOdds", { length: 16 }),
+  /** Model F5 home run line fair value odds, e.g. "+104" */
+  modelF5HomeRlOdds: varchar("modelF5HomeRlOdds", { length: 16 }),
   /** Model F5 over fair value odds, e.g. "-108" */
   modelF5OverOdds: varchar("modelF5OverOdds", { length: 16 }),
   /** Model F5 under fair value odds, e.g. "+108" */

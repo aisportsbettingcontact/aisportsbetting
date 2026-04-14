@@ -2567,3 +2567,14 @@
 - [ ] BUG FIX: O/U model line and odds must always be anchored to book total line (not model-computed line) — ARI/BAL showing o8.5 model vs o9 book
 - [ ] BUG FIX: Run/puck/point line model spread must always match book side — KC/DET showing inverted RL (book KC -1.5 but model showing KC +1.5)
 - [ ] Apply both fixes across MLB, NHL, NBA with deep per-game validation logging
+
+## CHEAT SHEETS Tab (April 14, 2026)
+- [x] Rename F5/NRFI tab to CHEAT SHEETS
+- [ ] Extend DB schema: add innDist (JSON), f5ModelML, f5ModelRL, f5ModelTotal, f5ModelAwayScore, f5ModelHomeScore, nrfiModelOdds, yrfiModelOdds columns to games table
+- [ ] Extend MLBAIModel.py: compute and return I1-I5 per-team run distributions, F5 model ML/RL/Total, NRFI/YRFI model odds from simulation
+- [ ] Update mlbModelRunner.ts: write new F5/NRFI model line fields to DB
+- [ ] Build Action Network F5/NRFI odds scraper (F5 ML, RL, Total; NRFI/YRFI odds)
+- [ ] Build tRPC endpoint for CHEAT SHEETS data
+- [ ] Build CHEAT SHEETS UI: F5 section with I1-I5 distribution bars + AN odds + model lines
+- [ ] Build CHEAT SHEETS UI: NRFI section with I1 distribution + YRFI%/NRFI% + AN odds + model odds
+- [ ] Full validation audit: all games populated, odds correct, model lines accurate

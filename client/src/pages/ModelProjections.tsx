@@ -18,6 +18,7 @@ import { GameCard } from "@/components/GameCard";
 import { MlbLineupCard } from "@/components/MlbLineupCard";
 import MlbPropsCard, { type StrikeoutPropRow } from "@/components/MlbPropsCard";
 import MlbF5NrfiCard, { type F5NrfiGame } from "@/components/MlbF5NrfiCard";
+import MlbCheatSheetCard, { type CheatSheetGame } from "@/components/MlbCheatSheetCard";
 import MlbHrPropsCard, { type HrPropRow } from "@/components/MlbHrPropsCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -330,7 +331,7 @@ export default function ModelProjections() {
         { id: 'splits',  label: 'SPLITS' },
         { id: 'lineups', label: 'LINEUPS' },
         { id: 'props',   label: 'K PROPS' },
-        { id: 'f5nrfi',  label: 'F5/NRFI' },
+        { id: 'f5nrfi',  label: 'CHEAT SHEETS' },
         { id: 'hrprops', label: 'HR PROPS' },
       ]
     : [
@@ -1352,7 +1353,7 @@ export default function ModelProjections() {
                 gamesLoading ? (
                   <div className="flex flex-col items-center justify-center py-24 gap-3">
                     <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">Loading F5/NRFI data…</p>
+                    <p className="text-sm text-muted-foreground">Loading Cheat Sheets…</p>
                   </div>
                 ) : sortedDates.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
@@ -1367,9 +1368,9 @@ export default function ModelProjections() {
                     {sortedDates.map((date) => (
                       <div key={date}>
                         {gamesByDate[date]!.map((game) => (
-                          <MlbF5NrfiCard
+                          <MlbCheatSheetCard
                             key={game!.id}
-                            game={game as unknown as F5NrfiGame}
+                            game={game as unknown as CheatSheetGame}
                           />
                         ))}
                       </div>

@@ -2103,6 +2103,16 @@ def project_game(
         'exp_away_hr':         sim['exp_away_hr'],                    # expected away HR count
         'home_hr_lambda':      sim['home_hr_lambda'],                 # Poisson lambda (home)
         'away_hr_lambda':      sim['away_hr_lambda'],                 # Poisson lambda (away)
+        # SPEC: Inning-by-Inning projections (I1-I9) — surfaced from sim dict
+        'inning_home_exp':         sim['inning_home_exp'],         # [I1..I9] expected home runs per inning
+        'inning_away_exp':         sim['inning_away_exp'],         # [I1..I9] expected away runs per inning
+        'inning_total_exp':        sim['inning_total_exp'],        # [I1..I9] expected combined runs per inning
+        'inning_home_std':         sim['inning_home_std'],         # [I1..I9] std dev home runs per inning
+        'inning_away_std':         sim['inning_away_std'],         # [I1..I9] std dev away runs per inning
+        'inning_p_home_scores':    sim['inning_p_home_scores'],    # [I1..I9] P(home scores >= 1)
+        'inning_p_away_scores':    sim['inning_p_away_scores'],    # [I1..I9] P(away scores >= 1)
+        'inning_p_both_score':     sim['inning_p_both_score'],     # [I1..I9] P(both teams score)
+        'inning_p_neither_score':  sim['inning_p_neither_score'],  # [I1..I9] P(neither scores) = NRFI per inning
         # Meta
         'elapsed_sec':     elapsed,
         'error':           None,
