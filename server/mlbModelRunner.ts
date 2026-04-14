@@ -717,7 +717,7 @@ async function batchFetchPitcherStats(
   // Expose nrfiRateByMlbamId on the result map as a side-channel
   (result as any).__nrfiRates = nrfiRateByMlbamId;
 
-  const dbMap = new Map<string, { stats: Record<string, number>; mlbamId: number; nrfiRate: number | null }>();
+  const dbMap = new Map<string, { stats: Record<string, number>; mlbamId: number; nrfiRate: number | null; nrfiStarts: number | null }>();
   for (const row of allRows) {
     const normName = row.fullName.toLowerCase().trim();
     // Season stats base
@@ -744,7 +744,7 @@ async function batchFetchPitcherStats(
     const blended = blendWithRolling(seasonStats, r5);
     // Store the actual hand string for Python
     blended.throwsHandStr = 0; // unused numeric placeholder
-    const entry = { stats: blended, mlbamId: row.mlbamId, nrfiRate: row.nrfiRate ?? null };
+    const entry = { stats: blended, mlbamId: row.mlbamId, nrfiRate: row.nrfiRate ?? null, nrfiStarts: row.nrfiStarts ?? null };
     // Primary key: "name (TEAM)"
     dbMap.set(`${normName} (${row.teamAbbrev.toUpperCase()})`, entry);
     // Secondary key: name only (team-agnostic, first occurrence wins)
@@ -829,11 +829,16 @@ async function batchFetchPitcherStats(
     // via team_stats dict (passed separately in engineInputs)
     result.set(`${name}|${teamAbbrev}`, stats);
 
-    // Store nrfiRate in side-channel keyed by "name|team" for NRFI signal computation
+    // Store nrfiRate + nrfiStarts in side-channel keyed by "name|team" for NRFI signal computation
     // Only available for DB-resolved pitchers (not registry/fallback)
-    const nrfiRate = resolvedMlbamId != null ? (dbMap.get(teamKey)?.nrfiRate ?? dbMap.get(normName)?.nrfiRate ?? null) : null;
-    (result as any).__nrfiRateByKey = (result as any).__nrfiRateByKey ?? new Map<string, number | null>();
+    // nrfiStarts is passed alongside nrfiRate so MLBAIModel.py can apply Bayesian shrinkage
+    // for low-sample pitchers (< 5 starts) toward the league I1 prior (0.1166 → NRFI=0.8899)
+    const nrfiRate   = resolvedMlbamId != null ? (dbMap.get(teamKey)?.nrfiRate   ?? dbMap.get(normName)?.nrfiRate   ?? null) : null;
+    const nrfiStarts = resolvedMlbamId != null ? (dbMap.get(teamKey)?.nrfiStarts ?? dbMap.get(normName)?.nrfiStarts ?? null) : null;
+    (result as any).__nrfiRateByKey    = (result as any).__nrfiRateByKey    ?? new Map<string, number | null>();
+    (result as any).__nrfiStartsByKey  = (result as any).__nrfiStartsByKey  ?? new Map<string, number | null>();
     (result as any).__nrfiRateByKey.set(`${name}|${teamAbbrev}`, nrfiRate);
+    (result as any).__nrfiStartsByKey.set(`${name}|${teamAbbrev}`, nrfiStarts);
   }
 
   // Also expose battingSplitsLookup so Step 3 can attach to team_stats
@@ -885,8 +890,10 @@ interface EngineInput {
   nrfi_combined_signal: number | null;  // (awayNrfiRate + homeNrfiRate) / 2, null if missing
   nrfi_filter_pass: boolean | null;     // combinedSignal >= 0.56 (optimal threshold, n=5109)
   // ── 3-year backtest NRFI/F5 priors (passed directly to project_game) ─────────
-  away_pitcher_nrfi: number | null;    // away SP 3yr NRFI rate from mlbPitcherStats
-  home_pitcher_nrfi: number | null;    // home SP 3yr NRFI rate from mlbPitcherStats
+  away_pitcher_nrfi: number | null;         // away SP 3yr NRFI rate from mlbPitcherStats
+  home_pitcher_nrfi: number | null;         // home SP 3yr NRFI rate from mlbPitcherStats
+  away_pitcher_nrfi_starts: number | null;  // away SP NRFI sample size (for Bayesian shrinkage)
+  home_pitcher_nrfi_starts: number | null;  // home SP NRFI sample size (for Bayesian shrinkage)
   away_team_nrfi: number | null;       // away team 3yr NRFI rate (null = auto-lookup in Python)
   home_team_nrfi: number | null;       // home team 3yr NRFI rate (null = auto-lookup in Python)
   away_f5_rs: number | null;           // away team 3yr F5 RS mean (null = auto-lookup in Python)
@@ -926,6 +933,8 @@ for inp in inputs:
             # Team NRFI rates and F5 RS: pass None → auto-lookup from 3yr constants in project_game
             away_pitcher_nrfi=inp.get('away_pitcher_nrfi'),
             home_pitcher_nrfi=inp.get('home_pitcher_nrfi'),
+            away_pitcher_nrfi_starts=inp.get('away_pitcher_nrfi_starts'),
+            home_pitcher_nrfi_starts=inp.get('home_pitcher_nrfi_starts'),
             away_team_nrfi=inp.get('away_team_nrfi'),
             home_team_nrfi=inp.get('home_team_nrfi'),
             away_f5_rs=inp.get('away_f5_rs'),
@@ -1328,9 +1337,12 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
       mlb_game_pk:        g.mlbGamePk ?? null,
       // ── 3-year NRFI pitcher signal + full Bayesian prior inputs (3yr backtest integration) ──
       ...(() => {
-        const nrfiRateMap = (pitcherStatsMap as any).__nrfiRateByKey as Map<string, number | null> | undefined;
-        const awayNrfi = nrfiRateMap?.get(`${awayPitcher}|${awayAbbrev}`) ?? null;
-        const homeNrfi = nrfiRateMap?.get(`${homePitcher}|${homeAbbrev}`) ?? null;
+        const nrfiRateMap   = (pitcherStatsMap as any).__nrfiRateByKey   as Map<string, number | null> | undefined;
+        const nrfiStartsMap = (pitcherStatsMap as any).__nrfiStartsByKey as Map<string, number | null> | undefined;
+        const awayNrfi       = nrfiRateMap?.get(`${awayPitcher}|${awayAbbrev}`)   ?? null;
+        const homeNrfi       = nrfiRateMap?.get(`${homePitcher}|${homeAbbrev}`)   ?? null;
+        const awayNrfiStarts = nrfiStartsMap?.get(`${awayPitcher}|${awayAbbrev}`) ?? null;
+        const homeNrfiStarts = nrfiStartsMap?.get(`${homePitcher}|${homeAbbrev}`) ?? null;
         const NRFI_THRESHOLD = 0.56;
         const combined = (awayNrfi != null && homeNrfi != null) ? (awayNrfi + homeNrfi) / 2 : null;
         const filterPass = combined != null ? combined >= NRFI_THRESHOLD : null;
@@ -1339,8 +1351,8 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
           : null;
         console.log(
           `${TAG} [${g.id}] NRFI SIGNAL: ` +
-          `away_SP=${awayPitcher} nrfi=${awayNrfi != null ? awayNrfi.toFixed(4) : 'N/A'} ` +
-          `home_SP=${homePitcher} nrfi=${homeNrfi != null ? homeNrfi.toFixed(4) : 'N/A'} | ` +
+          `away_SP=${awayPitcher} nrfi=${awayNrfi != null ? awayNrfi.toFixed(4) : 'N/A'} starts=${awayNrfiStarts ?? 'N/A'} ` +
+          `home_SP=${homePitcher} nrfi=${homeNrfi != null ? homeNrfi.toFixed(4) : 'N/A'} starts=${homeNrfiStarts ?? 'N/A'} | ` +
           `combined=${combined != null ? combined.toFixed(4) : 'N/A'} ` +
           `filter=${filterPass != null ? (filterPass ? '\u2705 PASS (>=0.56)' : '\u274c FAIL (<0.56)') : 'N/A'} ` +
           `both=${bothPass != null ? (bothPass ? '\u2705 BOTH PASS' : '\u274c NOT BOTH') : 'N/A'}`
@@ -1349,9 +1361,12 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
         return {
           nrfi_combined_signal: combined,
           nrfi_filter_pass:     filterPass,
-          // Pitcher NRFI rates passed directly to project_game Bayesian prior blending
-          away_pitcher_nrfi:    awayNrfi,
-          home_pitcher_nrfi:    homeNrfi,
+          // Pitcher NRFI rates + starts passed to project_game Bayesian prior blending
+          // MLBAIModel.py applies shrinkage toward league prior for pitchers with < 5 starts
+          away_pitcher_nrfi:        awayNrfi,
+          home_pitcher_nrfi:        homeNrfi,
+          away_pitcher_nrfi_starts: awayNrfiStarts,  // for Bayesian shrinkage in Python
+          home_pitcher_nrfi_starts: homeNrfiStarts,  // for Bayesian shrinkage in Python
           // Team rates: null → Python auto-lookup from 3yr backtest constants
           away_team_nrfi:       null,
           home_team_nrfi:       null,
