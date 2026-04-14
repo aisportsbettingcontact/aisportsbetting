@@ -49,16 +49,16 @@ const CONFIDENCE_THRESHOLD = 0.65;   // minimum model probability to act
 const DRIFT_SIGMA_THRESHOLD = 2.0;   // standard deviations to trigger recalibration
 const MIN_SAMPLE_FOR_DRIFT  = 20;    // minimum samples before drift detection fires
 
-// ─── Backtest-calibrated NRFI/F5 constants (2026-04-13, n=238 games) ────────────────────
-// NRFI: 51.7% season rate (123-115). Profitable only with pitcher + team filters.
+// ─── Backtest-calibrated NRFI/F5 constants (3-YR ROLLING: 2024+2025+2026, n=5109 games) ──────
+// NRFI: 51.54% 3-yr rate (2632 NRFI / 5107 graded). 2024=53.29% | 2025=49.75% | 2026=51.85%
 // Filter: model P(NRFI) >= 0.55 AND (away_pitcher NRFI% >= 0.60 OR home_pitcher NRFI% >= 0.60)
-// Backtest-calibrated INNING1_RUN_SHARE: 0.1162 (was 0.105, +1.1pp)
-// Backtest-calibrated F5_RUN_SHARE: 0.5503 (was 0.555, -0.5pp)
+// 3-YR Backtest-calibrated INNING1_RUN_SHARE: 0.1093 (was 0.1162, delta=-0.0069)
+// 3-YR Backtest-calibrated F5_RUN_SHARE: 0.5311 (was 0.5503, delta=-0.0192)
 // These constants are applied in MLBAIModel.py; this file consumes the output.
 const NRFI_CONFIDENCE_THRESHOLD = 0.55;  // lower than FG — NRFI is a binary 50/50 market
 const F5_CONFIDENCE_THRESHOLD   = 0.55;  // F5 home win rate: 54.8% season-wide
 // Calibration version tag — bump when MLBAIModel.py constants change
-const CALIBRATION_VERSION = "2026-04-13-v1"; // INNING1=0.1162 F5=0.5503
+const CALIBRATION_VERSION = "2026-04-14-3yr-v1"; // INNING1=0.1093 F5=0.5311 (3yr: 2024+2025+2026, n=5109)
 
 // Market identifiers — canonical names used in mlb_game_backtest.market column
 export const MARKETS = {

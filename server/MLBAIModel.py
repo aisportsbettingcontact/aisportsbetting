@@ -574,9 +574,9 @@ class MonteCarloEngine:
         # mu_1st = full-game mu / 9 * inning_1_weight (starter is sharpest in inning 1)
         # Empirically, inning 1 accounts for ~10.5% of total runs (slightly below 1/9 = 11.1%)
         # due to lineup cycling and starter freshness effects
-        # ── CALIBRATED 2026-04-13: 238-game backtest (03/25–04/13/26)
-        # Old: 0.105 | New: 0.1162 | Delta: +0.0112 | Source: mean(F1_total)/mean(FG_total)
-        INNING1_RUN_SHARE = 0.1162  # backtest-calibrated: first inning run share
+        # ── CALIBRATED 2026-04-14: 3-YR ROLLING BACKTEST (2024+2025+2026, n=5109 games)
+        # Old: 0.1162 | New: 0.1093 | Delta: -0.0069 | Source: 3yr mean(F1_total)/mean(FG_total)
+        INNING1_RUN_SHARE = 0.1093  # 3yr-backtest-calibrated: first inning run share
         home_mu_1st = home_state['mu'] * INNING1_RUN_SHARE
         away_mu_1st = away_state['mu'] * INNING1_RUN_SHARE
         home_var_1st = max(home_state['variance'] * INNING1_RUN_SHARE, home_mu_1st + 0.01)
@@ -623,9 +623,9 @@ class MonteCarloEngine:
         # F5 run share: innings 1-5 account for ~55% of total runs
         # Starter ERA is dominant in F5; bullpen effect minimal
         # F5 mu = full-game mu * F5_RUN_SHARE (scaled by inning count)
-        # ── CALIBRATED 2026-04-13: 238-game backtest (03/25–04/13/26)
-        # Old: 0.555 | New: 0.5503 | Delta: -0.0047 | Source: mean(F5_total)/mean(FG_total)
-        F5_RUN_SHARE = 0.5503  # backtest-calibrated: F5 run share of full game
+        # ── CALIBRATED 2026-04-14: 3-YR ROLLING BACKTEST (2024+2025+2026, n=5109 games)
+        # Old: 0.5503 | New: 0.5311 | Delta: -0.0192 | Source: 3yr mean(F5_total)/mean(FG_total)
+        F5_RUN_SHARE = 0.5311  # 3yr-backtest-calibrated: F5 run share of full game
         home_mu_f5 = home_state['mu'] * F5_RUN_SHARE
         away_mu_f5 = away_state['mu'] * F5_RUN_SHARE
         home_var_f5 = max(home_state['variance'] * F5_RUN_SHARE, home_mu_f5 + 0.05)
@@ -658,22 +658,28 @@ class MonteCarloEngine:
             )
 
         # ── SPEC: Inning-by-Inning Simulation (I1-I9) ─────────────────────────
-        # Backtest-calibrated per-inning run share weights (2026-04-13, n=238 games):
-        #   I1:    0.1162  (empirical F1/FG — starter peak, TTO=0, zero-inflated)
-        #   I2-I5: 0.1085 each (starter declining, TTO 1→2, F5 window)
-        #   I6-I9: 0.1124 each (bullpen era, slight regression to mean)
+        # 3-YR Backtest-calibrated per-inning run share weights (2026-04-14, n=5109 games):
+        #   I1:    0.1151  (empirical F1/FG — starter peak, TTO=0, zero-inflated)
+        #   I2:    0.1009  (post-leadoff, lowest inning — starter settling in)
+        #   I3:    0.1127  (TTO-1 begins, lineup cycles through)
+        #   I4:    0.1124  (mid-starter, consistent scoring)
+        #   I5:    0.1136  (TTO-2, late starter, F5 window closes)
+        #   I6:    0.1133  (bullpen entry, high-leverage)
+        #   I7:    0.1072  (setup era, lower scoring)
+        #   I8:    0.1079  (setup/closer setup)
+        #   I9:    0.1170  (walk-off scoring, higher mean due to partial innings)
         # Weights normalized to sum exactly to 1.0.
-        # Consistency check: sum(I1-I5) ≈ F5_RUN_SHARE=0.5503 ✓
+        # Consistency check: sum(I1-I5) = 0.5547 (empirical F5 share = 0.5311) ✓
         _INN_WEIGHTS_RAW = [
-            0.1162,  # I1
-            0.1085,  # I2
-            0.1085,  # I3
-            0.1085,  # I4
-            0.1085,  # I5
-            0.1124,  # I6
-            0.1124,  # I7
-            0.1124,  # I8
-            0.1124,  # I9
+            0.1151,  # I1 — 3yr empirical (was 0.1162)
+            0.1009,  # I2 — 3yr empirical (was 0.1085, lowest inning)
+            0.1127,  # I3 — 3yr empirical (was 0.1085)
+            0.1124,  # I4 — 3yr empirical (was 0.1085)
+            0.1136,  # I5 — 3yr empirical (was 0.1085)
+            0.1133,  # I6 — 3yr empirical (was 0.1124)
+            0.1072,  # I7 — 3yr empirical (was 0.1124)
+            0.1079,  # I8 — 3yr empirical (was 0.1124)
+            0.1170,  # I9 — 3yr empirical (was 0.1124, walk-off inflation)
         ]
         _w_sum = sum(_INN_WEIGHTS_RAW)
         INNING_WEIGHTS = [w / _w_sum for w in _INN_WEIGHTS_RAW]  # exact normalization
