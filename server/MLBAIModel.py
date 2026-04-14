@@ -142,29 +142,31 @@ PARK_FACTORS = {
 #         Bayesian priors and validation gates — not overrides.
 # ─────────────────────────────────────────────────────────────────────────────
 
-# ── Team NRFI rates (3yr empirical, min 50 games) ────────────────────────────
+# ── Team NRFI rates (3yr empirical, n=5,103 games, min 20 games) ─────────────
+# Updated 2026-04-14 from mlbBacktestV2.py. Exact values from mlb_calibration_constants.json.
 # Keyed by DB team abbreviation (same as away_abbrev / home_abbrev in project_game)
 TEAM_NRFI_RATES: Dict[str, float] = {
-    'PIT': 0.576, 'NYM': 0.569, 'KC':  0.565, 'STL': 0.554, 'CHC': 0.553,
-    'CLE': 0.547, 'CIN': 0.545, 'BAL': 0.537, 'WSH': 0.535, 'HOU': 0.534,
-    'MIL': 0.531, 'DET': 0.529, 'TOR': 0.523, 'SEA': 0.523, 'ATL': 0.523,
-    'TEX': 0.516, 'SD':  0.512, 'SF':  0.506, 'TB':  0.504, 'CWS': 0.504,
-    'ATH': 0.500, 'MIN': 0.496, 'BOS': 0.488, 'PHI': 0.488, 'LAA': 0.487,
-    'LAD': 0.476, 'MIA': 0.466, 'ARI': 0.459, 'NYY': 0.456, 'COL': 0.456,
+    'PIT': 0.5765, 'NYM': 0.5664, 'KC':  0.5647, 'STL': 0.5543, 'CHC': 0.5503,
+    'CLE': 0.5471, 'CIN': 0.5452, 'BAL': 0.5367, 'WSH': 0.5353, 'HOU': 0.5339,
+    'MIL': 0.5310, 'DET': 0.5294, 'TOR': 0.5235, 'SEA': 0.5235, 'ATL': 0.5206,
+    'TEX': 0.5161, 'SD':  0.5118, 'SF':  0.5059, 'TB':  0.5044, 'CWS': 0.5044,
+    'ATH': 0.5000, 'MIN': 0.4956, 'BOS': 0.4883, 'PHI': 0.4882, 'LAA': 0.4868,
+    'LAD': 0.4734, 'MIA': 0.4663, 'ARI': 0.4591, 'NYY': 0.4559, 'COL': 0.4559,
 }
-TEAM_NRFI_LEAGUE_MEAN = 0.5154   # 3yr empirical NRFI rate (n=5,109 games)
+TEAM_NRFI_LEAGUE_MEAN = 0.5150   # 3yr empirical NRFI rate (n=5,103 games, was 0.5154)
 
-# ── Team F5 runs scored means (3yr, used for F5 mu calibration) ──────────────
-# Source: 04_deep_analysis.py → TEAM NRFI RANKINGS table (F5 RS column)
+# ── Team F5 runs scored means (3yr, n=5,103 games, used for F5 mu calibration) ─
+# Updated 2026-04-14 from mlbBacktestV2.py. Exact values from mlb_calibration_constants.json.
+# Source: team_scoring.avg_f5 field (3yr empirical, min 20 games)
 TEAM_F5_RS: Dict[str, float] = {
-    'PIT': 2.191, 'NYM': 2.669, 'KC':  2.303, 'STL': 2.276, 'CHC': 2.709,
-    'CLE': 2.321, 'CIN': 2.557, 'BAL': 2.537, 'WSH': 2.312, 'HOU': 2.493,
-    'MIL': 2.835, 'DET': 2.541, 'TOR': 2.471, 'SEA': 2.459, 'ATL': 2.412,
-    'TEX': 2.390, 'SD':  2.571, 'SF':  2.341, 'TB':  2.313, 'CWS': 2.041,
-    'ATH': 2.379, 'MIN': 2.466, 'BOS': 2.623, 'PHI': 2.621, 'LAA': 2.355,
-    'LAD': 2.926, 'MIA': 2.317, 'ARI': 2.959, 'NYY': 2.959, 'COL': 2.150,
+    'PIT': 2.1912, 'NYM': 2.6844, 'KC':  2.3029, 'STL': 2.2757, 'CHC': 2.7130,
+    'CLE': 2.3206, 'CIN': 2.5569, 'BAL': 2.5367, 'WSH': 2.3118, 'HOU': 2.4926,
+    'MIL': 2.8348, 'DET': 2.5412, 'TOR': 2.4706, 'SEA': 2.4588, 'ATL': 2.4176,
+    'TEX': 2.3900, 'SD':  2.5706, 'SF':  2.3412, 'TB':  2.3127, 'CWS': 2.0411,
+    'ATH': 2.3794, 'MIN': 2.4663, 'BOS': 2.6228, 'PHI': 2.6206, 'LAA': 2.3548,
+    'LAD': 2.9172, 'MIA': 2.3167, 'ARI': 2.9591, 'NYY': 2.9588, 'COL': 2.1500,
 }
-F5_RS_LEAGUE_MEAN = 2.466   # 3yr empirical mean F5 runs scored per team
+F5_RS_LEAGUE_MEAN = 2.484   # 3yr empirical mean F5 runs scored per team (avg of 30 teams)
 F5_RS_WEIGHT      = 0.10    # max 10% adjustment from team F5 RS tendency
 
 # ── NRFI Bayesian prior weights ───────────────────────────────────────────────
@@ -178,21 +180,39 @@ NRFI_PHYSICS_WEIGHT = 0.50   # simulation physics weight (sum = 1.0)
 NRFI_COMBINED_THRESHOLD = 0.56   # combined (avg) pitcher rate >= 0.56 → filter pass
 NRFI_BOTH_THRESHOLD     = 0.56   # both individual pitchers >= 0.56 → stronger signal
 
-# ── Empirical market priors (3yr, n=5,109 games) ─────────────────────────────
+# ── Empirical market priors (3yr, n=5,103 games) ─────────────────────────────
+# Updated 2026-04-14 from mlbBacktestV2.py (2024+2025+2026 full season backtest)
+# Source: mlb_calibration_constants.json
 # Used as validation gates — model should arrive at these through simulation.
-# Source: 07_market_accuracy.py
 EMPIRICAL_PRIORS = {
-    'fg_home_win_rate':   0.5258,   # FG ML home win rate (3yr)
-    'fg_away_win_rate':   0.4742,   # FG ML away win rate (3yr)
-    'f5_home_win_rate':   0.5319,   # F5 ML home win rate (3yr) — HFA stronger in F5
-    'f5_away_win_rate':   0.4681,   # F5 ML away win rate (3yr)
-    'fg_rl_away_cover':   0.3189,   # FG RL away -1.5 cover rate (3yr)
-    'fg_rl_home_cover':   0.5128,   # FG RL home -1.5 cover rate (3yr)
-    'nrfi_rate':          0.5154,   # NRFI rate (3yr)
-    'f5_share':           0.5311,   # F5 runs / FG runs (3yr)
-    'i1_share':           0.1093,   # I1 runs / FG runs (3yr)
-    'fg_mean':            8.895,    # mean FG total (2025 LEAGUE_RPG)
-    'f5_mean':            4.726,    # mean F5 total (3yr: 8.895 * 0.5311)
+    # Full Game ML
+    'fg_home_win_rate':   0.5338,   # FG ML home win rate (3yr empirical, was 0.5258)
+    'fg_away_win_rate':   0.4662,   # FG ML away win rate (3yr empirical, was 0.4742)
+    # F5 ML (push=15.07% when tied after 5)
+    'f5_home_win_rate':   0.4511,   # F5 ML home win rate (3yr empirical, was 0.5319)
+    'f5_away_win_rate':   0.3982,   # F5 ML away win rate (3yr empirical, was 0.4681)
+    'f5_push_rate':       0.1507,   # F5 push rate — tied after 5 innings (3yr empirical)
+    # Full Game Run Line (±1.5)
+    'fg_rl_away_cover':   0.6430,   # FG RL away +1.5 cover rate (3yr empirical, was 0.3189)
+    'fg_rl_home_cover':   0.3570,   # FG RL home -1.5 cover rate (3yr empirical, was 0.5128)
+    # F5 Run Line (±0.5)
+    'f5_rl_away_cover':   0.5489,   # F5 RL away +0.5 cover rate (3yr empirical)
+    'f5_rl_home_cover':   0.4511,   # F5 RL home -0.5 cover rate (3yr empirical)
+    # NRFI
+    'nrfi_rate':          0.5150,   # NRFI rate (3yr empirical, was 0.5154)
+    # Run shares
+    'f5_share':           0.5618,   # F5 runs / FG runs (3yr empirical, was 0.5311)
+    'i1_share':           0.1166,   # I1 runs / FG runs (3yr empirical, was 0.1093)
+    # Totals
+    'fg_mean':            8.842,    # mean FG total (3yr empirical, was 8.895)
+    'f5_mean':            4.967,    # mean F5 total (3yr empirical: 8.842 * 0.5618, was 4.726)
+    # Season-by-season drift (for temporal weighting)
+    'f5_share_2024':      0.5622,   # 2024 F5 share (n=2,428)
+    'f5_share_2025':      0.5624,   # 2025 F5 share (n=2,432)
+    'f5_share_2026':      0.5509,   # 2026 F5 share (n=243)
+    'i1_share_2024':      0.1133,   # 2024 I1 share
+    'i1_share_2025':      0.1198,   # 2025 I1 share
+    'i1_share_2026':      0.1181,   # 2026 I1 share
 }
 
 RE_MATRIX = {
@@ -650,7 +670,7 @@ class MonteCarloEngine:
         #           if both missing  → physics*1.00 (no change)
         # Source: 06_nrfi_threshold_grid.py (n=5,109 games, optimal threshold=0.56)
         # ──────────────────────────────────────────────────────────────────────────────────
-        INNING1_RUN_SHARE = 0.1093  # 3yr-backtest-calibrated: first inning run share
+        INNING1_RUN_SHARE = 0.1166  # 3yr-backtest-calibrated: first inning run share (was 0.1093, updated 2026-04-14)
         home_mu_1st_physics = home_state['mu'] * INNING1_RUN_SHARE
         away_mu_1st_physics = away_state['mu'] * INNING1_RUN_SHARE
 
@@ -831,7 +851,7 @@ class MonteCarloEngine:
         # Scale: max ±10% adjustment (F5_RS_WEIGHT = 0.10)
         # Adjustment: f5_rs_adj = (team_f5_rs - F5_RS_LEAGUE_MEAN) / F5_RS_LEAGUE_MEAN * F5_RS_WEIGHT
         # Source: 04_deep_analysis.py → TEAM NRFI RANKINGS table (F5 RS column)
-        F5_RUN_SHARE = 0.5311  # 3yr-backtest-calibrated: F5 run share of full game
+        F5_RUN_SHARE = 0.5618  # 3yr-backtest-calibrated: F5 run share of full game (was 0.5311, updated 2026-04-14)
         home_mu_f5_base = home_state['mu'] * F5_RUN_SHARE
         away_mu_f5_base = away_state['mu'] * F5_RUN_SHARE
         # Apply team F5 RS adjustment if available
@@ -897,28 +917,29 @@ class MonteCarloEngine:
             )
 
         # ── SPEC: Inning-by-Inning Simulation (I1-I9) ─────────────────────────
-        # 3-YR Backtest-calibrated per-inning run share weights (2026-04-14, n=5109 games):
-        #   I1:    0.1151  (empirical F1/FG — starter peak, TTO=0, zero-inflated)
-        #   I2:    0.1009  (post-leadoff, lowest inning — starter settling in)
-        #   I3:    0.1127  (TTO-1 begins, lineup cycles through)
-        #   I4:    0.1124  (mid-starter, consistent scoring)
-        #   I5:    0.1136  (TTO-2, late starter, F5 window closes)
-        #   I6:    0.1133  (bullpen entry, high-leverage)
-        #   I7:    0.1072  (setup era, lower scoring)
-        #   I8:    0.1079  (setup/closer setup)
-        #   I9:    0.1170  (walk-off scoring, higher mean due to partial innings)
+        # 3-YR Backtest-calibrated per-inning run share weights (2026-04-14, n=5103 games):
+        #   I1:    0.116647  (empirical F1/FG — starter peak, TTO=0, zero-inflated)
+        #   I2:    0.102130  (post-leadoff, lowest inning — starter settling in)
+        #   I3:    0.114120  (TTO-1 begins, lineup cycles through)
+        #   I4:    0.113854  (mid-starter, consistent scoring)
+        #   I5:    0.115029  (TTO-2, late starter, F5 window closes)
+        #   I6:    0.114764  (bullpen entry, high-leverage)
+        #   I7:    0.108511  (setup era, lower scoring)
+        #   I8:    0.109019  (setup/closer setup)
+        #   I9:    0.079211  (walk-off scoring — CORRECTED from 0.1170, empirical is lower)
         # Weights normalized to sum exactly to 1.0.
-        # Consistency check: sum(I1-I5) = 0.5547 (empirical F5 share = 0.5311) ✓
+        # Consistency check: sum(I1-I5) = 0.5618 (empirical F5 share = 0.5618) ✓
+        # Updated 2026-04-14: exact values from mlb_calibration_constants.json inning_weights
         _INN_WEIGHTS_RAW = [
-            0.1151,  # I1 — 3yr empirical (was 0.1162)
-            0.1009,  # I2 — 3yr empirical (was 0.1085, lowest inning)
-            0.1127,  # I3 — 3yr empirical (was 0.1085)
-            0.1124,  # I4 — 3yr empirical (was 0.1085)
-            0.1136,  # I5 — 3yr empirical (was 0.1085)
-            0.1133,  # I6 — 3yr empirical (was 0.1124)
-            0.1072,  # I7 — 3yr empirical (was 0.1124)
-            0.1079,  # I8 — 3yr empirical (was 0.1124)
-            0.1170,  # I9 — 3yr empirical (was 0.1124, walk-off inflation)
+            0.116647,  # I1 — 3yr empirical exact (was 0.1151)
+            0.102130,  # I2 — 3yr empirical exact (was 0.1009)
+            0.114120,  # I3 — 3yr empirical exact (was 0.1127)
+            0.113854,  # I4 — 3yr empirical exact (was 0.1124)
+            0.115029,  # I5 — 3yr empirical exact (was 0.1136)
+            0.114764,  # I6 — 3yr empirical exact (was 0.1133)
+            0.108511,  # I7 — 3yr empirical exact (was 0.1072)
+            0.109019,  # I8 — 3yr empirical exact (was 0.1079)
+            0.079211,  # I9 — 3yr empirical exact (was 0.1170 — CORRECTED, walk-off overcorrected)
         ]
         _w_sum = sum(_INN_WEIGHTS_RAW)
         INNING_WEIGHTS = [w / _w_sum for w in _INN_WEIGHTS_RAW]  # exact normalization
