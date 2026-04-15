@@ -2578,3 +2578,8 @@
 - [ ] Build CHEAT SHEETS UI: F5 section with I1-I5 distribution bars + AN odds + model lines
 - [ ] Build CHEAT SHEETS UI: NRFI section with I1 distribution + YRFI%/NRFI% + AN odds + model odds
 - [ ] Full validation audit: all games populated, odds correct, model lines accurate
+
+## Outcome Ingestion + F5 Win Pct Backfill (April 15, 2026)
+- [x] Trigger outcome ingestion for 2026-04-14 — confirmed already ingested at 07:30 UTC (15/15 games, 0 errors)
+- [x] Add modelF5HomeWinPct + modelF5AwayWinPct to CheatSheet F5 card CENTER section (Away Win% | Push% | Home Win% row, neon green on leader)
+- [x] Build and launch backfillF5WinPct.mts — re-runs Python engine for all 256 modeled games (2026-03-26 → 2026-04-14) with per-game VERIFY logging

@@ -1287,6 +1287,15 @@ function F5GameCardV3({ game, lineup }: { game: CheatSheetGame; lineup?: CheatSh
   const rlEdge = computeEdgeV3(parseNumV3(game.modelF5AwayRLCoverPct), game.f5AwayRunLineOdds);
   const mlEdge = computeEdgeV3(parseNumV3(game.modelF5AwayWinPct), game.f5AwayML);
 
+  // ── F5 Win Probability (three-way: Away Win | Push | Home Win) ──────────────
+  // DB stores on 0–100 scale (e.g. "43.51" = 43.51%)
+  const f5AwayWinPct = parseNumV3(game.modelF5AwayWinPct);  // 0–100
+  const f5HomeWinPct = parseNumV3(game.modelF5HomeWinPct);  // 0–100
+  // Push% derived: 100 - away - home (three-way market; clamp to 0 for float safety)
+  const f5PushPctV3 = (f5AwayWinPct != null && f5HomeWinPct != null)
+    ? Math.max(0, 100 - f5AwayWinPct - f5HomeWinPct)
+    : null;
+
   let ouEdge: EdgeV3 | null = null;
   let ouLabel = '';
   if (modelF5Total != null && bookTotalNum != null) {
@@ -1361,9 +1370,11 @@ function F5GameCardV3({ game, lineup }: { game: CheatSheetGame; lineup?: CheatSh
           </div>
         </div>
 
-        {/* CENTER: F5 projection */}
-        <div style={{ padding: '10px 18px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 8, borderRight: '1px solid #1a1d1b', minWidth: 150 }}>
+        {/* CENTER: F5 projection + Win Probability row */}
+        <div style={{ padding: '10px 18px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 6, borderRight: '1px solid #1a1d1b', minWidth: 160 }}>
           <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#3a3f3c' }}>F5 projection</div>
+
+          {/* Score display row */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <div style={{ width: 34, height: 34, borderRadius: '50%', background: awayInfo?.primaryColor ? `${awayInfo.primaryColor}22` : '#1a1d1b', border: `1px solid ${awayInfo?.primaryColor ?? '#222523'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 500, color: awayInfo?.primaryColor ?? '#7a8078', flexShrink: 0 }}>
               {game.awayTeam}
@@ -1381,6 +1392,64 @@ function F5GameCardV3({ game, lineup }: { game: CheatSheetGame; lineup?: CheatSh
               {game.homeTeam}
             </div>
           </div>
+
+          {/* F5 Win Probability row: Away Win% | Push% | Home Win% */}
+          {/* Only rendered when at least one win pct is populated */}
+          {(f5AwayWinPct != null || f5HomeWinPct != null) && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              background: '#0e1110',
+              border: '1px solid #1a1d1b',
+              borderRadius: 6,
+              padding: '5px 8px',
+              width: '100%',
+              justifyContent: 'center',
+            }}>
+              {/* Away win% */}
+              <div style={{ textAlign: 'center', minWidth: 46 }}>
+                <div style={{ fontSize: 8, color: '#3a3f3c', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 2 }}>{game.awayTeam}</div>
+                <div style={{
+                  fontSize: 13, fontWeight: 600, lineHeight: 1,
+                  color: f5AwayWinPct != null && f5HomeWinPct != null && f5AwayWinPct > f5HomeWinPct
+                    ? '#39FF14'
+                    : '#c4cac5',
+                }}>
+                  {f5AwayWinPct != null ? `${f5AwayWinPct.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div style={{ width: 1, height: 24, background: '#1e2320', flexShrink: 0 }} />
+
+              {/* Push% (three-way derived) */}
+              {f5PushPctV3 != null && (
+                <>
+                  <div style={{ textAlign: 'center', minWidth: 36 }}>
+                    <div style={{ fontSize: 8, color: '#3a3f3c', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 2 }}>Push</div>
+                    <div style={{ fontSize: 11, fontWeight: 400, lineHeight: 1, color: '#4a5048' }}>
+                      {f5PushPctV3.toFixed(1)}%
+                    </div>
+                  </div>
+                  <div style={{ width: 1, height: 24, background: '#1e2320', flexShrink: 0 }} />
+                </>
+              )}
+
+              {/* Home win% */}
+              <div style={{ textAlign: 'center', minWidth: 46 }}>
+                <div style={{ fontSize: 8, color: '#3a3f3c', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 2 }}>{game.homeTeam}</div>
+                <div style={{
+                  fontSize: 13, fontWeight: 600, lineHeight: 1,
+                  color: f5HomeWinPct != null && f5AwayWinPct != null && f5HomeWinPct > f5AwayWinPct
+                    ? '#39FF14'
+                    : '#c4cac5',
+                }}>
+                  {f5HomeWinPct != null ? `${f5HomeWinPct.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* RIGHT: Book vs model — RL / ML / O/U */}
