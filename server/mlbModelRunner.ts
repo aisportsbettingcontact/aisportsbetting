@@ -1032,6 +1032,7 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
     publishedToFeed:   games.publishedToFeed,
     publishedModel:    games.publishedModel,
     modelF5PushPct:    games.modelF5PushPct,
+    modelF5PushRaw:    games.modelF5PushRaw,
     modelRunAt:        games.modelRunAt,
   }).from(games)
     .where(and(
@@ -1097,15 +1098,45 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
       issues.push(`${label}: publishedToFeed=${g.publishedToFeed} publishedModel=${g.publishedModel}`);
     }
 
-    // 6. F5 push probability must be populated for modeled games
+    // 6. F5 push probability (Bayesian-blended) must be populated for modeled games
     // Only check games that have been modeled (modelRunAt is set)
+    // Empirical range: Bayesian-blended push rate is always 5%–35%. Outside = model error.
     if (g.modelRunAt != null) {
       const pushVal = g.modelF5PushPct != null ? parseFloat(String(g.modelF5PushPct)) : null;
       if (pushVal === null || isNaN(pushVal)) {
-        issues.push(`${label}: modelF5PushPct is NULL — F5 push probability missing for modeled game`);
+        issues.push(`${label}: modelF5PushPct is NULL — Bayesian-blended F5 push probability missing for modeled game`);
       } else if (pushVal < 0.05 || pushVal > 0.35) {
-        // Empirical range: F5 push rate is always 5%-35%. Outside this range = model error.
-        issues.push(`${label}: modelF5PushPct=${pushVal.toFixed(4)} is out of empirical range [0.05, 0.35]`);
+        issues.push(
+          `${label}: modelF5PushPct=${pushVal.toFixed(4)} out of empirical range [0.05, 0.35] ` +
+          `— Bayesian blend anomaly (empirical_prior=0.1507, K=10)`
+        );
+      }
+
+      // 6b. Raw simulation push rate (pre-Bayesian-blend) must be populated and plausible
+      // Range [0.05, 0.40]: raw sim rate can be slightly wider than blended because it is
+      // unregularised. Values outside this range indicate a Monte Carlo sampling failure.
+      const rawVal = g.modelF5PushRaw != null ? parseFloat(String(g.modelF5PushRaw)) : null;
+      if (rawVal === null || isNaN(rawVal)) {
+        issues.push(`${label}: modelF5PushRaw is NULL — raw Monte Carlo F5 push rate missing for modeled game`);
+      } else if (rawVal < 0.05 || rawVal > 0.40) {
+        issues.push(
+          `${label}: modelF5PushRaw=${rawVal.toFixed(4)} out of plausible range [0.05, 0.40] ` +
+          `— Monte Carlo sampling anomaly (400K sims, expected raw push ≈ 0.10–0.30)`
+        );
+      } else if (pushVal !== null && !isNaN(pushVal)) {
+        // 6c. Bayesian shrinkage coherence: blended value must be pulled TOWARD prior (0.1507)
+        // relative to raw. If |blended - prior| > |raw - prior|, the shrinkage went the wrong way.
+        const EMPIRICAL_PRIOR = 0.1507;
+        const distRaw    = Math.abs(rawVal  - EMPIRICAL_PRIOR);
+        const distBlended = Math.abs(pushVal - EMPIRICAL_PRIOR);
+        if (distBlended > distRaw + 0.001) {
+          // Allow 0.001 tolerance for floating-point rounding
+          issues.push(
+            `${label}: modelF5PushPct Bayesian shrinkage INVERTED — ` +
+            `raw=${rawVal.toFixed(4)} blended=${pushVal.toFixed(4)} prior=0.1507 ` +
+            `(blended is FURTHER from prior than raw — shrinkage formula error)`
+          );
+        }
       }
     }
 
