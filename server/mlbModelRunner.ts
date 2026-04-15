@@ -1029,8 +1029,10 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
     homeRunLineOdds: games.homeRunLineOdds,
     modelOverOdds:   games.modelOverOdds,
     modelUnderOdds:  games.modelUnderOdds,
-    publishedToFeed: games.publishedToFeed,
-    publishedModel:  games.publishedModel,
+    publishedToFeed:   games.publishedToFeed,
+    publishedModel:    games.publishedModel,
+    modelF5PushPct:    games.modelF5PushPct,
+    modelRunAt:        games.modelRunAt,
   }).from(games)
     .where(and(
       eq(games.gameDate, dateStr),
@@ -1095,7 +1097,19 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
       issues.push(`${label}: publishedToFeed=${g.publishedToFeed} publishedModel=${g.publishedModel}`);
     }
 
-    // 6. Warn on whole-number totals (push probability > 0)
+    // 6. F5 push probability must be populated for modeled games
+    // Only check games that have been modeled (modelRunAt is set)
+    if (g.modelRunAt != null) {
+      const pushVal = g.modelF5PushPct != null ? parseFloat(String(g.modelF5PushPct)) : null;
+      if (pushVal === null || isNaN(pushVal)) {
+        issues.push(`${label}: modelF5PushPct is NULL — F5 push probability missing for modeled game`);
+      } else if (pushVal < 0.05 || pushVal > 0.35) {
+        // Empirical range: F5 push rate is always 5%-35%. Outside this range = model error.
+        issues.push(`${label}: modelF5PushPct=${pushVal.toFixed(4)} is out of empirical range [0.05, 0.35]`);
+      }
+    }
+
+    // 7. Warn on whole-number totals (push probability > 0)
     if (bookT === Math.floor(bookT)) {
       warnings.push(`${label}: bookTotal=${bookT} is a whole number — push probability applies`);
     }
@@ -1413,9 +1427,6 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
     console.log(`  RL: ${r.away_run_line} (${fmtMl(r.away_rl_odds)}) / ${r.home_run_line} (${fmtMl(r.home_rl_odds)})`);
     console.log(`  Cover%: away=${r.away_rl_cover_pct.toFixed(2)}% home=${r.home_rl_cover_pct.toFixed(2)}%`);
     console.log(`  Model spread: ${r.model_spread.toFixed(3)} | Sims: ${r.simulations} | Elapsed: ${r.elapsed_sec}s`);
-    // [DEBUG v2.1] Trace F5 push values before DB write
-    console.log(`  [DEBUG-F5PUSH] p_f5_push=${r.p_f5_push} p_f5_push_raw=${r.p_f5_push_raw} | type=${typeof r.p_f5_push}`);
-
     try {
       await db.update(games)
         .set({
