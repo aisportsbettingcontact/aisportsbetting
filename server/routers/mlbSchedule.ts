@@ -486,7 +486,7 @@ export const mlbScheduleRouter = router({
             rollFgMl: number | null; rollF5Ml: number | null; rollNrfi: number | null;
             rollFgTotal: number | null; rollF5Total: number | null;
           }>,
-          summary: { totalGames: 0, avgFgMl: null as number | null, avgF5Ml: null as number | null, avgNrfi: null as number | null, windowSize: input.windowSize },
+          summary: { totalGames: 0, avgFgMl: null as number | null, avgF5Ml: null as number | null, avgNrfi: null as number | null, avgFgTotal: null as number | null, avgF5Total: null as number | null, windowSize: input.windowSize },
         };
       }
 

@@ -14,7 +14,7 @@
  * Backend: all procedures use ownerProcedure (server-side owner check enforced).
  */
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Component, type ReactNode } from "react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, ReferenceLine,
@@ -31,6 +31,52 @@ import {
   FlaskConical, Filter, BarChart3, Target, Activity,
 } from "lucide-react";
 import { MLB_BY_ABBREV } from "@shared/mlbTeams";
+
+// ─── Section Error Boundary ──────────────────────────────────────────────────
+class SectionErrorBoundary extends Component<
+  { label: string; children: ReactNode },
+  { hasError: boolean; error: Error | null }
+> {
+  constructor(props: { label: string; children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: { componentStack: string }) {
+    console.error(`[SectionErrorBoundary:${this.props.label}] ERROR MESSAGE:`, error.message);
+    console.error(`[SectionErrorBoundary:${this.props.label}] STACK:`, error.stack);
+    console.error(`[SectionErrorBoundary:${this.props.label}] COMPONENT STACK:`, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          padding: 24, background: "rgba(255,34,68,0.08)",
+          border: "1px solid rgba(255,34,68,0.35)", borderRadius: 8, margin: "16px 0",
+        }}>
+          <div style={{ color: "#FF2244", fontWeight: 700, fontSize: 13, fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: 1, marginBottom: 8 }}>
+            ⚠ SECTION CRASH — {this.props.label}
+          </div>
+          <div style={{ color: "#ff6680", fontSize: 14, fontFamily: 'monospace', fontWeight: 700, marginBottom: 12, wordBreak: 'break-all' }}>
+            {this.state.error?.message ?? 'Unknown error'}
+          </div>
+          <pre style={{ color: "rgba(255,255,255,0.35)", fontSize: 10, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto', marginBottom: 12 }}>
+            {this.state.error?.stack}
+          </pre>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{ padding: "4px 14px", background: "#1a1a1a", border: "1px solid #444", borderRadius: 4, color: "#ccc", cursor: "pointer", fontSize: 11, fontFamily: '"Barlow Condensed", sans-serif' }}
+          >
+            RETRY
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 // ─── Date helpers ─────────────────────────────────────────────────────────────
 function todayPst(): string {
@@ -1222,6 +1268,7 @@ export default function TheModelResults() {
         {/* FULL GAME TAB                                                     */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {marketTab === "fullgame" && (
+          <SectionErrorBoundary label="FULL GAME">
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
             {/* Rolling Accuracy */}
@@ -1328,12 +1375,14 @@ export default function TheModelResults() {
               )}
             </div>
           </div>
+          </SectionErrorBoundary>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* FIRST 5 INNINGS TAB                                               */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {marketTab === "first5" && (
+          <SectionErrorBoundary label="FIRST 5 INNINGS">
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
             {/* Rolling Accuracy */}
@@ -1439,12 +1488,14 @@ export default function TheModelResults() {
               )}
             </div>
           </div>
+          </SectionErrorBoundary>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* 1ST INNING TAB                                                    */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {marketTab === "firstinning" && (
+          <SectionErrorBoundary label="1ST INNING">
           <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
 
             {/* Rolling Accuracy */}
@@ -1504,12 +1555,14 @@ export default function TheModelResults() {
               </div>
             </div>
           </div>
+          </SectionErrorBoundary>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* K-PROPS TAB                                                       */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {marketTab === "kprops" && (
+          <SectionErrorBoundary label="K-PROPS">
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
             {/* View toggle */}
@@ -1604,12 +1657,14 @@ export default function TheModelResults() {
               )
             )}
           </div>
+          </SectionErrorBoundary>
         )}
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* HR PROPS TAB                                                      */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {marketTab === "hrprops" && (
+          <SectionErrorBoundary label="HR PROPS">
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
 
             {/* Rolling Accuracy */}
@@ -1682,6 +1737,7 @@ S</SectionLabel>
               </Button>
             </div>
           </div>
+          </SectionErrorBoundary>
         )}
 
       </main>
