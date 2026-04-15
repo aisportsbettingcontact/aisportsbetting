@@ -18,7 +18,7 @@ import { GameCard } from "@/components/GameCard";
 import { MlbLineupCard } from "@/components/MlbLineupCard";
 import MlbPropsCard, { type StrikeoutPropRow } from "@/components/MlbPropsCard";
 import MlbF5NrfiCard, { type F5NrfiGame } from "@/components/MlbF5NrfiCard";
-import MlbCheatSheetCard, { type CheatSheetGame } from "@/components/MlbCheatSheetCard";
+import MlbCheatSheetCard, { type CheatSheetGame, CheatSheetView, type CheatSheetLineup } from "@/components/MlbCheatSheetCard";
 import MlbHrPropsCard, { type HrPropRow } from "@/components/MlbHrPropsCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -1366,14 +1366,12 @@ export default function ModelProjections() {
                 ) : (
                   <div style={{ padding: '10px 10px 0' }}>
                     {sortedDates.map((date) => (
-                      <div key={date}>
-                        {gamesByDate[date]!.map((game) => (
-                          <MlbCheatSheetCard
-                            key={game!.id}
-                            game={game as unknown as CheatSheetGame}
-                          />
-                        ))}
-                      </div>
+                      <CheatSheetView
+                        key={date}
+                        games={gamesByDate[date]!.map(g => g as unknown as CheatSheetGame)}
+                        lineupsMap={mlbLineupsMap as unknown as Map<number, CheatSheetLineup>}
+                        dateLabel={formatDateHeader(date)}
+                      />
                     ))}
                   </div>
                 )

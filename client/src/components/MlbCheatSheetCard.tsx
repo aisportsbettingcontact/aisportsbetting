@@ -1024,3 +1024,520 @@ export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
     </div>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CheatSheetView — v3.0 HTML SPEC MIRROR
+// Two-view layout: NRFI/YRFI table + First 5 card view with internal tab switcher
+// Renders all games for a single date group in one block.
+// ═══════════════════════════════════════════════════════════════════════════════
+import { useState } from "react";
+
+// ─── Lineup type for pitcher data ─────────────────────────────────────────────
+export interface CheatSheetLineup {
+  awayPitcherName?: string | null;
+  awayPitcherEra?: string | null;
+  awayPitcherConfirmed?: boolean | null;
+  homePitcherName?: string | null;
+  homePitcherEra?: string | null;
+  homePitcherConfirmed?: boolean | null;
+}
+
+// ─── Edge computation (v3) ────────────────────────────────────────────────────
+function americanToImplied(odds: number): number {
+  return odds > 0 ? 100 / (odds + 100) : -odds / (-odds + 100);
+}
+function americanToDecimalV3(odds: number): number {
+  return odds > 0 ? 1 + odds / 100 : 1 - 100 / odds;
+}
+interface EdgeV3 {
+  edge: number;
+  ev: number;
+  roiPct: number;
+  barWidth: number;
+  isPositive: boolean;
+  hasEdge: boolean;
+}
+function computeEdgeV3(modelPct: number | null, bookOddsStr: string | null | undefined): EdgeV3 | null {
+  if (modelPct == null || !bookOddsStr) return null;
+  const bookOdds = parseFloat(bookOddsStr);
+  if (isNaN(bookOdds)) return null;
+  const impliedProb = americanToImplied(bookOdds);
+  const modelProb = modelPct / 100;
+  const edge = modelProb - impliedProb;
+  const decOdds = americanToDecimalV3(bookOdds);
+  const ev = modelProb * (decOdds - 1) - (1 - modelProb);
+  const roiPct = edge * 100;
+  const barWidth = Math.min(Math.abs(edge) * 1000, 100);
+  return { edge, ev, roiPct, barWidth, isPositive: edge >= 0, hasEdge: Math.abs(edge) >= 0.03 };
+}
+function edgeColorV3(e: EdgeV3 | null): string {
+  if (!e || !e.hasEdge) return '#3a3f3c';
+  return e.isPositive ? '#39FF14' : '#ff5555';
+}
+
+// ─── Color helpers (v3) ───────────────────────────────────────────────────────
+function projColorV3(exp: number): string {
+  if (exp <= 0.35) return '#39FF14';
+  if (exp <= 0.45) return '#aee87a';
+  return '#ff5555';
+}
+function scoreColorV3(score: number): string {
+  if (score <= 2.5) return '#39FF14';
+  if (score <= 4.5) return '#aee87a';
+  return '#ff5555';
+}
+function inningBoxStyleV3(exp: number): { bg: string; border: string; color: string } {
+  const r = Math.round(exp);
+  if (r === 0) return { bg: '#161918', border: '#1e2320', color: '#2a2e2c' };
+  if (r === 1) return { bg: 'rgba(57,255,20,.12)', border: 'rgba(57,255,20,.25)', color: '#39FF14' };
+  return { bg: 'rgba(255,85,85,.12)', border: 'rgba(255,85,85,.25)', color: '#ff5555' };
+}
+function totalBadgeStyleV3(total: number): { bg: string; border: string; color: string } {
+  if (total <= 2) return { bg: 'rgba(57,255,20,.08)', border: 'rgba(57,255,20,.18)', color: '#39FF14' };
+  if (total <= 4) return { bg: '#161918', border: '#1e2320', color: '#aee87a' };
+  return { bg: 'rgba(255,85,85,.08)', border: 'rgba(255,85,85,.18)', color: '#ff5555' };
+}
+
+// ─── NRFI badge ───────────────────────────────────────────────────────────────
+type NrfiBadgeV3 = 'NRFI' | 'YRFI' | 'Skip';
+function getNrfiBadgeV3(modelPNrfiRaw: string | null): NrfiBadgeV3 {
+  const raw = parseFloat(modelPNrfiRaw ?? '');
+  if (isNaN(raw)) return 'Skip';
+  const pct = raw * 100;
+  if (pct >= 52) return 'NRFI';
+  if (pct <= 46) return 'YRFI';
+  return 'Skip';
+}
+
+// ─── Format helpers (v3) ──────────────────────────────────────────────────────
+function fmtOddsV3(val: string | number | null | undefined): string {
+  if (val == null || val === '') return "—";
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  if (isNaN(n)) return String(val);
+  return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
+}
+function fmtLineV3(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  return n > 0 ? `+${n}` : `${n}`;
+}
+function formatTimeV3(t: string | null | undefined): string {
+  if (!t) return "";
+  const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!m) return t;
+  let h = parseInt(m[1]!, 10);
+  const min = m[2]!;
+  const suffix = m[3] ?? (h >= 12 ? 'PM' : 'AM');
+  if (!m[3]) {
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+  }
+  return `${h}:${min} ${suffix.toUpperCase()} ET`;
+}
+function parseNumV3(val: string | number | null | undefined): number | null {
+  if (val == null) return null;
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  return isNaN(n) ? null : n;
+}
+function parseJsonArrV3(val: string | null | undefined): number[] | null {
+  if (!val) return null;
+  try {
+    const arr = JSON.parse(val);
+    if (Array.isArray(arr) && arr.length >= 5) return arr.map(Number);
+    return null;
+  } catch { return null; }
+}
+
+// ─── NRFI Table Row ───────────────────────────────────────────────────────────
+function NrfiTableRowV3({ game, lineup }: { game: CheatSheetGame; lineup?: CheatSheetLineup | null }) {
+  const awayPitcherName = lineup?.awayPitcherName || (game as CheatSheetGame & { awayStartingPitcher?: string | null }).awayStartingPitcher || "TBD";
+  const homePitcherName = lineup?.homePitcherName || (game as CheatSheetGame & { homeStartingPitcher?: string | null }).homeStartingPitcher || "TBD";
+  const awayPitcherEra = lineup?.awayPitcherEra ?? null;
+  const homePitcherEra = lineup?.homePitcherEra ?? null;
+
+  const awayInnExp = parseJsonArrV3(game.modelInningAwayExp);
+  const homeInnExp = parseJsonArrV3(game.modelInningHomeExp);
+  const awayI1 = awayInnExp?.[0] ?? null;
+  const homeI1 = homeInnExp?.[0] ?? null;
+
+  const modelPNrfiRaw = parseNumV3(game.modelPNrfi);
+  const modelPNrfiPct = modelPNrfiRaw != null ? modelPNrfiRaw * 100 : null;
+  const badge = getNrfiBadgeV3(game.modelPNrfi);
+
+  const nrfiEdge = badge === 'NRFI'
+    ? computeEdgeV3(modelPNrfiPct, game.nrfiOverOdds)
+    : badge === 'YRFI'
+    ? computeEdgeV3(modelPNrfiPct != null ? 100 - modelPNrfiPct : null, game.yrfiUnderOdds)
+    : null;
+
+  const bookOdds = badge === 'NRFI' ? game.nrfiOverOdds : badge === 'YRFI' ? game.yrfiUnderOdds : (game.nrfiOverOdds ?? game.yrfiUnderOdds);
+  const modelOdds = badge === 'NRFI' ? game.modelNrfiOdds : badge === 'YRFI' ? game.modelYrfiOdds : (game.modelNrfiOdds ?? game.modelYrfiOdds);
+
+  const td: React.CSSProperties = {
+    padding: '10px 10px',
+    borderBottom: '0.5px solid #161918',
+    verticalAlign: 'middle',
+    color: '#e8ede9',
+  };
+
+  return (
+    <tr
+      onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = '#111412'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'; }}
+    >
+      {/* Matchup */}
+      <td style={td}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#e8ede9', whiteSpace: 'nowrap' }}>
+          {game.awayTeam} @ {game.homeTeam}
+        </div>
+        <div style={{ fontSize: 10, color: '#3a3f3c', marginTop: 2 }}>
+          {formatTimeV3(game.startTimeEst)}
+          {(game as CheatSheetGame & { venue?: string | null }).venue ? ` · ${(game as CheatSheetGame & { venue?: string | null }).venue}` : ''}
+        </div>
+      </td>
+      {/* Away Starter */}
+      <td style={td}>
+        <div style={{ fontSize: 12, color: '#c4cac5', whiteSpace: 'nowrap' }}>{awayPitcherName}</div>
+        <div style={{ fontSize: 10, color: '#3a3f3c', marginTop: 1 }}>{awayPitcherEra ? `ERA ${awayPitcherEra}` : '—'}</div>
+      </td>
+      {/* Home Starter */}
+      <td style={td}>
+        <div style={{ fontSize: 12, color: '#c4cac5', whiteSpace: 'nowrap' }}>{homePitcherName}</div>
+        <div style={{ fontSize: 10, color: '#3a3f3c', marginTop: 1 }}>{homePitcherEra ? `ERA ${homePitcherEra}` : '—'}</div>
+      </td>
+      {/* Away I1 Proj */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {awayI1 != null
+          ? <span style={{ fontSize: 15, fontWeight: 500, color: projColorV3(awayI1) }}>{awayI1.toFixed(2)}</span>
+          : <span style={{ color: '#3a3f3c' }}>—</span>}
+      </td>
+      {/* Home I1 Proj */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {homeI1 != null
+          ? <span style={{ fontSize: 15, fontWeight: 500, color: projColorV3(homeI1) }}>{homeI1.toFixed(2)}</span>
+          : <span style={{ color: '#3a3f3c' }}>—</span>}
+      </td>
+      {/* Badge */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {badge === 'NRFI' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, padding: '4px 9px', borderRadius: 4, whiteSpace: 'nowrap', background: 'rgba(57,255,20,.09)', color: '#39FF14', border: '1px solid rgba(57,255,20,.22)' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#39FF14', flexShrink: 0, display: 'inline-block' }} />NRFI
+          </span>
+        )}
+        {badge === 'YRFI' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, padding: '4px 9px', borderRadius: 4, whiteSpace: 'nowrap', background: 'rgba(255,85,85,.09)', color: '#ff5555', border: '1px solid rgba(255,85,85,.22)' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ff5555', flexShrink: 0, display: 'inline-block' }} />YRFI
+          </span>
+        )}
+        {badge === 'Skip' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, padding: '4px 9px', borderRadius: 4, whiteSpace: 'nowrap', background: '#111412', color: '#3a3f3c', border: '1px solid #1e2320' }}>Skip</span>
+        )}
+      </td>
+      {/* Book / Model */}
+      <td style={td}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, minWidth: 160 }}>
+          <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '7px 10px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#7a8078', marginBottom: 2 }}>Book</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: '#c4cac5' }}>{fmtOddsV3(bookOdds)}</div>
+          </div>
+          <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '7px 10px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#7a8078', marginBottom: 2 }}>Model</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: nrfiEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>{fmtOddsV3(modelOdds)}</div>
+          </div>
+        </div>
+      </td>
+      {/* Edge */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {nrfiEdge?.hasEdge ? (
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: nrfiEdge.isPositive ? '#39FF14' : '#ff5555' }}>
+              {nrfiEdge.isPositive ? '+' : ''}{nrfiEdge.roiPct.toFixed(1)}%
+            </div>
+            <div style={{ height: 2, background: '#1e2320', borderRadius: 1, marginTop: 4 }}>
+              <div style={{ height: 2, borderRadius: 1, width: `${nrfiEdge.barWidth}%`, background: nrfiEdge.isPositive ? '#39FF14' : '#ff5555' }} />
+            </div>
+          </div>
+        ) : <div style={{ fontSize: 14, fontWeight: 500, color: '#3a3f3c' }}>—</div>}
+      </td>
+    </tr>
+  );
+}
+
+// ─── F5 Game Card ─────────────────────────────────────────────────────────────
+function F5GameCardV3({ game, lineup }: { game: CheatSheetGame; lineup?: CheatSheetLineup | null }) {
+  const awayInfo = MLB_BY_ABBREV.get(game.awayTeam);
+  const homeInfo = MLB_BY_ABBREV.get(game.homeTeam);
+
+  const awayPitcherName = lineup?.awayPitcherName || (game as CheatSheetGame & { awayStartingPitcher?: string | null }).awayStartingPitcher || null;
+  const homePitcherName = lineup?.homePitcherName || (game as CheatSheetGame & { homeStartingPitcher?: string | null }).homeStartingPitcher || null;
+
+  const awayInnExp = parseJsonArrV3(game.modelInningAwayExp);
+  const homeInnExp = parseJsonArrV3(game.modelInningHomeExp);
+  const modelF5Away = parseNumV3(game.modelF5AwayScore);
+  const modelF5Home = parseNumV3(game.modelF5HomeScore);
+  const modelF5Total = parseNumV3(game.modelF5Total);
+  const modelF5OverRate = parseNumV3(game.modelF5OverRate);
+  const modelF5UnderRate = parseNumV3(game.modelF5UnderRate);
+  const bookTotalNum = parseNumV3(game.f5Total);
+
+  const awayF5Total = awayInnExp ? awayInnExp.slice(0, 5).reduce((a, b) => a + b, 0) : null;
+  const homeF5Total = homeInnExp ? homeInnExp.slice(0, 5).reduce((a, b) => a + b, 0) : null;
+
+  const rlEdge = computeEdgeV3(parseNumV3(game.modelF5AwayRLCoverPct), game.f5AwayRunLineOdds);
+  const mlEdge = computeEdgeV3(parseNumV3(game.modelF5AwayWinPct), game.f5AwayML);
+
+  let ouEdge: EdgeV3 | null = null;
+  let ouLabel = '';
+  if (modelF5Total != null && bookTotalNum != null) {
+    if (modelF5Total > bookTotalNum) {
+      ouEdge = computeEdgeV3(modelF5OverRate, game.f5OverOdds);
+      ouLabel = 'O';
+    } else {
+      ouEdge = computeEdgeV3(modelF5UnderRate, game.f5UnderOdds);
+      ouLabel = 'U';
+    }
+  }
+
+  const pitcherLine = [awayPitcherName, homePitcherName].filter(Boolean).join(' vs ');
+
+  return (
+    <div style={{ background: '#111412', border: '1px solid #1a1d1b', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '9px 14px', borderBottom: '1px solid #1a1d1b', gap: 10, flexWrap: 'wrap' as const }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: '#e8ede9' }}>{game.awayTeam} @ {game.homeTeam}</span>
+        <span style={{ fontSize: 10, color: '#3a3f3c' }}>
+          {formatTimeV3(game.startTimeEst)}
+          {(game as CheatSheetGame & { venue?: string | null }).venue ? ` · ${(game as CheatSheetGame & { venue?: string | null }).venue}` : ''}
+          {pitcherLine ? ` · ${pitcherLine}` : ''}
+        </span>
+      </div>
+
+      {/* 3-column body */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr' }}>
+
+        {/* LEFT: Proj runs I1–I5 */}
+        <div style={{ padding: '10px 14px 12px', borderRight: '1px solid #1a1d1b' }}>
+          <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 8 }}>
+            Proj runs — innings 1–5
+          </div>
+          {/* Away */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: '#7a8078', width: 38, flexShrink: 0 }}>{game.awayTeam}</span>
+            <div style={{ display: 'flex', gap: 3 }}>
+              {(awayInnExp ?? Array(5).fill(null)).slice(0, 5).map((exp: number | null, i: number) => {
+                const s = exp != null ? inningBoxStyleV3(exp) : { bg: '#161918', border: '#1e2320', color: '#2a2e2c' };
+                return (
+                  <div key={i} style={{ width: 22, height: 22, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, flexShrink: 0, background: s.bg, border: `1px solid ${s.border}`, color: s.color }}>
+                    {exp != null ? Math.round(exp) : '—'}
+                  </div>
+                );
+              })}
+            </div>
+            {awayF5Total != null && (() => {
+              const t = Math.round(awayF5Total);
+              const s = totalBadgeStyleV3(t);
+              return <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 7px', borderRadius: 3, marginLeft: 2, whiteSpace: 'nowrap' as const, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{t}</span>;
+            })()}
+          </div>
+          {/* Home */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: '#7a8078', width: 38, flexShrink: 0 }}>{game.homeTeam}</span>
+            <div style={{ display: 'flex', gap: 3 }}>
+              {(homeInnExp ?? Array(5).fill(null)).slice(0, 5).map((exp: number | null, i: number) => {
+                const s = exp != null ? inningBoxStyleV3(exp) : { bg: '#161918', border: '#1e2320', color: '#2a2e2c' };
+                return (
+                  <div key={i} style={{ width: 22, height: 22, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, flexShrink: 0, background: s.bg, border: `1px solid ${s.border}`, color: s.color }}>
+                    {exp != null ? Math.round(exp) : '—'}
+                  </div>
+                );
+              })}
+            </div>
+            {homeF5Total != null && (() => {
+              const t = Math.round(homeF5Total);
+              const s = totalBadgeStyleV3(t);
+              return <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 7px', borderRadius: 3, marginLeft: 2, whiteSpace: 'nowrap' as const, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{t}</span>;
+            })()}
+          </div>
+        </div>
+
+        {/* CENTER: F5 projection */}
+        <div style={{ padding: '10px 18px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 8, borderRight: '1px solid #1a1d1b', minWidth: 150 }}>
+          <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#3a3f3c' }}>F5 projection</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: awayInfo?.primaryColor ? `${awayInfo.primaryColor}22` : '#1a1d1b', border: `1px solid ${awayInfo?.primaryColor ?? '#222523'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 500, color: awayInfo?.primaryColor ?? '#7a8078', flexShrink: 0 }}>
+              {game.awayTeam}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 26, fontWeight: 500, lineHeight: 1, color: modelF5Away != null ? scoreColorV3(modelF5Away) : '#7a8078' }}>
+                {modelF5Away != null ? modelF5Away.toFixed(1) : '—'}
+              </span>
+              <span style={{ fontSize: 14, color: '#2e3330' }}>–</span>
+              <span style={{ fontSize: 26, fontWeight: 500, lineHeight: 1, color: modelF5Home != null ? scoreColorV3(modelF5Home) : '#7a8078' }}>
+                {modelF5Home != null ? modelF5Home.toFixed(1) : '—'}
+              </span>
+            </div>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: homeInfo?.primaryColor ? `${homeInfo.primaryColor}22` : '#1a1d1b', border: `1px solid ${homeInfo?.primaryColor ?? '#222523'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 500, color: homeInfo?.primaryColor ?? '#7a8078', flexShrink: 0 }}>
+              {game.homeTeam}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: Book vs model — RL / ML / O/U */}
+        <div style={{ padding: '10px 14px 12px' }}>
+          <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 8 }}>Book vs model</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+            {/* RL */}
+            <div>
+              <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 4, textAlign: 'center' }}>RL</div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>{fmtLineV3(game.f5AwayRunLine)} Book</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#c4cac5' }}>{fmtOddsV3(game.f5AwayRunLineOdds)}</div>
+                </div>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>{fmtLineV3(game.f5AwayRunLine)} Model</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: rlEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>{fmtOddsV3(game.modelF5AwayRlOdds)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 4, textAlign: 'center', color: edgeColorV3(rlEdge) }}>
+                {rlEdge?.hasEdge ? `${rlEdge.isPositive ? '+' : ''}${rlEdge.roiPct.toFixed(1)}%` : '—'}
+              </div>
+            </div>
+            {/* ML */}
+            <div>
+              <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 4, textAlign: 'center' }}>ML</div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Book</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#c4cac5' }}>{fmtOddsV3(game.f5AwayML)}</div>
+                </div>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Model</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: mlEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>{fmtOddsV3(game.modelF5AwayML)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 4, textAlign: 'center', color: edgeColorV3(mlEdge) }}>
+                {mlEdge?.hasEdge ? `${mlEdge.isPositive ? '+' : ''}${mlEdge.roiPct.toFixed(1)}%` : '—'}
+              </div>
+            </div>
+            {/* O/U */}
+            <div>
+              <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 4, textAlign: 'center' }}>O/U</div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Book</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#c4cac5' }}>{game.f5Total ?? '—'}</div>
+                </div>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Model</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: ouEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>
+                    {modelF5Total != null ? modelF5Total.toFixed(1) : '—'}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 4, textAlign: 'center', color: edgeColorV3(ouEdge) }}>
+                {ouEdge?.hasEdge && ouLabel ? `${ouLabel} ${ouEdge.isPositive ? '+' : ''}${ouEdge.roiPct.toFixed(1)}%` : '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ─── CheatSheetView — main export ─────────────────────────────────────────────
+export interface CheatSheetViewProps {
+  games: CheatSheetGame[];
+  lineupsMap?: Map<number, CheatSheetLineup>;
+  dateLabel?: string;
+}
+
+export function CheatSheetView({ games, lineupsMap, dateLabel }: CheatSheetViewProps) {
+  const [activeTab, setActiveTab] = useState<'nrfi' | 'f5'>('nrfi');
+
+  const modeledGames = games.filter(g => g.modelPNrfi != null || g.modelF5AwayScore != null);
+  if (modeledGames.length === 0) return null;
+
+  return (
+    <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", marginBottom: 24 }}>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap' as const, gap: 10 }}>
+        {dateLabel && (
+          <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase' as const, color: '#4a4f4b' }}>
+            {dateLabel}
+          </span>
+        )}
+        {/* Tab switcher */}
+        <div style={{ display: 'flex', background: '#111412', border: '1px solid #1a1d1b', borderRadius: 6, padding: 3, gap: 2 }}>
+          {(['nrfi', 'f5'] as const).map(tab => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                fontSize: 11, fontWeight: 500, letterSpacing: '.07em', textTransform: 'uppercase' as const,
+                padding: '5px 16px', borderRadius: 4, cursor: 'pointer', transition: 'all .15s',
+                border: activeTab === tab ? '1px solid rgba(57,255,20,.2)' : '1px solid transparent',
+                background: activeTab === tab ? 'rgba(57,255,20,.1)' : 'transparent',
+                color: activeTab === tab ? '#39FF14' : '#4a4f4b',
+              }}
+            >
+              {tab === 'nrfi' ? 'NRFI / YRFI' : 'First 5'}
+            </button>
+          ))}
+        </div>
+        {/* Legend */}
+        {activeTab === 'nrfi' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {[{ color: '#39FF14', label: 'NRFI' }, { color: '#ff5555', label: 'YRFI' }, { color: '#333', label: 'Skip' }].map(({ color, label }) => (
+              <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 500, letterSpacing: '.06em', textTransform: 'uppercase' as const, color: '#4a4f4b' }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }} />{label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {[{ color: 'rgba(57,255,20,.5)', label: 'Run' }, { color: 'rgba(255,85,85,.5)', label: 'Multi-run' }, { color: '#1a1d1b', label: 'Zero' }].map(({ color, label }) => (
+              <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 500, letterSpacing: '.06em', textTransform: 'uppercase' as const, color: '#4a4f4b' }}>
+                <span style={{ width: 7, height: 7, borderRadius: 2, background: color, flexShrink: 0, display: 'inline-block' }} />{label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── NRFI TABLE ── */}
+      {activeTab === 'nrfi' && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #1e2320' }}>
+                {['Matchup', 'Away starter', 'Home starter', 'Away proj', 'Home proj', 'NRFI / YRFI', 'Book / Model', 'Edge (ROI%)'].map((h, i) => (
+                  <th key={h} style={{ fontSize: '8.5px', fontWeight: 500, letterSpacing: '.11em', textTransform: 'uppercase' as const, color: '#3a3f3c', padding: '6px 10px', textAlign: i >= 3 ? 'center' : 'left', whiteSpace: 'nowrap' as const }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {modeledGames.map(game => (
+                <NrfiTableRowV3 key={game.id} game={game} lineup={lineupsMap?.get(game.id)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── F5 CARDS ── */}
+      {activeTab === 'f5' && (
+        <div>
+          {modeledGames.map(game => (
+            <F5GameCardV3 key={game.id} game={game} lineup={lineupsMap?.get(game.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
