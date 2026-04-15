@@ -953,8 +953,8 @@ export default function TheModelResults() {
     { enabled: !!appUser && isOwner, refetchOnWindowFocus: false, staleTime: 5 * 60 * 1000 }
   );
 
-  // FG ML Edge Leaderboard
-  const { data: fgEdgeData, isLoading: fgEdgeLoading, refetch: refetchFgEdge } = trpc.mlbSchedule.getF5EdgeLeaderboard.useQuery(
+  // FG ML Edge Leaderboard — dedicated procedure with FG ML fields (awayML, homeML, fgMlResult, fgMlCorrect, brierFgMl)
+  const { data: fgEdgeData, isLoading: fgEdgeLoading, refetch: refetchFgEdge } = trpc.mlbSchedule.getFgEdgeLeaderboard.useQuery(
     { minEdge: fgMinEdge, side: fgSide, withOutcome: fgWithOutcome, limit: fgLimit },
     { enabled: !!appUser && isOwner && marketTab === "fullgame", refetchOnWindowFocus: false }
   );
@@ -1067,19 +1067,17 @@ export default function TheModelResults() {
     });
   }, [hrPropsData, hrGamesData]);
 
-  // ─── FG edge rows (reuse F5 leaderboard data — NOTE: getF5EdgeLeaderboard returns F5 data;
-  //     for FG we use the same endpoint but display FG fields) ──────────────────────────────
-  // The getF5EdgeLeaderboard procedure returns rows with both f5 and fg fields.
-  // We display FG-specific columns when marketTab === "fullgame".
+  // ─── FG edge rows — getFgEdgeLeaderboard returns FG ML fields directly ─────────────────────
+  // Fields: modelWinPct, bookImpliedPct, edgePct, awayML, homeML, fgMlResult, fgMlCorrect, brierFgMl
   const fgRows: EdgeRow[] = useMemo(() => (fgEdgeData?.rows ?? []).map((r: Record<string, unknown>) => ({
     id: r.id as number,
     gameDate: r.gameDate as string | null,
     awayTeam: r.awayTeam as string,
     homeTeam: r.homeTeam as string,
     side: r.side as string,
-    modelWinPct: r.modelFgWinPct != null ? r.modelFgWinPct as number : r.modelWinPct as number,
-    bookImpliedPct: r.bookFgImpliedPct != null ? r.bookFgImpliedPct as number : r.bookImpliedPct as number,
-    edgePct: r.fgEdgePct != null ? r.fgEdgePct as number : r.edgePct as number,
+    modelWinPct: r.modelWinPct as number,
+    bookImpliedPct: r.bookImpliedPct as number,
+    edgePct: r.edgePct as number,
     awayML: r.awayML as string | null,
     homeML: r.homeML as string | null,
     actualAwayScore: r.actualAwayScore as number | null,

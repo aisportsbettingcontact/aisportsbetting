@@ -856,6 +856,129 @@ export const mlbScheduleRouter = router({
     }),
 
   /**
+   * Owner-only: Full-Game ML Edge Leaderboard.
+   *
+   * Mirrors getF5EdgeLeaderboard but uses FG ML fields:
+   * modelAwayWinPct, modelHomeWinPct, awayML, homeML, fgMlResult, fgMlCorrect, brierFgMl.
+   */
+  getFgEdgeLeaderboard: ownerProcedure
+    .input(z.object({
+      minEdge:     z.number().optional().default(0),
+      side:        z.enum(['away', 'home', 'both']).optional().default('both'),
+      withOutcome: z.boolean().optional().default(false),
+      limit:       z.number().min(1).max(500).optional().default(200),
+    }))
+    .query(async ({ input }) => {
+      const tag = `${TAG}[getFgEdgeLeaderboard]`;
+      console.log(`${tag} [INPUT] minEdge=${input.minEdge} side=${input.side} withOutcome=${input.withOutcome} limit=${input.limit}`);
+      const db = await getDb();
+      const rows = await db
+        .select({
+          id:              gamesTable.id,
+          gameDate:        gamesTable.gameDate,
+          awayTeam:        gamesTable.awayTeam,
+          homeTeam:        gamesTable.homeTeam,
+          awayML:          gamesTable.awayML,
+          homeML:          gamesTable.homeML,
+          modelAwayWinPct: gamesTable.modelAwayWinPct,
+          modelHomeWinPct: gamesTable.modelHomeWinPct,
+          fgMlResult:      gamesTable.fgMlResult,
+          fgMlCorrect:     gamesTable.fgMlCorrect,
+          actualAwayScore: gamesTable.actualAwayScore,
+          actualHomeScore: gamesTable.actualHomeScore,
+          brierFgMl:       gamesTable.brierFgMl,
+        })
+        .from(gamesTable)
+        .where(
+          and(
+            isNotNull(gamesTable.modelAwayWinPct),
+            isNotNull(gamesTable.awayML),
+            isNotNull(gamesTable.homeML),
+          )
+        )
+        .orderBy(asc(gamesTable.gameDate));
+      console.log(`${tag} [STATE] raw rows with model+odds: ${rows.length}`);
+      const americanToRaw = (ml: string | null): number | null => {
+        if (!ml) return null;
+        const n = parseFloat(ml);
+        if (isNaN(n)) return null;
+        return n < 0 ? (-n) / (-n + 100) : 100 / (n + 100);
+      };
+      type FgEdgeRow = {
+        id: number; gameDate: string; awayTeam: string; homeTeam: string;
+        side: 'away' | 'home'; modelWinPct: number; bookImpliedPct: number; edgePct: number;
+        awayML: string | null; homeML: string | null;
+        fgMlResult: string | null; fgMlCorrect: number | null;
+        actualAwayScore: number | null; actualHomeScore: number | null;
+        brierFgMl: string | null;
+      };
+      const edgeRows: FgEdgeRow[] = [];
+      for (const row of rows) {
+        const rawAway = americanToRaw(row.awayML);
+        const rawHome = americanToRaw(row.homeML);
+        if (rawAway == null || rawHome == null) continue;
+        const total = rawAway + rawHome;
+        if (total <= 0) continue;
+        const noVigAway = (rawAway / total) * 100;
+        const noVigHome = (rawHome / total) * 100;
+        const modelAway = row.modelAwayWinPct != null ? parseFloat(String(row.modelAwayWinPct)) : null;
+        const modelHome = row.modelHomeWinPct != null ? parseFloat(String(row.modelHomeWinPct)) : null;
+        if (modelAway != null && (input.side === 'away' || input.side === 'both')) {
+          const edge = modelAway - noVigAway;
+          if (Math.abs(edge) >= input.minEdge) {
+            edgeRows.push({
+              id: row.id, gameDate: row.gameDate ?? '', awayTeam: row.awayTeam, homeTeam: row.homeTeam,
+              side: 'away', modelWinPct: modelAway, bookImpliedPct: noVigAway, edgePct: edge,
+              awayML: row.awayML, homeML: row.homeML,
+              fgMlResult: row.fgMlResult, fgMlCorrect: row.fgMlCorrect,
+              actualAwayScore: row.actualAwayScore, actualHomeScore: row.actualHomeScore,
+              brierFgMl: row.brierFgMl != null ? String(row.brierFgMl) : null,
+            });
+          }
+        }
+        if (modelHome != null && (input.side === 'home' || input.side === 'both')) {
+          const edge = modelHome - noVigHome;
+          if (Math.abs(edge) >= input.minEdge) {
+            edgeRows.push({
+              id: row.id, gameDate: row.gameDate ?? '', awayTeam: row.awayTeam, homeTeam: row.homeTeam,
+              side: 'home', modelWinPct: modelHome, bookImpliedPct: noVigHome, edgePct: edge,
+              awayML: row.awayML, homeML: row.homeML,
+              fgMlResult: row.fgMlResult, fgMlCorrect: row.fgMlCorrect,
+              actualAwayScore: row.actualAwayScore, actualHomeScore: row.actualHomeScore,
+              brierFgMl: row.brierFgMl != null ? String(row.brierFgMl) : null,
+            });
+          }
+        }
+      }
+      edgeRows.sort((a, b) => Math.abs(b.edgePct) - Math.abs(a.edgePct));
+      const limited = edgeRows.slice(0, input.limit);
+      const withOutcomeRows = edgeRows.filter(r => r.fgMlResult != null && r.fgMlResult !== '');
+      const wins = withOutcomeRows.filter(r => r.edgePct > 0 && r.fgMlCorrect === 1).length;
+      const losses = withOutcomeRows.filter(r => r.edgePct > 0 && r.fgMlCorrect === 0).length;
+      const positiveEdge = edgeRows.filter(r => r.edgePct > 0);
+      const negativeEdge = edgeRows.filter(r => r.edgePct < 0);
+      const avgPositiveEdge = positiveEdge.length > 0
+        ? positiveEdge.reduce((s, r) => s + r.edgePct, 0) / positiveEdge.length : 0;
+      const avgNegativeEdge = negativeEdge.length > 0
+        ? negativeEdge.reduce((s, r) => s + r.edgePct, 0) / negativeEdge.length : 0;
+      const summary = {
+        totalGames:           rows.length,
+        edgeRows:             edgeRows.length,
+        positiveEdge:         positiveEdge.length,
+        negativeEdge:         negativeEdge.length,
+        avgPositiveEdge:      parseFloat(avgPositiveEdge.toFixed(2)),
+        avgNegativeEdge:      parseFloat(avgNegativeEdge.toFixed(2)),
+        winsOnPositiveEdge:   wins,
+        lossesOnPositiveEdge: losses,
+        winRateOnPositiveEdge: withOutcomeRows.length > 0 && (wins + losses) > 0
+          ? parseFloat((wins / (wins + losses) * 100).toFixed(1)) : null,
+      };
+      console.log(`${tag} [OUTPUT] edgeRows=${edgeRows.length} positiveEdge=${positiveEdge.length} negativeEdge=${negativeEdge.length} wins=${wins} losses=${losses}`);
+      console.log(`${tag} [VERIFY] ${summary.winRateOnPositiveEdge != null ? `PASS — win rate on positive edge: ${summary.winRateOnPositiveEdge}%` : 'PENDING — no outcomes yet'}`);
+      return { rows: limited, summary };
+    }),
+
+  /**
    * Owner-only: Brier Heatmap Drill-Down.
    *
    * Returns individual game rows for a specific date, with all 5 Brier fields.
