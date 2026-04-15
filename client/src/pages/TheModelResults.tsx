@@ -115,6 +115,22 @@ function mlbPhoto(id: number | null | undefined): string | null {
   return `https://img.mlbstatic.com/mlb-photos/image/upload/d_people:generic:headshot:67:current.png/w_360,q_auto:best,e_background_removal,f_png/v1/people/${id}/headshot/67/current`;
 }
 
+/** Initials avatar fallback when no MLB photo is available */
+function InitialsAvatar({ name, color, size = 56 }: { name: string; color: string; size?: number }) {
+  const initials = name.split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase();
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: 8, flexShrink: 0,
+      background: `${color}22`, border: `1px solid ${color}44`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: size * 0.32, fontWeight: 800, color: color,
+      fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: 1,
+    }}>
+      {initials}
+    </div>
+  );
+}
+
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 function fmtNum(val: string | number | null | undefined, decimals = 1): string {
   if (val === null || val === undefined || val === "") return "—";
@@ -173,26 +189,42 @@ function edgeBg(edge: number): string {
 }
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
+
+/** Responsive grid wrapper for StatCard rows — auto-fills columns, min 130px each */
+function StatGrid({ children, minColWidth = 110 }: { children: React.ReactNode; minColWidth?: number }) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: `repeat(auto-fill, minmax(${minColWidth}px, 1fr))`,
+      gap: 8,
+      width: "100%",
+    }}>
+      {children}
+    </div>
+  );
+}
+
 function StatCard({ label, value, sub, color }: { label: string; value: string; sub?: string; color?: string }) {
   return (
     <div style={{
       background: "#090E14", border: "1px solid #182433", borderRadius: 10,
-      padding: "14px 16px", display: "flex", flexDirection: "column", gap: 4, flex: 1, minWidth: 0,
+      padding: "10px 12px", display: "flex", flexDirection: "column", gap: 4,
+      minWidth: 0, overflow: "hidden",
     }}>
-      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", fontFamily: '"Barlow Condensed", sans-serif' }}>
+      <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(255,255,255,0.4)", fontFamily: '"Barlow Condensed", sans-serif', lineHeight: 1.2, wordBreak: "break-word" }}>
         {label}
       </div>
-      <div style={{ fontSize: 28, fontWeight: 800, color: color ?? "#FFFFFF", lineHeight: 1, fontFamily: '"Barlow Condensed", sans-serif' }}>
+      <div style={{ fontSize: 22, fontWeight: 800, color: color ?? "#FFFFFF", lineHeight: 1, fontFamily: '"Barlow Condensed", sans-serif' }}>
         {value}
       </div>
-      {sub && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: '"Barlow Condensed", sans-serif' }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", fontFamily: '"Barlow Condensed", sans-serif', lineHeight: 1.3 }}>{sub}</div>}
     </div>
   );
 }
 
 function MiniStatCard({ label, value, color }: { label: string; value: string | number; color?: string }) {
   return (
-    <div style={{ background: "#111", border: "1px solid #1e2320", borderRadius: 6, padding: "8px 12px", minWidth: 100 }}>
+    <div style={{ background: "#111", border: "1px solid #1e2320", borderRadius: 6, padding: "8px 12px", minWidth: 0 }}>
       <div style={{ fontSize: 9, color: "#555", letterSpacing: 1, marginBottom: 2, fontFamily: '"Barlow Condensed", sans-serif' }}>{label}</div>
       <div style={{ fontSize: 16, fontWeight: 700, color: color ?? "#ccc", fontFamily: '"Barlow Condensed", sans-serif' }}>{value}</div>
     </div>
@@ -712,7 +744,7 @@ function RollingAccuracyPanel({ days, appUser }: { days: number; appUser: { id: 
   if (isLoading) return <div style={{ fontSize: 11, color: "#555", padding: "8px 0" }}>Loading rolling accuracy…</div>;
   if (!data || data.length === 0) return <div style={{ fontSize: 11, color: "#555", padding: "8px 0" }}>No backtest data yet.</div>;
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+    <StatGrid>
       {data.map(row => (
         <div key={row.market} style={{ background: "#090E14", border: "1px solid #182433", borderRadius: 8, padding: "10px 14px", minWidth: 110 }}>
           <div style={{ fontSize: 8, fontWeight: 700, letterSpacing: "1px", textTransform: "uppercase", color: "rgba(255,255,255,0.35)", fontFamily: '"Barlow Condensed", sans-serif', marginBottom: 4 }}>{row.market.replace(/_/g, " ")}</div>
@@ -722,11 +754,10 @@ function RollingAccuracyPanel({ days, appUser }: { days: number; appUser: { id: 
           <div style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", marginTop: 2, fontFamily: '"Barlow Condensed", sans-serif' }}>{row.sampleSize} graded</div>
         </div>
       ))}
-    </div>
+    </StatGrid>
   );
 }
-
-// ─── HR Props Row ──────────────────────────────────────────────────────────────
+// ─── HR Props Roww ──────────────────────────────────────────────────────────────
 interface HrPropRow {
   id: number;
   gameId: number;
@@ -764,9 +795,12 @@ function HrPropRow({ prop, awayTeam, homeTeam }: { prop: HrPropRow; awayTeam: st
       <div style={{ height: 3, background: primary }} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px" }}>
         {/* Photo */}
-        <div style={{ width: 44, height: 44, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-          {photo ? <img src={photo} alt={prop.playerName} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>⚾</div>}
-        </div>
+        {photo
+          ? <div style={{ width: 56, height: 56, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "rgba(255,255,255,0.04)", border: `1px solid ${primary}44` }}>
+              <img src={photo} alt={prop.playerName} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+            </div>
+          : <InitialsAvatar name={prop.playerName} color={primary} size={56} />
+        }
         {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
@@ -777,7 +811,7 @@ function HrPropRow({ prop, awayTeam, homeTeam }: { prop: HrPropRow; awayTeam: st
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: '"Barlow Condensed", sans-serif' }}>{awayTeam} @ {homeTeam}</div>
         </div>
         {/* Model vs Book */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", letterSpacing: 1, fontFamily: '"Barlow Condensed", sans-serif' }}>MODEL P(HR)</div>
             <div style={{ fontSize: 18, fontWeight: 800, color: "#FFFFFF", fontFamily: '"Barlow Condensed", sans-serif' }}>
@@ -858,9 +892,12 @@ function KPropPitcherRow({ prop }: { prop: KPropRow }) {
     <div style={{ background: "#090E14", border: "1px solid #182433", borderRadius: 10, overflow: "hidden", marginBottom: 8 }}>
       <div style={{ height: 3, background: primary }} />
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px" }}>
-        <div style={{ width: 44, height: 44, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-          {photo ? <img src={photo} alt={prop.pitcherName} style={{ width: "100%", height: "100%", objectFit: "cover" }} /> : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16 }}>⚾</div>}
-        </div>
+        {photo
+          ? <div style={{ width: 56, height: 56, borderRadius: 8, overflow: "hidden", flexShrink: 0, background: "rgba(255,255,255,0.04)", border: `1px solid ${primary}44` }}>
+              <img src={photo} alt={prop.pitcherName} style={{ width: "100%", height: "100%", objectFit: "cover", objectPosition: "top center" }} />
+            </div>
+          : <InitialsAvatar name={prop.pitcherName} color={primary} size={56} />
+        }
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
             {logo && <img src={logo} alt={pitcherTeam} style={{ width: 18, height: 18, objectFit: "contain" }} />}
@@ -870,11 +907,11 @@ function KPropPitcherRow({ prop }: { prop: KPropRow }) {
           <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", fontFamily: '"Barlow Condensed", sans-serif' }}>{prop.awayTeam} @ {prop.homeTeam}</div>
         </div>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", minWidth: 44 }}>
             <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", letterSpacing: 1, fontFamily: '"Barlow Condensed", sans-serif' }}>PROJ Ks</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: "#FFFFFF", fontFamily: '"Barlow Condensed", sans-serif', lineHeight: 1 }}>{kProj != null ? kProj.toFixed(1) : "—"}</div>
           </div>
-          <div style={{ textAlign: "center" }}>
+          <div style={{ textAlign: "center", minWidth: 52 }}>
             <div style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", letterSpacing: 1, fontFamily: '"Barlow Condensed", sans-serif' }}>BOOK LINE</div>
             <div style={{ fontSize: 22, fontWeight: 800, color: "rgba(255,255,255,0.6)", fontFamily: '"Barlow Condensed", sans-serif', lineHeight: 1 }}>{bookLine != null ? bookLine.toFixed(1) : "—"}</div>
           </div>
@@ -1184,7 +1221,7 @@ export default function TheModelResults() {
         </div>
 
         {/* Market tabs */}
-        <div className="px-4 pb-2 max-w-6xl mx-auto flex items-center gap-1.5 overflow-x-auto">
+        <div className="px-4 pb-2 max-w-6xl mx-auto flex items-center gap-1.5 overflow-x-auto scrollbar-hide" style={{ WebkitOverflowScrolling: "touch" }}>
           {MARKET_TABS.map(tab => (
             <button type="button" key={tab.id} onClick={() => setMarketTab(tab.id)}
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex-shrink-0"
@@ -1284,11 +1321,11 @@ export default function TheModelResults() {
             {brierData && (
               <div>
                 <SectionLabel>BRIER SCORE SUMMARY — FG ML + FG TOTAL</SectionLabel>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <StatGrid>
                   <StatCard label="FG ML AVG BRIER" value={brierData.summary.avgFgMl != null ? brierData.summary.avgFgMl.toFixed(4) : "—"} color={brierData.summary.avgFgMl != null ? brierColor(brierData.summary.avgFgMl) : undefined} sub="lower = better · random = 0.25" />
                   <StatCard label="FG TOTAL AVG BRIER" value={brierData.summary.avgFgTotal != null ? brierData.summary.avgFgTotal.toFixed(4) : "—"} color={brierData.summary.avgFgTotal != null ? brierColor(brierData.summary.avgFgTotal) : undefined} sub="lower = better · random = 0.25" />
                   <StatCard label="GAMES SCORED" value={String(brierData.summary.totalGames)} sub="with outcomes ingested" />
-                </div>
+                </StatGrid>
               </div>
             )}
 
@@ -1351,7 +1388,7 @@ export default function TheModelResults() {
 
               {/* FG edge summary */}
               {fgEdgeData?.summary && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                <StatGrid>
                   {[
                     { label: "TOTAL GAMES", value: fgEdgeData.summary.totalGames, color: "#888" },
                     { label: "POSITIVE EDGE", value: fgEdgeData.summary.positiveEdge, color: "#00ff88" },
@@ -1359,7 +1396,7 @@ export default function TheModelResults() {
                     { label: "AVG +EDGE", value: `+${fgEdgeData.summary.avgPositiveEdge.toFixed(2)}pp`, color: "#00ff88" },
                     { label: "WIN RATE (POS EDGE)", value: fgEdgeData.summary.winRateOnPositiveEdge != null ? `${fgEdgeData.summary.winRateOnPositiveEdge}%` : "PENDING", color: "#ffd700" },
                   ].map(c => <MiniStatCard key={c.label} label={c.label} value={c.value} color={c.color} />)}
-                </div>
+                </StatGrid>
               )}
 
               {fgEdgeLoading ? (
@@ -1380,9 +1417,8 @@ export default function TheModelResults() {
           </div>
           </SectionErrorBoundary>
         )}
-
         {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* FIRST 5 INNINGS TAB                                               */}
+        {/* FIRST 5 INNINGS TABB                                               */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {marketTab === "first5" && (
           <SectionErrorBoundary label="FIRST 5 INNINGS">
@@ -1398,11 +1434,11 @@ export default function TheModelResults() {
             {brierData && (
               <div>
                 <SectionLabel>BRIER SCORE SUMMARY — F5 ML + F5 TOTAL</SectionLabel>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <StatGrid>
                   <StatCard label="F5 ML AVG BRIER" value={brierData.summary.avgF5Ml != null ? brierData.summary.avgF5Ml.toFixed(4) : "—"} color={brierData.summary.avgF5Ml != null ? brierColor(brierData.summary.avgF5Ml) : undefined} sub="lower = better · random = 0.25" />
                   <StatCard label="F5 TOTAL AVG BRIER" value={brierData.summary.avgF5Total != null ? brierData.summary.avgF5Total.toFixed(4) : "—"} color={brierData.summary.avgF5Total != null ? brierColor(brierData.summary.avgF5Total) : undefined} sub="lower = better · random = 0.25" />
                   <StatCard label="GAMES SCORED" value={String(brierData.summary.totalGames)} sub="with outcomes ingested" />
-                </div>
+                </StatGrid>
               </div>
             )}
 
@@ -1464,7 +1500,7 @@ export default function TheModelResults() {
               </div>
 
               {f5EdgeData?.summary && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                <StatGrid>
                   {[
                     { label: "TOTAL GAMES", value: f5EdgeData.summary.totalGames, color: "#888" },
                     { label: "POSITIVE EDGE", value: f5EdgeData.summary.positiveEdge, color: "#00ff88" },
@@ -1472,7 +1508,7 @@ export default function TheModelResults() {
                     { label: "AVG +EDGE", value: `+${f5EdgeData.summary.avgPositiveEdge.toFixed(2)}pp`, color: "#00ff88" },
                     { label: "WIN RATE (POS EDGE)", value: f5EdgeData.summary.winRateOnPositiveEdge != null ? `${f5EdgeData.summary.winRateOnPositiveEdge}%` : "PENDING", color: "#ffd700" },
                   ].map(c => <MiniStatCard key={c.label} label={c.label} value={c.value} color={c.color} />)}
-                </div>
+                </StatGrid>
               )}
 
               {f5EdgeLoading ? (
@@ -1511,10 +1547,10 @@ export default function TheModelResults() {
             {brierData && (
               <div>
                 <SectionLabel>BRIER SCORE SUMMARY — NRFI</SectionLabel>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <StatGrid>
                   <StatCard label="NRFI AVG BRIER" value={brierData.summary.avgNrfi != null ? brierData.summary.avgNrfi.toFixed(4) : "—"} color={brierData.summary.avgNrfi != null ? brierColor(brierData.summary.avgNrfi) : undefined} sub="lower = better · random = 0.25" />
                   <StatCard label="GAMES SCORED" value={String(brierData.summary.totalGames)} sub="with outcomes ingested" />
-                </div>
+                </StatGrid>
               </div>
             )}
 
@@ -1589,7 +1625,7 @@ export default function TheModelResults() {
             {!kCalibLoading && kCalibData?.metrics && (
               <div>
                 <SectionLabel>ROLLING CALIBRATION — ALL TIME ({kCalibData.metrics.completedProps} props)</SectionLabel>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <StatGrid>
                   <StatCard label="MODEL ACCURACY" value={fmtPct(kCalibData.metrics.modelAccuracy)} sub={`${kCalibData.metrics.completedProps} completed`} color={accuracyColor(kCalibData.metrics.modelAccuracy)} />
                   <StatCard label="OVER ACCURACY" value={fmtPct(kCalibData.metrics.modelOverAccuracy)} sub={`${kCalibData.metrics.overCount} overs`} color={accuracyColor(kCalibData.metrics.modelOverAccuracy)} />
                   <StatCard label="UNDER ACCURACY" value={fmtPct(kCalibData.metrics.modelUnderAccuracy)} sub={`${kCalibData.metrics.underCount} unders`} color={accuracyColor(kCalibData.metrics.modelUnderAccuracy)} />
@@ -1597,7 +1633,7 @@ export default function TheModelResults() {
                   <StatCard label="MEAN BIAS" value={signedNum(kCalibData.metrics.meanBias, 3)} sub="avg (actual − proj)" color={Math.abs(kCalibData.metrics.meanBias) <= 0.2 ? "#39FF14" : Math.abs(kCalibData.metrics.meanBias) <= 0.5 ? "#FFD700" : "#FF2244"} />
                   <StatCard label="CALIBRATION FACTOR" value={fmtNum(kCalibData.metrics.calibrationFactor, 4)} sub="multiply proj × factor" color={Math.abs(kCalibData.metrics.calibrationFactor - 1) <= 0.03 ? "#39FF14" : "#FFD700"} />
                   <StatCard label="RMSE" value={fmtNum(kCalibData.metrics.rmse, 3)} sub="root mean squared error" />
-                </div>
+                </StatGrid>
               </div>
             )}
 
@@ -1611,13 +1647,13 @@ export default function TheModelResults() {
                 <>
                   <div>
                     <SectionLabel>DAILY SUMMARY — {formatDateNav(gameDate)}</SectionLabel>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <StatGrid>
                       <StatCard label="ACCURACY" value={kDailyData.results.accuracy != null ? fmtPct(kDailyData.results.accuracy) : "—"} sub={`${kDailyData.results.correct}/${kDailyData.results.completed} correct`} color={accuracyColor(kDailyData.results.accuracy)} />
                       <StatCard label="OVER ACC" value={kDailyData.results.overTotal > 0 ? fmtPct(kDailyData.results.overCorrect / kDailyData.results.overTotal) : "—"} sub={`${kDailyData.results.overCorrect}/${kDailyData.results.overTotal} overs`} color={accuracyColor(kDailyData.results.overTotal > 0 ? kDailyData.results.overCorrect / kDailyData.results.overTotal : null)} />
                       <StatCard label="UNDER ACC" value={kDailyData.results.underTotal > 0 ? fmtPct(kDailyData.results.underCorrect / kDailyData.results.underTotal) : "—"} sub={`${kDailyData.results.underCorrect}/${kDailyData.results.underTotal} unders`} color={accuracyColor(kDailyData.results.underTotal > 0 ? kDailyData.results.underCorrect / kDailyData.results.underTotal : null)} />
                       <StatCard label="MEAN ERROR" value={kDailyData.results.meanError !== null ? signedNum(kDailyData.results.meanError, 2) : "—"} sub="avg (actual − proj)" color={kDailyData.results.meanError !== null ? Math.abs(kDailyData.results.meanError) <= 0.3 ? "#39FF14" : Math.abs(kDailyData.results.meanError) <= 0.8 ? "#FFD700" : "#FF2244" : undefined} />
                       <StatCard label="MAE" value={kDailyData.results.mae !== null ? fmtNum(kDailyData.results.mae, 2) : "—"} sub="mean absolute error" color={kDailyData.results.mae !== null ? kDailyData.results.mae <= 0.8 ? "#39FF14" : kDailyData.results.mae <= 1.5 ? "#FFD700" : "#FF2244" : undefined} />
-                    </div>
+                    </StatGrid>
                   </div>
                   <div>
                     <SectionLabel sub={`${kDailyData.results.total} pitchers · ${kDailyData.results.correct}/${kDailyData.results.completed} correct`}>PER-PITCHER RESULTS</SectionLabel>
@@ -1638,13 +1674,13 @@ export default function TheModelResults() {
               ) : (
                 <div>
                   <SectionLabel sub={`${kLast7Data.totalProps} props across ${kLast7Data.windowDays} days`}>LAST 7 DAYS AGGREGATE</SectionLabel>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                  <StatGrid>
                     <StatCard label="OVERALL ACCURACY" value={kLast7Data.accuracy != null ? fmtPct(kLast7Data.accuracy) : "—"} sub={`${kLast7Data.correctProps}/${kLast7Data.completedProps} correct`} color={accuracyColor(kLast7Data.accuracy)} />
                     <StatCard label="OVER ACCURACY" value={kLast7Data.overAccuracy != null ? fmtPct(kLast7Data.overAccuracy) : "—"} sub={`${kLast7Data.overCorrect}/${kLast7Data.overTotal}`} color={accuracyColor(kLast7Data.overAccuracy)} />
                     <StatCard label="UNDER ACCURACY" value={kLast7Data.underAccuracy != null ? fmtPct(kLast7Data.underAccuracy) : "—"} sub={`${kLast7Data.underCorrect}/${kLast7Data.underTotal}`} color={accuracyColor(kLast7Data.underAccuracy)} />
                     <StatCard label="ROLLING MAE" value={kLast7Data.mae != null ? fmtNum(kLast7Data.mae, 3) : "—"} sub="mean absolute error" color={kLast7Data.mae != null ? kLast7Data.mae <= 0.8 ? "#39FF14" : kLast7Data.mae <= 1.5 ? "#FFD700" : "#FF2244" : undefined} />
                     <StatCard label="MEAN ERROR" value={kLast7Data.meanError != null ? signedNum(kLast7Data.meanError, 3) : "—"} sub="avg (actual − proj)" color={kLast7Data.meanError != null ? Math.abs(kLast7Data.meanError) <= 0.2 ? "#39FF14" : "#FFD700" : undefined} />
-                  </div>
+                  </StatGrid>
                   {/* Per-date breakdown */}
                   {kLast7Data.dailyBreakdown && kLast7Data.dailyBreakdown.map((day: { date: string; correct: number; completed: number; accuracy: number | null; mae: number | null }) => (
                     <div key={day.date} style={{ marginBottom: 8, padding: "10px 14px", background: "#090E14", border: "1px solid #182433", borderRadius: 8 }}>
@@ -1664,7 +1700,7 @@ export default function TheModelResults() {
         )}
 
         {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* HR PROPS TAB                                                      */}
+        {/* HR PROPS TAB                                               */}
         {/* ══════════════════════════════════════════════════════════════════ */}
         {marketTab === "hrprops" && (
           <SectionErrorBoundary label="HR PROPS">
@@ -1692,7 +1728,7 @@ export default function TheModelResults() {
               ) : (
                 <>
                   {/* Summary */}
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                  <StatGrid>
                     {(() => {
                       const graded = hrPropsList.filter(p => p.modelCorrect != null);
                       const correct = graded.filter(p => p.modelCorrect === 1).length;
@@ -1710,7 +1746,7 @@ export default function TheModelResults() {
                         </>
                       );
                     })()}
-                  </div>
+                  </StatGrid>
 
                   {/* Per-player rows */}
                   {hrPropsList.map(p => (
@@ -1719,7 +1755,6 @@ export default function TheModelResults() {
                 </>
               )}
             </div>
-
             {/* Re-ingest button */}
             <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.06)" }}>
               <Target size={12} style={{ color: "#555" }} />
