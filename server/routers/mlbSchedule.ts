@@ -537,10 +537,12 @@ export const mlbScheduleRouter = router({
           : null;
       };
       const summary = {
-        totalGames: gamePoints.length,
-        avgFgMl:    allAvg("brierFgMl"),
-        avgF5Ml:    allAvg("brierF5Ml"),
-        avgNrfi:    allAvg("brierNrfi"),
+        totalGames:  gamePoints.length,
+        avgFgMl:     allAvg("brierFgMl"),
+        avgF5Ml:     allAvg("brierF5Ml"),
+        avgNrfi:     allAvg("brierNrfi"),
+        avgFgTotal:  allAvg("brierFgTotal"),
+        avgF5Total:  allAvg("brierF5Total"),
         windowSize: W,
       };
 
@@ -548,7 +550,9 @@ export const mlbScheduleRouter = router({
         `${tag} [OUTPUT] games=${gamePoints.length} ` +
         `avgFgMl=${summary.avgFgMl ?? "null"} ` +
         `avgF5Ml=${summary.avgF5Ml ?? "null"} ` +
-        `avgNrfi=${summary.avgNrfi ?? "null"}`
+        `avgNrfi=${summary.avgNrfi ?? "null"} ` +
+        `avgFgTotal=${summary.avgFgTotal ?? "null"} ` +
+        `avgF5Total=${summary.avgF5Total ?? "null"}`
       );
       return { games: gamePoints, rolling, summary };
     }),

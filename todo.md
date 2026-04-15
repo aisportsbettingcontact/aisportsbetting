@@ -2586,3 +2586,7 @@
 - [x] Wire checkDrift post-backfill — call checkF5ShareDrift() after all 256 games populated, log rolling 50-game window result
 - [x] Add F5 ML edge display to CheatSheet F5 card — no-vig implied prob from book F5 ML vs modelF5HomeWinPct/modelF5AwayWinPct, show edge delta
 - [x] Build rolling Brier score trend chart on Admin page — 20-game rolling window, 3 markets (FG ML, F5 ML, NRFI)
+- [ ] Monitor and complete F5 win pct historical backfill (256 games, 20 dates, 2026-03-26 to 2026-04-14) [IN PROGRESS: 7/20 dates, 75/256 games, 0 errors]
+- [x] Trigger checkDrift after backfill completes — 50-game rolling window, full drift report with calibration recommendations
+- [x] Add FG Total and F5 Total Brier lines to Brier Trend chart (dashed purple/teal)
+- [x] Wire notifyOwner at end of ingestMlbOutcomes with per-market Brier scores for morning calibration push notification

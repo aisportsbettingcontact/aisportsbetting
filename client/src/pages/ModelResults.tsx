@@ -694,6 +694,8 @@ export default function ModelResults() {
                     { label: 'FG ML', value: brierData.summary.avgFgMl, color: '#39FF14' },
                     { label: 'F5 ML', value: brierData.summary.avgF5Ml, color: '#FFA500' },
                     { label: 'NRFI', value: brierData.summary.avgNrfi, color: '#00BFFF' },
+                    { label: 'FG TOT', value: (brierData.summary as Record<string, number | null>).avgFgTotal ?? null, color: '#BF5FFF' },
+                    { label: 'F5 TOT', value: (brierData.summary as Record<string, number | null>).avgF5Total ?? null, color: '#00E5CC' },
                   ] as Array<{ label: string; value: number | null; color: string }>).map(({ label, value, color }) => (
                     <StatCard
                       key={label}
@@ -730,7 +732,7 @@ export default function ModelResults() {
                   color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif',
                   marginBottom: 16,
                 }}>
-                  ROLLING {brierWindow}-GAME BRIER SCORE — FG ML / F5 ML / NRFI
+                  ROLLING {brierWindow}-GAME BRIER SCORE — FG ML / F5 ML / NRFI / FG TOT / F5 TOT
                 </div>
                 <ResponsiveContainer width="100%" height={280}>
                   <LineChart data={brierChartData} margin={{ top: 4, right: 16, left: -20, bottom: 4 }}>
@@ -790,6 +792,16 @@ export default function ModelResults() {
                       type="monotone" dataKey="rollNrfi" name="NRFI"
                       stroke="#00BFFF" strokeWidth={2} dot={false}
                       connectNulls activeDot={{ r: 4, fill: '#00BFFF' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="rollFgTotal" name="FG TOT"
+                      stroke="#BF5FFF" strokeWidth={1.5} strokeDasharray="5 3" dot={false}
+                      connectNulls activeDot={{ r: 4, fill: '#BF5FFF' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="rollF5Total" name="F5 TOT"
+                      stroke="#00E5CC" strokeWidth={1.5} strokeDasharray="5 3" dot={false}
+                      connectNulls activeDot={{ r: 4, fill: '#00E5CC' }}
                     />
                   </LineChart>
                 </ResponsiveContainer>

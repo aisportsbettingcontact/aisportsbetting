@@ -51,6 +51,7 @@
 import { and, eq, isNull, isNotNull, sql, or } from "drizzle-orm";
 import { getDb } from "./db";
 import { games } from "../drizzle/schema";
+import { notifyOwner } from "./_core/notification";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -690,6 +691,45 @@ export async function ingestMlbOutcomes(
   console.log(`${TAG} [SUMMARY] total=${dbGames.length} | written=${written} | skipped_ingested=${skippedAlreadyIngested} | skipped_not_final=${skippedNotFinal} | skipped_no_pk=${skippedNoGamePk} | skipped_no_match=${skippedNoApiMatch} | errors=${errors}`);
   console.log(`${TAG} [SUMMARY] elapsed=${elapsed}s`);
   console.log(`${TAG} ══════════════════════════════════════════════════════\n`);
+
+  // ── notifyOwner: push Brier calibration summary to owner after each nightly ingest ────────────
+  if (written > 0) {
+    try {
+      const ingestedResults = results.filter(r => r.status === 'written');
+      const brierAvg = (field: keyof OutcomeIngestResult): string => {
+        const vals = ingestedResults
+          .map(r => r[field] as number | null | undefined)
+          .filter((v): v is number => v != null && !isNaN(v as number));
+        if (vals.length === 0) return 'N/A';
+        const avg = vals.reduce((s, v) => s + v, 0) / vals.length;
+        return avg.toFixed(4);
+      };
+      const statusLine = errors > 0 ? `⚠️ ${errors} error(s)` : '✅ 0 errors';
+      const notifTitle = `MLB Outcome Ingest — ${dateStr}`;
+      const notifContent = [
+        `Date: ${dateStr}`,
+        `Games ingested: ${written} / ${dbGames.length} | ${statusLine}`,
+        `Elapsed: ${elapsed}s`,
+        ``,
+        `Brier Scores (today's ${written} game${written !== 1 ? 's' : ''}):`,
+        `  FG ML:    ${brierAvg('brierFgMl')}`,
+        `  F5 ML:    ${brierAvg('brierF5Ml')}`,
+        `  NRFI:     ${brierAvg('brierNrfi')}`,
+        `  FG Total: ${brierAvg('brierFgTotal')}`,
+        `  F5 Total: ${brierAvg('brierF5Total')}`,
+        ``,
+        `(lower = better | perfect = 0.0000 | random = 0.2500)`,
+      ].join('\n');
+      console.log(`${TAG} [STEP] Sending owner notification with Brier calibration summary...`);
+      const notifOk = await notifyOwner({ title: notifTitle, content: notifContent });
+      console.log(`${TAG} [OUTPUT] notifyOwner: ${notifOk ? 'sent' : 'failed (non-fatal)'}`);
+    } catch (notifErr) {
+      const notifMsg = notifErr instanceof Error ? notifErr.message : String(notifErr);
+      console.error(`${TAG} [ERROR] notifyOwner failed (non-fatal): ${notifMsg}`);
+    }
+  } else {
+    console.log(`${TAG} [STEP] Skipping owner notification (written=0, no new games ingested)`);
+  }
 
   return {
     date: dateStr,

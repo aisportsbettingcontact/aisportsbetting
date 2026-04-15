@@ -41,6 +41,7 @@ import { and, eq, isNull, isNotNull } from "drizzle-orm";
 import { getDb } from "../server/db";
 import { games } from "../drizzle/schema";
 import { runMlbModelForDate } from "../server/mlbModelRunner";
+import { checkF5ShareDrift } from "../server/mlbDriftDetector";
 
 const TAG = "[BackfillF5WinPct]";
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -255,5 +256,37 @@ if (totalErrors > 0) {
 }
 
 console.log(`${TAG} [VERIFY] PASS — backfill complete with 0 errors`);
+
+// ─── Step 6: Trigger checkDrift — first full 50-game rolling window evaluation ──────────────────────────────────────────────────────
+console.log(`\n${TAG} [STEP 6] Triggering checkF5ShareDrift — first full 50-game rolling window...`);
+console.log(`${TAG} [INPUT] triggerRecal=true (auto-recalibrate if drift detected and cooldown not active)`);
+try {
+  const drift = await checkF5ShareDrift(true);
+  console.log(`${TAG} [OUTPUT] checkF5ShareDrift complete`);
+  console.log(`${TAG} [STATE]  windowSize=${drift.windowSize}`);
+  console.log(`${TAG} [STATE]  rollingF5Share=${drift.rollingF5Share ?? 'null'}`);
+  console.log(`${TAG} [STATE]  baselineF5Share=${drift.baselineF5Share}`);
+  console.log(`${TAG} [STATE]  delta=${drift.delta ?? 'null'}`);
+  console.log(`${TAG} [STATE]  driftDetected=${drift.driftDetected}`);
+  console.log(`${TAG} [STATE]  recalibrationTriggered=${drift.recalibrationTriggered}`);
+  console.log(`${TAG} [STATE]  cooldownSkipped=${drift.cooldownSkipped}`);
+  console.log(`${TAG} [STATE]  lastRecalibrationAt=${drift.lastRecalibrationAt ?? 'never'}`);
+  console.log(`${TAG} [STATE]  message=${drift.message}`);
+  if (drift.driftDetected) {
+    console.warn(`${TAG} [VERIFY] DRIFT DETECTED — delta=${drift.delta?.toFixed(4)} exceeds threshold 0.02`);
+    if (drift.recalibrationTriggered) {
+      console.log(`${TAG} [VERIFY] Recalibration triggered automatically`);
+    } else if (drift.cooldownSkipped) {
+      console.log(`${TAG} [VERIFY] Recalibration skipped (cooldown active)`);
+    }
+  } else {
+    console.log(`${TAG} [VERIFY] PASS — no drift detected (delta=${drift.delta?.toFixed(4) ?? 'N/A'}, threshold=0.02)`);
+  }
+} catch (err) {
+  const errMsg = err instanceof Error ? err.message : String(err);
+  console.error(`${TAG} [ERROR] checkF5ShareDrift failed: ${errMsg}`);
+  // Non-fatal: backfill succeeded, drift check failure does not block exit
+}
+
 console.log(`${TAG} ══════════════════════════════════════════════════════\n`);
 process.exit(0);
