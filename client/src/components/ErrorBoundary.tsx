@@ -48,8 +48,7 @@ class ErrorBoundary extends Component<Props, State> {
               </pre>
             </div>
 
-            <button
-              onClick={() => window.location.reload()}
+            <button type="button" onClick={() => window.location.reload()}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-lg",
                 "bg-primary text-primary-foreground",

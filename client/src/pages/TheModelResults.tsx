@@ -65,8 +65,7 @@ class SectionErrorBoundary extends Component<
           <pre style={{ color: "rgba(255,255,255,0.35)", fontSize: 10, fontFamily: 'monospace', whiteSpace: 'pre-wrap', wordBreak: 'break-all', maxHeight: 200, overflow: 'auto', marginBottom: 12 }}>
             {this.state.error?.stack}
           </pre>
-          <button
-            onClick={() => this.setState({ hasError: false, error: null })}
+          <button type="button" onClick={() => this.setState({ hasError: false, error: null })}
             style={{ padding: "4px 14px", background: "#1a1a1a", border: "1px solid #444", borderRadius: 4, color: "#ccc", cursor: "pointer", fontSize: 11, fontFamily: '"Barlow Condensed", sans-serif' }}
           >
             RETRY
@@ -284,7 +283,7 @@ function BrierTrendChart({ data, lines, windowSize, onWindowChange }: {
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
         <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: ".08em", textTransform: "uppercase" }}>Window</span>
         {[10, 20, 30, 50].map(w => (
-          <button key={w} onClick={() => onWindowChange(w)} style={{
+          <button type="button" key={w} onClick={() => onWindowChange(w)} style={{
             fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 6,
             background: windowSize === w ? "rgba(255,165,0,0.15)" : "rgba(255,255,255,0.04)",
             color: windowSize === w ? "#FFA500" : "rgba(255,255,255,0.35)",
@@ -383,7 +382,7 @@ function EdgeLeaderboardTable({
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ fontSize: 10, color: "#555", fontFamily: '"Barlow Condensed", sans-serif' }}>MIN EDGE</span>
           {[0, 1, 2, 3, 5].map(v => (
-            <button key={v} onClick={() => setMinEdge(v)} style={{
+            <button type="button" key={v} onClick={() => setMinEdge(v)} style={{
               background: minEdge === v ? "#ff8c00" : "#1a1a1a", border: "1px solid #333",
               borderRadius: 3, cursor: "pointer", color: minEdge === v ? "#000" : "#888",
               padding: "2px 7px", fontSize: 10, fontWeight: 700, fontFamily: '"Barlow Condensed", sans-serif',
@@ -393,7 +392,7 @@ function EdgeLeaderboardTable({
         <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
           <span style={{ fontSize: 10, color: "#555", fontFamily: '"Barlow Condensed", sans-serif' }}>SIDE</span>
           {(["both", "away", "home"] as const).map(s => (
-            <button key={s} onClick={() => setSide(s)} style={{
+            <button type="button" key={s} onClick={() => setSide(s)} style={{
               background: side === s ? "#ff8c00" : "#1a1a1a", border: "1px solid #333",
               borderRadius: 3, cursor: "pointer", color: side === s ? "#000" : "#888",
               padding: "2px 7px", fontSize: 10, fontWeight: 700, textTransform: "uppercase",
@@ -401,7 +400,7 @@ function EdgeLeaderboardTable({
             }}>{s}</button>
           ))}
         </div>
-        <button onClick={() => setWithOutcome(!withOutcome)} style={{
+        <button type="button" onClick={() => setWithOutcome(!withOutcome)} style={{
           background: withOutcome ? "#ff8c00" : "#1a1a1a", border: "1px solid #333",
           borderRadius: 3, cursor: "pointer", color: withOutcome ? "#000" : "#888",
           padding: "2px 7px", fontSize: 10, fontWeight: 700, fontFamily: '"Barlow Condensed", sans-serif',
@@ -409,7 +408,7 @@ function EdgeLeaderboardTable({
         <div style={{ display: "flex", alignItems: "center", gap: 5, marginLeft: "auto" }}>
           <span style={{ fontSize: 10, color: "#555", fontFamily: '"Barlow Condensed", sans-serif' }}>SORT</span>
           {(["edge", "date", "brier"] as const).map(s => (
-            <button key={s} onClick={() => setSortBy(s)} style={{
+            <button type="button" key={s} onClick={() => setSortBy(s)} style={{
               background: sortBy === s ? "#333" : "#1a1a1a", border: "1px solid #333",
               borderRadius: 3, cursor: "pointer", color: sortBy === s ? "#fff" : "#888",
               padding: "2px 7px", fontSize: 10, fontWeight: 700, textTransform: "uppercase",
@@ -483,7 +482,7 @@ function EdgeLeaderboardTable({
         </span>
         <div style={{ display: "flex", gap: 6 }}>
           {[100, 200, 500].map(v => (
-            <button key={v} onClick={() => setLimit(v)} style={{
+            <button type="button" key={v} onClick={() => setLimit(v)} style={{
               background: limit === v ? "#333" : "#1a1a1a", border: "1px solid #333",
               borderRadius: 3, cursor: "pointer", color: limit === v ? "#fff" : "#555",
               padding: "2px 7px", fontSize: 10, fontFamily: '"Barlow Condensed", sans-serif',
@@ -653,7 +652,7 @@ function BrierHeatmap({ heatmapData, selectedCell, setSelectedCell, drilldownDat
             <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "2px", color: "#00BFFF", fontFamily: '"Barlow Condensed", sans-serif' }}>
               DRILL-DOWN — {selectedCell.date} / {selectedCell.market.toUpperCase()}
             </div>
-            <button onClick={() => setSelectedCell(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 14 }}>×</button>
+            <button type="button" onClick={() => setSelectedCell(null)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 14 }}>×</button>
           </div>
           {drilldownLoading ? (
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", padding: "12px 0" }}>Loading games…</div>
@@ -1159,7 +1158,7 @@ export default function TheModelResults() {
       {/* ── Sticky header ──────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
         <div className="relative flex items-center px-4 py-2 max-w-6xl mx-auto">
-          <button onClick={() => setLocation("/admin/publish")} className="p-1.5 rounded-lg transition-colors hover:bg-white/10 mr-2 flex-shrink-0">
+          <button type="button" onClick={() => setLocation("/admin/publish")} className="p-1.5 rounded-lg transition-colors hover:bg-white/10 mr-2 flex-shrink-0">
             <ChevronLeft size={18} style={{ color: "hsl(var(--muted-foreground))" }} />
           </button>
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 pointer-events-none">
@@ -1184,7 +1183,7 @@ export default function TheModelResults() {
         {/* Market tabs */}
         <div className="px-4 pb-2 max-w-6xl mx-auto flex items-center gap-1.5 overflow-x-auto">
           {MARKET_TABS.map(tab => (
-            <button key={tab.id} onClick={() => setMarketTab(tab.id)}
+            <button type="button" key={tab.id} onClick={() => setMarketTab(tab.id)}
               className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors whitespace-nowrap flex-shrink-0"
               style={{
                 background: marketTab === tab.id ? `${tab.color}1a` : "rgba(255,255,255,0.04)",
@@ -1200,14 +1199,14 @@ export default function TheModelResults() {
           {(marketTab === "kprops" || marketTab === "hrprops" || marketTab === "firstinning") && (
             <>
               <div style={{ flex: 1 }} />
-              <button onClick={() => setGameDate(d => addDays(d, -1))} className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0">
+              <button type="button" onClick={() => setGameDate(d => addDays(d, -1))} className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0">
                 <ChevronLeft size={14} style={{ color: "hsl(var(--muted-foreground))" }} />
               </button>
               <span className="text-xs font-bold text-foreground tracking-wide whitespace-nowrap">{formatDateNav(gameDate)}</span>
               {gameDate === todayPst() && (
                 <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{ background: "rgba(57,255,20,0.15)", color: "#39FF14" }}>TODAY</span>
               )}
-              <button onClick={() => setGameDate(d => addDays(d, 1))} className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0">
+              <button type="button" onClick={() => setGameDate(d => addDays(d, 1))} className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0">
                 <ChevronRight size={14} style={{ color: "hsl(var(--muted-foreground))" }} />
               </button>
             </>
@@ -1218,7 +1217,7 @@ export default function TheModelResults() {
             <>
               <div style={{ flex: 1 }} />
               {(["trend", "heatmap"] as const).map(st => (
-                <button key={st} onClick={() => setBrierSubTab(st)}
+                <button type="button" key={st} onClick={() => setBrierSubTab(st)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-colors"
                   style={{
                     background: brierSubTab === st ? "rgba(255,165,0,0.12)" : "rgba(255,255,255,0.04)",
@@ -1234,7 +1233,7 @@ export default function TheModelResults() {
               {brierSubTab === "trend" && (
                 <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 4 }}>
                   {[10, 20, 30, 50].map(w => (
-                    <button key={w} onClick={() => setBrierWindow(w)} style={{
+                    <button type="button" key={w} onClick={() => setBrierWindow(w)} style={{
                       fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 5,
                       background: brierWindow === w ? "rgba(255,165,0,0.15)" : "rgba(255,255,255,0.04)",
                       color: brierWindow === w ? "#FFA500" : "rgba(255,255,255,0.3)",
@@ -1284,7 +1283,7 @@ export default function TheModelResults() {
                 <SectionLabel>BRIER SCORE SUMMARY — FG ML + FG TOTAL</SectionLabel>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <StatCard label="FG ML AVG BRIER" value={brierData.summary.avgFgMl != null ? brierData.summary.avgFgMl.toFixed(4) : "—"} color={brierData.summary.avgFgMl != null ? brierColor(brierData.summary.avgFgMl) : undefined} sub="lower = better · random = 0.25" />
-                  <StatCard label="FG TOTAL AVG BRIER" value={'avgFgTotal' in brierData.summary && brierData.summary.avgFgTotal != null ? (brierData.summary.avgFgTotal as number).toFixed(4) : "—"} color={'avgFgTotal' in brierData.summary && brierData.summary.avgFgTotal != null ? brierColor(brierData.summary.avgFgTotal as number) : undefined} sub="lower = better · random = 0.25" />
+                  <StatCard label="FG TOTAL AVG BRIER" value={brierData.summary.avgFgTotal != null ? brierData.summary.avgFgTotal.toFixed(4) : "—"} color={brierData.summary.avgFgTotal != null ? brierColor(brierData.summary.avgFgTotal) : undefined} sub="lower = better · random = 0.25" />
                   <StatCard label="GAMES SCORED" value={String(brierData.summary.totalGames)} sub="with outcomes ingested" />
                 </div>
               </div>
@@ -1337,7 +1336,7 @@ export default function TheModelResults() {
                 <SectionLabel>FG ML EDGE LEADERBOARD — MODEL WIN% vs NO-VIG BOOK IMPLIED%</SectionLabel>
                 <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                   {(["table", "scatter"] as const).map(t => (
-                    <button key={t} onClick={() => setFgEdgeTab(t)} style={{
+                    <button type="button" key={t} onClick={() => setFgEdgeTab(t)} style={{
                       background: fgEdgeTab === t ? "#39FF14" : "#1a1a1a", border: "1px solid #333",
                       borderRadius: 4, cursor: "pointer", color: fgEdgeTab === t ? "#000" : "#888",
                       padding: "3px 10px", fontSize: 10, fontWeight: 700,
@@ -1398,7 +1397,7 @@ export default function TheModelResults() {
                 <SectionLabel>BRIER SCORE SUMMARY — F5 ML + F5 TOTAL</SectionLabel>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <StatCard label="F5 ML AVG BRIER" value={brierData.summary.avgF5Ml != null ? brierData.summary.avgF5Ml.toFixed(4) : "—"} color={brierData.summary.avgF5Ml != null ? brierColor(brierData.summary.avgF5Ml) : undefined} sub="lower = better · random = 0.25" />
-                  <StatCard label="F5 TOTAL AVG BRIER" value={'avgF5Total' in brierData.summary && brierData.summary.avgF5Total != null ? (brierData.summary.avgF5Total as number).toFixed(4) : "—"} color={'avgF5Total' in brierData.summary && brierData.summary.avgF5Total != null ? brierColor(brierData.summary.avgF5Total as number) : undefined} sub="lower = better · random = 0.25" />
+                  <StatCard label="F5 TOTAL AVG BRIER" value={brierData.summary.avgF5Total != null ? brierData.summary.avgF5Total.toFixed(4) : "—"} color={brierData.summary.avgF5Total != null ? brierColor(brierData.summary.avgF5Total) : undefined} sub="lower = better · random = 0.25" />
                   <StatCard label="GAMES SCORED" value={String(brierData.summary.totalGames)} sub="with outcomes ingested" />
                 </div>
               </div>
@@ -1451,7 +1450,7 @@ export default function TheModelResults() {
                 <SectionLabel>F5 ML EDGE LEADERBOARD — MODEL WIN% vs NO-VIG BOOK IMPLIED%</SectionLabel>
                 <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                   {(["table", "scatter"] as const).map(t => (
-                    <button key={t} onClick={() => setF5EdgeTab(t)} style={{
+                    <button type="button" key={t} onClick={() => setF5EdgeTab(t)} style={{
                       background: f5EdgeTab === t ? "#FFA500" : "#1a1a1a", border: "1px solid #333",
                       borderRadius: 4, cursor: "pointer", color: f5EdgeTab === t ? "#000" : "#888",
                       padding: "3px 10px", fontSize: 10, fontWeight: 700,
@@ -1569,7 +1568,7 @@ export default function TheModelResults() {
             {/* View toggle */}
             <div style={{ display: "flex", gap: 6 }}>
               {(["daily", "last7"] as const).map(v => (
-                <button key={v} onClick={() => setKPropsView(v)}
+                <button type="button" key={v} onClick={() => setKPropsView(v)}
                   className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
                   style={{
                     background: kPropsView === v ? "rgba(255,105,180,0.12)" : "rgba(255,255,255,0.04)",

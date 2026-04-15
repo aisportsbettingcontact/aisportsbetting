@@ -308,8 +308,7 @@ function TeamSection({
     <div className="flex-1 min-w-0">
       {/* Team header */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-white/[0.06]">
-        <button
-          onClick={onLogoClick}
+        <button type="button" onClick={onLogoClick}
           className="flex-shrink-0 group relative"
           title={`View ${teamName} full schedule`}
         >
@@ -411,8 +410,7 @@ export default function MlbLast5Panel({
       }}
     >
       {/* ── Collapsible Header ────────────────────────────────────────────── */}
-      <button
-        onClick={() => setIsExpanded((v) => !v)}
+      <button type="button" onClick={() => setIsExpanded((v) => !v)}
         className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/[0.02] transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -454,8 +452,7 @@ export default function MlbLast5Panel({
               <p className="text-[10px] text-red-400 font-mono">
                 Error: {error.message}
               </p>
-              <button
-                onClick={() => refetch()}
+              <button type="button" onClick={() => refetch()}
                 className="text-[9px] text-blue-400 font-mono mt-1 hover:underline"
               >
                 Retry

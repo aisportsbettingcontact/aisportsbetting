@@ -2157,8 +2157,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       {/* Status: [star] [clock] [LIVE] */}
       <div className="flex items-center gap-1 mb-1">
         {isAppAuthed && (
-          <button
-            onClick={handleStarClick}
+          <button type="button" onClick={handleStarClick}
             aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
             title={isFavorited ? "Remove from favorites" : "Add to favorites"}
             style={{
@@ -2272,8 +2271,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       <div className="flex items-center gap-1.5 mb-0.5">
         {/* Star / Favorite button — always left of status */}
         {isAppAuthed && (
-          <button
-            onClick={handleStarClick}
+          <button type="button" onClick={handleStarClick}
             aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
             title={isFavorited ? "Remove from favorites" : "Add to favorites"}
             style={{
@@ -3577,8 +3575,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     borderBottom: '1px solid rgba(255,255,255,0.10)',
                   }}>
                     {isAppAuthed && (
-                      <button
-                        onClick={handleStarClick}
+                      <button type="button" onClick={handleStarClick}
                         aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 1px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
                       >

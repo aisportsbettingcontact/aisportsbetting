@@ -135,8 +135,7 @@ export default function F5EdgeLeaderboard() {
     <div style={{ minHeight: "100vh", background: "#0a0a0a", color: "#e0e0e0", fontFamily: "monospace" }}>
       {/* ─── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ borderBottom: "1px solid #1a1a1a", padding: "12px 16px", display: "flex", alignItems: "center", gap: 12, background: "#0d0d0d" }}>
-        <button
-          onClick={() => setLocation("/admin/model-results")}
+        <button type="button" onClick={() => setLocation("/admin/model-results")}
           style={{ background: "none", border: "none", cursor: "pointer", color: "#888", display: "flex", alignItems: "center", gap: 6, fontSize: 12 }}
         >
           <ArrowLeft style={{ width: 14, height: 14 }} /> BACK
@@ -149,8 +148,7 @@ export default function F5EdgeLeaderboard() {
             Model Win% vs No-Vig Book Implied% — Historical 2026 Season
           </p>
         </div>
-        <button
-          onClick={() => refetch()}
+        <button type="button" onClick={() => refetch()}
           disabled={isFetching}
           style={{ background: "none", border: "1px solid #333", borderRadius: 4, cursor: "pointer", color: "#888", padding: "4px 8px", display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}
         >
@@ -162,8 +160,7 @@ export default function F5EdgeLeaderboard() {
       {/* ─── Tab Toggle ─────────────────────────────────────────────────────────── */}
       <div style={{ padding: "8px 16px", display: "flex", gap: 6, borderBottom: "1px solid #1a1a1a", background: "#0d0d0d" }}>
         {([["table", "📋 TABLE"], ["scatter", "📊 SCATTER"]] as const).map(([tab, label]) => (
-          <button
-            key={tab}
+          <button type="button" key={tab}
             onClick={() => setPageTab(tab)}
             style={{
               background: pageTab === tab ? "#ff8c00" : "#1a1a1a",
@@ -213,8 +210,7 @@ export default function F5EdgeLeaderboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 10, color: "#555" }}>MIN EDGE</span>
           {[0, 1, 2, 3, 5].map(v => (
-            <button
-              key={v}
+            <button type="button" key={v}
               onClick={() => setMinEdge(v)}
               style={{
                 background: minEdge === v ? "#ff8c00" : "#1a1a1a",
@@ -236,8 +232,7 @@ export default function F5EdgeLeaderboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 10, color: "#555" }}>SIDE</span>
           {(["both", "away", "home"] as const).map(s => (
-            <button
-              key={s}
+            <button type="button" key={s}
               onClick={() => setSide(s)}
               style={{
                 background: side === s ? "#ff8c00" : "#1a1a1a",
@@ -259,8 +254,7 @@ export default function F5EdgeLeaderboard() {
         {/* With Outcome */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <span style={{ fontSize: 10, color: "#555" }}>FILTER</span>
-          <button
-            onClick={() => setWithOutcome(!withOutcome)}
+          <button type="button" onClick={() => setWithOutcome(!withOutcome)}
             style={{
               background: withOutcome ? "#ff8c00" : "#1a1a1a",
               border: "1px solid #333",
@@ -280,8 +274,7 @@ export default function F5EdgeLeaderboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
           <span style={{ fontSize: 10, color: "#555" }}>SORT</span>
           {(["edge", "date", "brier"] as const).map(s => (
-            <button
-              key={s}
+            <button type="button" key={s}
               onClick={() => setSortBy(s)}
               style={{
                 background: sortBy === s ? "#333" : "#1a1a1a",
@@ -496,8 +489,7 @@ export default function F5EdgeLeaderboard() {
         </span>
         <div style={{ display: "flex", gap: 8 }}>
           {[100, 200, 500].map(v => (
-            <button
-              key={v}
+            <button type="button" key={v}
               onClick={() => setLimit(v)}
               style={{
                 background: limit === v ? "#333" : "#1a1a1a",

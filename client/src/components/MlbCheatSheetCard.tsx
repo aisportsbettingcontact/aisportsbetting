@@ -1771,8 +1771,7 @@ export function CheatSheetView({ games, lineupsMap, dateLabel }: CheatSheetViewP
         {/* Tab switcher */}
         <div style={{ display: 'flex', background: '#111412', border: '1px solid #1a1d1b', borderRadius: 6, padding: 3, gap: 2 }}>
           {(['nrfi', 'f5'] as const).map(tab => (
-            <button
-              key={tab}
+            <button type="button" key={tab}
               onClick={() => setActiveTab(tab)}
               style={{
                 fontSize: 11, fontWeight: 500, letterSpacing: '.07em', textTransform: 'uppercase' as const,

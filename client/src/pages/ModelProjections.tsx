@@ -145,8 +145,7 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   const dateShort = formatDateShort(game.gameDate);
 
   return (
-    <button
-      onClick={onClick}
+    <button type="button" onClick={onClick}
       className="w-full hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0"
     >
       <div className="flex items-center px-3 py-2.5 gap-2">
@@ -220,8 +219,7 @@ function FavNotificationBanner({ notif, onDismiss }: { notif: FavNotification; o
           {awayName} @ {homeName}
         </p>
       </div>
-      <button
-        onClick={() => onDismiss(notif.id)}
+      <button type="button" onClick={() => onDismiss(notif.id)}
         style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}
       >
         <X style={{ width: 12, height: 12 }} />
@@ -919,7 +917,7 @@ export default function ModelProjections() {
           )}
           {/* User menu */}
           <div className="flex-shrink-0 relative">
-            <button onClick={() => setShowUserMenu(!showUserMenu)} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors" title={user ? user.name ?? "Account" : "Sign in"}>
+            <button type="button" onClick={() => setShowUserMenu(!showUserMenu)} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors" title={user ? user.name ?? "Account" : "Sign in"}>
               <User className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
             {showUserMenu && (
@@ -936,27 +934,27 @@ export default function ModelProjections() {
                         <p className="text-[11px] text-muted-foreground truncate">{appUser.email}</p>
                       </div>
                       {(isOwner || appUser.role === "admin" || appUser.role === "handicapper") && (
-                        <button onClick={() => { setShowUserMenu(false); setLocation("/bet-tracker"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                        <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/bet-tracker"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                           <BarChart2 className="w-3.5 h-3.5 text-emerald-400" /> Bet Tracker
                         </button>
                       )}
                       {isOwner && (
                         <>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Send className="w-3.5 h-3.5 text-green-400" /> Publish Projections
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Crown className="w-3.5 h-3.5 text-yellow-400" /> User Management
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/model-results"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/model-results"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <FlaskConical className="w-3.5 h-3.5 text-blue-400" /> THE MODEL RESULTS
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/security"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/security"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Security Events
                           </button>
                         </>
                       )}
-                      <button onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                      <button type="button" onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                         <LogOut className="w-3.5 h-3.5" /> Sign out
                       </button>
                     </>
@@ -966,12 +964,12 @@ export default function ModelProjections() {
                         <p className="text-xs font-semibold text-foreground truncate">{user.name ?? "User"}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{user.email ?? ""}</p>
                       </div>
-                      <button onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                      <button type="button" onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                         <LogOut className="w-3.5 h-3.5" /> Sign out
                       </button>
                     </>
                   ) : (
-                    <button onClick={() => { setShowUserMenu(false); setLocation("/login"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Sign in</button>
+                    <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/login"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Sign in</button>
                   )}
                 </div>
               </>
@@ -988,8 +986,7 @@ export default function ModelProjections() {
           {/* FAVORITES tab — shown when user is authenticated AND has ≥1 active favorite */}
           {/* NOTE: must use isAppAuthedForFav (Boolean(appUser)) — NOT isAuthenticated (Manus OAuth always null) */}
           {isAppAuthedForFav && activeFavCount >= 1 && (
-            <button
-              onClick={() => setShowFavoritesTab(v => !v)}
+            <button type="button" onClick={() => setShowFavoritesTab(v => !v)}
               className="flex items-center gap-1 sm:gap-1.5 md:gap-2 px-1.5 sm:px-2.5 md:px-3 py-1 sm:py-1.5 md:py-2 rounded-full text-[10px] sm:text-[11px] md:text-[13px] font-bold tracking-wide transition-all flex-shrink-0"
               style={showFavoritesTab
                 ? { background: "rgba(255,215,0,0.18)", color: "#FFD700", border: "1px solid rgba(255,215,0,0.55)", boxShadow: "0 0 8px rgba(255,215,0,0.15)" }
@@ -1012,7 +1009,7 @@ export default function ModelProjections() {
 
           {/* MLB pill — only shown when MLB has games today or tomorrow */}
           {(!activeSports || activeSports.MLB) && (
-            <button onClick={() => setSelectedSport("MLB")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            <button type="button" onClick={() => setSelectedSport("MLB")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
               style={{ fontSize: 'clamp(10px, 1.7vw, 13px)', ...(selectedSport === "MLB" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
               <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" className="w-[10px] h-[10px] md:w-[14px] md:h-[14px]" style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
               MLB
@@ -1021,7 +1018,7 @@ export default function ModelProjections() {
 
           {/* NHL pill — only shown when NHL has games today or tomorrow */}
           {(!activeSports || activeSports.NHL) && (
-            <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            <button type="button" onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
               style={{ fontSize: 'clamp(10px, 1.7vw, 13px)', ...(selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
               <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" className="w-[10px] h-[10px] md:w-[14px] md:h-[14px]" style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
               NHL
@@ -1030,7 +1027,7 @@ export default function ModelProjections() {
 
           {/* NBA pill — only shown when NBA has games today or tomorrow */}
           {(!activeSports || activeSports.NBA) && (
-            <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+            <button type="button" onClick={() => setSelectedSport("NBA")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
               style={{ fontSize: 'clamp(10px, 1.7vw, 13px)', ...(selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
               <img src={CDN_NBA} alt="NBA" className="w-[10px] h-[10px] md:w-[14px] md:h-[14px]" style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
               NBA
@@ -1046,7 +1043,7 @@ export default function ModelProjections() {
               style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
               <Search className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground flex-shrink-0" />
               <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs md:text-[13px] text-foreground placeholder:text-muted-foreground outline-none" />
-              {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3 md:w-4 md:h-4" /></button>}
+              {searchQuery && <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3 md:w-4 md:h-4" /></button>}
             </div>
           </div>
 
@@ -1163,8 +1160,7 @@ export default function ModelProjections() {
                 handleFeedTabChange(tab.id);
               };
               return (
-                <button
-                  key={tab.id}
+                <button type="button" key={tab.id}
                   onClick={handleClick}
                   className="feed-tab"
                   data-active={isActive ? "true" : undefined}

@@ -686,8 +686,7 @@ export default function RecentSchedulePanel({
       }}
     >
       {/* ── Collapsible Header ─────────────────────────────────────────────── */}
-      <button
-        onClick={() => setIsExpanded((v) => !v)}
+      <button type="button" onClick={() => setIsExpanded((v) => !v)}
         className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/[0.02] transition-colors"
       >
         <div className="flex items-center gap-2">
@@ -711,8 +710,7 @@ export default function RecentSchedulePanel({
           {/* ── Team Tab Selector ─────────────────────────────────────────── */}
           <div className="flex items-center gap-1 px-3 py-2 border-b border-white/[0.06]">
             {/* Away tab */}
-            <button
-              onClick={() => setTab("away")}
+            <button type="button" onClick={() => setTab("away")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold font-mono transition-all flex-1 justify-center",
                 tab === "away"
@@ -732,8 +730,7 @@ export default function RecentSchedulePanel({
             </button>
 
             {/* H2H tab */}
-            <button
-              onClick={() => setTab("h2h")}
+            <button type="button" onClick={() => setTab("h2h")}
               className={cn(
                 "px-3 py-1.5 rounded-full text-[10px] font-bold font-mono transition-all flex-1 justify-center",
                 tab === "h2h"
@@ -745,8 +742,7 @@ export default function RecentSchedulePanel({
             </button>
 
             {/* Home tab */}
-            <button
-              onClick={() => setTab("home")}
+            <button type="button" onClick={() => setTab("home")}
               className={cn(
                 "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[10px] font-bold font-mono transition-all flex-1 justify-center",
                 tab === "home"
@@ -778,8 +774,7 @@ export default function RecentSchedulePanel({
           {error && !isLoading && (
             <div className="px-3 py-3">
               <p className="text-[10px] text-red-400 font-mono">Error: {error.message}</p>
-              <button
-                onClick={() => activeQuery.refetch()}
+              <button type="button" onClick={() => activeQuery.refetch()}
                 className="text-[9px] text-blue-400 font-mono mt-1 hover:underline"
               >
                 Retry
@@ -823,8 +818,7 @@ export default function RecentSchedulePanel({
           {/* ── Team logo click-through links ─────────────────────────────── */}
           {!isLoading && !error && (
             <div className="flex items-center justify-between px-3 py-2 border-t border-white/[0.04]">
-              <button
-                onClick={handleAwayLogoClick}
+              <button type="button" onClick={handleAwayLogoClick}
                 className="flex items-center gap-1.5 text-[9px] text-blue-400 font-mono hover:underline"
               >
                 {awayLogo && (
@@ -832,8 +826,7 @@ export default function RecentSchedulePanel({
                 )}
                 View {awayAbbr} full schedule →
               </button>
-              <button
-                onClick={handleHomeLogoClick}
+              <button type="button" onClick={handleHomeLogoClick}
                 className="flex items-center gap-1.5 text-[9px] text-blue-400 font-mono hover:underline"
               >
                 View {homeAbbr} full schedule →

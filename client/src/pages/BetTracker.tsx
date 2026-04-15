@@ -268,9 +268,7 @@ function PickButton({
   const sideLabel = isTotal ? (side === "OVER" ? "OVER" : "UNDER") : (side === "AWAY" ? "AWAY" : "HOME");
 
   return (
-    <button
-      type="button"
-      onClick={onClick}
+    <button type="button" onClick={onClick}
       disabled={disabled}
       className={`
         flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 transition-all
@@ -383,9 +381,7 @@ function GameSelector({
   return (
     <div ref={ref} className="relative">
       {/* Trigger */}
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
+      <button type="button" onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-colors text-left"
       >
         {selected ? (
@@ -412,9 +408,7 @@ function GameSelector({
       {open && (
         <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto">
           {games.map(g => (
-            <button
-              key={g.id}
-              type="button"
+            <button type="button" key={g.id}
               onClick={() => { onSelect(g); setOpen(false); }}
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-zinc-800 transition-colors text-left ${g.id === selectedId ? "bg-emerald-500/10" : ""}`}
             >
@@ -514,8 +508,7 @@ function BetCard({
       <div className="flex items-center justify-between gap-2 pt-1">
         <div className="flex gap-1.5 flex-wrap">
           {(["WIN", "LOSS", "PUSH"] as Result[]).map(r => (
-            <button
-              key={r}
+            <button type="button" key={r}
               onClick={() => onResult(bet.id, r)}
               className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md border transition-all ${
                 bet.result === r ? resultBg(r) : "border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 bg-transparent"
@@ -526,15 +519,13 @@ function BetCard({
           ))}
         </div>
         <div className="flex gap-1.5">
-          <button
-            onClick={() => onEdit(bet)}
+          <button type="button" onClick={() => onEdit(bet)}
             className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
             title="Edit"
           >
             <Pencil size={13} />
           </button>
-          <button
-            onClick={() => onDelete(bet.id)}
+          <button type="button" onClick={() => onDelete(bet.id)}
             className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
             title="Delete"
           >
@@ -866,7 +857,7 @@ export default function BetTracker() {
           <AlertCircle className="mx-auto text-red-400" size={32} />
           <p className="text-white font-bold">Access Restricted</p>
           <p className="text-zinc-500 text-sm">Bet Tracker is available to Handicappers, Admins, and Owners only.</p>
-          <button onClick={() => navigate("/")} className="text-emerald-400 text-sm underline">Go back</button>
+          <button type="button" onClick={() => navigate("/")} className="text-emerald-400 text-sm underline">Go back</button>
         </div>
       </div>
     );
@@ -882,7 +873,7 @@ export default function BetTracker() {
       <header className="sticky top-0 z-30 bg-zinc-950/95 backdrop-blur border-b border-zinc-800/60">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <button onClick={() => navigate("/")} className="text-zinc-500 hover:text-white transition-colors p-1">
+            <button type="button" onClick={() => navigate("/")} className="text-zinc-500 hover:text-white transition-colors p-1">
               <ChevronLeft size={18} />
             </button>
             <TrendingUp size={18} className="text-emerald-400" />
@@ -892,14 +883,12 @@ export default function BetTracker() {
           <div className="flex items-center gap-2">
             {/* $ / Units toggle */}
             <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-lg p-0.5">
-              <button
-                onClick={() => setStakeMode("$")}
+              <button type="button" onClick={() => setStakeMode("$")}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${stakeMode === "$" ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
               >
                 <DollarSign size={11} />$
               </button>
-              <button
-                onClick={() => setStakeMode("U")}
+              <button type="button" onClick={() => setStakeMode("U")}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${stakeMode === "U" ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
               >
                 <Hash size={11} />U
@@ -932,8 +921,7 @@ export default function BetTracker() {
         {/* Sport tabs */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1 pb-0">
           {SPORTS.map(s => (
-            <button
-              key={s}
+            <button type="button" key={s}
               onClick={() => setActiveSport(s)}
               className={`px-4 py-2.5 text-xs font-bold tracking-wider transition-all border-b-2 ${
                 activeSport === s ? "border-emerald-400 text-emerald-400" : "border-transparent text-zinc-500 hover:text-zinc-300"
@@ -1136,8 +1124,7 @@ export default function BetTracker() {
             )}
 
             {/* Submit */}
-            <button
-              onClick={handleSubmit}
+            <button type="button" onClick={handleSubmit}
               disabled={createMut.isPending || !formGame}
               className="w-full bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed text-white font-bold py-3 rounded-xl text-sm tracking-wider transition-all"
             >
@@ -1175,8 +1162,7 @@ export default function BetTracker() {
               <div className="ml-auto flex items-center gap-2 self-end pb-2">
                 <span className="text-xs text-zinc-500">{bets.length} bet{bets.length !== 1 ? "s" : ""}</span>
                 {/* Grade Bets button — runs autoGrade for current sport + date */}
-                <button
-                  onClick={() => {
+                <button type="button" onClick={() => {
                     console.log(`[BetTracker][INPUT] Grade Bets clicked: sport=${activeSport} date=${filterDate}`);
                     autoGradeMut.mutate({ sport: activeSport, gameDate: filterDate || undefined });
                   }}
@@ -1243,14 +1229,12 @@ export default function BetTracker() {
               />
             </div>
             <div className="flex gap-3">
-              <button
-                onClick={() => setEditBet(null)}
+              <button type="button" onClick={() => setEditBet(null)}
                 className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 text-sm font-medium hover:border-zinc-500 transition-colors"
               >
                 Cancel
               </button>
-              <button
-                onClick={handleEditSave}
+              <button type="button" onClick={handleEditSave}
                 disabled={updateMut.isPending}
                 className="flex-1 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-sm font-bold transition-colors disabled:opacity-40"
               >
@@ -1267,7 +1251,7 @@ export default function BetTracker() {
           <div className="flex items-center gap-2 mb-2">
             <Zap size={14} className="text-emerald-400" />
             <span className="text-sm font-bold text-white tracking-wider">BETS GRADED</span>
-            <button onClick={() => setGradeToast(null)} className="ml-auto text-zinc-500 hover:text-zinc-300 transition-colors">
+            <button type="button" onClick={() => setGradeToast(null)} className="ml-auto text-zinc-500 hover:text-zinc-300 transition-colors">
               <Minus size={12} />
             </button>
           </div>
@@ -1305,14 +1289,12 @@ export default function BetTracker() {
             <p className="font-bold text-sm">Delete this bet?</p>
             <p className="text-zinc-500 text-xs">This action cannot be undone.</p>
             <div className="flex gap-3">
-              <button
-                onClick={() => setDeleteId(null)}
+              <button type="button" onClick={() => setDeleteId(null)}
                 className="flex-1 py-2.5 rounded-xl border border-zinc-700 text-zinc-400 text-sm font-medium hover:border-zinc-500 transition-colors"
               >
                 Cancel
               </button>
-              <button
-                onClick={async () => { await deleteMut.mutateAsync({ id: deleteId }); setDeleteId(null); }}
+              <button type="button" onClick={async () => { await deleteMut.mutateAsync({ id: deleteId }); setDeleteId(null); }}
                 disabled={deleteMut.isPending}
                 className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-400 text-white text-sm font-bold transition-colors disabled:opacity-40"
               >

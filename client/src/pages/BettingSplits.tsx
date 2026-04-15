@@ -115,7 +115,7 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   const time = formatMilitaryTime(game.startTimeEst);
   const dateShort = formatDateShort(game.gameDate);
   return (
-    <button onClick={onClick} className="w-full hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0">
+    <button type="button" onClick={onClick} className="w-full hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0">
       <div className="flex items-center px-3 py-2.5 gap-2">
         <div className="flex items-center gap-1.5 sm:gap-2" style={{ flex: "1 1 0", minWidth: 0, overflow: "hidden" }}>
           <TeamBadge slug={game.awayTeam} size={22} />
@@ -326,7 +326,7 @@ export default function BettingSplitsPage() {
           <div className="flex-1" />
           {/* User menu */}
           <div className="flex-shrink-0 relative">
-            <button onClick={() => setShowUserMenu(!showUserMenu)} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors" title={user ? user.name ?? "Account" : "Sign in"}>
+            <button type="button" onClick={() => setShowUserMenu(!showUserMenu)} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors" title={user ? user.name ?? "Account" : "Sign in"}>
               <User className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
             {showUserMenu && (
@@ -344,18 +344,18 @@ export default function BettingSplitsPage() {
                       </div>
                       {isOwner && (
                         <>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Send className="w-3.5 h-3.5 text-green-400" /> Publish Projections
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Crown className="w-3.5 h-3.5 text-yellow-400" /> User Management
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/security"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/security"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Security Events
                           </button>
                         </>
                       )}
-                      <button onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                      <button type="button" onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                         <LogOut className="w-3.5 h-3.5" /> Sign out
                       </button>
                     </>
@@ -365,12 +365,12 @@ export default function BettingSplitsPage() {
                         <p className="text-xs font-semibold text-foreground truncate">{user.name ?? "User"}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{user.email ?? ""}</p>
                       </div>
-                      <button onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                      <button type="button" onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                         <LogOut className="w-3.5 h-3.5" /> Sign out
                       </button>
                     </>
                   ) : (
-                    <button onClick={() => { setShowUserMenu(false); setLocation("/login"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Sign in</button>
+                    <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/login"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Sign in</button>
                   )}
                 </div>
               </>
@@ -382,8 +382,7 @@ export default function BettingSplitsPage() {
         <div className="flex w-full" style={{ borderBottom: "1px solid hsl(var(--border))" }}>
           {/* Left: AI MODEL PROJECTIONS — inactive/dimmed on this page */}
           <Link href="/projections" className="flex-1">
-            <button
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
+            <button type="button" className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors"
               style={{ color: "rgba(255,255,255,0.45)" }}
             >
               <img src={CDN_TEST_TUBE} alt="Test tube" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)", opacity: 0.45 }} />
@@ -392,8 +391,7 @@ export default function BettingSplitsPage() {
           </Link>
           {/* Right: BETTING SPLITS — active on this page */}
           <Link href="/splits" className="flex-1">
-            <button
-              className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
+            <button type="button" className="w-full flex items-center justify-center gap-2 py-2.5 text-sm font-bold tracking-wide transition-colors relative"
               style={{ color: "#ffffff" }}
             >
               <img src={CDN_MONEY_BAG} alt="Money bag" width={14} height={14} style={{ objectFit: "contain", filter: "invert(1)" }} />
@@ -417,21 +415,21 @@ export default function BettingSplitsPage() {
 
 
           {/* MLB pill — primary sport */}
-          <button onClick={() => setSelectedSport("MLB")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+          <button type="button" onClick={() => setSelectedSport("MLB")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "MLB" ? { background: "rgba(0,45,114,0.25)", color: "#E31837", border: "1px solid rgba(227,24,55,0.5)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
             <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
             MLB
           </button>
 
           {/* NHL pill */}
-          <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+          <button type="button" onClick={() => setSelectedSport("NHL")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "NHL" ? { background: "rgba(0,100,200,0.18)", color: "#4FC3F7", border: "1px solid rgba(0,100,200,0.5)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
             <img src="https://assets.nhle.com/logos/nhl/svg/NHL_light.svg" alt="NHL" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
             NHL
           </button>
 
           {/* NBA pill */}
-          <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+          <button type="button" onClick={() => setSelectedSport("NBA")} className="flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
             style={selectedSport === "NBA" ? { background: "rgba(200,16,46,0.15)", color: "#C8102E", border: "1px solid rgba(200,16,46,0.5)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }}>
             <img src={CDN_NBA} alt="NBA" width={12} height={12} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
             NBA
@@ -443,7 +441,7 @@ export default function BettingSplitsPage() {
               style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
               <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
               <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none" />
-              {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>}
+              {searchQuery && <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>}
             </div>
           </div>
 

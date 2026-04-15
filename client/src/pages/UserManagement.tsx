@@ -165,8 +165,7 @@ function ColFilterDropdown({
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
+      <button type="button" onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1 group transition-colors ${
           isActive ? "text-white" : "text-zinc-400 hover:text-zinc-200"
         }`}
@@ -192,16 +191,14 @@ function ColFilterDropdown({
           {/* Sort options */}
           <div className="px-2 py-1 border-b border-white/8">
             <p className="text-[10px] text-zinc-500 tracking-wider mb-1 px-1">SORT</p>
-            <button
-              onClick={() => toggleSort("asc")}
+            <button type="button" onClick={() => toggleSort("asc")}
               className={`flex items-center gap-2 w-full px-2 py-1 rounded text-xs transition-colors ${
                 state.sort === "asc" ? "bg-blue-500/20 text-blue-300" : "text-zinc-300 hover:bg-white/5"
               }`}
             >
               <ArrowUp className="w-3 h-3" /> Ascending
             </button>
-            <button
-              onClick={() => toggleSort("desc")}
+            <button type="button" onClick={() => toggleSort("desc")}
               className={`flex items-center gap-2 w-full px-2 py-1 rounded text-xs transition-colors ${
                 state.sort === "desc" ? "bg-blue-500/20 text-blue-300" : "text-zinc-300 hover:bg-white/5"
               }`}
@@ -215,7 +212,7 @@ function ColFilterDropdown({
             <div className="flex items-center justify-between mb-1 px-1">
               <p className="text-[10px] text-zinc-500 tracking-wider">FILTER</p>
               {isFiltered && (
-                <button onClick={selectAll} className="text-[10px] text-blue-400 hover:text-blue-300">
+                <button type="button" onClick={selectAll} className="text-[10px] text-blue-400 hover:text-blue-300">
                   All
                 </button>
               )}
@@ -244,8 +241,7 @@ function ColFilterDropdown({
           {/* Clear all */}
           {isActive && (
             <div className="border-t border-white/8 px-2 py-1">
-              <button
-                onClick={() => { clearAll(); setOpen(false); }}
+              <button type="button" onClick={() => { clearAll(); setOpen(false); }}
                 className="flex items-center gap-1.5 w-full px-2 py-1 rounded text-xs text-red-400 hover:bg-red-500/10 transition-colors"
               >
                 <X className="w-3 h-3" /> Clear filters
@@ -607,8 +603,7 @@ export default function UserManagement() {
       {/* Header */}
       <div className="sticky top-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-b border-white/8">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-          <button
-            onClick={() => navigate("/dashboard")}
+          <button type="button" onClick={() => navigate("/dashboard")}
             className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -683,8 +678,7 @@ export default function UserManagement() {
             className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-9 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-white/25 transition-colors"
           />
           {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
+            <button type="button" onClick={() => setSearchQuery("")}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
             >
               <X className="w-3.5 h-3.5" />
@@ -696,8 +690,7 @@ export default function UserManagement() {
         {users.length !== rawUsers.length && (
           <div className="mb-3 flex items-center gap-2 text-xs text-zinc-400">
             <span>Showing <span className="text-white font-semibold">{users.length}</span> of <span className="text-white font-semibold">{rawUsers.length}</span> accounts</span>
-            <button
-              onClick={() => {
+            <button type="button" onClick={() => {
                 setSearchQuery("");
                 setCols({
                   username: defaultColState(), email: defaultColState(), role: defaultColState(),
@@ -825,14 +818,12 @@ export default function UserManagement() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(user)}
+                        <button type="button" onClick={() => openEdit(user)}
                           className="p-1.5 rounded hover:bg-white/8 text-zinc-400 hover:text-white transition-colors"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => forceLogoutUserMutation.mutate({ id: user.id })}
+                        <button type="button" onClick={() => forceLogoutUserMutation.mutate({ id: user.id })}
                           className="p-1.5 rounded hover:bg-orange-500/15 text-zinc-400 hover:text-orange-400 transition-colors"
                           disabled={user.id === appUser?.id || forceLogoutUserMutation.isPending}
                           title="Force logout this user"
@@ -844,8 +835,7 @@ export default function UserManagement() {
                          * Users cannot disconnect their own Discord — this is admin-only.
                          * Logs CHECKPOINT:ADMIN_DISCORD_DISCONNECT on the server. */}
                         {user.discordId && (
-                          <button
-                            onClick={() => {
+                          <button type="button" onClick={() => {
                               if (confirm(`Unlink Discord @${user.discordUsername ?? user.discordId} from ${user.username}?\n\nThis cannot be undone by the user — only you can re-link it.`)) {
                                 console.log(`[UserMgmt] ADMIN_DISCORD_DISCONNECT.INITIATED: userId=${user.id} username=${user.username} discordUsername=${user.discordUsername}`);
                                 disconnectDiscordMutation.mutate({ id: user.id });
@@ -861,8 +851,7 @@ export default function UserManagement() {
                             </svg>
                           </button>
                         )}
-                        <button
-                          onClick={() => setDeleteConfirm(user)}
+                        <button type="button" onClick={() => setDeleteConfirm(user)}
                           className="p-1.5 rounded hover:bg-red-500/15 text-zinc-400 hover:text-red-400 transition-colors"
                           disabled={user.id === appUser?.id}
                         >
@@ -922,9 +911,7 @@ export default function UserManagement() {
                   placeholder={editUser ? "••••••••" : "Min 8 characters"}
                   className="bg-white/5 border-white/10 text-white placeholder:text-zinc-600 pr-10"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
+                <button type="button" onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
                   tabIndex={-1}
                   aria-label={showPassword ? "Hide password" : "Show password"}

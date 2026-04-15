@@ -587,8 +587,7 @@ export default function ModelResults() {
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
         {/* Top row */}
         <div className="relative flex items-center px-4 py-2 max-w-5xl mx-auto">
-          <button
-            onClick={() => setLocation("/admin/publish")}
+          <button type="button" onClick={() => setLocation("/admin/publish")}
             className="p-1.5 rounded-lg transition-colors hover:bg-white/10 mr-2 flex-shrink-0"
           >
             <ChevronLeft size={18} style={{ color: "hsl(var(--muted-foreground))" }} />
@@ -622,8 +621,7 @@ export default function ModelResults() {
 
         {/* View mode toggle + date nav */}
         <div className="px-4 pb-1.5 max-w-5xl mx-auto flex items-center gap-2">
-          <button
-            onClick={() => setViewMode('daily')}
+          <button type="button" onClick={() => setViewMode('daily')}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
             style={{
               background: viewMode === 'daily' ? 'rgba(57,255,20,0.12)' : 'rgba(255,255,255,0.04)',
@@ -636,8 +634,7 @@ export default function ModelResults() {
             <Calendar size={11} />
             DAILY
           </button>
-          <button
-            onClick={() => setViewMode('last7')}
+          <button type="button" onClick={() => setViewMode('last7')}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
             style={{
               background: viewMode === 'last7' ? 'rgba(0,191,255,0.12)' : 'rgba(255,255,255,0.04)',
@@ -650,8 +647,7 @@ export default function ModelResults() {
             <CalendarDays size={11} />
             LAST 7 DAYS
           </button>
-          <button
-            onClick={() => setViewMode('brier')}
+          <button type="button" onClick={() => setViewMode('brier')}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
             style={{
               background: viewMode === 'brier' ? 'rgba(255,165,0,0.12)' : 'rgba(255,255,255,0.04)',
@@ -669,8 +665,7 @@ export default function ModelResults() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '.08em', textTransform: 'uppercase' }}>Window</span>
               {[10, 20, 30, 50].map(w => (
-                <button
-                  key={w}
+                <button type="button" key={w}
                   onClick={() => setBrierWindow(w)}
                   style={{
                     fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
@@ -688,8 +683,7 @@ export default function ModelResults() {
           {viewMode === 'daily' && (
             <>
               <div style={{ flex: 1 }} />
-              <button
-                onClick={() => setGameDate(d => addDays(d, -1))}
+              <button type="button" onClick={() => setGameDate(d => addDays(d, -1))}
                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0"
               >
                 <ChevronLeft size={14} style={{ color: 'hsl(var(--muted-foreground))' }} />
@@ -702,8 +696,7 @@ export default function ModelResults() {
                   TODAY
                 </span>
               )}
-              <button
-                onClick={() => setGameDate(d => addDays(d, 1))}
+              <button type="button" onClick={() => setGameDate(d => addDays(d, 1))}
                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0"
               >
                 <ChevronRight size={14} style={{ color: 'hsl(var(--muted-foreground))' }} />
@@ -766,8 +759,7 @@ export default function ModelResults() {
               {/* ── Sub-tab toggle: TREND / HEATMAP ──────────────────────────────────────── */}
               <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
                 {(['trend', 'heatmap'] as const).map(tab => (
-                  <button
-                    key={tab}
+                  <button type="button" key={tab}
                     onClick={() => setBrierSubTab(tab)}
                     style={{
                       fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
@@ -953,8 +945,7 @@ export default function ModelResults() {
                               </td>
                             ))}
                             <td style={{ padding: '4px 8px' }}>
-                              <button
-                                onClick={() => handleReingest(g.gameDate)}
+                              <button type="button" onClick={() => handleReingest(g.gameDate)}
                                 disabled={isAnyReingestActive}
                                 title={`Force re-ingest ${g.gameDate} (force=true, rewrites all Brier scores)`}
                                 style={{
@@ -1088,7 +1079,7 @@ export default function ModelResults() {
                     <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#00BFFF', fontFamily: '"Barlow Condensed", sans-serif' }}>
                       DRILL-DOWN — {selectedCell.date} / {selectedCell.market.toUpperCase()}
                     </div>
-                    <button onClick={() => setSelectedCell(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 14 }}>×</button>
+                    <button type="button" onClick={() => setSelectedCell(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 14 }}>×</button>
                   </div>
                   {drilldownLoading ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0' }}>

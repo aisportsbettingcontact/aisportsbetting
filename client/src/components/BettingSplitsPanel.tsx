@@ -634,8 +634,7 @@ export function BettingSplitsPanel({
             const isActive = m === activeMarket;
             const isAvailable = availableMarkets.includes(m);
             return (
-              <button
-                key={m}
+              <button type="button" key={m}
                 onClick={() => handleMarketChange(m)}
                 disabled={!isAvailable}
                 style={{

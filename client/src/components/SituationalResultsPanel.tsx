@@ -418,8 +418,7 @@ export default function SituationalResultsPanel({
       }}
     >
       {/* ── Collapsible Header ─────────────────────────────────────────────── */}
-      <button
-        onClick={() => setIsExpanded((v) => !v)}
+      <button type="button" onClick={() => setIsExpanded((v) => !v)}
         className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/[0.02] transition-colors"
       >
         <span className="text-[10px] font-bold text-gray-400 font-mono tracking-widest uppercase">
@@ -439,8 +438,7 @@ export default function SituationalResultsPanel({
           {/* ── Tab selector ─────────────────────────────────────────────── */}
           <div className="flex items-center gap-1 px-3 py-2 border-b border-white/[0.06]">
             {tabs.map((t) => (
-              <button
-                key={t.key}
+              <button type="button" key={t.key}
                 onClick={() => setTab(t.key)}
                 className={cn(
                   "flex-1 py-1.5 rounded-full text-[10px] font-bold font-mono transition-all",

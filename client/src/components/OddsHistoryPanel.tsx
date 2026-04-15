@@ -441,9 +441,7 @@ export function OddsHistoryPanel({
     <div className="border-t" style={{ borderColor: "rgba(57,255,20,0.15)" }}>
 
       {/* ── Toggle header ─────────────────────────────────────────────────── */}
-      <button
-        type="button"
-        onClick={handleToggle}
+      <button type="button" onClick={handleToggle}
         className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 transition-colors"
         aria-expanded={open}
       >
