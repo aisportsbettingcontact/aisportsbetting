@@ -9,8 +9,7 @@ import UserManagement from "./pages/UserManagement";
 import PublishProjections from "./pages/PublishProjections";
 import IngestAnOdds from "./pages/IngestAnOdds";
 import ModelProjections from "./pages/ModelProjections";
-import ModelResults from "./pages/ModelResults";
-import F5EdgeLeaderboard from "./pages/F5EdgeLeaderboard";
+import TheModelResults from "./pages/TheModelResults";
 import SecurityEvents from "./pages/SecurityEvents";
 import MlbTeamSchedule from "./pages/MlbTeamSchedule";
 import NbaTeamSchedule from "./pages/NbaTeamSchedule";
@@ -40,10 +39,10 @@ function Router() {
       <Route path="/nba/team/:slug" component={NbaTeamSchedule} />
       {/* NHL Team Schedule — click team logo on NHL matchup cards to navigate here */}
       <Route path="/nhl/team/:slug" component={NhlTeamSchedule} />
-      {/* Owner-only: K-Props model backtest results */}
-      <Route path="/admin/model-results" component={ModelResults} />
-      {/* Owner-only: F5 ML Edge Leaderboard */}
-      <Route path="/admin/f5-edge" component={F5EdgeLeaderboard} />
+      {/* Owner-only: Unified model results dashboard (all 5 markets) */}
+      <Route path="/admin/model-results" component={TheModelResults} />
+      {/* Legacy redirect: old F5 edge board → unified model results */}
+      <Route path="/admin/f5-edge">{() => <Redirect to="/admin/model-results" />}</Route>
       {/* Owner-only: Security Events dashboard */}
       <Route path="/admin/security" component={SecurityEvents} />
       <Route path="/bet-tracker" component={BetTracker} />

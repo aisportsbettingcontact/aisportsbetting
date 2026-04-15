@@ -2613,3 +2613,15 @@
 - [ ] Task 6: Build Brier heatmap drill-down — click cell to see individual game list for that date x market
 - [ ] Task 7: Build F5 edge vs outcome scatter plot — model edge (x) vs actual outcome (y) for all 256 historical games
 - [ ] Task 8: Add FG Total and F5 Total edge display to CheatSheet card (no-vig implied vs model projected total)
+
+## Unified THE MODEL RESULTS Page (Session: Apr 15, 2026)
+- [ ] Merge "THE MODEL" + "F5 EDGE BOARD" into single "THE MODEL RESULTS" page at /admin/model-results
+- [ ] 5 market tabs: FULL GAME, FIRST 5 INNINGS, 1ST INNING, K-PROPS, HR PROPS
+- [ ] FULL GAME tab: Brier trend (FG ML + FG Total), heatmap, FG ML edge leaderboard + scatter, drift banner, rolling accuracy from mlbBacktest
+- [ ] FIRST 5 INNINGS tab: Brier trend (F5 ML + F5 Total), F5 ML edge leaderboard + scatter, rolling accuracy
+- [ ] 1ST INNING tab: NRFI Brier trend, NRFI daily results (date nav), rolling accuracy
+- [ ] K-PROPS tab: daily backtest (date nav), last 7 days aggregate, calibration metrics
+- [ ] HR PROPS tab: daily HR props results (date nav), rolling accuracy, backtest results
+- [ ] Single sidebar entry "THE MODEL RESULTS" with FlaskConical icon (replace both old entries)
+- [ ] Remove /admin/f5-edge route (redirect to /admin/model-results)
+- [ ] TypeScript 0 errors, 487/487 tests passing

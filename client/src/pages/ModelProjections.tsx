@@ -949,10 +949,7 @@ export default function ModelProjections() {
                             <Crown className="w-3.5 h-3.5 text-yellow-400" /> User Management
                           </button>
                           <button onClick={() => { setShowUserMenu(false); setLocation("/admin/model-results"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                            <FlaskConical className="w-3.5 h-3.5 text-blue-400" /> THE MODEL
-                          </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/f5-edge"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                            <TrendingUp className="w-3.5 h-3.5 text-orange-400" /> F5 EDGE BOARD
+                            <FlaskConical className="w-3.5 h-3.5 text-blue-400" /> THE MODEL RESULTS
                           </button>
                           <button onClick={() => { setShowUserMenu(false); setLocation("/admin/security"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Security Events
