@@ -1,0 +1,767 @@
+/**
+ * mlbOutcomeIngestor.ts — Automated MLB outcome ingestion + Brier score computation.
+ *
+ * PURPOSE:
+ *   After a game transitions to 'final', this module fetches the authoritative
+ *   innings-level linescore from the MLB Stats API and writes the following to DB:
+ *
+ *   Outcome fields (games table):
+ *     actualFgTotal      — away + home final runs (used for FG Total Brier + drift)
+ *     actualF5Total      — away + home F5 runs (used for F5 Total Brier + f5_share drift)
+ *     actualNrfiBinary   — 1 if no run in inning 1, 0 if run scored (used for NRFI Brier)
+ *
+ *   Brier score fields (games table):
+ *     brierFgTotal  — (p_over - outcome_over)^2 for FG Total market
+ *     brierF5Total  — (p_f5_over - outcome_f5_over)^2 for F5 Total market
+ *     brierNrfi     — (p_nrfi - outcome_nrfi)^2 for NRFI market
+ *     brierFgMl     — (p_home_win - outcome_home_win)^2 for FG ML market
+ *     brierF5Ml     — (p_f5_home_win - outcome_f5_home_win)^2 for F5 ML market
+ *     outcomeIngestedAt — UTC ms timestamp of ingestion
+ *
+ * BRIER SCORE FORMULA:
+ *   BS = (p - o)^2
+ *   where p = model probability [0,1], o = binary outcome (0 or 1)
+ *   Range: [0, 1]. Lower = better calibration.
+ *   Perfect calibration: BS = 0. Worst: BS = 1.
+ *   Null if required inputs (model prob or actual score) are unavailable.
+ *
+ * PUSH HANDLING:
+ *   If actualFgTotal == bookTotal (push), brierFgTotal = null (no outcome to score).
+ *   If actualF5Total == f5Total (push), brierF5Total = null.
+ *   Ties in ML (actualAway == actualHome) → brierFgMl = null.
+ *
+ * IDEMPOTENCY:
+ *   Games with outcomeIngestedAt already set are SKIPPED unless force=true.
+ *   Safe to run multiple times per day — only processes newly-final games.
+ *
+ * LOGGING CONVENTION:
+ *   [OutcomeIngestor][INPUT]  — trigger context + date range
+ *   [OutcomeIngestor][STEP]   — operation in progress
+ *   [OutcomeIngestor][STATE]  — intermediate values per game
+ *   [OutcomeIngestor][OUTPUT] — write result per game
+ *   [OutcomeIngestor][VERIFY] — post-write validation pass/fail
+ *   [OutcomeIngestor][ERROR]  — failure with context
+ *   [OutcomeIngestor][SUMMARY]— batch summary
+ *
+ * INTEGRATION:
+ *   Called by mlbNightlyCron after score refresh completes.
+ *   Also exported for manual backfill via scripts/backfillOutcomes.mts.
+ */
+
+import { and, eq, isNull, isNotNull, sql, or } from "drizzle-orm";
+import { getDb } from "./db";
+import { games } from "../drizzle/schema";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const TAG = "[OutcomeIngestor]";
+const MLB_STATS_API_BASE = "https://statsapi.mlb.com/api/v1";
+const FETCH_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+  Accept: "application/json",
+  Referer: "https://www.mlb.com/",
+};
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface MlbApiInning {
+  num: number;
+  away?: { runs?: number };
+  home?: { runs?: number };
+}
+
+interface MlbApiLinescore {
+  teams?: {
+    away?: { runs?: number };
+    home?: { runs?: number };
+  };
+  innings?: MlbApiInning[];
+}
+
+interface MlbApiGame {
+  gamePk: number;
+  status: {
+    abstractGameState: string;
+    detailedState: string;
+  };
+  teams: {
+    away: { team: { abbreviation: string }; score?: number };
+    home: { team: { abbreviation: string }; score?: number };
+  };
+  linescore?: MlbApiLinescore;
+}
+
+/** Parsed outcome data from the MLB Stats API for a single game */
+interface GameOutcome {
+  gamePk: number;
+  awayAbbrev: string;
+  homeAbbrev: string;
+  /** Full-game away runs (null if game not final or linescore missing) */
+  awayFgRuns: number | null;
+  /** Full-game home runs (null if game not final or linescore missing) */
+  homeFgRuns: number | null;
+  /** Away runs through 5 innings (null if < 5 innings in linescore) */
+  awayF5Runs: number | null;
+  /** Home runs through 5 innings (null if < 5 innings in linescore) */
+  homeF5Runs: number | null;
+  /** 1 if no run scored in inning 1, 0 if run scored, null if inning 1 not in linescore */
+  nrfiBinary: number | null;
+  /** True if game is final per API */
+  isFinal: boolean;
+}
+
+/** Per-game ingestion result */
+export interface OutcomeIngestResult {
+  gameId: number;
+  matchup: string;
+  gameDate: string;
+  status: "written" | "skipped_already_ingested" | "skipped_not_final" | "skipped_no_mlbgamepk" | "skipped_no_api_match" | "error";
+  actualFgTotal: number | null;
+  actualF5Total: number | null;
+  actualNrfiBinary: number | null;
+  brierFgTotal: number | null;
+  brierF5Total: number | null;
+  brierNrfi: number | null;
+  brierFgMl: number | null;
+  brierF5Ml: number | null;
+  error?: string;
+}
+
+/** Batch ingestion summary */
+export interface OutcomeIngestSummary {
+  date: string;
+  totalGames: number;
+  written: number;
+  skippedAlreadyIngested: number;
+  skippedNotFinal: number;
+  skippedNoGamePk: number;
+  skippedNoApiMatch: number;
+  errors: number;
+  results: OutcomeIngestResult[];
+  runAt: number;
+}
+
+// ─── Brier Score Computation ──────────────────────────────────────────────────
+
+/**
+ * Computes a single Brier score: (p - o)^2
+ *
+ * @param modelProbPct  Model probability in [0, 100] (e.g. 54.3 = 54.3%)
+ * @param outcome       Binary outcome: 1 = event occurred, 0 = did not occur
+ * @returns Brier score in [0, 1], or null if inputs are invalid
+ */
+function brierScore(
+  modelProbPct: string | number | null | undefined,
+  outcome: 0 | 1 | null,
+): number | null {
+  if (modelProbPct === null || modelProbPct === undefined) return null;
+  if (outcome === null) return null;
+  const p = parseFloat(String(modelProbPct)) / 100;
+  if (isNaN(p) || p < 0 || p > 1) return null;
+  const bs = Math.pow(p - outcome, 2);
+  // Round to 6 decimal places (matches precision: 7, scale: 6 in schema)
+  return parseFloat(bs.toFixed(6));
+}
+
+/**
+ * Computes all 5 Brier scores for a game.
+ *
+ * @param game        DB game row (model probabilities)
+ * @param outcome     Parsed outcome from MLB Stats API
+ * @returns Object with all 5 Brier scores (null if inputs unavailable)
+ */
+function computeBrierScores(
+  game: {
+    bookTotal: string | null | undefined;
+    modelOverRate: string | null | undefined;
+    f5Total: string | null | undefined;
+    modelF5OverRate: string | null | undefined;
+    modelPNrfi: string | null | undefined;
+    modelHomeWinPct: string | null | undefined;
+    modelF5HomeWinPct: string | null | undefined;
+  },
+  outcome: GameOutcome,
+): {
+  brierFgTotal: number | null;
+  brierF5Total: number | null;
+  brierNrfi: number | null;
+  brierFgMl: number | null;
+  brierF5Ml: number | null;
+} {
+  // ── FG Total ──────────────────────────────────────────────────────────────
+  let brierFgTotal: number | null = null;
+  const fgTotal = outcome.awayFgRuns !== null && outcome.homeFgRuns !== null
+    ? outcome.awayFgRuns + outcome.homeFgRuns
+    : null;
+  const bookTotalNum = game.bookTotal ? parseFloat(String(game.bookTotal)) : null;
+  if (fgTotal !== null && bookTotalNum !== null && bookTotalNum > 0) {
+    if (fgTotal !== bookTotalNum) {
+      // Not a push — compute Brier
+      const outcomeOver: 0 | 1 = fgTotal > bookTotalNum ? 1 : 0;
+      brierFgTotal = brierScore(game.modelOverRate, outcomeOver);
+    }
+    // Push → brierFgTotal stays null
+  }
+
+  // ── F5 Total ──────────────────────────────────────────────────────────────
+  let brierF5Total: number | null = null;
+  const f5TotalActual = outcome.awayF5Runs !== null && outcome.homeF5Runs !== null
+    ? outcome.awayF5Runs + outcome.homeF5Runs
+    : null;
+  const bookF5TotalNum = game.f5Total ? parseFloat(String(game.f5Total)) : null;
+  if (f5TotalActual !== null && bookF5TotalNum !== null && bookF5TotalNum > 0) {
+    if (f5TotalActual !== bookF5TotalNum) {
+      const outcomeF5Over: 0 | 1 = f5TotalActual > bookF5TotalNum ? 1 : 0;
+      brierF5Total = brierScore(game.modelF5OverRate, outcomeF5Over);
+    }
+    // Push → brierF5Total stays null
+  }
+
+  // ── NRFI ──────────────────────────────────────────────────────────────────
+  let brierNrfi: number | null = null;
+  if (outcome.nrfiBinary !== null) {
+    brierNrfi = brierScore(game.modelPNrfi, outcome.nrfiBinary as 0 | 1);
+  }
+
+  // ── FG ML ─────────────────────────────────────────────────────────────────
+  let brierFgMl: number | null = null;
+  if (outcome.awayFgRuns !== null && outcome.homeFgRuns !== null) {
+    if (outcome.awayFgRuns !== outcome.homeFgRuns) {
+      // No tie in MLB (extra innings always produce a winner)
+      const outcomeHomeWin: 0 | 1 = outcome.homeFgRuns > outcome.awayFgRuns ? 1 : 0;
+      brierFgMl = brierScore(game.modelHomeWinPct, outcomeHomeWin);
+    }
+    // Tie (shouldn't happen in MLB but guard anyway) → brierFgMl stays null
+  }
+
+  // ── F5 ML ─────────────────────────────────────────────────────────────────
+  let brierF5Ml: number | null = null;
+  if (outcome.awayF5Runs !== null && outcome.homeF5Runs !== null) {
+    if (outcome.awayF5Runs !== outcome.homeF5Runs) {
+      const outcomeF5HomeWin: 0 | 1 = outcome.homeF5Runs > outcome.awayF5Runs ? 1 : 0;
+      brierF5Ml = brierScore(game.modelF5HomeWinPct, outcomeF5HomeWin);
+    }
+    // F5 tie (common) → brierF5Ml stays null
+  }
+
+  return { brierFgTotal, brierF5Total, brierNrfi, brierFgMl, brierF5Ml };
+}
+
+// ─── MLB Stats API Fetch ──────────────────────────────────────────────────────
+
+/**
+ * Fetches innings-level linescore data for all games on a given date.
+ * Returns a map of gamePk → GameOutcome.
+ *
+ * API endpoint: statsapi.mlb.com/api/v1/schedule
+ * Hydration: linescore (includes innings array)
+ */
+async function fetchMlbOutcomes(dateStr: string): Promise<Map<number, GameOutcome>> {
+  const url =
+    `${MLB_STATS_API_BASE}/schedule` +
+    `?sportId=1&date=${dateStr}&hydrate=linescore`;
+
+  console.log(`${TAG} [STEP] Fetching MLB Stats API: ${url}`);
+
+  const res = await fetch(url, { headers: FETCH_HEADERS });
+  if (!res.ok) {
+    throw new Error(`MLB Stats API HTTP ${res.status} for date=${dateStr}`);
+  }
+
+  const json = await res.json() as {
+    dates?: Array<{ games?: MlbApiGame[] }>;
+  };
+
+  const outcomes = new Map<number, GameOutcome>();
+  const dateEntry = json.dates?.[0];
+  if (!dateEntry?.games) {
+    console.log(`${TAG} [STATE] No games found in API response for date=${dateStr}`);
+    return outcomes;
+  }
+
+  for (const g of dateEntry.games) {
+    const abstractState = g.status?.abstractGameState ?? "";
+    const detailedState = g.status?.detailedState ?? "";
+    const isFinal =
+      abstractState === "Final" &&
+      !["Postponed", "Suspended", "Cancelled"].includes(detailedState);
+
+    const linescore = g.linescore;
+    const innings = linescore?.innings ?? [];
+
+    // Full-game runs from linescore teams (most reliable for final games)
+    const awayFgRuns = isFinal
+      ? (linescore?.teams?.away?.runs ?? g.teams.away.score ?? null)
+      : null;
+    const homeFgRuns = isFinal
+      ? (linescore?.teams?.home?.runs ?? g.teams.home.score ?? null)
+      : null;
+
+    // F5 runs: sum innings 1-5 (only if at least 5 innings are present)
+    const f5Innings = innings.filter(i => i.num >= 1 && i.num <= 5);
+    const hasF5 = f5Innings.length >= 5 || (isFinal && innings.length >= 5);
+    const awayF5Runs = hasF5
+      ? f5Innings.reduce((s, i) => s + (i.away?.runs ?? 0), 0)
+      : null;
+    const homeF5Runs = hasF5
+      ? f5Innings.reduce((s, i) => s + (i.home?.runs ?? 0), 0)
+      : null;
+
+    // NRFI: inning 1 — 1 if no run scored, 0 if any run scored
+    const inn1 = innings.find(i => i.num === 1);
+    let nrfiBinary: number | null = null;
+    if (inn1) {
+      const i1Away = inn1.away?.runs ?? 0;
+      const i1Home = inn1.home?.runs ?? 0;
+      nrfiBinary = (i1Away === 0 && i1Home === 0) ? 1 : 0;
+    }
+
+    const awayAbbrev = g.teams.away.team.abbreviation;
+    const homeAbbrev = g.teams.home.team.abbreviation;
+
+    outcomes.set(g.gamePk, {
+      gamePk: g.gamePk,
+      awayAbbrev,
+      homeAbbrev,
+      awayFgRuns,
+      homeFgRuns,
+      awayF5Runs,
+      homeF5Runs,
+      nrfiBinary,
+      isFinal,
+    });
+
+    console.log(
+      `${TAG} [STATE] gamePk=${g.gamePk} ${awayAbbrev}@${homeAbbrev}` +
+      ` | final=${isFinal} | FG=${awayFgRuns ?? "?"}–${homeFgRuns ?? "?"}` +
+      ` | F5=${awayF5Runs ?? "?"}–${homeF5Runs ?? "?"}` +
+      ` | NRFI=${nrfiBinary ?? "?"}` +
+      ` | innings=${innings.length}`
+    );
+  }
+
+  console.log(`${TAG} [STEP] API returned ${outcomes.size} games for date=${dateStr}`);
+  return outcomes;
+}
+
+// ─── Main Ingestion Function ──────────────────────────────────────────────────
+
+/**
+ * Ingests outcomes for all final MLB games on the given date.
+ *
+ * Strategy:
+ *   1. Query DB for all MLB games on date with gameStatus='final' and sport='MLB'
+ *   2. Skip games where outcomeIngestedAt is already set (unless force=true)
+ *   3. Fetch innings-level linescore from MLB Stats API
+ *   4. Match DB games to API outcomes by mlbGamePk (primary) or team abbreviation (fallback)
+ *   5. Compute actualFgTotal, actualF5Total, actualNrfiBinary
+ *   6. Compute 5 Brier scores using model probabilities from DB
+ *   7. Write all fields atomically in a single UPDATE per game
+ *   8. Verify written values match computed values
+ *
+ * @param dateStr  YYYY-MM-DD date string (PST/PDT)
+ * @param force    If true, re-ingest games that already have outcomeIngestedAt set
+ */
+export async function ingestMlbOutcomes(
+  dateStr: string,
+  force = false,
+): Promise<OutcomeIngestSummary> {
+  const startMs = Date.now();
+  console.log(`\n${TAG} ══════════════════════════════════════════════════════`);
+  console.log(`${TAG} [INPUT] date=${dateStr} force=${force}`);
+
+  const db = await getDb();
+
+  // ── Step 1: Query DB for final MLB games on this date ─────────────────────
+  console.log(`${TAG} [STEP 1] Querying DB for final MLB games on ${dateStr}`);
+
+  const dbGames = await db
+    .select({
+      id: games.id,
+      gameDate: games.gameDate,
+      awayTeam: games.awayTeam,
+      homeTeam: games.homeTeam,
+      gameStatus: games.gameStatus,
+      mlbGamePk: games.mlbGamePk,
+      outcomeIngestedAt: games.outcomeIngestedAt,
+      // Model probabilities for Brier computation
+      bookTotal: games.bookTotal,
+      modelOverRate: games.modelOverRate,
+      f5Total: games.f5Total,
+      modelF5OverRate: games.modelF5OverRate,
+      modelPNrfi: games.modelPNrfi,
+      modelHomeWinPct: games.modelHomeWinPct,
+      modelF5HomeWinPct: games.modelF5HomeWinPct,
+      // Existing actual scores (may already be set by mlbScoreRefresh)
+      actualAwayScore: games.actualAwayScore,
+      actualHomeScore: games.actualHomeScore,
+      actualF5AwayScore: games.actualF5AwayScore,
+      actualF5HomeScore: games.actualF5HomeScore,
+    })
+    .from(games)
+    .where(
+      and(
+        eq(games.gameDate, dateStr),
+        eq(games.sport, "MLB"),
+        eq(games.gameStatus, "final"),
+      )
+    );
+
+  console.log(`${TAG} [STATE] Found ${dbGames.length} final MLB games in DB for ${dateStr}`);
+
+  const results: OutcomeIngestResult[] = [];
+  let written = 0;
+  let skippedAlreadyIngested = 0;
+  let skippedNotFinal = 0;
+  let skippedNoGamePk = 0;
+  let skippedNoApiMatch = 0;
+  let errors = 0;
+
+  if (dbGames.length === 0) {
+    console.log(`${TAG} [OUTPUT] No final MLB games to ingest for ${dateStr}`);
+    return {
+      date: dateStr,
+      totalGames: 0,
+      written: 0,
+      skippedAlreadyIngested: 0,
+      skippedNotFinal: 0,
+      skippedNoGamePk: 0,
+      skippedNoApiMatch: 0,
+      errors: 0,
+      results: [],
+      runAt: Date.now(),
+    };
+  }
+
+  // ── Step 2: Fetch MLB Stats API outcomes ──────────────────────────────────
+  console.log(`${TAG} [STEP 2] Fetching MLB Stats API for date=${dateStr}`);
+  let apiOutcomes: Map<number, GameOutcome>;
+  try {
+    apiOutcomes = await fetchMlbOutcomes(dateStr);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${TAG} [ERROR] MLB Stats API fetch failed: ${msg}`);
+    // Return all games as errors
+    for (const g of dbGames) {
+      results.push({
+        gameId: g.id,
+        matchup: `${g.awayTeam}@${g.homeTeam}`,
+        gameDate: g.gameDate ?? dateStr,
+        status: "error",
+        actualFgTotal: null,
+        actualF5Total: null,
+        actualNrfiBinary: null,
+        brierFgTotal: null,
+        brierF5Total: null,
+        brierNrfi: null,
+        brierFgMl: null,
+        brierF5Ml: null,
+        error: `API fetch failed: ${msg}`,
+      });
+      errors++;
+    }
+    return {
+      date: dateStr,
+      totalGames: dbGames.length,
+      written: 0,
+      skippedAlreadyIngested: 0,
+      skippedNotFinal: 0,
+      skippedNoGamePk: 0,
+      skippedNoApiMatch: 0,
+      errors,
+      results,
+      runAt: Date.now(),
+    };
+  }
+
+  // ── Step 3: Process each DB game ──────────────────────────────────────────
+  console.log(`${TAG} [STEP 3] Processing ${dbGames.length} games`);
+
+  for (const game of dbGames) {
+    const matchup = `${game.awayTeam}@${game.homeTeam}`;
+    console.log(`\n${TAG} [STEP] Processing game id=${game.id} ${matchup} date=${game.gameDate}`);
+
+    // Skip if already ingested (unless force)
+    if (!force && game.outcomeIngestedAt !== null && game.outcomeIngestedAt !== undefined) {
+      console.log(`${TAG} [STATE] SKIP — already ingested at ${new Date(game.outcomeIngestedAt).toISOString()}`);
+      results.push({
+        gameId: game.id,
+        matchup,
+        gameDate: game.gameDate ?? dateStr,
+        status: "skipped_already_ingested",
+        actualFgTotal: null,
+        actualF5Total: null,
+        actualNrfiBinary: null,
+        brierFgTotal: null,
+        brierF5Total: null,
+        brierNrfi: null,
+        brierFgMl: null,
+        brierF5Ml: null,
+      });
+      skippedAlreadyIngested++;
+      continue;
+    }
+
+    // Match to API outcome
+    let apiOutcome: GameOutcome | undefined;
+
+    // Primary match: mlbGamePk
+    if (game.mlbGamePk) {
+      apiOutcome = apiOutcomes.get(game.mlbGamePk);
+      if (apiOutcome) {
+        console.log(`${TAG} [STATE] Matched by mlbGamePk=${game.mlbGamePk}`);
+      }
+    }
+
+    // Fallback match: team abbreviation (normalize SF → SF, etc.)
+    if (!apiOutcome) {
+      for (const outcome of Array.from(apiOutcomes.values())) {
+        const awayMatch =
+          outcome.awayAbbrev === game.awayTeam ||
+          normalizeTeamAbbrev(outcome.awayAbbrev) === normalizeTeamAbbrev(game.awayTeam);
+        const homeMatch =
+          outcome.homeAbbrev === game.homeTeam ||
+          normalizeTeamAbbrev(outcome.homeAbbrev) === normalizeTeamAbbrev(game.homeTeam);
+        if (awayMatch && homeMatch) {
+          apiOutcome = outcome;
+          console.log(`${TAG} [STATE] Matched by team abbreviation: ${outcome.awayAbbrev}@${outcome.homeAbbrev}`);
+          break;
+        }
+      }
+    }
+
+    if (!apiOutcome) {
+      console.warn(`${TAG} [WARN] No API match for game id=${game.id} ${matchup} — skipping`);
+      results.push({
+        gameId: game.id,
+        matchup,
+        gameDate: game.gameDate ?? dateStr,
+        status: "skipped_no_api_match",
+        actualFgTotal: null,
+        actualF5Total: null,
+        actualNrfiBinary: null,
+        brierFgTotal: null,
+        brierF5Total: null,
+        brierNrfi: null,
+        brierFgMl: null,
+        brierF5Ml: null,
+      });
+      skippedNoApiMatch++;
+      continue;
+    }
+
+    if (!apiOutcome.isFinal) {
+      console.log(`${TAG} [STATE] SKIP — API reports game not final (gamePk=${apiOutcome.gamePk})`);
+      results.push({
+        gameId: game.id,
+        matchup,
+        gameDate: game.gameDate ?? dateStr,
+        status: "skipped_not_final",
+        actualFgTotal: null,
+        actualF5Total: null,
+        actualNrfiBinary: null,
+        brierFgTotal: null,
+        brierF5Total: null,
+        brierNrfi: null,
+        brierFgMl: null,
+        brierF5Ml: null,
+      });
+      skippedNotFinal++;
+      continue;
+    }
+
+    // ── Compute derived outcome fields ────────────────────────────────────
+    const actualFgTotal =
+      apiOutcome.awayFgRuns !== null && apiOutcome.homeFgRuns !== null
+        ? apiOutcome.awayFgRuns + apiOutcome.homeFgRuns
+        : null;
+    const actualF5Total =
+      apiOutcome.awayF5Runs !== null && apiOutcome.homeF5Runs !== null
+        ? apiOutcome.awayF5Runs + apiOutcome.homeF5Runs
+        : null;
+    const actualNrfiBinary = apiOutcome.nrfiBinary;
+
+    console.log(
+      `${TAG} [STATE] id=${game.id} ${matchup}` +
+      ` | actualFgTotal=${actualFgTotal ?? "null"}` +
+      ` | actualF5Total=${actualF5Total ?? "null"}` +
+      ` | actualNrfiBinary=${actualNrfiBinary ?? "null"}`
+    );
+
+    // ── Compute Brier scores ──────────────────────────────────────────────
+    const briers = computeBrierScores(game, apiOutcome);
+
+    console.log(
+      `${TAG} [STATE] Brier scores:` +
+      ` FgTotal=${briers.brierFgTotal ?? "null"}` +
+      ` F5Total=${briers.brierF5Total ?? "null"}` +
+      ` NRFI=${briers.brierNrfi ?? "null"}` +
+      ` FgML=${briers.brierFgMl ?? "null"}` +
+      ` F5ML=${briers.brierF5Ml ?? "null"}`
+    );
+
+    // ── Write to DB ───────────────────────────────────────────────────────
+    try {
+      const now = Date.now();
+      await db
+        .update(games)
+        .set({
+          actualFgTotal: actualFgTotal !== null ? String(actualFgTotal) : undefined,
+          actualF5Total: actualF5Total !== null ? String(actualF5Total) : undefined,
+          actualNrfiBinary: actualNrfiBinary,
+          brierFgTotal: briers.brierFgTotal !== null ? String(briers.brierFgTotal) : undefined,
+          brierF5Total: briers.brierF5Total !== null ? String(briers.brierF5Total) : undefined,
+          brierNrfi: briers.brierNrfi !== null ? String(briers.brierNrfi) : undefined,
+          brierFgMl: briers.brierFgMl !== null ? String(briers.brierFgMl) : undefined,
+          brierF5Ml: briers.brierF5Ml !== null ? String(briers.brierF5Ml) : undefined,
+          outcomeIngestedAt: now,
+        })
+        .where(eq(games.id, game.id));
+
+      console.log(`${TAG} [OUTPUT] id=${game.id} ${matchup} — written OK`);
+
+      // ── Post-write verification ────────────────────────────────────────
+      const [verify] = await db
+        .select({
+          actualFgTotal: games.actualFgTotal,
+          actualF5Total: games.actualF5Total,
+          actualNrfiBinary: games.actualNrfiBinary,
+          brierFgTotal: games.brierFgTotal,
+          outcomeIngestedAt: games.outcomeIngestedAt,
+        })
+        .from(games)
+        .where(eq(games.id, game.id));
+
+      const fgMatch = verify.actualFgTotal !== null && actualFgTotal !== null
+        ? Math.abs(parseFloat(String(verify.actualFgTotal)) - actualFgTotal) < 0.01
+        : verify.actualFgTotal === null && actualFgTotal === null;
+
+      if (!fgMatch) {
+        console.error(
+          `${TAG} [VERIFY] FAIL — id=${game.id} ${matchup}` +
+          ` | expected actualFgTotal=${actualFgTotal} got=${verify.actualFgTotal}`
+        );
+      } else {
+        console.log(`${TAG} [VERIFY] PASS — id=${game.id} ${matchup} | actualFgTotal=${verify.actualFgTotal} | outcomeIngestedAt=${verify.outcomeIngestedAt}`);
+      }
+
+      results.push({
+        gameId: game.id,
+        matchup,
+        gameDate: game.gameDate ?? dateStr,
+        status: "written",
+        actualFgTotal,
+        actualF5Total,
+        actualNrfiBinary,
+        brierFgTotal: briers.brierFgTotal,
+        brierF5Total: briers.brierF5Total,
+        brierNrfi: briers.brierNrfi,
+        brierFgMl: briers.brierFgMl,
+        brierF5Ml: briers.brierF5Ml,
+      });
+      written++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`${TAG} [ERROR] DB write failed for id=${game.id} ${matchup}: ${msg}`);
+      results.push({
+        gameId: game.id,
+        matchup,
+        gameDate: game.gameDate ?? dateStr,
+        status: "error",
+        actualFgTotal: null,
+        actualF5Total: null,
+        actualNrfiBinary: null,
+        brierFgTotal: null,
+        brierF5Total: null,
+        brierNrfi: null,
+        brierFgMl: null,
+        brierF5Ml: null,
+        error: msg,
+      });
+      errors++;
+    }
+  }
+
+  // ── Summary ───────────────────────────────────────────────────────────────
+  const elapsed = ((Date.now() - startMs) / 1000).toFixed(2);
+  console.log(`\n${TAG} ══════════════════════════════════════════════════════`);
+  console.log(`${TAG} [SUMMARY] date=${dateStr}`);
+  console.log(`${TAG} [SUMMARY] total=${dbGames.length} | written=${written} | skipped_ingested=${skippedAlreadyIngested} | skipped_not_final=${skippedNotFinal} | skipped_no_pk=${skippedNoGamePk} | skipped_no_match=${skippedNoApiMatch} | errors=${errors}`);
+  console.log(`${TAG} [SUMMARY] elapsed=${elapsed}s`);
+  console.log(`${TAG} ══════════════════════════════════════════════════════\n`);
+
+  return {
+    date: dateStr,
+    totalGames: dbGames.length,
+    written,
+    skippedAlreadyIngested,
+    skippedNotFinal,
+    skippedNoGamePk,
+    skippedNoApiMatch,
+    errors,
+    results,
+    runAt: Date.now(),
+  };
+}
+
+/**
+ * Ingests outcomes for a range of dates (inclusive).
+ * Used for backfill operations.
+ *
+ * @param startDate  YYYY-MM-DD start date
+ * @param endDate    YYYY-MM-DD end date
+ * @param force      If true, re-ingest already-ingested games
+ */
+export async function ingestMlbOutcomesRange(
+  startDate: string,
+  endDate: string,
+  force = false,
+): Promise<OutcomeIngestSummary[]> {
+  const summaries: OutcomeIngestSummary[] = [];
+  const start = new Date(startDate + "T00:00:00Z");
+  const end = new Date(endDate + "T00:00:00Z");
+
+  console.log(`${TAG} [INPUT] Range backfill: ${startDate} → ${endDate} force=${force}`);
+
+  const current = new Date(start);
+  while (current <= end) {
+    const dateStr = current.toISOString().slice(0, 10);
+    const summary = await ingestMlbOutcomes(dateStr, force);
+    summaries.push(summary);
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+
+  const totalWritten = summaries.reduce((s, r) => s + r.written, 0);
+  const totalErrors = summaries.reduce((s, r) => s + r.errors, 0);
+  console.log(`${TAG} [SUMMARY] Range complete: ${startDate}→${endDate} | totalWritten=${totalWritten} | totalErrors=${totalErrors}`);
+
+  return summaries;
+}
+
+// ─── Team Abbreviation Normalization ─────────────────────────────────────────
+
+/**
+ * Normalizes MLB team abbreviations for fuzzy matching.
+ * Handles known discrepancies between MLB Stats API and our DB.
+ */
+function normalizeTeamAbbrev(abbrev: string): string {
+  const MAP: Record<string, string> = {
+    // MLB Stats API → our DB
+    "SF":  "SF",
+    "SFG": "SF",
+    "SD":  "SD",
+    "SDP": "SD",
+    "KC":  "KC",
+    "KCR": "KC",
+    "TB":  "TB",
+    "TBR": "TB",
+    "CWS": "CWS",
+    "CHW": "CWS",
+    "WSH": "WSH",
+    "WAS": "WSH",
+    "ARI": "ARI",
+    "AZ":  "ARI",
+  };
+  return MAP[abbrev] ?? abbrev;
+}

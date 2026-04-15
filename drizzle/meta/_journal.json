@@ -505,6 +505,13 @@
       "when": 1776213541684,
       "tag": "0071_sleepy_guardsmen",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "5",
+      "when": 1776231889128,
+      "tag": "0072_brainy_cerebro",
+      "breakpoints": true
     }
   ]
 }

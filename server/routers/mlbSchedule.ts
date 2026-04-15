@@ -29,6 +29,8 @@ import {
   type MlbScheduleRefreshResult,
 } from "../mlbScheduleHistoryService";
 import { runMlbNightlyTrendsRefresh } from "../mlbNightlyTrendsRefresh";
+import { ingestMlbOutcomes } from "../mlbOutcomeIngestor";
+import { checkF5ShareDrift, triggerRecalibration } from "../mlbDriftDetector";
 
 const TAG = "[MlbScheduleRouter]";
 
@@ -357,6 +359,91 @@ export const mlbScheduleRouter = router({
           code: "INTERNAL_SERVER_ERROR",
           message: `Nightly TRENDS refresh failed: ${msg}`,
         });
+      }
+    }),
+
+  /**
+   * Owner-only: Manually trigger outcome ingestion for a specific date.
+   * Fetches innings-level linescore from MLB Stats API, writes actualFgTotal,
+   * actualF5Total, actualNrfiBinary, and 5 Brier scores to the games table.
+   *
+   * Input:
+   *   dateStr — "YYYY-MM-DD" format
+   *   force   — if true, re-ingest games that already have outcomeIngestedAt set
+   */
+  triggerOutcomeIngestion: ownerProcedure
+    .input(
+      z.object({
+        dateStr: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        force: z.boolean().optional().default(false),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const tag = `${TAG}[triggerOutcomeIngestion]`;
+      console.log(`${tag} Manual trigger: dateStr=${input.dateStr} force=${input.force}`);
+      try {
+        const summary = await ingestMlbOutcomes(input.dateStr, input.force);
+        console.log(`${tag} COMPLETE: written=${summary.written} errors=${summary.errors}`);
+        return summary;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`${tag} ERROR: ${msg}`);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Outcome ingestion failed: ${msg}` });
+      }
+    }),
+
+  /**
+   * Owner-only: Run the f5_share drift check and optionally trigger recalibration.
+   * Returns the full DriftCheckResult with rolling f5_share, delta, and recalibration status.
+   *
+   * Input:
+   *   triggerRecal — if true and drift detected, triggers full recalibration run
+   */
+  checkDrift: ownerProcedure
+    .input(
+      z.object({
+        triggerRecal: z.boolean().optional().default(false),
+      })
+    )
+    .query(async ({ input }) => {
+      const tag = `${TAG}[checkDrift]`;
+      console.log(`${tag} Manual drift check: triggerRecal=${input.triggerRecal}`);
+      try {
+        const result = await checkF5ShareDrift(input.triggerRecal);
+        console.log(`${tag} COMPLETE: driftDetected=${result.driftDetected} delta=${result.delta}`);
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`${tag} ERROR: ${msg}`);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Drift check failed: ${msg}` });
+      }
+    }),
+
+  /**
+   * Owner-only: Manually trigger a full recalibration run.
+   * Runs runMlbBacktest2.py, updates mlb_calibration_constants.json,
+   * and patches EMPIRICAL_PRIORS in MLBAIModel.py.
+   *
+   * Input:
+   *   reason — 'MANUAL' (default) | 'SCHEDULED' | 'DRIFT_DETECTED'
+   */
+  triggerRecalibration: ownerProcedure
+    .input(
+      z.object({
+        reason: z.enum(["MANUAL", "SCHEDULED", "DRIFT_DETECTED"]).optional().default("MANUAL"),
+      })
+    )
+    .mutation(async ({ input }) => {
+      const tag = `${TAG}[triggerRecalibration]`;
+      console.log(`${tag} Manual recalibration trigger: reason=${input.reason}`);
+      try {
+        const result = await triggerRecalibration(input.reason);
+        console.log(`${tag} COMPLETE: success=${result.success} constantsPatched=${result.constantsPatched}`);
+        return result;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`${tag} ERROR: ${msg}`);
+        throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Recalibration failed: ${msg}` });
       }
     }),
 });

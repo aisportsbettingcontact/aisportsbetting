@@ -495,6 +495,69 @@ export const games = mysqlTable("games", {
    */
   oddsSource: mysqlEnum("oddsSource", ["open", "dk"]),
 
+  // ─── Outcome Ingestion + Brier Scores (populated by mlbOutcomeIngestor after game final) ──
+  /**
+   * Actual full-game total runs (awayFinalScore + homeFinalScore).
+   * Populated by mlbOutcomeIngestor.ts after gameStatus = 'final'.
+   * Used for Brier score computation and rolling f5_share drift detection.
+   * Precision 5,1 matches actualAwayScore + actualHomeScore (both int, sum ≤ 99.0).
+   */
+  actualFgTotal: decimal("actualFgTotal", { precision: 5, scale: 1 }),
+  /**
+   * Actual F5 total runs (actualF5AwayScore + actualF5HomeScore).
+   * Populated by mlbOutcomeIngestor.ts after game is final.
+   * Used for rolling f5_share = actualF5Total / actualFgTotal drift detection.
+   * Precision 5,1 matches F5 score fields.
+   */
+  actualF5Total: decimal("actualF5Total", { precision: 5, scale: 1 }),
+  /**
+   * Actual NRFI result: 1 = no run scored in inning 1, 0 = at least one run scored.
+   * Populated by mlbOutcomeIngestor.ts from MLB Stats API linescore.innings[0].
+   * Null = game not yet final or linescore unavailable.
+   */
+  actualNrfiBinary: tinyint("actualNrfiBinary"),
+  /**
+   * Brier score for FG Total prediction: (p_over - outcome_over)^2
+   * p_over = modelFgOverRate / 100 (model probability of over)
+   * outcome_over = 1 if actualFgTotal > bookTotal, 0 if under, null if push/no-line
+   * Range [0, 1]. Lower = better calibration. Null if bookTotal or scores unavailable.
+   */
+  brierFgTotal: decimal("brierFgTotal", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for F5 Total prediction: (p_f5_over - outcome_f5_over)^2
+   * p_f5_over = modelF5OverRate / 100
+   * outcome_f5_over = 1 if actualF5Total > bookF5Total, 0 if under, null if push/no-line
+   * Range [0, 1]. Lower = better calibration. Null if F5 book total or scores unavailable.
+   */
+  brierF5Total: decimal("brierF5Total", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for NRFI prediction: (p_nrfi - outcome_nrfi)^2
+   * p_nrfi = modelPNrfi / 100
+   * outcome_nrfi = actualNrfiBinary (1 = NRFI, 0 = YRFI)
+   * Range [0, 1]. Lower = better calibration. Null if modelPNrfi or linescore unavailable.
+   */
+  brierNrfi: decimal("brierNrfi", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for FG ML prediction: (p_home_win - outcome_home_win)^2
+   * p_home_win = modelHomeWinPct / 100
+   * outcome_home_win = 1 if actualHomeScore > actualAwayScore, 0 if home lost, null if tie
+   * Range [0, 1]. Null if modelHomeWinPct or final scores unavailable.
+   */
+  brierFgMl: decimal("brierFgMl", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for F5 ML prediction: (p_f5_home_win - outcome_f5_home_win)^2
+   * p_f5_home_win = modelF5HomeWinPct / 100
+   * outcome_f5_home_win = 1 if actualF5HomeScore > actualF5AwayScore, 0 if away led, null if tie
+   * Range [0, 1]. Null if modelF5HomeWinPct or F5 scores unavailable.
+   */
+  brierF5Ml: decimal("brierF5Ml", { precision: 7, scale: 6 }),
+  /**
+   * UTC ms when mlbOutcomeIngestor last populated this game's outcome fields.
+   * Null = not yet ingested. Used to skip re-ingestion of already-complete games.
+   * Set on every successful ingestion run (even if scores were already present).
+   */
+  outcomeIngestedAt: bigint("outcomeIngestedAt", { mode: "number" }),
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
   /** Prevent duplicate rows for the same matchup on the same date */
