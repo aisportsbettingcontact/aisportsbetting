@@ -584,6 +584,101 @@ export const mlbScheduleRouter = router({
         throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: `Recalibration failed: ${msg}` });
       }
     }),
+
+  /**
+   * Owner-only: 5-market Brier heatmap by date.
+   *
+   * Returns one row per game date (aggregated), with average Brier scores
+   * for each of the 5 markets: FG ML, F5 ML, NRFI, FG Total, F5 Total.
+   * Also includes game count and a per-market null count for completeness.
+   *
+   * Ordered chronologically (oldest first).
+   * Only includes dates where at least one game has been outcome-ingested.
+   */
+  getBrierHeatmap: ownerProcedure
+    .input(
+      z.object({
+        sport: z.enum(["MLB"]).optional().default("MLB"),
+      })
+    )
+    .query(async ({ input }) => {
+      const tag = `${TAG}[getBrierHeatmap]`;
+      console.log(`${tag} [INPUT] sport=${input.sport}`);
+      const db = await getDb();
+
+      // Fetch all outcome-ingested games with Brier scores
+      const rows = await db
+        .select({
+          gameDate:     gamesTable.gameDate,
+          brierFgMl:    gamesTable.brierFgMl,
+          brierF5Ml:    gamesTable.brierF5Ml,
+          brierNrfi:    gamesTable.brierNrfi,
+          brierFgTotal: gamesTable.brierFgTotal,
+          brierF5Total: gamesTable.brierF5Total,
+        })
+        .from(gamesTable)
+        .where(
+          and(
+            eq(gamesTable.sport, input.sport),
+            isNotNull(gamesTable.outcomeIngestedAt),
+          )
+        )
+        .orderBy(asc(gamesTable.gameDate), asc(gamesTable.id));
+
+      console.log(`${tag} [STATE] total ingested rows: ${rows.length}`);
+
+      // Group by date and compute per-market averages
+      type BrierRow = typeof rows[number];
+      type DateRow = {
+        date: string;
+        games: number;
+        avgFgMl:    number | null;
+        avgF5Ml:    number | null;
+        avgNrfi:    number | null;
+        avgFgTotal: number | null;
+        avgF5Total: number | null;
+        nullFgMl:    number;
+        nullF5Ml:    number;
+        nullNrfi:    number;
+        nullFgTotal: number;
+        nullF5Total: number;
+      };
+
+      const dateMap = new Map<string, BrierRow[]>();
+      for (const r of rows) {
+        const d = r.gameDate ?? 'unknown';
+        if (!dateMap.has(d)) dateMap.set(d, []);
+        dateMap.get(d)!.push(r);
+      }
+
+      const avg = (vals: (number | null | undefined)[]): number | null => {
+        const nums = vals.filter((v): v is number => v != null && !isNaN(v as number));
+        if (nums.length === 0) return null;
+        return nums.reduce((s, v) => s + v, 0) / nums.length;
+      };
+
+      const sortedEntries = Array.from(dateMap.entries()).sort(([a], [b]) => a.localeCompare(b));
+      const heatmap: DateRow[] = [];
+      for (const [date, vals] of sortedEntries) {
+        heatmap.push({
+          date,
+          games:      vals.length,
+          avgFgMl:    avg(vals.map((r: BrierRow) => r.brierFgMl)),
+          avgF5Ml:    avg(vals.map((r: BrierRow) => r.brierF5Ml)),
+          avgNrfi:    avg(vals.map((r: BrierRow) => r.brierNrfi)),
+          avgFgTotal: avg(vals.map((r: BrierRow) => r.brierFgTotal)),
+          avgF5Total: avg(vals.map((r: BrierRow) => r.brierF5Total)),
+          nullFgMl:    vals.filter((r: BrierRow) => r.brierFgMl    == null).length,
+          nullF5Ml:    vals.filter((r: BrierRow) => r.brierF5Ml    == null).length,
+          nullNrfi:    vals.filter((r: BrierRow) => r.brierNrfi    == null).length,
+          nullFgTotal: vals.filter((r: BrierRow) => r.brierFgTotal == null).length,
+          nullF5Total: vals.filter((r: BrierRow) => r.brierF5Total == null).length,
+        });
+      }
+
+      console.log(`${tag} [OUTPUT] heatmap rows: ${heatmap.length}`);
+      return { heatmap };
+    }),
 });
 
 export type MlbScheduleRouter = typeof mlbScheduleRouter;

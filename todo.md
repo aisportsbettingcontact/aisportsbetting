@@ -2590,3 +2590,6 @@
 - [x] Trigger checkDrift after backfill completes — 50-game rolling window, full drift report with calibration recommendations
 - [x] Add FG Total and F5 Total Brier lines to Brier Trend chart (dashed purple/teal)
 - [x] Wire notifyOwner at end of ingestMlbOutcomes with per-market Brier scores for morning calibration push notification
+- [x] Re-ingest 2026-04-14 with force=true after backfill completes — recompute correct brierF5Ml for 15 games
+- [x] Add Re-ingest button to Admin Brier Trend per-game table (force=true per date row)
+- [x] Build 5-market Brier heatmap by date (date x market grid: FG ML / F5 ML / NRFI / FG Total / F5 Total)

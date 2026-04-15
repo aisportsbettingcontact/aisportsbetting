@@ -433,6 +433,8 @@ export default function ModelResults() {
   // 'daily' | 'last7' | 'brier'
   const [viewMode, setViewMode] = useState<'daily' | 'last7' | 'brier'>('daily');
   const [brierWindow, setBrierWindow] = useState<number>(20);
+  // 'trend' | 'heatmap' — sub-tab within the BRIER view
+  const [brierSubTab, setBrierSubTab] = useState<'trend' | 'heatmap'>('trend');
 
   // ── Strict owner-only guard ─────────────────────────────────────────────────
   useEffect(() => {
@@ -470,8 +472,7 @@ export default function ModelResults() {
     { days: 7 },
     { enabled: !!appUser && isOwner && viewMode === 'last7', refetchOnWindowFocus: false }
   );
-
-  // ── Brier Score Trend ───────────────────────────────────────────────
+  // ── Brier Score Trend ──────────────────────────────────────────────────────
   const {
     data: brierData,
     isLoading: brierLoading,
@@ -480,6 +481,36 @@ export default function ModelResults() {
     { windowSize: brierWindow, sport: 'MLB' },
     { enabled: !!appUser && isOwner && viewMode === 'brier', refetchOnWindowFocus: false }
   );
+
+  // ── Brier Heatmap ──────────────────────────────────────────────────────
+  const {
+    data: heatmapData,
+    isLoading: heatmapLoading,
+    refetch: refetchHeatmap,
+  } = trpc.mlbSchedule.getBrierHeatmap.useQuery(
+    { sport: 'MLB' },
+    { enabled: !!appUser && isOwner && viewMode === 'brier' && brierSubTab === 'heatmap', refetchOnWindowFocus: false }
+  );
+
+  // ── Re-ingest mutation (force=true per date) ───────────────────────────────────────
+  const [reingestingDate, setReingestingDate] = useState<string | null>(null);
+  const reingestMutation = trpc.mlbSchedule.triggerOutcomeIngestion.useMutation({
+    onSuccess: (data, vars) => {
+      toast.success(`Re-ingested ${vars.dateStr}: ${data.written} written, ${data.errors} errors`);
+      setReingestingDate(null);
+      refetchBrier();
+    },
+    onError: (err, vars) => {
+      toast.error(`Re-ingest failed for ${vars.dateStr}: ${err.message}`);
+      setReingestingDate(null);
+    },
+  });
+
+  const handleReingest = (dateStr: string) => {
+    if (reingestingDate) return; // prevent concurrent re-ingests
+    setReingestingDate(dateStr);
+    reingestMutation.mutate({ dateStr, force: true });
+  };
 
   // Merge per-game and rolling arrays for recharts (keyed by gameIndex)
   const brierChartData = useMemo(() => {
@@ -500,6 +531,7 @@ export default function ModelResults() {
         await refetchLast7();
       } else {
         await refetchBrier();
+        if (brierSubTab === 'heatmap') await refetchHeatmap();
       }
       toast.success("Results refreshed");
     } catch (err) {
@@ -677,7 +709,29 @@ export default function ModelResults() {
             </div>
           ) : (
             <>
-              {/* ── Summary stat cards ──────────────────────────────────────────── */}
+              {/* ── Sub-tab toggle: TREND / HEATMAP ────────────────────────────────────────── */}
+              <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+                {(['trend', 'heatmap'] as const).map(tab => (
+                  <button
+                    key={tab}
+                    onClick={() => setBrierSubTab(tab)}
+                    style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
+                      padding: '4px 12px', borderRadius: 4, border: 'none', cursor: 'pointer',
+                      fontFamily: '"Barlow Condensed", sans-serif',
+                      background: brierSubTab === tab ? (tab === 'trend' ? 'rgba(255,165,0,0.2)' : 'rgba(0,229,204,0.15)') : 'rgba(255,255,255,0.05)',
+                      color: brierSubTab === tab ? (tab === 'trend' ? '#FFA500' : '#00E5CC') : 'rgba(255,255,255,0.3)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {tab === 'trend' ? '📈 TREND' : '🟥 HEATMAP'}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── TREND sub-tab content ────────────────────────────────────────────────── */}
+              {brierSubTab === 'trend' && <>
+              {/* ── Summary stat cards ────────────────────────────────────────────────────── */}
               <div style={{ marginBottom: 20 }}>
                 <div style={{
                   fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
@@ -820,8 +874,8 @@ export default function ModelResults() {
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: '"Barlow Condensed", sans-serif' }}>
                     <thead>
                       <tr style={{ borderBottom: '1px solid #1a1d1b' }}>
-                        {['#', 'DATE', 'MATCHUP', 'FG ML', 'F5 ML', 'NRFI', 'FG TOT', 'F5 TOT'].map(h => (
-                          <th key={h} style={{ padding: '4px 8px', textAlign: h === '#' || h === 'DATE' || h === 'MATCHUP' ? 'left' : 'right', color: 'rgba(255,255,255,0.3)', fontWeight: 700, letterSpacing: '.08em', fontSize: 9 }}>{h}</th>
+                        {['#', 'DATE', 'MATCHUP', 'FG ML', 'F5 ML', 'NRFI', 'FG TOT', 'F5 TOT', ''].map(h => (
+                          <th key={h} style={{ padding: '4px 8px', textAlign: h === '#' || h === 'DATE' || h === 'MATCHUP' || h === '' ? 'left' : 'right', color: 'rgba(255,255,255,0.3)', fontWeight: 700, letterSpacing: '.08em', fontSize: 9 }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -832,6 +886,8 @@ export default function ModelResults() {
                             : v <= 0.15 ? '#39FF14'
                             : v <= 0.22 ? '#FFD700'
                             : '#FF2244';
+                        const isReingestingThis = reingestingDate === g.gameDate;
+                        const isAnyReingestActive = reingestingDate !== null;
                         return (
                           <tr key={g.gameIndex} style={{ borderBottom: '1px solid #0e1110' }}>
                             <td style={{ padding: '4px 8px', color: 'rgba(255,255,255,0.25)', fontSize: 9 }}>{g.gameIndex}</td>
@@ -842,6 +898,27 @@ export default function ModelResults() {
                                 {g[field] != null ? (g[field] as number).toFixed(4) : <span style={{ color: 'rgba(255,255,255,0.12)' }}>—</span>}
                               </td>
                             ))}
+                            <td style={{ padding: '4px 8px' }}>
+                              <button
+                                onClick={() => handleReingest(g.gameDate)}
+                                disabled={isAnyReingestActive}
+                                title={`Force re-ingest ${g.gameDate} (force=true, rewrites all Brier scores)`}
+                                style={{
+                                  fontSize: 8, fontWeight: 700, letterSpacing: '.08em',
+                                  padding: '2px 6px', borderRadius: 3, border: 'none', cursor: isAnyReingestActive ? 'not-allowed' : 'pointer',
+                                  background: isReingestingThis ? 'rgba(255,180,0,0.15)' : 'rgba(255,255,255,0.06)',
+                                  color: isReingestingThis ? '#FFB400' : 'rgba(255,255,255,0.35)',
+                                  transition: 'all 0.15s',
+                                  display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {isReingestingThis ? (
+                                  <>⏳ INGESTING…</>
+                                ) : (
+                                  <>↺ RE-INGEST</>  
+                                )}
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -849,11 +926,96 @@ export default function ModelResults() {
                   </table>
                 </div>
               </div>
+              </> /* end brierSubTab === 'trend' */}
+
+              {/* ── HEATMAP sub-tab content ────────────────────────────────────────────── */}
+              {brierSubTab === 'heatmap' && (
+                heatmapLoading ? (
+                  <div className="flex items-center justify-center py-12 gap-3">
+                    <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#00E5CC' }} />
+                    <span className="text-sm text-muted-foreground">Loading Brier heatmap…</span>
+                  </div>
+                ) : !heatmapData || heatmapData.heatmap.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                    <BarChart3 className="w-10 h-10 text-muted-foreground/30" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground mb-1">No heatmap data yet</p>
+                      <p className="text-xs text-muted-foreground">Outcome ingestion must run first.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <div style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
+                      color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif',
+                      marginBottom: 12,
+                    }}>
+                      BRIER HEATMAP — {heatmapData.heatmap.length} DATES × 5 MARKETS
+                      <span style={{ marginLeft: 8, color: 'rgba(0,229,204,0.6)', fontSize: 8 }}>
+                        (avg per date | 🟢 ≤0.15 | 🟡 ≤0.22 | 🔴 &gt;0.22 | — = no data)
+                      </span>
+                    </div>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 11, fontFamily: '"Barlow Condensed", sans-serif', minWidth: 520 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #1a1d1b' }}>
+                          {['DATE', 'GAMES', 'FG ML', 'F5 ML', 'NRFI', 'FG TOT', 'F5 TOT'].map(h => (
+                            <th key={h} style={{
+                              padding: '4px 10px',
+                              textAlign: h === 'DATE' ? 'left' : 'right',
+                              color: 'rgba(255,255,255,0.3)', fontWeight: 700, letterSpacing: '.08em', fontSize: 9,
+                            }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...heatmapData.heatmap].reverse().map(row => {
+                          const cellBg = (v: number | null) =>
+                            v == null ? 'transparent'
+                              : v <= 0.15 ? 'rgba(57,255,20,0.12)'
+                              : v <= 0.22 ? 'rgba(255,215,0,0.12)'
+                              : 'rgba(255,34,68,0.12)';
+                          const cellColor = (v: number | null) =>
+                            v == null ? 'rgba(255,255,255,0.12)'
+                              : v <= 0.15 ? '#39FF14'
+                              : v <= 0.22 ? '#FFD700'
+                              : '#FF4466';
+                          return (
+                            <tr key={row.date} style={{ borderBottom: '1px solid #0e1110' }}>
+                              <td style={{ padding: '5px 10px', color: 'rgba(255,255,255,0.55)', fontWeight: 600, whiteSpace: 'nowrap' }}>{row.date}</td>
+                              <td style={{ padding: '5px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.3)', fontSize: 9 }}>{row.games}</td>
+                              {(['avgFgMl', 'avgF5Ml', 'avgNrfi', 'avgFgTotal', 'avgF5Total'] as const).map(field => {
+                                const v = row[field];
+                                const nullCount = row[field.replace('avg', 'null') as keyof typeof row] as number;
+                                return (
+                                  <td key={field} style={{
+                                    padding: '5px 10px', textAlign: 'right',
+                                    background: cellBg(v),
+                                    color: cellColor(v),
+                                    fontWeight: 700,
+                                    position: 'relative',
+                                  }}>
+                                    {v != null ? v.toFixed(4) : <span style={{ color: 'rgba(255,255,255,0.1)' }}>—</span>}
+                                    {nullCount > 0 && (
+                                      <span style={{ fontSize: 7, color: 'rgba(255,180,0,0.5)', marginLeft: 3 }}>
+                                        ({nullCount}ø)
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
             </>
           )
         )}
 
-        {/* ── LAST 7 DAYS VIEW ──────────────────────────────────────────────── */}
+        {/* ── LAST 7 DAYS VIEW ────────────────────────────────────────────────────── */}
         {viewMode === 'last7' && (
           last7Loading ? (
             <div className="flex items-center justify-center py-12 gap-3">

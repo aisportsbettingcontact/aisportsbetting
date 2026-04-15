@@ -42,6 +42,7 @@ import { getDb } from "../server/db";
 import { games } from "../drizzle/schema";
 import { runMlbModelForDate } from "../server/mlbModelRunner";
 import { checkF5ShareDrift } from "../server/mlbDriftDetector";
+import { ingestMlbOutcomes } from "../server/mlbOutcomeIngestor";
 
 const TAG = "[BackfillF5WinPct]";
 const DRY_RUN = process.argv.includes("--dry-run");
@@ -286,6 +287,44 @@ try {
   const errMsg = err instanceof Error ? err.message : String(err);
   console.error(`${TAG} [ERROR] checkF5ShareDrift failed: ${errMsg}`);
   // Non-fatal: backfill succeeded, drift check failure does not block exit
+}
+
+// ─── Step 7: Force re-ingest April 14 — recompute brierF5Ml now that F5 win pct is populated ────
+// April 14 was ingested before the backfill ran, so brierF5Ml was 0.0000 (modelF5HomeWinPct was NULL).
+// Now that all 15 April 14 games have correct modelF5HomeWinPct/modelF5AwayWinPct values,
+// re-ingesting with force=true will recompute the correct Brier scores.
+console.log(`\n${TAG} [STEP 7] Force re-ingesting 2026-04-14 to recompute brierF5Ml...`);
+console.log(`${TAG} [INPUT] force=true (overwrite existing Brier scores for April 14)`);
+try {
+  const reingestSummary = await ingestMlbOutcomes('2026-04-14', true);
+  console.log(`${TAG} [OUTPUT] Re-ingest 2026-04-14: total=${reingestSummary.totalGames} written=${reingestSummary.written} errors=${reingestSummary.errors}`);
+  if (reingestSummary.errors > 0) {
+    console.error(`${TAG} [ERROR] Re-ingest had ${reingestSummary.errors} error(s)`);
+  } else if (reingestSummary.written === 0) {
+    console.warn(`${TAG} [VERIFY] WARN — written=0 for 2026-04-14 re-ingest (check force flag in ingestMlbOutcomes)`);
+  } else {
+    // Spot-check: verify brierF5Ml is now non-zero for at least one game
+    const db2 = await getDb();
+    const spot = await db2
+      .select({ id: games.id, awayTeam: games.awayTeam, homeTeam: games.homeTeam, brierF5Ml: games.brierF5Ml, modelF5AwayWinPct: games.modelF5AwayWinPct })
+      .from(games)
+      .where(and(eq(games.gameDate, '2026-04-14'), eq(games.sport, 'MLB')))
+      .limit(5);
+    const nonZero = spot.filter(r => r.brierF5Ml != null && r.brierF5Ml > 0);
+    console.log(`${TAG} [VERIFY] brierF5Ml spot-check (first 5 games):`);
+    for (const r of spot) {
+      console.log(`${TAG} [STATE]  id=${r.id} ${r.awayTeam}@${r.homeTeam} | brierF5Ml=${r.brierF5Ml} modelF5Away=${r.modelF5AwayWinPct}`);
+    }
+    if (nonZero.length > 0) {
+      console.log(`${TAG} [VERIFY] PASS — ${nonZero.length}/${spot.length} sampled games have non-zero brierF5Ml`);
+    } else {
+      console.warn(`${TAG} [VERIFY] WARN — all sampled games still have brierF5Ml=0 or null (check ingestor logic)`);
+    }
+  }
+} catch (err) {
+  const errMsg = err instanceof Error ? err.message : String(err);
+  console.error(`${TAG} [ERROR] Force re-ingest 2026-04-14 failed: ${errMsg}`);
+  // Non-fatal: backfill and drift check succeeded
 }
 
 console.log(`${TAG} ══════════════════════════════════════════════════════\n`);
