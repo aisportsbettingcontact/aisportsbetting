@@ -1,5 +1,13 @@
 # AI Sports Betting Models - TODO
 
+## Session: 2026-04-16 - NHL PL Sign Fix (All Rendering Paths)
+
+- [x] Audit ALL GameCard rendering paths that display NHL book puck line label
+- [x] Move odds-authoritative correction to top of GameCard component (awayBookSpread/homeBookSpread reassigned globally)
+- [x] Remove redundant _correctedAwaySpread block from DesktopMergedPanel path
+- [x] TypeScript: 0 errors
+- [x] Tests: 487/487 passing
+
 - [x] Initialize project scaffold
 - [x] Upgrade to full-stack (web-db-user)
 - [x] Add model_files and games tables to schema
