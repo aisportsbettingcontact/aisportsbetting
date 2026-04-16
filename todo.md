@@ -2669,3 +2669,12 @@
 - [x] Backfill 14 days of MLB schedule history (4/3-4/16): 191 games upserted, 0 errors. All games from 4/11-4/15 now show correct scores and 'complete' status.
 - [x] Verify team colors fix: MLB_ABBREV_ALIASES fully populated in teamColors.ts, merged into ALL_COLORS map. getTeamColors('NYM') now correctly returns Mets blue.
 - [x] Implement OPEN line pinning in OddsHistoryPanel: separates OPEN rows from DK rows, pins first non-null OPEN row at top with amber "OPENING LINE" separator, filters null-value rows from dedup display, adds "LIVE MARKET MOVEMENT" separator between OPEN and DK sections.
+
+## Session: 2026-04-16 - MLB 10-Game Fix
+
+- [x] Fix RL sign inversion: awayModelSpread anchored to book awayRunLine (dbGameById lookup)
+- [x] Fix RL odds swap: awayRlOdds/homeRlOdds sign-corrected variables when Python inverts
+- [x] Add dbGameById map to model runner for book RL label anchoring
+- [x] Re-run model for 2026-04-16: all 10 games modeled, validation PASSED, 0 errors
+- [x] Update mlbRunLineOdds.test.ts assertions to match new book-anchored RL pattern
+- [x] 487/487 tests passing
