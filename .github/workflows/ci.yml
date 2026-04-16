@@ -56,7 +56,7 @@ jobs:
         # ERR_PNPM_BAD_PM_VERSION in pnpm/action-setup@v4.
 
       - name: "[STEP] Setup Node.js 22"
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -150,7 +150,7 @@ jobs:
         # No 'version' key — packageManager in package.json is the single source of truth.
 
       - name: "[STEP] Setup Node.js 22"
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -224,7 +224,7 @@ jobs:
         # No 'version' key — packageManager in package.json is the single source of truth.
 
       - name: "[STEP] Setup Node.js 22"
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
