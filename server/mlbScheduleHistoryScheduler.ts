@@ -181,6 +181,17 @@ async function runStartupBackfill(): Promise<void> {
   } catch (err) {
     console.error(`${TAG}[ERROR] Startup backfill failed (non-fatal):`, err);
   }
+
+  // After the 60-day backfill, immediately run a daily refresh for today + yesterday.
+  // This ensures game scores and statuses are current regardless of when the server
+  // was restarted relative to the 4-hour scheduled refresh window.
+  console.log(`${TAG}[STEP] Post-startup daily refresh — today + yesterday`);
+  try {
+    await runDailyRefresh();
+    console.log(`${TAG}[VERIFY] PASS — post-startup daily refresh complete`);
+  } catch (err) {
+    console.error(`${TAG}[ERROR] Post-startup daily refresh failed (non-fatal):`, err);
+  }
 }
 
 // ─── Scheduler ────────────────────────────────────────────────────────────────

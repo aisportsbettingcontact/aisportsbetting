@@ -2656,3 +2656,16 @@
 - [x] Fix Last 5 Games table — not updating in real time, always current
 - [x] Remove "169 consecutive duplicates hidden" from frontend UI (backend-only logging)
 - [x] Add OPEN line display to betting splits
+
+## Betting Splits — 3 Persistent Issues (2026-04-15)
+
+- [ ] Fix splits bars — use team hex colors from DB (primary color per team)
+- [ ] Fix Last 5 Games — stale data, must auto-update daily with current completed games
+- [ ] Fix OPEN line — pull from AN API 'Open' category, store as lineSource='open', display in OddsHistoryPanel
+
+## Session: 2026-04-16 - Critical Bug Fixes
+
+- [x] Fix upsertMlbScheduleHistory silent failure: onDuplicateKeyUpdate used snake_case column names (game_status, away_score) but actual MySQL columns are camelCase (gameStatus, awayScore) — MySQL error 42S22 "Unknown column 'game_status' in field list". Fixed by using sql`VALUES(${sql.raw('columnName')})` pattern.
+- [x] Backfill 14 days of MLB schedule history (4/3-4/16): 191 games upserted, 0 errors. All games from 4/11-4/15 now show correct scores and 'complete' status.
+- [x] Verify team colors fix: MLB_ABBREV_ALIASES fully populated in teamColors.ts, merged into ALL_COLORS map. getTeamColors('NYM') now correctly returns Mets blue.
+- [x] Implement OPEN line pinning in OddsHistoryPanel: separates OPEN rows from DK rows, pins first non-null OPEN row at top with amber "OPENING LINE" separator, filters null-value rows from dedup display, adds "LIVE MARKET MOVEMENT" separator between OPEN and DK sections.

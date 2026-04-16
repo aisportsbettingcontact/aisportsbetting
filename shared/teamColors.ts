@@ -121,15 +121,99 @@ const MLB_COLORS: Record<string, TeamColorEntry> = {
   athletics:              { primaryColor: '#003831', secondaryColor: '#EFB21E', tertiaryColor: '#FFFFFF' },
 };
 
+// ── MLB short-slug aliases (vsinSlug / dbSlug format, e.g. "mets", "dodgers") ──
+// These are the values stored in game.awayTeam / game.homeTeam in the DB
+const MLB_SHORT_SLUG_ALIASES: Record<string, TeamColorEntry> = {
+  diamondbacks:    MLB_COLORS.arizona_diamondbacks,
+  braves:          MLB_COLORS.atlanta_braves,
+  orioles:         MLB_COLORS.baltimore_orioles,
+  'red-sox':       MLB_COLORS.boston_red_sox,
+  'red_sox':       MLB_COLORS.boston_red_sox,
+  redsox:          MLB_COLORS.boston_red_sox,
+  cubs:            MLB_COLORS.chicago_cubs,
+  'white-sox':     MLB_COLORS.chicago_white_sox,
+  'white_sox':     MLB_COLORS.chicago_white_sox,
+  whitesox:        MLB_COLORS.chicago_white_sox,
+  reds:            MLB_COLORS.cincinnati_reds,
+  guardians:       MLB_COLORS.cleveland_guardians,
+  rockies:         MLB_COLORS.colorado_rockies,
+  tigers:          MLB_COLORS.detroit_tigers,
+  astros:          MLB_COLORS.houston_astros,
+  royals:          MLB_COLORS.kansas_city_royals,
+  angels:          MLB_COLORS.los_angeles_angels,
+  dodgers:         MLB_COLORS.los_angeles_dodgers,
+  marlins:         MLB_COLORS.miami_marlins,
+  brewers:         MLB_COLORS.milwaukee_brewers,
+  twins:           MLB_COLORS.minnesota_twins,
+  mets:            MLB_COLORS.new_york_mets,
+  yankees:         MLB_COLORS.new_york_yankees,
+  'a\'s':          MLB_COLORS.oakland_athletics,
+  athletics:       MLB_COLORS.athletics,
+  phillies:        MLB_COLORS.philadelphia_phillies,
+  pirates:         MLB_COLORS.pittsburgh_pirates,
+  padres:          MLB_COLORS.san_diego_padres,
+  giants:          MLB_COLORS.san_francisco_giants,
+  mariners:        MLB_COLORS.seattle_mariners,
+  cardinals:       MLB_COLORS.st_louis_cardinals,
+  rays:            MLB_COLORS.tampa_bay_rays,
+  rangers:         MLB_COLORS.texas_rangers,
+  'blue-jays':     MLB_COLORS.toronto_blue_jays,
+  'blue_jays':     MLB_COLORS.toronto_blue_jays,
+  bluejays:        MLB_COLORS.toronto_blue_jays,
+  nationals:       MLB_COLORS.washington_nationals,
+};
+
+// ── MLB abbreviation aliases (e.g. "NYM", "LAD", "TB") ──
+// These are the values stored in game.awayTeam / game.homeTeam in the DB
+const MLB_ABBREV_ALIASES: Record<string, TeamColorEntry> = {
+  ARI:  MLB_COLORS.arizona_diamondbacks,
+  ATL:  MLB_COLORS.atlanta_braves,
+  BAL:  MLB_COLORS.baltimore_orioles,
+  BOS:  MLB_COLORS.boston_red_sox,
+  CHC:  MLB_COLORS.chicago_cubs,
+  CWS:  MLB_COLORS.chicago_white_sox,
+  CIN:  MLB_COLORS.cincinnati_reds,
+  CLE:  MLB_COLORS.cleveland_guardians,
+  COL:  MLB_COLORS.colorado_rockies,
+  DET:  MLB_COLORS.detroit_tigers,
+  HOU:  MLB_COLORS.houston_astros,
+  KC:   MLB_COLORS.kansas_city_royals,
+  LAA:  MLB_COLORS.los_angeles_angels,
+  LAD:  MLB_COLORS.los_angeles_dodgers,
+  MIA:  MLB_COLORS.miami_marlins,
+  MIL:  MLB_COLORS.milwaukee_brewers,
+  MIN:  MLB_COLORS.minnesota_twins,
+  NYM:  MLB_COLORS.new_york_mets,
+  NYY:  MLB_COLORS.new_york_yankees,
+  ATH:  MLB_COLORS.athletics,
+  OAK:  MLB_COLORS.oakland_athletics,
+  PHI:  MLB_COLORS.philadelphia_phillies,
+  PIT:  MLB_COLORS.pittsburgh_pirates,
+  SD:   MLB_COLORS.san_diego_padres,
+  SF:   MLB_COLORS.san_francisco_giants,
+  SEA:  MLB_COLORS.seattle_mariners,
+  STL:  MLB_COLORS.st_louis_cardinals,
+  TB:   MLB_COLORS.tampa_bay_rays,
+  TEX:  MLB_COLORS.texas_rangers,
+  TOR:  MLB_COLORS.toronto_blue_jays,
+  WSH:  MLB_COLORS.washington_nationals,
+};
+
 // ── Unified lookup map ────────────────────────────────────────────────────────
 const ALL_COLORS = new Map<string, TeamColorEntry>([
   ...Object.entries(NHL_COLORS),
   ...Object.entries(NBA_COLORS),
   ...Object.entries(MLB_COLORS),
+  ...Object.entries(MLB_SHORT_SLUG_ALIASES),
+  ...Object.entries(MLB_ABBREV_ALIASES),
 ]);
 
 /**
- * Look up team colors by DB slug and sport.
+ * Look up team colors by DB slug, short slug, or abbreviation.
+ * Supports all three formats used across the codebase:
+ *   - Full slug:  "new_york_mets" (MLB_COLORS key format)
+ *   - Short slug: "mets" (vsinSlug / dbSlug stored in mlb_teams.dbSlug)
+ *   - Abbreviation: "NYM" (stored in games.awayTeam / games.homeTeam)
  * Returns null if the team is not found.
  */
 export function getTeamColors(dbSlug: string, _sport?: string): TeamColorEntry | null {
