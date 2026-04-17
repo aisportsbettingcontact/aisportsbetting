@@ -744,29 +744,22 @@ let syncInterval: ReturnType<typeof setInterval> | null = null;
 export function startNhlModelSyncScheduler(): void {
   if (syncInterval) return;
 
-  const THIRTY_MIN_MS = 30 * 60 * 1000;
+  const FIVE_MIN_MS = 5 * 60 * 1000; // 24/7 — no time gate
 
-  if (isWithinSyncWindow()) {
-    console.log("[NhlModelSync] Within sync window — starting initial sync...");
-    syncNhlModelForToday("auto").catch(err =>
-      console.error("[NhlModelSync] Initial sync error:", err)
-    );
-  } else {
-    console.log("[NhlModelSync] Outside sync window (9AM–9PM PST), skipping initial sync.");
-  }
+  // Run immediately on startup
+  console.log("[NhlModelSync] Starting initial sync (24/7, no time gate)...");
+  syncNhlModelForToday("auto").catch(err =>
+    console.error("[NhlModelSync] Initial sync error:", err)
+  );
 
   syncInterval = setInterval(() => {
-    if (isWithinSyncWindow()) {
-      console.log("[NhlModelSync] Scheduled sync triggered...");
-      syncNhlModelForToday("auto").catch(err =>
-        console.error("[NhlModelSync] Scheduled sync error:", err)
-      );
-    } else {
-      console.log("[NhlModelSync] Outside sync window (9AM–9PM PST), skipping scheduled sync.");
-    }
-  }, THIRTY_MIN_MS);
+    console.log("[NhlModelSync] Scheduled 5-min sync triggered...");
+    syncNhlModelForToday("auto").catch(err =>
+      console.error("[NhlModelSync] Scheduled sync error:", err)
+    );
+  }, FIVE_MIN_MS);
 
-  console.log("[NhlModelSync] Scheduler started (every 30 min, 9AM–9PM PST).");
+  console.log("[NhlModelSync] Scheduler started (every 5 min, 24/7).");
 }
 
 export function stopNhlModelSyncScheduler(): void {

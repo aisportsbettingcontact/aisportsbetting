@@ -209,6 +209,13 @@ export async function checkGoalieChanges(source: "auto" | "manual" = "auto"): Pr
   }
 
   // Step 3: Compare scraped goalies vs DB
+  // ── Structured per-game Rotowire goalie log ─────────────────────────────
+  // Emits one line per game: matchup, away/home goalie name + confirmed status
+  for (const rg of rotoGames) {
+    const awayG = rg.awayGoalie ? `${rg.awayGoalie.name}${rg.awayGoalie.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}` : 'TBD';
+    const homeG = rg.homeGoalie ? `${rg.homeGoalie.name}${rg.homeGoalie.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}` : 'TBD';
+    console.log(`[GoalieWatcher]${tag}[Roto][TODAY] ${rg.awayTeam}@${rg.homeTeam} | away_g=${awayG} home_g=${homeG}`);
+  }
   const changedGameIds: number[] = [];
   const newlyPopulatedGameIds: number[] = []; // games where both goalies just became available
 
@@ -435,6 +442,12 @@ export async function seedNhlTomorrowGoalies(source: "auto" | "manual" = "auto")
   }
 
   // Step 3: Seed / update goalies for each tomorrow game
+  // ── Structured per-game Rotowire goalie log (TOMORROW) ─────────────────────────────
+  for (const rg of rotoGames) {
+    const awayG = rg.awayGoalie ? `${rg.awayGoalie.name}${rg.awayGoalie.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}` : 'TBD';
+    const homeG = rg.homeGoalie ? `${rg.homeGoalie.name}${rg.homeGoalie.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}` : 'TBD';
+    console.log(`[GoalieTomorrowSeeder]${tag}[Roto][TOMORROW] ${rg.awayTeam}@${rg.homeTeam} | away_g=${awayG} home_g=${homeG}`);
+  }
   const gameIdsToModel: number[] = [];
 
   for (const rotoGame of rotoGames) {
@@ -543,48 +556,36 @@ export function startNhlGoalieWatcher(): void {
     return;
   }
 
-  console.log("[GoalieWatcher] Starting 10-minute goalie change watcher (today) + 30-minute tomorrow seeder");
+  console.log("[GoalieWatcher] Starting 5-minute goalie change watcher (today + tomorrow) — 24/7, no time gates");
 
-  // ── TODAY WATCHER: runs every 10 min, 9AM–9PM PST ─────────────────────────
-  if (isWithinWatchWindow()) {
-    checkGoalieChanges("auto").catch(err => {
-      console.error("[GoalieWatcher] Initial today-run error:", err);
-    });
-  }
+  // ── TODAY WATCHER: runs every 5 min, 24/7 ────────────────────────────────
+  checkGoalieChanges("auto").catch(err => {
+    console.error("[GoalieWatcher] Initial today-run error:", err);
+  });
 
   watcherIntervalId = setInterval(() => {
-    if (!isWithinWatchWindow()) {
-      console.log("[GoalieWatcher] Outside today-watch window (9AM-9PM PST) - skipping");
-      return;
-    }
     checkGoalieChanges("auto").catch(err => {
       console.error("[GoalieWatcher] Interval run error:", err);
     });
-  }, 10 * 60 * 1000);
+  }, 5 * 60 * 1000);
 
-  // ── TOMORROW SEEDER: runs every 30 min, 12PM–11PM PST ─────────────────────
+  // ── TOMORROW SEEDER: runs every 5 min, 24/7 ────────────────────────────────
   // Seeds tomorrow's games with initial goalie data and runs the model day-ahead.
-  // Window: noon to 11PM PST — covers when RotoWire first posts next-day lineups
-  // through the end of the evening when lineups are fully confirmed.
+  // 24/7 — RotoWire posts next-day lineups at any time; we catch them immediately.
   const runTomorrowSeeder = () => {
-    const h = getPSTHour();
-    if (h < 12 || h >= 23) {
-      // Outside seeder window — silent skip
-      return;
-    }
-    console.log(`[GoalieTomorrowSeeder] [AUTO] Scheduled 30-min run at PST hour ${h}`);
+    console.log(`[GoalieTomorrowSeeder] [AUTO] Scheduled 5-min run`);
     seedNhlTomorrowGoalies("auto").catch(err => {
       console.error("[GoalieTomorrowSeeder] Scheduled run error:", err);
     });
   };
 
-  // Run immediately on startup if within window
+  // Run immediately on startup
   runTomorrowSeeder();
 
-  tomorrowSeederIntervalId = setInterval(runTomorrowSeeder, 30 * 60 * 1000);
+  tomorrowSeederIntervalId = setInterval(runTomorrowSeeder, 5 * 60 * 1000);
 
-  console.log("[GoalieWatcher] TODAY watcher: every 10 min (9AM-9PM PST)");
-  console.log("[GoalieTomorrowSeeder] TOMORROW seeder: every 30 min (12PM-11PM PST)");
+  console.log("[GoalieWatcher] TODAY watcher: every 5 min (24/7)");
+  console.log("[GoalieTomorrowSeeder] TOMORROW seeder: every 5 min (24/7)");
 }
 
 // Dead export — no active callers in pipeline

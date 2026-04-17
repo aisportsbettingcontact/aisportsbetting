@@ -1166,9 +1166,9 @@ export interface MlbModelRunSummary {
   validation: ValidationResult;
 }
 
-export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds?: number[] }): Promise<MlbModelRunSummary> {
+export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds?: number[]; forceRerun?: boolean }): Promise<MlbModelRunSummary> {
   const TAG = `[MLBModelRunner][${dateStr}]`;
-  console.log(`${TAG} ► START${opts?.targetGameIds ? ` (targetGameIds=[${opts.targetGameIds.join(',')}])` : ''}`);
+  console.log(`${TAG} ► START${opts?.targetGameIds ? ` (targetGameIds=[${opts.targetGameIds.join(',')}])` : ''}${opts?.forceRerun ? ' (forceRerun=true)' : ''}`);
 
   const db = await getDb();
 
@@ -1194,6 +1194,7 @@ export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds
     homeStartingPitcher: games.homeStartingPitcher,
     startTimeEst:    games.startTimeEst,
     mlbGamePk:       games.mlbGamePk,
+    modelRunAt:      games.modelRunAt,
   }).from(games)
     .where(and(
       eq(games.gameDate, dateStr),
@@ -1206,6 +1207,11 @@ export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds
   const modelable = dbGames.filter((g: typeof dbGames[0]) => {
     // If targetGameIds specified, only run those specific games
     if (opts?.targetGameIds && !opts.targetGameIds.includes(g.id)) return false;
+    // Skip already-modeled games unless forceRerun is explicitly set
+    // Prevents the 5-min fallback cycle from re-running games already done
+    if (!opts?.forceRerun && g.modelRunAt !== null && g.modelRunAt !== undefined) {
+      return false;
+    }
     // CRITICAL: require confirmed DK run line — never fall back to ML-derived RL direction
     // Missing awayRunLine causes RL inversion when ML is even-money (e.g. +100 treated as dog)
     const hasLines = g.bookTotal && g.awayML && g.homeML && g.awayRunLine;

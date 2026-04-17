@@ -22,7 +22,7 @@ import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NH
 import { MLB_BY_ABBREV, MLB_BY_VSIN_SLUG, MLB_VALID_ABBREVS, getMlbTeamByAnSlug, getMlbTeamByVsinSlug, VSIN_MLB_HREF_ALIASES } from "../shared/mlbTeams";
 import type { InsertGame } from "../drizzle/schema";
 
-const INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — all sports refresh cadence
+const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — all sports refresh cadence (24/7, no time gates)
 
 // Rolling window: today through N days ahead
 const RANGE_DAYS_AHEAD = 6; // fetch today + 6 more days = 7-day window
@@ -1214,7 +1214,7 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
 }
 
 const SCORE_INTERVAL_MS = 15 * 1000; // 15 seconds
-const MLB_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — MLB scores + splits + AN odds
+const MLB_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — MLB scores + splits + AN odds (24/7, no time gates)
 
 /**
  * Refreshes NBA live/final scores and game status from the NBA live scoreboard API.
@@ -1512,34 +1512,26 @@ export async function runVsinRefreshManual(
  * so the pre-game DK NJ line is permanently locked in the DB once the game starts.
  */
 export function startVsinAutoRefresh() {
-  if (isWithinActiveHours()) {
-    void runVsinRefresh();
-  } else {
-    console.log("[VSiNAutoRefresh] Outside active hours (14:01\u201304:59 UTC / 6:01 AM\u201311:59 PM EST) \u2014 waiting for next tick.");
-  }
+  // 24/7 — no active hours gate
+  void runVsinRefresh();
 
   // Fire score refresh immediately on startup (don't wait for first 15-sec tick)
   void refreshAllScoresNow();
 
+  // 24/7 — runs every 5 minutes with no time gate
   setInterval(() => {
-    if (isWithinActiveHours()) {
-      void runVsinRefresh();
-       } else {
-      console.log("[VSiNAutoRefresh] Tick skipped — outside active hours (14:01–04:59 UTC / 6:01 AM–11:59 PM EST).");
-    }
+    void runVsinRefresh();
   }, INTERVAL_MS);
 
-  // 15-second score refresh (runs independently of the hourly full refresh)
-  // NBA, NHL only — MLB has its own 10-minute cycle below
+  // 15-second score refresh (runs independently of the main refresh) — 24/7, no gate
+  // NBA, NHL only — MLB has its own 5-minute cycle below
   setInterval(() => {
-    if (isWithinActiveHours()) {
-      void refreshNbaScores();
-      void refreshNhlScores();
-    }
+    void refreshNbaScores();
+    void refreshNhlScores();
   }, SCORE_INTERVAL_MS);
 
-  // ─── MLB 10-minute refresh cycle ──────────────────────────────────────────────
-  // Runs every 10 minutes during active hours:
+  // ─── MLB 5-minute refresh cycle ──────────────────────────────────────────────
+  // Runs every 5 minutes 24/7 (no time gates):
   //   1. MLB Stats API live scores (runs, hits, errors, inning, status, pitchers)
   //   2. VSiN MLB betting splits (run line, total, ML percentages)
   //   3. Action Network DK NJ odds (run line, total, ML lines)
@@ -1547,10 +1539,7 @@ export function startVsinAutoRefresh() {
   // Fires immediately on startup so MLB data is never stale after a restart.
   // Non-fatal: each step is isolated; errors in one do not block the others.
   const runMlbCycle = async () => {
-    if (!isWithinActiveHours()) {
-      console.log("[MLBCycle] Tick skipped \u2014 outside active hours (14:01\u201304:59 UTC / 6:01 AM\u201311:59 PM EST).");
-      return;
-    }
+    // 24/7 — no active hours gate
     const todayStr = datePst();
     console.log(`[MLBCycle] ► START — ${new Date().toISOString()} | date: ${todayStr}`);
 
@@ -1623,6 +1612,27 @@ export function startVsinAutoRefresh() {
         `(today=${lineupResult.today.cardsParsed} tomorrow=${lineupResult.tomorrow.cardsParsed}) ` +
         `parseErrors=${totalErrors}`
       );
+      // ── Per-game pitcher/lineup detail log (structured Rotowire watcher output) ────────────────────────────────────
+      // Emits one line per game with: matchup, pitcher names+hand, lineup status
+      const logRotowireGames = (gamesArr: import('./rotowireLineupScraper').RotoLineupGame[], scope: string) => {
+        for (const g of gamesArr) {
+          const awayP = g.awayPitcher
+            ? `${g.awayPitcher.name} (${g.awayPitcher.hand})${g.awayPitcher.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}`
+            : 'TBD';
+          const homeP = g.homePitcher
+            ? `${g.homePitcher.name} (${g.homePitcher.hand})${g.homePitcher.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}`
+            : 'TBD';
+          const awayLO = g.awayLineupConfirmed ? 'CONFIRMED' : (g.awayLineup.length > 0 ? 'EXPECTED' : 'NONE');
+          const homeLO = g.homeLineupConfirmed ? 'CONFIRMED' : (g.homeLineup.length > 0 ? 'EXPECTED' : 'NONE');
+          console.log(
+            `[MLBCycle][Roto][${scope}] ${g.awayAbbrev}@${g.homeAbbrev} | ` +
+            `away_p=${awayP} home_p=${homeP} | ` +
+            `away_lo=${awayLO} home_lo=${homeLO}`
+          );
+        }
+      };
+      logRotowireGames(lineupResult.today.games, 'TODAY');
+      logRotowireGames(lineupResult.tomorrow.games, 'TOMORROW');
       // Upsert today games (separate from tomorrow for watcher scoping)
       // Pass targetDate=todayStr to restrict DB lookup to today's games only,
       // preventing tomorrow's scrape from overwriting today's lineup records

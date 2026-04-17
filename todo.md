@@ -2722,3 +2722,23 @@
 - [x] Fix: GameCard odds-authoritative correction for NHL book spread display (_correctedAwaySpread/_correctedHomeSpread)
 - [x] DB audit: modelAwayPuckLine signs are 100% correct for all 6 April 16 NHL games
 - [x] 487/487 tests passing, 0 TypeScript errors
+
+## Session: 2026-04-17 - Rotowire Watcher Pipeline Rebuild
+
+- [ ] Audit: find all Rotowire log files across server and DB
+- [ ] Diagnose why April 18 NHL games are not modeled
+- [ ] Audit MLB/NHL live score APIs for in-progress detection
+- [ ] Remove ALL time gates from vsinAutoRefresh (MLBCycle, VSiN splits, AN API odds)
+- [ ] Remove ALL time gates from nhlGoalieWatcher (today + tomorrow seeder)
+- [ ] Remove ALL time gates from mlbLineupsWatcher
+- [ ] Set all watcher intervals to 5 minutes
+- [ ] Model on EXPECTED lineups (not just confirmed) — run model as soon as any lineup is populated
+- [ ] Re-model on any lineup/pitcher/goalie change (late scratches)
+- [ ] Add modelRunAt IS NULL guard to prevent re-running already-modeled confirmed games
+- [ ] Watch both today AND tomorrow pages for MLB and NHL every 5 min
+- [ ] Stop watching/modeling once game is live or final (use API game status)
+- [ ] Integrate MLB Stats API for live game status detection
+- [ ] Integrate NHL API for live game status detection
+- [ ] Add structured per-cycle log file for Rotowire watcher (rotowire-watcher.log)
+- [ ] Validate April 17 today + April 18 tomorrow pipeline end-to-end
+- [ ] Save checkpoint
