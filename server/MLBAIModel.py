@@ -1708,9 +1708,9 @@ def get_environment_features(home_team_db: str, game_month: int,
 # ─────────────────────────────────────────────────────────────────────────────
 def team_stats_to_pitcher_features(stats: dict) -> dict:
     era  = float(stats.get('era', 4.50))
-    k9   = float(stats.get('k9', 8.5))
-    bb9  = float(stats.get('bb9', 3.2))
-    whip = float(stats.get('whip', 1.30))
+    k9   = float(stats.get('k9') if stats.get('k9') is not None else 8.5)
+    bb9  = float(stats.get('bb9') if stats.get('bb9') is not None else 3.2)
+    whip = float(stats.get('whip') if stats.get('whip') is not None else 1.30)
     ip_per_game = float(stats.get('ip_per_game', STARTER_IP_MEAN))
     pa_per_9 = 38.0
     k_pct    = k9  / pa_per_9
@@ -1805,12 +1805,12 @@ def pitcher_stats_to_features(stats: dict, team_era: float = 4.50) -> dict:
       - FIP-minus / ERA-minus used for park-neutral quality adjustment
     """
     # Core rate stats (already blended 70/30 season/rolling-5 in TS layer)
-    era  = float(stats.get('era', team_era))
+    era  = float(stats.get('era') if stats.get('era') is not None else team_era)
     k9   = float(stats.get('k9', 8.5))
     bb9  = float(stats.get('bb9', 3.2))
     whip = float(stats.get('whip', 1.30))
-    ip   = float(stats.get('ip', 150.0))
-    gp   = max(1, int(stats.get('gp', 28)))
+    ip   = float(stats.get('ip') if stats.get('ip') is not None else 150.0)
+    gp   = max(1, int(stats.get('gp') if stats.get('gp') is not None else 28))
     ip_per_game = max(1.0, ip / gp)
 
     # Real xFIP from DB (park-neutral, HR-independent quality signal)
@@ -1860,8 +1860,8 @@ def pitcher_stats_to_features(stats: dict, team_era: float = 4.50) -> dict:
     whiff_pct = float(np.clip(k_pct * 0.9 * xfip_quality, 0.12, 0.45))
 
     # Rolling-5 diagnostic fields (already blended into era/k9/bb9/whip above)
-    rolling_starts = int(stats.get('rolling_starts', 0))
-    rolling_era    = float(stats.get('rolling_era', era))
+    rolling_starts = int(stats.get('rolling_starts') or 0)
+    rolling_era    = float(stats.get('rolling_era') if stats.get('rolling_era') is not None else era)
 
     return {
         'k_pct':         float(np.clip(k_pct, 0.10, 0.45)),
