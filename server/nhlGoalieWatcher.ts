@@ -526,8 +526,28 @@ export async function seedNhlTomorrowGoalies(source: "auto" | "manual" = "auto")
   }
 
   // Step 4: Run model for tomorrow's games that now have both goalies
-  if (gameIdsToModel.length > 0) {
-    console.log(`\n[GoalieTomorrowSeeder]${tag} Triggering model for ${gameIdsToModel.length} tomorrow game(s)...`);
+  // ── Fallback pass: catch games already populated but never modeled ──────────
+  // If goalies were seeded in a prior cycle (no change this cycle), gameIdsToModel
+  // will be empty even though modelRunAt IS NULL. Query DB directly to catch them.
+  const alreadyPopulatedUnmodeled = tomorrowGames.filter(
+    (g: typeof tomorrowGames[0]) => !!g.awayGoalie && !!g.homeGoalie && !g.modelRunAt
+  );
+  const alreadyPopulatedIds = alreadyPopulatedUnmodeled
+    .map((g: typeof tomorrowGames[0]) => g.id)
+    .filter((id: number) => !gameIdsToModel.includes(id));
+  if (alreadyPopulatedIds.length > 0) {
+    console.log(
+      `[GoalieTomorrowSeeder]${tag} Fallback: ${alreadyPopulatedIds.length} tomorrow game(s) have both goalies but modelRunAt=null — queuing model run`
+    );
+    for (const g of alreadyPopulatedUnmodeled) {
+      if (!gameIdsToModel.includes(g.id)) {
+        console.log(`[GoalieTomorrowSeeder]${tag}   → ${g.awayTeam} @ ${g.homeTeam} | away=${g.awayGoalie} home=${g.homeGoalie}`);
+      }
+    }
+  }
+  const allGameIdsToModel = Array.from(new Set([...gameIdsToModel, ...alreadyPopulatedIds]));
+  if (allGameIdsToModel.length > 0) {
+    console.log(`\n[GoalieTomorrowSeeder]${tag} Triggering model for ${allGameIdsToModel.length} tomorrow game(s) (${gameIdsToModel.length} changed + ${alreadyPopulatedIds.length} fallback)...`);
     try {
       const syncResult = await syncNhlModelForToday("auto", false, false, tomorrowDate);
       result.modelRerun = true;
@@ -538,7 +558,7 @@ export async function seedNhlTomorrowGoalies(source: "auto" | "manual" = "auto")
       result.errors.push(msg);
     }
   } else {
-    console.log(`[GoalieTomorrowSeeder]${tag} No new goalie data — model not triggered`);
+    console.log(`[GoalieTomorrowSeeder]${tag} No games to model — all tomorrow games already modeled or missing goalies`);
   }
 
   console.log(`[GoalieTomorrowSeeder]${tag} DONE - changes=${result.changes.length} modelRerun=${result.modelRerun} errors=${result.errors.length}`);
