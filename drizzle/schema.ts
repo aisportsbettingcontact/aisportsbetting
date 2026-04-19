@@ -1145,6 +1145,14 @@ export const mlbTeamBattingSplits = mysqlTable("mlb_team_batting_splits", {
   k9: double("k9"),
   /** Derived: wOBA approximation = (0.69*BB + 0.888*1B + 1.271*2B + 1.616*3B + 2.101*HR) / (AB+BB) */
   woba: double("woba"),
+  /** Season runs per game for this team (hand-agnostic, same value for L and R rows).
+   *  Computed from MLB Stats API team season stats: R / G.
+   *  Replaces the frozen TEAM_STATS_2025.rpg constant. */
+  rpg: double("rpg"),
+  /** Average innings pitched per game by the starting rotation (hand-agnostic).
+   *  Computed from MLB Stats API team pitching stats: IP / G.
+   *  Replaces the frozen TEAM_STATS_2025.ip_per_game constant. */
+  ipPerGame: double("ipPerGame"),
   /** UTC timestamp (ms) when stats were last fetched */
   lastFetchedAt: bigint("lastFetchedAt", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

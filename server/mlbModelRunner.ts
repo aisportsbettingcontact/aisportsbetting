@@ -639,6 +639,7 @@ async function batchFetchPitcherStats(
   for (const r of rolling5Rows) rolling5Map.set(r.mlbamId, r);
 
   // ── DB round-trip 3: fetch all team batting splits (vs LHP + vs RHP) ───────
+  // Also fetches rpg and ipPerGame (live 2026 season values, backfilled from MLB Stats API)
   const battingSplitRows = await dbInstance
     .select({
       teamAbbrev: mlbTeamBattingSplits.teamAbbrev,
@@ -651,11 +652,16 @@ async function batchFetchPitcherStats(
       hr9:        mlbTeamBattingSplits.hr9,
       bb9:        mlbTeamBattingSplits.bb9,
       k9:         mlbTeamBattingSplits.k9,
+      rpg:        mlbTeamBattingSplits.rpg,
+      ipPerGame:  mlbTeamBattingSplits.ipPerGame,
     })
     .from(mlbTeamBattingSplits);
 
   // Build batting splits lookup: teamAbbrev → { L: splits, R: splits }
   const battingSplitsLookup = new Map<string, { L: Record<string, number>; R: Record<string, number> }>();
+  // Build rpg/ipPerGame lookup: teamAbbrev → { rpg, ipPerGame }
+  // Values are hand-agnostic (same for L and R rows); first row per team wins.
+  const teamRpgIpgLookup = new Map<string, { rpg: number; ipPerGame: number }>();
   for (const r of battingSplitRows) {
     const team = r.teamAbbrev.toUpperCase();
     if (!battingSplitsLookup.has(team)) battingSplitsLookup.set(team, { L: {}, R: {} });
@@ -672,6 +678,13 @@ async function batchFetchPitcherStats(
     };
     if (r.hand === 'L') entry.L = splits;
     else                entry.R = splits;
+    // Populate rpg/ipPerGame lookup (first row per team wins)
+    if (!teamRpgIpgLookup.has(team)) {
+      teamRpgIpgLookup.set(team, {
+        rpg:       r.rpg       ?? 4.50,  // fallback: league avg
+        ipPerGame: r.ipPerGame ?? 5.30,  // fallback: league avg
+      });
+    }
   }
 
   console.log(`[MLBModelRunner] [BATCH] Loaded: ${allRows.length} pitcher rows, ${rolling5Rows.length} rolling-5 rows, ${battingSplitRows.length} batting split rows`);
@@ -843,16 +856,55 @@ async function batchFetchPitcherStats(
     (result as any).__nrfiStartsByKey.set(`${name}|${teamAbbrev}`, nrfiStarts);
   }
 
-  // Also expose battingSplitsLookup so Step 3 can attach to team_stats
+  // Expose battingSplitsLookup so Step 3 can attach to team_stats
   (result as any).__battingSplits = battingSplitsLookup;
+  // Expose teamRpgIpgLookup so getTeamStats can use live DB rpg/ipPerGame instead of TEAM_STATS_2025
+  (result as any).__teamRpgIpg = teamRpgIpgLookup;
 
   return result;
 }
 
-function getTeamStats(abbrev: string): Record<string, number> {
-  if (TEAM_STATS_2025[abbrev]) return TEAM_STATS_2025[abbrev];
-  console.warn(`[MLBModelRunner] ⚠ Unknown team "${abbrev}" — using league-average stats`);
-  return { rpg: 4.50, era: 4.20, avg: 0.250, obp: 0.318, slg: 0.410, k9: 9.0, bb9: 3.1, whip: 1.26, ip_per_game: 5.3 };
+/**
+ * getTeamStats — returns base team stats for the model engine.
+ *
+ * Priority:
+ *   1. DB-driven rpg + ipPerGame from mlb_team_batting_splits (live 2026 season)
+ *      merged with TEAM_STATS_2025 avg/obp/slg/era/k9/bb9/whip as structural defaults
+ *   2. TEAM_STATS_2025 full row (frozen 2025 season — used only if team not in DB)
+ *   3. League-average defaults (unknown/expansion team)
+ *
+ * Note: avg/obp/slg/woba/k9/bb9/hr9 are overridden by hand-specific batting splits
+ * downstream in runMlbModelForDate (awayBattingSplit / homeBattingSplit merge).
+ * Only rpg and ip_per_game from this function are used in the final team_stats dict.
+ */
+function getTeamStats(
+  abbrev: string,
+  rpgIpgLookup?: Map<string, { rpg: number; ipPerGame: number }>
+): Record<string, number> {
+  const base = TEAM_STATS_2025[abbrev] ?? {
+    rpg: 4.50, era: 4.20, avg: 0.250, obp: 0.318, slg: 0.410,
+    k9: 9.0, bb9: 3.1, whip: 1.26, ip_per_game: 5.30,
+  };
+  if (!TEAM_STATS_2025[abbrev]) {
+    console.warn(`[MLBModelRunner] ⚠ Unknown team "${abbrev}" — using league-average base stats`);
+  }
+  // Override rpg and ip_per_game with live DB values if available
+  const dbRpgIpg = rpgIpgLookup?.get(abbrev.toUpperCase());
+  if (dbRpgIpg) {
+    const result = { ...base, rpg: dbRpgIpg.rpg, ip_per_game: dbRpgIpg.ipPerGame };
+    console.log(
+      `[MLBModelRunner] [TeamStats] ${abbrev}: rpg=${dbRpgIpg.rpg.toFixed(3)} (DB) ` +
+      `ip_per_game=${dbRpgIpg.ipPerGame.toFixed(3)} (DB) | ` +
+      `avg=${base.avg} obp=${base.obp} slg=${base.slg} (TEAM_STATS_2025 base)`
+    );
+    return result;
+  }
+  // Fallback: TEAM_STATS_2025 frozen values
+  console.warn(
+    `[MLBModelRunner] [TeamStats] ${abbrev}: rpg=${base.rpg} ip_per_game=${base.ip_per_game} ` +
+    `(TEAM_STATS_2025 fallback — DB row not found)`
+  );
+  return base;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1312,10 +1364,14 @@ export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds
     // Retrieve batting splits lookup from pitcherStatsMap side-channel
     const battingSplits = (pitcherStatsMap as any).__battingSplits as
       Map<string, { L: Record<string, number>; R: Record<string, number> }> | undefined;
+    // Retrieve live rpg/ipPerGame lookup from pitcherStatsMap side-channel
+    const rpgIpgLookup = (pitcherStatsMap as any).__teamRpgIpg as
+      Map<string, { rpg: number; ipPerGame: number }> | undefined;
 
     // Base team stats (season-level)
-    const awayBaseStats = getTeamStats(awayAbbrev);
-    const homeBaseStats = getTeamStats(homeAbbrev);
+    // rpg and ip_per_game are now sourced from live DB values (2026 season) via rpgIpgLookup
+    const awayBaseStats = getTeamStats(awayAbbrev, rpgIpgLookup);
+    const homeBaseStats = getTeamStats(homeAbbrev, rpgIpgLookup);
 
     // Augment team stats with hand-specific batting splits vs the opposing pitcher
     // Away team bats against HOME pitcher (homeHand)
