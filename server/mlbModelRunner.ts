@@ -22,9 +22,9 @@ import { spawn } from "child_process";
 import https from "https";
 import path from "path";
 import { fileURLToPath } from "url";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "./db";
-import { games, mlbPitcherStats, mlbPitcherRolling5, mlbTeamBattingSplits, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers } from "../drizzle/schema";
+import { games, mlbPitcherStats, mlbPitcherRolling5, mlbTeamBattingSplits, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers, mlbLineups } from "../drizzle/schema";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -1173,6 +1173,10 @@ export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds
   const db = await getDb();
 
   // ── Step 1: Fetch all MLB games for the date with book lines ────────────────
+  // P0 FIX: Left-join mlb_lineups so Rotowire pitcher names are used when
+  // games.awayStartingPitcher (VSiN/MLB Stats API) is null. Rotowire posts
+  // expected pitchers hours before VSiN, so this eliminates hasPitchers=false
+  // skips on early cycles and ensures tomorrow's games model automatically.
   const dbGames = await db.select({
     id:              games.id,
     awayTeam:        games.awayTeam,
@@ -1190,12 +1194,14 @@ export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds
     homeRunLine:     games.homeRunLine,
     awayRunLineOdds: games.awayRunLineOdds,
     homeRunLineOdds: games.homeRunLineOdds,
-    awayStartingPitcher: games.awayStartingPitcher,
-    homeStartingPitcher: games.homeStartingPitcher,
+    // COALESCE: prefer VSiN/MLB Stats API pitcher, fall back to Rotowire (mlb_lineups)
+    awayStartingPitcher: sql<string | null>`COALESCE(${games.awayStartingPitcher}, ${mlbLineups.awayPitcherName})`,
+    homeStartingPitcher: sql<string | null>`COALESCE(${games.homeStartingPitcher}, ${mlbLineups.homePitcherName})`,
     startTimeEst:    games.startTimeEst,
     mlbGamePk:       games.mlbGamePk,
     modelRunAt:      games.modelRunAt,
   }).from(games)
+    .leftJoin(mlbLineups, eq(mlbLineups.gameId, games.id))
     .where(and(
       eq(games.gameDate, dateStr),
       eq(games.sport, "MLB"),
@@ -1621,4 +1627,95 @@ export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds
     errors,
     validation,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STANDALONE MLB MODEL SYNC SCHEDULER
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * startMlbModelSyncScheduler
+ *
+ * Independent 5-minute heartbeat that calls runMlbModelForDate for both today
+ * and tomorrow. This is the catch-all safety net that guarantees the model runs
+ * even if the watcher misses a trigger (server restart, hash collision, etc.).
+ *
+ * The modelRunAt IS NULL guard inside runMlbModelForDate prevents re-running
+ * games that are already modeled, so this scheduler is fully idempotent.
+ *
+ * Runs 24/7 — no time gates. Parallel to startVsinAutoRefresh (MLBCycle Step 6)
+ * but independent of it so the model fires even if the MLBCycle stalls.
+ */
+
+const MLB_MODEL_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getMlbTodayStr(): string {
+  const now = new Date();
+  const etStr = now.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const [m, d, y] = etStr.split("/");
+  return `${y}-${m}-${d}`;
+}
+
+function getMlbTomorrowStr(): string {
+  const now = new Date();
+  // Add 1 day in ET
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const etStr = tomorrow.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const [m, d, y] = etStr.split("/");
+  return `${y}-${m}-${d}`;
+}
+
+async function runMlbModelSyncCycle(): Promise<void> {
+  const TAG = "[MlbModelSync]";
+  const todayStr    = getMlbTodayStr();
+  const tomorrowStr = getMlbTomorrowStr();
+
+  console.log(`${TAG} ► Cycle start — today=${todayStr} tomorrow=${tomorrowStr}`);
+
+  try {
+    // Today
+    const todayResult = await runMlbModelForDate(todayStr);
+    console.log(
+      `${TAG} today=${todayStr}: written=${todayResult.written} skipped=${todayResult.skipped} ` +
+      `errors=${todayResult.errors} validation=${todayResult.validation.passed ? "✅ PASSED" : "❌ FAILED (" + todayResult.validation.issues.length + " issues)"}`
+    );
+    if (!todayResult.validation.passed) {
+      console.error(`${TAG} Validation issues (today):`, todayResult.validation.issues);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${TAG} [ERROR] today=${todayStr} failed: ${msg}`);
+  }
+
+  try {
+    // Tomorrow — ensures games seeded a day ahead are modeled as soon as
+    // pitchers + odds are available, without waiting for the MLBCycle watcher.
+    const tomorrowResult = await runMlbModelForDate(tomorrowStr);
+    console.log(
+      `${TAG} tomorrow=${tomorrowStr}: written=${tomorrowResult.written} skipped=${tomorrowResult.skipped} ` +
+      `errors=${tomorrowResult.errors} validation=${tomorrowResult.validation.passed ? "✅ PASSED" : "❌ FAILED (" + tomorrowResult.validation.issues.length + " issues)"}`
+    );
+    if (!tomorrowResult.validation.passed) {
+      console.error(`${TAG} Validation issues (tomorrow):`, tomorrowResult.validation.issues);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${TAG} [ERROR] tomorrow=${tomorrowStr} failed: ${msg}`);
+  }
+
+  console.log(`${TAG} ◄ Cycle complete`);
+}
+
+export function startMlbModelSyncScheduler(): void {
+  const TAG = "[MlbModelSync]";
+  console.log(`${TAG} Starting — interval=${MLB_MODEL_SYNC_INTERVAL_MS / 1000}s (24/7, no time gates)`);
+
+  // Run immediately on boot, then every 5 minutes
+  void runMlbModelSyncCycle();
+  setInterval(() => void runMlbModelSyncCycle(), MLB_MODEL_SYNC_INTERVAL_MS);
 }

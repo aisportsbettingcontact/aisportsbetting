@@ -28,6 +28,7 @@ import { startMlbNightlyTrendsScheduler } from "../mlbNightlyTrendsRefresh";
 import { prewarmSlateCache } from "../actionNetwork";
 import { startBetAutoGradeScheduler } from "../betAutoGradeScheduler";
 import { startMlbOutcomeAndDriftScheduler } from "../mlbOutcomeAndDriftScheduler";
+import { startMlbModelSyncScheduler } from "../mlbModelRunner";
 
 // ─── Rate limit event helper ─────────────────────────────────────────────────
 // Fire-and-forget: writes a RATE_LIMIT row to security_events.
@@ -324,6 +325,10 @@ async function startServer() {
     // Nightly at 12:30 AM PST: ingest final game outcomes → compute Brier scores → check f5_share drift
     // Monthly on 1st at 3:00 AM PST: full recalibration regardless of drift
     startMlbOutcomeAndDriftScheduler();
+    // MLB model sync — standalone 5-min heartbeat for today+tomorrow, 24/7, no time gates
+    // Catch-all safety net: models any game with pitchers+lines but modelRunAt=null
+    // Idempotent: modelRunAt IS NULL guard prevents re-running already-modeled games
+    startMlbModelSyncScheduler();
     // Security digest — daily at 08:00 EST (13:00 UTC), sends 24h threat summary via notifyOwner()
     startSecurityDigestScheduler();
     // Weekly security threat trend digest — every Sunday at 08:00 EST, 7-day bar chart + top IPs

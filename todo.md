@@ -2741,4 +2741,9 @@
 - [ ] Integrate NHL API for live game status detection
 - [ ] Add structured per-cycle log file for Rotowire watcher (rotowire-watcher.log)
 - [ ] Validate April 17 today + April 18 tomorrow pipeline end-to-end
-- [ ] Save checkpoint
+- [ ] Save checkpoin## MLB Model P0 Automation Fixes (2026-04-19)
+- [x] Fix CASE C guard in mlbLineupsWatcher.ts — add modelRunAt IS NULL check before skipping unchanged lineups
+- [x] Fix CASE D guard in mlbLineupsWatcher.ts — add modelRunAt IS NULL check before skipping confirmed lineups
+- [x] Fix pitcher source in runMlbModelForDate — COALESCE mlb_lineups.awayPitcherName with games.awayStartingPitcher
+- [x] Step 6 tomorrow fallback — already present, confirmed live
+- [x] Create startMlbModelSyncScheduler — standalone 5-min scheduler for today+tomorrow, registered in index.tstMlbModelSyncScheduler — standalone 5-min scheduler for today+tomorrow, register in index.ts

@@ -383,8 +383,14 @@ export async function runLineupWatcher(
     const isNullHash = isNullLineupHash(currentHash);
 
     // ── CASE D: Both lineups confirmed → stop guard ──────────────────────────
-    if (existing?.awayLineupConfirmed && existing?.homeLineupConfirmed) {
-      console.log(`${gameTag} [STATE] CONFIRMED_STOP — both lineups confirmed, no re-model needed`);
+    // P0 FIX: Only skip if lineupModeledAt is set (model has already run for this game).
+    // If lineupModeledAt is null, the model never fired — fall through to trigger it
+    // even though both lineups are confirmed (e.g. server restart after lineups posted).
+    if (existing?.awayLineupConfirmed && existing?.homeLineupConfirmed && existing?.lineupModeledAt) {
+      console.log(
+        `${gameTag} [STATE] CONFIRMED_STOP — both lineups confirmed + model already ran ` +
+        `(lineupModeledAt=${existing.lineupModeledAt}), no re-model needed`
+      );
       result.confirmed++;
       result.details.push({
         gameId,
@@ -394,14 +400,20 @@ export async function runLineupWatcher(
         lineupHash: existing.lineupHash ?? null,
         previousHash: existing.lineupHash ?? null,
         modelTriggered: false,
-        reason: "Both batting orders confirmed — stop guard active",
+        reason: "Both batting orders confirmed + model already ran — stop guard active",
       });
       continue;
     }
 
-    // ── CASE C: Lineup unchanged ─────────────────────────────────────────────
-    if (existing?.lineupHash && existing.lineupHash === currentHash) {
-      console.log(`${gameTag} [STATE] UNCHANGED — hash=${currentHash.slice(0, 12)}... no action`);
+     // ── CASE C: Lineup unchanged ─────────────────────────────────────────
+    // P0 FIX: Only skip if lineupModeledAt is set (model has already run for this game).
+    // If lineupModeledAt is null, the model never fired — fall through to trigger it
+    // even though the hash hasn’t changed (e.g. server restart after first scrape).
+    if (existing?.lineupHash && existing.lineupHash === currentHash && existing?.lineupModeledAt) {
+      console.log(
+        `${gameTag} [STATE] UNCHANGED — hash=${currentHash.slice(0, 12)}... ` +
+        `model already ran (lineupModeledAt=${existing.lineupModeledAt}), no action`
+      );
       result.unchanged++;
       result.details.push({
         gameId,
@@ -411,7 +423,7 @@ export async function runLineupWatcher(
         lineupHash: currentHash,
         previousHash: existing.lineupHash,
         modelTriggered: false,
-        reason: "Hash unchanged",
+        reason: "Hash unchanged + model already ran",
       });
       continue;
     }
