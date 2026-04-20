@@ -29,6 +29,7 @@ import { prewarmSlateCache } from "../actionNetwork";
 import { startBetAutoGradeScheduler } from "../betAutoGradeScheduler";
 import { startMlbOutcomeAndDriftScheduler } from "../mlbOutcomeAndDriftScheduler";
 import { startMlbModelSyncScheduler } from "../mlbModelRunner";
+import { getCircuitStatus, getCacheStats } from "../dbCircuitBreaker";
 
 // ─── Rate limit event helper ─────────────────────────────────────────────────
 // Fire-and-forget: writes a RATE_LIMIT row to security_events.
@@ -223,7 +224,25 @@ async function startServer() {
   // Lightweight endpoint for load balancer health probes and uptime monitoring.
   // Returns 200 immediately without hitting the DB so it never times out.
   app.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok", ts: Date.now() });
+    const circuit = getCircuitStatus();
+    const dbOk = circuit.state === 'CLOSED';
+    res.status(dbOk ? 200 : 503).json({
+      status: dbOk ? 'ok' : 'degraded',
+      ts: Date.now(),
+      db: { state: circuit.state, consecutiveFailures: circuit.consecutiveFailures },
+    });
+  });
+
+  // ─── DB status endpoint ───────────────────────────────────────────────────
+  // Detailed circuit breaker + user cache stats for operational monitoring.
+  app.get("/api/db-status", (_req, res) => {
+    const circuit = getCircuitStatus();
+    const cache = getCacheStats();
+    res.json({
+      ts: Date.now(),
+      circuit,
+      userCache: cache,
+    });
   });
 
   // ─── Global API rate limiter ──────────────────────────────────────────────

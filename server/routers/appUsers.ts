@@ -22,6 +22,7 @@ import {
   incrementAllTokenVersions,
   insertSecurityEvent,
 } from "../db";
+import { getCachedAppUser, setCachedAppUser, invalidateCachedAppUser } from "../dbCircuitBreaker";
 
 const APP_USER_COOKIE = "app_session";
 
@@ -60,6 +61,7 @@ export async function verifyAppUserToken(token: string) {
 }
 
 // Owner-only middleware — validates tokenVersion against DB to support force-logout
+// DB-resilient: falls back to in-memory user cache when DB is unavailable
 export const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
   if (!token) {
@@ -72,21 +74,29 @@ export const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
     console.log(`[AppAuth] ownerProcedure: REJECTED — role=${payload.role} (not owner)`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Owner access required" });
   }
-  const user = await getAppUserById(payload.userId);
+  let user = await getAppUserById(payload.userId);
+  const fromCache = !user;
+  if (!user) {
+    user = getCachedAppUser(payload.userId);
+    if (user) console.log(`[AppAuth] ownerProcedure: DB unavailable — serving userId=${payload.userId} from cache`);
+  } else {
+    setCachedAppUser(user);
+  }
   if (!user || !user.hasAccess) {
     console.log(`[AppAuth] ownerProcedure: REJECTED — user not found or no access`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
-  // tokenVersion check: if tv in JWT doesn't match DB, the session was force-invalidated
-  if (payload.tv !== null && payload.tv !== user.tokenVersion) {
+  // tokenVersion check: only enforce when DB is available
+  if (!fromCache && payload.tv !== null && payload.tv !== user.tokenVersion) {
     console.log(`[AppAuth] ownerProcedure: REJECTED — tokenVersion mismatch: jwt.tv=${payload.tv} db.tv=${user.tokenVersion} userId=${user.id}`);
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Session invalidated. Please log in again." });
   }
-  console.log(`[AppAuth] ownerProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion}`);
+  console.log(`[AppAuth] ownerProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion} fromCache=${fromCache}`);
   return next({ ctx: { ...ctx, appUser: user } });
 });
 
 // Handicapper procedure — grants access to owner, admin, and handicapper roles
+// DB-resilient: falls back to in-memory user cache when DB is unavailable
 export const handicapperProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
   if (!token) {
@@ -95,12 +105,19 @@ export const handicapperProcedure = publicProcedure.use(async ({ ctx, next }) =>
   }
   const payload = await verifyAppUserToken(token);
   if (!payload) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid session" });
-  const user = await getAppUserById(payload.userId);
+  let user = await getAppUserById(payload.userId);
+  const fromCache = !user;
+  if (!user) {
+    user = getCachedAppUser(payload.userId);
+    if (user) console.log(`[AppAuth] handicapperProcedure: DB unavailable — serving userId=${payload.userId} from cache`);
+  } else {
+    setCachedAppUser(user);
+  }
   if (!user || !user.hasAccess) {
     console.log(`[AppAuth] handicapperProcedure: REJECTED — user not found or no access`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
-  if (payload.tv !== null && payload.tv !== user.tokenVersion) {
+  if (!fromCache && payload.tv !== null && payload.tv !== user.tokenVersion) {
     console.log(`[AppAuth] handicapperProcedure: REJECTED — tokenVersion mismatch: jwt.tv=${payload.tv} db.tv=${user.tokenVersion} userId=${user.id}`);
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Session invalidated. Please log in again." });
   }
@@ -109,11 +126,12 @@ export const handicapperProcedure = publicProcedure.use(async ({ ctx, next }) =>
     console.log(`[AppAuth] handicapperProcedure: REJECTED — role=${user.role} not in [owner, admin, handicapper]`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Handicapper access required" });
   }
-  console.log(`[AppAuth] handicapperProcedure: GRANTED — userId=${user.id} username=${user.username} role=${user.role}`);
+  console.log(`[AppAuth] handicapperProcedure: GRANTED — userId=${user.id} username=${user.username} role=${user.role} fromCache=${fromCache}`);
   return next({ ctx: { ...ctx, appUser: user } });
 });
 
 // Authenticated app user middleware — validates tokenVersion against DB to support force-logout
+// DB-resilient: falls back to in-memory user cache when DB is unavailable (circuit open)
 export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
   if (!token) {
@@ -122,17 +140,30 @@ export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
   }
   const payload = await verifyAppUserToken(token);
   if (!payload) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid session" });
-  const user = await getAppUserById(payload.userId);
+
+  // Try DB first; fall back to cache if DB is unavailable
+  let user = await getAppUserById(payload.userId);
+  const fromCache = !user;
   if (!user) {
-    console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${payload.userId} not found`);
+    user = getCachedAppUser(payload.userId);
+    if (user) {
+      console.log(`[AppAuth] appUserProcedure: DB unavailable — serving userId=${payload.userId} from cache`);
+    }
+  } else {
+    // DB succeeded — update cache with fresh data
+    setCachedAppUser(user);
+  }
+
+  if (!user) {
+    console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${payload.userId} not found (DB + cache miss)`);
     throw new TRPCError({ code: "UNAUTHORIZED", message: "User not found" });
   }
   if (!user.hasAccess) {
     console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${user.id} hasAccess=false`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
-  // tokenVersion check: if tv in JWT doesn't match DB, the session was force-invalidated
-  if (payload.tv !== null && payload.tv !== user.tokenVersion) {
+  // tokenVersion check: only enforce when DB is available (cache may have stale tv)
+  if (!fromCache && payload.tv !== null && payload.tv !== user.tokenVersion) {
     console.log(`[AppAuth] appUserProcedure: REJECTED — tokenVersion mismatch: jwt.tv=${payload.tv} db.tv=${user.tokenVersion} userId=${user.id}`);
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Session invalidated. Please log in again." });
   }
@@ -141,7 +172,7 @@ export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
     console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${user.id} account expired`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Account expired" });
   }
-  console.log(`[AppAuth] appUserProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion}`);
+  console.log(`[AppAuth] appUserProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion} fromCache=${fromCache}`);
   return next({ ctx: { ...ctx, appUser: user } });
 });
 
@@ -271,8 +302,14 @@ export const appUsersRouter = router({
       };
     }),
 
-  logout: publicProcedure.mutation(({ ctx }) => {
+  logout: publicProcedure.mutation(async ({ ctx }) => {
     const cookieOptions = getSessionCookieOptions(ctx.req);
+    // Invalidate user cache on logout so stale entries don't persist
+    const token = getAppCookie(ctx.req);
+    if (token) {
+      const payload = await verifyAppUserToken(token);
+      if (payload) invalidateCachedAppUser(payload.userId);
+    }
     ctx.res.clearCookie(APP_USER_COOKIE, { ...cookieOptions, maxAge: -1 });
     return { success: true };
   }),

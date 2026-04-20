@@ -1594,6 +1594,9 @@ export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds
           modelF5HomeRunLine:   '+0.5',
           modelF5AwayRlOdds:    fmtMl(r.f5_rl_away_odds),
           modelF5HomeRlOdds:    fmtMl(r.f5_rl_home_odds),
+          // F5 RL cover probabilities (no-vig, 0-100 scale) — used by backtest engine
+          modelF5HomeRLCoverPct: r.p_f5_home_rl != null ? String((r.p_f5_home_rl * 100).toFixed(2)) : null,
+          modelF5AwayRLCoverPct: r.p_f5_away_rl != null ? String((r.p_f5_away_rl * 100).toFixed(2)) : null,
           // ── NRFI / YRFI model output ─────────────────────────────────────
           modelPNrfi:           String(r.p_nrfi.toFixed(4)),
           modelNrfiOdds:        fmtMl(r.nrfi_odds),

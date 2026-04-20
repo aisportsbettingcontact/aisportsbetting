@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, mlbTeams, appUsers as appUsersTable, oddsHistory, mlbLineups, mlbStrikeoutProps, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers, mlbHrProps, securityEvents, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam, type OddsHistoryRow, type MlbLineupRow, type InsertMlbLineup, type MlbStrikeoutPropRow, type InsertMlbStrikeoutProp, type MlbParkFactorRow, type MlbBullpenStatsRow, type MlbUmpireModifierRow, type MlbHrPropRow, type InsertSecurityEvent, type SecurityEventRow } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { withCircuitBreaker } from './dbCircuitBreaker';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _db: any = null;
@@ -17,8 +18,8 @@ export async function getDb() {
         uri: process.env.DATABASE_URL,
         connectionLimit: 10,
         waitForConnections: true,
-        queueLimit: 0,
-        connectTimeout: 10000,
+        queueLimit: 50,
+        connectTimeout: 5000,   // reduced from 10s → 5s for faster failure detection
         idleTimeout: 10000,
         enableKeepAlive: true,
         keepAliveInitialDelay: 0,
@@ -308,22 +309,40 @@ export async function listAppUsers(): Promise<AppUser[]> {
 export async function getAppUserById(id: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(appUsers).where(eq(appUsers.id, id)).limit(1);
-  return rows[0] ?? null;
+  try {
+    return await withCircuitBreaker(async () => {
+      const rows = await db.select().from(appUsers).where(eq(appUsers.id, id)).limit(1);
+      return rows[0] ?? null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function getAppUserByEmail(email: string) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
-  return rows[0] ?? null;
+  try {
+    return await withCircuitBreaker(async () => {
+      const rows = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
+      return rows[0] ?? null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function getAppUserByUsername(username: string) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(appUsers).where(eq(appUsers.username, username)).limit(1);
-  return rows[0] ?? null;
+  try {
+    return await withCircuitBreaker(async () => {
+      const rows = await db.select().from(appUsers).where(eq(appUsers.username, username)).limit(1);
+      return rows[0] ?? null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function updateAppUser(id: number, data: Partial<InsertAppUser>) {

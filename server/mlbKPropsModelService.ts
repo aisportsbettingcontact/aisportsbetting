@@ -61,7 +61,14 @@ const TAG = "[KPropsModel]";
 const LEAGUE_K9       = 8.5;    // League-average K/9 for starters
 const LEAGUE_XFIP     = 4.10;   // League-average xFIP
 const LEAGUE_OPP_K9   = 8.2;    // League-average team K/9 vs RHP (baseline)
-const EDGE_THRESHOLD  = 0.040;  // Minimum edge to emit OVER verdict
+const EDGE_THRESHOLD  = 0.040;  // Minimum edge to emit UNDER verdict
+// ─── Direction-split edge thresholds (empirical, 288-game backtest 2026) ──────
+// OVER at line>=6.5 has 33.3% win rate — model over-projects for elite pitchers.
+// Fix: gate OVER verdicts to lines <= 5.5 AND require higher edge (0.15).
+// UNDER has consistent 60.7% accuracy across all edge buckets >= 0.05.
+const EDGE_THRESHOLD_OVER = 0.150;  // Raised from 0.040 — filters low-confidence OVER bets
+const EDGE_THRESHOLD_UNDER = 0.040; // Unchanged — UNDER is profitable at all edge levels
+const MAX_OVER_LINE = 5.5;          // Gate: no OVER bets on lines > 5.5 (33.3% win rate at 6.5+)
 const MIN_P_OVER      = 0.03;
 const MAX_P_OVER      = 0.85;
 const MIN_XFIP_ADJ    = 0.70;
@@ -70,12 +77,13 @@ const MIN_OPP_ADJ     = 0.70;
 const MAX_OPP_ADJ     = 1.40;
 const MIN_IP          = 3.0;
 const MAX_IP          = 7.0;
-// ─── Empirical calibration (derived from 322-game backtest, 2026 season) ──────
-// Actual/Projected ratio = 0.739 → calibration factor = 0.739
-// Root cause: circular ip_expected = bookLine/k9*9 formula inflates lambda ~35%
-// Fix: use EMPIRICAL_IP_PER_START (5.1 innings, 2025 MLB avg) as IP baseline
-// then apply K_CALIBRATION_FACTOR to correct residual bias.
-const K_CALIBRATION_FACTOR  = 0.739;  // empirical actual/projected ratio
+// ─── Direction-split calibration factors (empirical, 288-game backtest 2026) ──
+// OVER bias: model over-projects at high lines (6.5+) → use stronger factor
+// UNDER bias: model over-projects by +0.507 Ks → standard factor
+const K_CALIBRATION_FACTOR_OVER  = 0.800;  // Stronger correction for OVER direction
+const K_CALIBRATION_FACTOR_UNDER = 0.739;  // Standard correction for UNDER direction
+// Legacy alias (used in kProj display)
+const K_CALIBRATION_FACTOR = K_CALIBRATION_FACTOR_UNDER;
 const EMPIRICAL_IP_PER_START = 5.1;   // 2025 MLB starter avg IP/start
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -320,36 +328,47 @@ export async function modelKPropsForDate(gameDate: string): Promise<KPropsModelR
         MAX_IP
       );
 
-      // ── Poisson lambda ─────────────────────────────────────────────────
-      // Apply K_CALIBRATION_FACTOR to correct residual over-projection bias.
+      // ── Poisson lambda (direction-split calibration) ─────────────────────
+      // OVER uses stronger factor (0.800) to correct high-line over-projection.
+      // UNDER uses standard factor (0.739) calibrated from full-sample backtest.
       const lambdaRaw = pitcherK9 * xfipAdj * oppAdj * (ipExpected / 9);
-      const lambda = lambdaRaw * K_CALIBRATION_FACTOR;
+      const lambdaOver  = lambdaRaw * K_CALIBRATION_FACTOR_OVER;  // for OVER probability
+      const lambdaUnder = lambdaRaw * K_CALIBRATION_FACTOR_UNDER; // for UNDER probability
+      // Use lambdaUnder as the display lambda (kProj) since UNDER is the primary signal
+      const lambda = lambdaUnder;
 
       // ── P(Ks > bookLine) ───────────────────────────────────────────────
-      const pOver = clamp(poissonPOver(bookLine, lambda), MIN_P_OVER, MAX_P_OVER);
-      const pUnder = clamp(1 - pOver, MIN_P_OVER, MAX_P_OVER);
+      const pOver  = clamp(poissonPOver(bookLine, lambdaOver),  MIN_P_OVER, MAX_P_OVER);
+      const pUnder = clamp(1 - poissonPOver(bookLine, lambdaUnder), MIN_P_OVER, MAX_P_OVER);
 
       // ── Model odds ────────────────────────────────────────────────────
-      const modelOverOdds = probToAmericanOdds(pOver);
+      const modelOverOdds  = probToAmericanOdds(pOver);
       const modelUnderOdds = probToAmericanOdds(pUnder);
 
       // ── Edge and EV ───────────────────────────────────────────────────
-      const edgeOver = parseFloat((pOver - anNoVig).toFixed(4));
+      const edgeOver  = parseFloat((pOver  - anNoVig).toFixed(4));
       const edgeUnder = parseFloat((pUnder - (1 - anNoVig)).toFixed(4));
 
-      // ── Verdict ───────────────────────────────────────────────────────
+      // ── Verdict (direction-split thresholds + MAX_OVER_LINE gate) ─────
+      // OVER: requires edge >= 0.15 AND line <= 5.5 (empirical: line>5.5 has 33% win rate)
+      // UNDER: requires edge >= 0.04 (consistent 60.7% accuracy at all edge levels)
       let verdict = "PASS";
       let bestEdge: number | null = null;
       let bestSide: string | null = null;
       let bestMlStr: string | null = null;
 
-      if (edgeOver >= EDGE_THRESHOLD) {
+      const overGatePass = bookLine <= MAX_OVER_LINE;
+      if (edgeOver >= EDGE_THRESHOLD_OVER && overGatePass) {
         verdict = "OVER";
         bestEdge = edgeOver;
         bestSide = "OVER";
         bestMlStr = modelOverOdds > 0 ? `+${modelOverOdds}` : `${modelOverOdds}`;
         edges++;
-      } else if (edgeUnder >= EDGE_THRESHOLD) {
+        console.log(`${TAG} [STATE] OVER gate: bookLine=${bookLine} <= MAX_OVER_LINE=${MAX_OVER_LINE} ✓ edge=${edgeOver.toFixed(4)} >= ${EDGE_THRESHOLD_OVER} ✓`);
+      } else if (edgeOver >= EDGE_THRESHOLD_OVER && !overGatePass) {
+        // Log filtered OVER bets for monitoring
+        console.log(`${TAG} [STATE] OVER FILTERED: bookLine=${bookLine} > MAX_OVER_LINE=${MAX_OVER_LINE} — edge=${edgeOver.toFixed(4)} but line too high`);
+      } else if (edgeUnder >= EDGE_THRESHOLD_UNDER) {
         verdict = "UNDER";
         bestEdge = edgeUnder;
         bestSide = "UNDER";

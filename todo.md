@@ -2747,3 +2747,19 @@
 - [x] Fix pitcher source in runMlbModelForDate — COALESCE mlb_lineups.awayPitcherName with games.awayStartingPitcher
 - [x] Step 6 tomorrow fallback — already present, confirmed live
 - [x] Create startMlbModelSyncScheduler — standalone 5-min scheduler for today+tomorrow, registered in index.tstMlbModelSyncScheduler — standalone 5-min scheduler for today+tomorrow, register in index.ts
+
+## Session: 2026-04-20 - TiDB Outage Resilience + MLB Backtest Fixes
+
+- [x] Add DB health check endpoint (/api/health) that returns DB status without crashing
+- [x] Make OAuth callback DB-resilient: set session cookie even if upsertUser fails (DB down)
+- [x] Make authenticateRequest DB-resilient: serve JWT-only session when DB is unavailable
+- [x] Add in-memory user cache to avoid DB round-trips for recently authenticated users
+- [x] Add DB circuit breaker: after N consecutive failures, return cached/degraded responses instead of hanging
+- [x] Add connection timeout reduction (5s max) to prevent 30s hangs on every request
+- [x] Add /api/db-status endpoint to show real-time TiDB connectivity
+- [ ] Fix FG ML home confidence: edge-based (done, TSC clean)
+- [ ] Fix F5 ML home confidence: edge-based (done, TSC clean)
+- [ ] Launch auto-retry rerun watcher (done, PID 26141 running)
+- [ ] Run full re-backtest once TiDB recovers
+- [ ] Run diagnostic SQL queries and grade all markets
+- [ ] Deliver Market-by-Market A-grade diagnostic report

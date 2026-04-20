@@ -220,8 +220,8 @@ NRFI_BOTH_THRESHOLD     = 0.56   # both individual pitchers >= 0.56 → stronger
 # Used as validation gates — model should arrive at these through simulation.
 EMPIRICAL_PRIORS = {
     # Full Game ML
-    'fg_home_win_rate':   0.5338,   # FG ML home win rate (3yr empirical, was 0.5258)
-    'fg_away_win_rate':   0.4662,   # FG ML away win rate (3yr empirical, was 0.4742)
+    'fg_home_win_rate':   0.5525,   # FG ML home win rate (2026 live: 0.5525, 3yr: 0.5338)
+    'fg_away_win_rate':   0.4475,   # FG ML away win rate (2026 live: 0.4475, 3yr: 0.4662)
     # F5 ML (push=15.07% when tied after 5)
     'f5_home_win_rate':   0.4511,   # F5 ML home win rate (3yr empirical, was 0.5319)
     'f5_away_win_rate':   0.3982,   # F5 ML away win rate (3yr empirical, was 0.4681)
@@ -233,17 +233,17 @@ EMPIRICAL_PRIORS = {
     'f5_rl_away_cover':   0.5489,   # F5 RL away +0.5 cover rate (3yr empirical)
     'f5_rl_home_cover':   0.4511,   # F5 RL home -0.5 cover rate (3yr empirical)
     # NRFI
-    'nrfi_rate':          0.5150,   # NRFI rate (3yr empirical, was 0.5154)
+    'nrfi_rate':          0.5093,   # NRFI rate (2026 live: 0.5093, 3yr: 0.5150)
     # Run shares
-    'f5_share':           0.5618,   # F5 runs / FG runs (3yr empirical, was 0.5311)
+    'f5_share':           0.5491,   # F5 runs / FG runs (2026 live: 0.5491, 3yr: 0.5618)
     'i1_share':           0.1166,   # I1 runs / FG runs (3yr empirical, was 0.1093)
     # Totals
-    'fg_mean':            8.842,    # mean FG total (3yr empirical, was 8.895)
-    'f5_mean':            4.967,    # mean F5 total (3yr empirical: 8.842 * 0.5618, was 4.726)
+    'fg_mean':            8.892,    # mean FG total (2026 live: 8.892, 3yr: 8.842)
+    'f5_mean':            4.881,    # mean F5 total (2026 live: 8.892 * 0.5491 = 4.881)
     # Season-by-season drift (for temporal weighting)
     'f5_share_2024':      0.5622,   # 2024 F5 share (n=2,428)
     'f5_share_2025':      0.5624,   # 2025 F5 share (n=2,432)
-    'f5_share_2026':      0.5509,   # 2026 F5 share (n=243)
+    'f5_share_2026':      0.5491,   # 2026 F5 share (n=324, updated 2026-04-20)
     'i1_share_2024':      0.1133,   # 2024 I1 share
     'i1_share_2025':      0.1198,   # 2025 I1 share
     'i1_share_2026':      0.1181,   # 2026 I1 share
