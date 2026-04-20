@@ -42,7 +42,7 @@
 
 import { and, eq, isNotNull, sql, desc } from "drizzle-orm";
 import { getDb } from "./db";
-import { games, mlbModelLearningLog } from "../drizzle/schema";
+import { games, mlbModelLearningLog, mlbDriftState, mlbCalibrationConstants } from "../drizzle/schema";
 import { spawn } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
@@ -78,7 +78,121 @@ const CALIBRATION_JSON = "/home/ubuntu/mlb_calibration_constants.json";
 /** Path to MLBAIModel.py */
 const MODEL_PY = path.resolve(__dirname, "MLBAIModel.py");
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Drift State Persistence ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Upserts the current drift check result into mlb_drift_state.
+ * Called at every return point in checkF5ShareDrift() to ensure the state
+ * table always reflects the latest check, regardless of drift outcome.
+ */
+async function persistDriftState(
+  market: string,
+  rollingValue: number | null,
+  baselineValue: number,
+  delta: number | null,
+  direction: "HIGH" | "LOW" | "STABLE",
+  driftDetected: boolean,
+  sampleSize: number,
+  recalibrationTriggered: boolean,
+): Promise<void> {
+  try {
+    const db = await getDb();
+    const now = Date.now();
+    const existing = await db
+      .select()
+      .from(mlbDriftState)
+      .where(eq(mlbDriftState.market, market))
+      .limit(1);
+    const prev = existing[0];
+    const consecutiveDriftCount = driftDetected
+      ? (prev?.consecutiveDriftCount ?? 0) + 1
+      : 0;
+    const lastRecalibrationAt = recalibrationTriggered
+      ? now
+      : (prev?.lastRecalibrationAt ?? null);
+    if (prev) {
+      await db
+        .update(mlbDriftState)
+        .set({
+          windowSize: WINDOW_SIZE,
+          rollingValue: rollingValue !== null ? String(rollingValue) : null,
+          baselineValue: String(baselineValue),
+          delta: delta !== null ? String(delta) : null,
+          direction,
+          driftDetected: driftDetected ? 1 : 0,
+          sampleSize,
+          lastCheckedAt: now,
+          lastRecalibrationAt,
+          consecutiveDriftCount,
+        })
+        .where(eq(mlbDriftState.market, market));
+    } else {
+      await db.insert(mlbDriftState).values({
+        market,
+        windowSize: WINDOW_SIZE,
+        rollingValue: rollingValue !== null ? String(rollingValue) : null,
+        baselineValue: String(baselineValue),
+        delta: delta !== null ? String(delta) : null,
+        direction,
+        driftDetected: driftDetected ? 1 : 0,
+        sampleSize,
+        lastCheckedAt: now,
+        lastRecalibrationAt: recalibrationTriggered ? now : null,
+        consecutiveDriftCount,
+      });
+    }
+    console.log(
+      `${TAG} [STATE] persistDriftState: market=${market} rolling=${rollingValue} delta=${delta} driftDetected=${driftDetected} consecutiveDrift=${consecutiveDriftCount}`
+    );
+  } catch (err) {
+    console.error(`${TAG} [ERROR] persistDriftState failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// ─── Calibration Constants Seeder ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Seeds mlb_calibration_constants with baseline values derived from the
+ * 3-year backtest (MLBAIModel.py EMPIRICAL_PRIORS, calibrated 2026-04-14).
+ * Uses INSERT-if-not-exists semantics — safe to call on every startup.
+ */
+export async function seedCalibrationConstants(): Promise<void> {
+  const TAG_SEED = "[CalibrationSeed]";
+  const db = await getDb();
+  const now = Date.now();
+  const BASELINE_PARAMS = [
+    { paramName: "f5_share",             currentValue: "0.56180000", baselineValue: "0.56180000", sampleSize: 5103, ciLower: "0.55800000", ciUpper: "0.56560000" },
+    { paramName: "nrfi_rate",            currentValue: "0.48820000", baselineValue: "0.48820000", sampleSize: 5103, ciLower: "0.47900000", ciUpper: "0.49740000" },
+    { paramName: "k_calibration_factor", currentValue: "1.00000000", baselineValue: "1.00000000", sampleSize: 0,    ciLower: "0.95000000", ciUpper: "1.05000000" },
+    { paramName: "hr_base_rate",         currentValue: "0.09300000", baselineValue: "0.09300000", sampleSize: 5103, ciLower: "0.08800000", ciUpper: "0.09800000" },
+    { paramName: "f5_under_bias",        currentValue: "0.00000000", baselineValue: "0.00000000", sampleSize: 0,    ciLower: "-0.05000000", ciUpper: "0.05000000" },
+    { paramName: "fg_ml_home_edge",      currentValue: "0.00000000", baselineValue: "0.00000000", sampleSize: 0,    ciLower: "-0.05000000", ciUpper: "0.05000000" },
+  ];
+  let seeded = 0, skipped = 0;
+  for (const param of BASELINE_PARAMS) {
+    const existing = await db
+      .select({ id: mlbCalibrationConstants.id })
+      .from(mlbCalibrationConstants)
+      .where(eq(mlbCalibrationConstants.paramName, param.paramName))
+      .limit(1);
+    if (existing.length > 0) { skipped++; continue; }
+    await db.insert(mlbCalibrationConstants).values({
+      paramName: param.paramName,
+      currentValue: param.currentValue,
+      baselineValue: param.baselineValue,
+      sampleSize: param.sampleSize,
+      ciLower: param.ciLower,
+      ciUpper: param.ciUpper,
+      updateSource: "INIT",
+      lastUpdatedAt: now,
+    });
+    seeded++;
+    console.log(`${TAG_SEED} [OUTPUT] Seeded param=${param.paramName} value=${param.currentValue}`);
+  }
+  console.log(`${TAG_SEED} [VERIFY] Seeded ${seeded} params, skipped ${skipped} (already exist)`);
+}
+
+// ─── Types ─────────────────────────────────────────────────────────────────────────────────
 
 export interface DriftCheckResult {
   /** Number of games in the rolling window */
@@ -225,6 +339,7 @@ export async function checkF5ShareDrift(triggerRecal = true): Promise<DriftCheck
   if (rollingF5Share === null) {
     const msg = `INSUFFICIENT DATA — ${sampleSize}/${MIN_SAMPLE} games with outcomes (need ${MIN_SAMPLE} minimum)`;
     console.log(`${TAG} [OUTPUT] ${msg}`);
+    await persistDriftState("F5_SHARE", null, BASELINE_F5_SHARE, null, "STABLE", false, sampleSize, false);
     return {
       windowSize: sampleSize,
       rollingF5Share: null,
@@ -264,6 +379,7 @@ export async function checkF5ShareDrift(triggerRecal = true): Promise<DriftCheck
     const msg = `PASS — delta=${delta} ≤ threshold=${DRIFT_THRESHOLD} | rolling=${rollingF5Share} baseline=${BASELINE_F5_SHARE} (n=${sampleSize})`;
     console.log(`${TAG} [VERIFY] ${msg}`);
     console.log(`${TAG} ══════════════════════════════════════════════════════\n`);
+    await persistDriftState("F5_SHARE", rollingF5Share, BASELINE_F5_SHARE, delta, direction as "HIGH" | "LOW" | "STABLE", false, sampleSize, false);
     return {
       windowSize: sampleSize,
       rollingF5Share,
@@ -294,7 +410,7 @@ export async function checkF5ShareDrift(triggerRecal = true): Promise<DriftCheck
 
       // Still log the drift event to learning log for tracking
       await writeDriftEvent(rollingF5Share, delta, sampleSize, "cooldown_skipped");
-
+      await persistDriftState("F5_SHARE", rollingF5Share, BASELINE_F5_SHARE, delta, direction as "HIGH" | "LOW" | "STABLE", true, sampleSize, false);
       return {
         windowSize: sampleSize,
         rollingF5Share,
@@ -315,6 +431,7 @@ export async function checkF5ShareDrift(triggerRecal = true): Promise<DriftCheck
   if (!triggerRecal) {
     const msg = `DRIFT DETECTED (dry-run) — delta=${delta} rolling=${rollingF5Share} n=${sampleSize} | recalibration NOT triggered (triggerRecal=false)`;
     console.log(`${TAG} [OUTPUT] ${msg}`);
+    await persistDriftState("F5_SHARE", rollingF5Share, BASELINE_F5_SHARE, delta, direction as "HIGH" | "LOW" | "STABLE", true, sampleSize, false);
     return {
       windowSize: sampleSize,
       rollingF5Share,
@@ -338,7 +455,7 @@ export async function checkF5ShareDrift(triggerRecal = true): Promise<DriftCheck
 
   console.log(`${TAG} [OUTPUT] ${msg}`);
   console.log(`${TAG} ══════════════════════════════════════════════════════\n`);
-
+  await persistDriftState("F5_SHARE", rollingF5Share, BASELINE_F5_SHARE, delta, direction as "HIGH" | "LOW" | "STABLE", true, sampleSize, recalResult.success);
   return {
     windowSize: sampleSize,
     rollingF5Share,

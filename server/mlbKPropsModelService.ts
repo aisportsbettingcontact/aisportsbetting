@@ -70,6 +70,13 @@ const MIN_OPP_ADJ     = 0.70;
 const MAX_OPP_ADJ     = 1.40;
 const MIN_IP          = 3.0;
 const MAX_IP          = 7.0;
+// ─── Empirical calibration (derived from 322-game backtest, 2026 season) ──────
+// Actual/Projected ratio = 0.739 → calibration factor = 0.739
+// Root cause: circular ip_expected = bookLine/k9*9 formula inflates lambda ~35%
+// Fix: use EMPIRICAL_IP_PER_START (5.1 innings, 2025 MLB avg) as IP baseline
+// then apply K_CALIBRATION_FACTOR to correct residual bias.
+const K_CALIBRATION_FACTOR  = 0.739;  // empirical actual/projected ratio
+const EMPIRICAL_IP_PER_START = 5.1;   // 2025 MLB starter avg IP/start
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -303,12 +310,20 @@ export async function modelKPropsForDate(gameDate: string): Promise<KPropsModelR
       const oppAdj = clamp(oppK9 / LEAGUE_OPP_K9, MIN_OPP_ADJ, MAX_OPP_ADJ);
 
       // ── Expected innings pitched ───────────────────────────────────────
-      // IP expected = bookLine / pitcher_k9 * 9 (how many innings to throw bookLine Ks)
-      // Clamped to realistic range [3.0, 7.0]
-      const ipExpected = clamp((bookLine / pitcherK9) * 9, MIN_IP, MAX_IP);
+      // FIX: Use empirical IP baseline (5.1 innings) instead of the circular
+      // formula ip_expected = bookLine/k9*9 which reduces to lambda ≈ bookLine.
+      // The rolling-5 ip5 is used if available (more recent form), else EMPIRICAL_IP_PER_START.
+      const rolling5Ip = rolling5?.ip5 ?? null;
+      const ipExpected = clamp(
+        rolling5Ip !== null ? rolling5Ip : EMPIRICAL_IP_PER_START,
+        MIN_IP,
+        MAX_IP
+      );
 
       // ── Poisson lambda ─────────────────────────────────────────────────
-      const lambda = pitcherK9 * xfipAdj * oppAdj * (ipExpected / 9);
+      // Apply K_CALIBRATION_FACTOR to correct residual over-projection bias.
+      const lambdaRaw = pitcherK9 * xfipAdj * oppAdj * (ipExpected / 9);
+      const lambda = lambdaRaw * K_CALIBRATION_FACTOR;
 
       // ── P(Ks > bookLine) ───────────────────────────────────────────────
       const pOver = clamp(poissonPOver(bookLine, lambda), MIN_P_OVER, MAX_P_OVER);
@@ -371,7 +386,7 @@ export async function modelKPropsForDate(gameDate: string): Promise<KPropsModelR
       const edgeStr = edgeOver >= 0 ? `+${edgeOver.toFixed(4)}` : edgeOver.toFixed(4);
       const evStr = (edgeOver * 100).toFixed(1);
       console.log(
-        `${TAG} [STATE] ${row.pitcherName} (${row.side}@${oppTeam}) | ${statsTag} | xfipAdj=${xfipAdj.toFixed(3)} oppAdj=${oppAdj.toFixed(3)} ip=${ipExpected.toFixed(1)} lambda=${lambda.toFixed(3)} | pOver=${pOver.toFixed(4)} anNoVig=${anNoVig.toFixed(4)} edge=${edgeStr} ev=${evStr} | verdict=${verdict}`
+        `${TAG} [STATE] ${row.pitcherName} (${row.side}@${oppTeam}) | ${statsTag} | xfipAdj=${xfipAdj.toFixed(3)} oppAdj=${oppAdj.toFixed(3)} ip=${ipExpected.toFixed(1)} lambdaRaw=${lambdaRaw.toFixed(3)} lambda=${lambda.toFixed(3)} (calib=${K_CALIBRATION_FACTOR}) | pOver=${pOver.toFixed(4)} anNoVig=${anNoVig.toFixed(4)} edge=${edgeStr} ev=${evStr} | verdict=${verdict}`
       );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

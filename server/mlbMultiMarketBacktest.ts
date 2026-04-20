@@ -57,7 +57,9 @@ const MIN_SAMPLE_FOR_DRIFT  = 20;    // minimum samples before drift detection f
 // 3-YR Backtest-calibrated I9_WEIGHT: 0.0792 (was 0.1170, CORRECTED walk-off inflation)
 // These constants are applied in MLBAIModel.py; this file consumes the output.
 const NRFI_CONFIDENCE_THRESHOLD = 0.55;  // lower than FG — NRFI is a binary 50/50 market
-const F5_CONFIDENCE_THRESHOLD   = 0.55;  // F5 home win rate: 45.11% season-wide (3yr empirical)
+// F5 threshold raised from 0.55 → 0.60 (empirical: prob=0.55 bucket has 38.5% win rate,
+// prob=0.60 bucket has 59.2% win rate — breakeven at ~52.4% for -110 odds)
+const F5_CONFIDENCE_THRESHOLD   = 0.60;  // F5 home win rate: 45.11% season-wide (3yr empirical)
 // Calibration version tag — bump when MLBAIModel.py constants change
 const CALIBRATION_VERSION = "2026-04-14-3yr-v2"; // INNING1=0.1166 F5=0.5618 I9=0.0792 (3yr: 2024+2025+2026, n=5103)
 

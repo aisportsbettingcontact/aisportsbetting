@@ -59,11 +59,23 @@ const LEAGUE_ISO      = 0.168;   // League ISO (SLG - AVG)
 const LEAGUE_BARREL   = 8.3;     // League barrel rate (%)
 const LEAGUE_HARDHIT  = 37.5;    // League hard-hit rate (%)
 const PLAYER_PA_PER_GAME = 4.22; // Average PA per batter per game
-const EDGE_THRESHOLD  = 0.030;   // Minimum edge to emit OVER verdict
+// EDGE_THRESHOLD raised from 0.030 → 0.060 (empirical: 0.030 produced 8.6% win rate,
+// well below the ~9.1% breakeven at +1000 odds; 0.060 targets the sharper edge tier)
+const EDGE_THRESHOLD  = 0.060;   // Minimum edge to emit OVER verdict
+// MIN_ABSOLUTE_P_HR: absolute probability floor for OVER bets.
+// Data shows zero wins at modelPHr ≤ 0.11 and <5% at 0.12–0.24.
+// Set to 0.25 to require the model to assign at least 25% HR probability before betting.
+const MIN_ABSOLUTE_P_HR = 0.25;  // Absolute probability gate — must exceed this to bet OVER
 const MIN_P_HR        = 0.04;
 const MAX_P_HR        = 0.45;
 const MIN_STATCAST_ADJ = 0.30;
 const MAX_STATCAST_ADJ = 3.00;
+// ─── Empirical calibration (derived from 510-game backtest, 2026 season) ──────
+// Root cause: woba_scale double-counts HR rate (wOBA already incorporates HR).
+// Empirical: model avg_pHr=0.286 for WIN+LOSS bets; actual win rate=9.3%.
+// Calibration factor = actual_rate / model_avg_pHr = 0.093 / 0.286 = 0.325
+// Applied as a final multiplier on lambda before P(HR) computation.
+const HR_CALIBRATION_FACTOR = 0.325;  // empirical actual/model ratio
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface HrPropsModelResult {
@@ -151,7 +163,10 @@ function computePlayerPHr(
   }
 
   // Step 3: Poisson P(≥1 HR)
-  const lambda = base_rate * statcast_adj * PLAYER_PA_PER_GAME;
+  // Apply HR_CALIBRATION_FACTOR to correct the woba_scale double-counting bias.
+  // Without calibration, model outputs pHr=0.25-0.41 for players with actual ~9% HR rate.
+  const lambdaRaw = base_rate * statcast_adj * PLAYER_PA_PER_GAME;
+  const lambda = lambdaRaw * HR_CALIBRATION_FACTOR;
   const p_hr = 1 - Math.exp(-lambda);
 
   return Math.max(MIN_P_HR, Math.min(MAX_P_HR, p_hr));
@@ -391,9 +406,15 @@ export async function resolveAndModelHrProps(gameDate: string): Promise<HrPropsM
       if (anNoVig != null && anNoVig > 0) {
         edgeOver = parseFloat((modelPHr - anNoVig).toFixed(4));
         evOver = parseFloat(((edgeOver / (1 - modelPHr)) * 100).toFixed(2));
-        if (edgeOver >= EDGE_THRESHOLD) {
+        // Dual gate: edge must exceed EDGE_THRESHOLD AND modelPHr must exceed MIN_ABSOLUTE_P_HR.
+        // Rationale: edge alone is insufficient when base probability is very low (< 0.25).
+        // A 3% edge on a 0.10 probability is noise; a 6% edge on a 0.25+ probability is signal.
+        if (edgeOver >= EDGE_THRESHOLD && modelPHr >= MIN_ABSOLUTE_P_HR) {
           verdict = "OVER";
           edges++;
+        } else if (edgeOver >= EDGE_THRESHOLD && modelPHr < MIN_ABSOLUTE_P_HR) {
+          // Log suppressed bets for monitoring
+          console.log(`${TAG} [FILTER] ${(row as HrRow).playerName}: edge=${edgeOver.toFixed(4)} ≥ threshold but modelPHr=${modelPHr.toFixed(4)} < MIN_ABSOLUTE_P_HR=${MIN_ABSOLUTE_P_HR} → PASS (suppressed)`);
         }
       }
 

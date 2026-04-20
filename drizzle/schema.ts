@@ -1507,6 +1507,78 @@ export const mlbModelLearningLog = mysqlTable("mlb_model_learning_log", {
 export type MlbModelLearningLogRow = typeof mlbModelLearningLog.$inferSelect;
 export type InsertMlbModelLearningLog = typeof mlbModelLearningLog.$inferInsert;
 
+// ─── MLB Drift State (rolling metric state per market) ───────────────────────
+/**
+ * Persists the live drift detection state across scheduler runs.
+ * One row per market — upserted on every drift check.
+ * Markets: 'F5_SHARE' | 'FG_ML' | 'FG_TOTAL' | 'F5_ML' | 'F5_TOTAL' | 'NRFI' | 'K_PROPS' | 'HR_PROPS'
+ */
+export const mlbDriftState = mysqlTable("mlb_drift_state", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Market identifier, e.g. 'F5_SHARE', 'FG_ML', 'NRFI' */
+  market: varchar("market", { length: 32 }).notNull(),
+  /** Rolling window size used (games) */
+  windowSize: int("windowSize").notNull().default(50),
+  /** Rolling metric value (f5_share, accuracy, etc.) */
+  rollingValue: decimal("rollingValue", { precision: 8, scale: 6 }),
+  /** Baseline value (calibrated constant) */
+  baselineValue: decimal("baselineValue", { precision: 8, scale: 6 }),
+  /** Absolute delta: |rolling - baseline| */
+  delta: decimal("delta", { precision: 8, scale: 6 }),
+  /** Direction of drift: 'HIGH' | 'LOW' | 'STABLE' */
+  direction: varchar("direction", { length: 8 }),
+  /** Whether drift was detected on last check: 1=yes 0=no */
+  driftDetected: tinyint("driftDetected").default(0),
+  /** Number of games in the rolling window */
+  sampleSize: int("sampleSize"),
+  /** UTC ms of last drift check */
+  lastCheckedAt: bigint("lastCheckedAt", { mode: "number" }),
+  /** UTC ms of last recalibration triggered by this market */
+  lastRecalibrationAt: bigint("lastRecalibrationAt", { mode: "number" }),
+  /** Number of consecutive drift detections (resets on recalibration) */
+  consecutiveDriftCount: int("consecutiveDriftCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  uqMarket: uniqueIndex("uq_drift_market").on(t.market),
+}));
+export type MlbDriftStateRow = typeof mlbDriftState.$inferSelect;
+export type InsertMlbDriftState = typeof mlbDriftState.$inferInsert;
+
+// ─── MLB Calibration Constants (live model parameter store) ──────────────────
+/**
+ * Persists live calibration constants for each model component.
+ * One row per parameter — upserted by the recalibration pipeline.
+ * Examples: f5_share, nrfi_rate, k_calibration_factor, hr_base_rate
+ */
+export const mlbCalibrationConstants = mysqlTable("mlb_calibration_constants", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Parameter name, e.g. 'f5_share', 'nrfi_rate', 'k_calibration_factor' */
+  paramName: varchar("paramName", { length: 64 }).notNull(),
+  /** Current live value (decimal string for precision) */
+  currentValue: decimal("currentValue", { precision: 12, scale: 8 }).notNull(),
+  /** Baseline value at last manual calibration */
+  baselineValue: decimal("baselineValue", { precision: 12, scale: 8 }),
+  /** Previous value before last recalibration */
+  previousValue: decimal("previousValue", { precision: 12, scale: 8 }),
+  /** Sample size used to compute current value */
+  sampleSize: int("sampleSize"),
+  /** Confidence interval lower bound (95%) */
+  ciLower: decimal("ciLower", { precision: 12, scale: 8 }),
+  /** Confidence interval upper bound (95%) */
+  ciUpper: decimal("ciUpper", { precision: 12, scale: 8 }),
+  /** Source of last update: 'AUTO_RECAL' | 'MANUAL' | 'INIT' */
+  updateSource: varchar("updateSource", { length: 16 }).default("INIT"),
+  /** UTC ms of last update */
+  lastUpdatedAt: bigint("lastUpdatedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  uqParam: uniqueIndex("uq_cal_param").on(t.paramName),
+  idxUpdated: index("idx_cal_updated").on(t.lastUpdatedAt),
+}));
+export type MlbCalibrationConstantRow = typeof mlbCalibrationConstants.$inferSelect;
+export type InsertMlbCalibrationConstant = typeof mlbCalibrationConstants.$inferInsert;
+
 // ─── Security Events (CSRF blocks, auth anomalies) ───────────────────────────
 /**
  * One row per security event detected by server-side middleware.

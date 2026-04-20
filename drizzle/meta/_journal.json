@@ -519,6 +519,13 @@
       "when": 1776634350942,
       "tag": "0073_powerful_rattler",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "5",
+      "when": 1776711994680,
+      "tag": "0074_wonderful_lifeguard",
+      "breakpoints": true
     }
   ]
 }
