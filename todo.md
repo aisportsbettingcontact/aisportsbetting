@@ -2788,4 +2788,4 @@
 - [x] Add handicapper selector dropdown (owner/admin only) to BetTracker page
 - [ ] Wire auto-grading for 04/21 pending bets via MLB API scoreGrader
 - [x] Run vitest for betTracker router after all changes (487/487 passing)
-- [ ] Save checkpoint and deploy
+- [x] Save checkpoint and deploy (5b2f90ec)

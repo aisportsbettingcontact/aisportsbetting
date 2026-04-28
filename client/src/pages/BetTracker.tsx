@@ -37,6 +37,21 @@ import type { StatsData } from "@/components/BetTrackerAnalytics";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
+/** TrackedBet enriched with SlateGame data from the list procedure */
+type EnrichedBet = TrackedBet & {
+  awayLogo:     string | null;
+  homeLogo:     string | null;
+  awayFull:     string | null;
+  homeFull:     string | null;
+  awayNickname: string | null;
+  homeNickname: string | null;
+  awayColor:    string | null;
+  homeColor:    string | null;
+  gameTime:     string | null;
+  startUtc:     string | null;
+  gameStatus:   string | null;
+};
+
 const SPORTS = ["MLB", "NHL", "NBA", "NCAAM"] as const;
 type Sport = typeof SPORTS[number];
 
@@ -397,7 +412,7 @@ function GameSelector({
 function BetCard({
   bet, stakeMode, unitSize, onResult, onDelete, onEdit,
 }: {
-  bet:       TrackedBet;
+  bet:       EnrichedBet;
   stakeMode: StakeMode;
   unitSize:  number;
   onResult:  (id: number, result: Result) => void;
@@ -413,103 +428,220 @@ function BetCard({
   }
 
   const tfShort  = timeframeShort(bet.timeframe ?? "FULL_GAME");
-  const mktLabel = bet.market === "ML" ? "ML" : bet.market === "RL" ? "RL" : "TOT";
+  const result   = bet.result as Result;
+
+  // Derive pick label: for RL bets, the pick already contains the line (e.g. "SF RL +1.5")
+  // Don't show a separate RL badge if the line is already embedded in the pick string
+  const pickHasLine = bet.market === "RL" && bet.pick.includes("+") || bet.pick.includes("-1.5") || bet.pick.includes("+1.5");
+  const lineDisplay = bet.line !== null && bet.line !== undefined && !pickHasLine
+    ? (Number(bet.line) > 0 ? `+${bet.line}` : String(bet.line))
+    : null;
+
+  // Score display
+  const awayScore = bet.awayScore;
+  const homeScore = bet.homeScore;
+  const hasScore  = awayScore !== null && awayScore !== undefined && homeScore !== null && homeScore !== undefined;
+  const isComplete = bet.gameStatus === "complete" || result !== "PENDING";
+  const isLive     = bet.gameStatus === "in_progress";
+  const isUpcoming = !isComplete && !isLive;
+
+  // Determine which team is the pick
+  const pickIsAway = bet.pickSide === "AWAY";
+  const pickIsHome = bet.pickSide === "HOME";
+
+  // Market label
+  const mktLabel = bet.market === "ML" ? "ML"
+    : bet.market === "RL" ? (bet.sport === "NHL" ? "PL" : "RL")
+    : "TOT";
 
   return (
-    <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 space-y-3">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] tracking-widest text-zinc-500 font-medium uppercase">{bet.sport}</span>
-            {bet.awayTeam && bet.homeTeam && (
-              <span className="text-[10px] text-zinc-600">{bet.awayTeam} @ {bet.homeTeam}</span>
+    <div className={`relative bg-zinc-900/90 border rounded-xl overflow-hidden transition-all ${
+      result === "WIN"  ? "border-green-500/25" :
+      result === "LOSS" ? "border-red-500/20" :
+      result === "PUSH" ? "border-yellow-500/20" :
+      "border-zinc-800"
+    }`}>
+      {/* Result accent bar */}
+      <div className={`absolute left-0 top-0 bottom-0 w-1 ${
+        result === "WIN"  ? "bg-green-500" :
+        result === "LOSS" ? "bg-red-500" :
+        result === "PUSH" ? "bg-yellow-500" :
+        result === "PENDING" ? "bg-zinc-700" :
+        "bg-zinc-800"
+      }`} />
+
+      <div className="pl-4 pr-4 pt-3 pb-3 space-y-2.5">
+        {/* ── Row 1: Matchup header ── */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            {/* Away team logo */}
+            {bet.awayLogo ? (
+              <img src={bet.awayLogo} alt={bet.awayTeam ?? ""} className="w-7 h-7 object-contain shrink-0" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center shrink-0">
+                <span className="text-[8px] font-bold text-zinc-500">{(bet.awayTeam ?? "?").slice(0,3)}</span>
+              </div>
             )}
-            {bet.gameDate && (
-              <span className="text-[10px] text-zinc-700">{fmtDate(bet.gameDate)}</span>
-            )}
+            {/* Matchup text */}
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] font-bold text-white">
+                  {bet.awayNickname ?? bet.awayTeam ?? "?"}
+                </span>
+                <span className="text-[10px] text-zinc-600">@</span>
+                <span className="text-[11px] font-bold text-white">
+                  {bet.homeNickname ?? bet.homeTeam ?? "?"}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[9px] tracking-widest text-zinc-600 uppercase">{bet.sport}</span>
+                <span className="text-zinc-700 text-[9px]">·</span>
+                <span className="text-[9px] text-zinc-600">{fmtDate(bet.gameDate)}</span>
+                {/* Game status / time */}
+                {isLive && (
+                  <span className="text-[9px] font-bold text-emerald-400 animate-pulse">LIVE</span>
+                )}
+                {isUpcoming && bet.gameTime && (
+                  <span className="text-[9px] text-zinc-500">{bet.gameTime} ET</span>
+                )}
+                {isComplete && hasScore && (
+                  <span className="text-[9px] text-zinc-500 font-mono">FINAL {awayScore}-{homeScore}</span>
+                )}
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {/* Home team logo */}
+          <div className="flex items-center gap-2 shrink-0">
+            {bet.homeLogo ? (
+              <img src={bet.homeLogo} alt={bet.homeTeam ?? ""} className="w-7 h-7 object-contain" />
+            ) : (
+              <div className="w-7 h-7 rounded-full bg-zinc-800 flex items-center justify-center">
+                <span className="text-[8px] font-bold text-zinc-500">{(bet.homeTeam ?? "?").slice(0,3)}</span>
+              </div>
+            )}
+            {/* Edit/Delete */}
+            <button type="button" onClick={() => onEdit(bet)}
+              className="p-1.5 rounded-lg text-zinc-700 hover:text-zinc-300 hover:bg-zinc-800 transition-all"
+              title="Edit bet"
+            >
+              <Pencil size={11} />
+            </button>
+            <button type="button" onClick={() => onDelete(bet.id)}
+              className="p-1.5 rounded-lg text-zinc-700 hover:text-red-400 hover:bg-red-500/10 transition-all"
+              title="Delete bet"
+            >
+              <Trash2 size={11} />
+            </button>
+          </div>
+        </div>
+
+        {/* ── Row 2: Pick + Bet Details ── */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+            {/* Pick team logo highlight */}
+            {(pickIsAway && bet.awayLogo) && (
+              <img src={bet.awayLogo} alt="" className="w-4 h-4 object-contain opacity-80" />
+            )}
+            {(pickIsHome && bet.homeLogo) && (
+              <img src={bet.homeLogo} alt="" className="w-4 h-4 object-contain opacity-80" />
+            )}
+            {/* Pick label */}
             <span className="text-white font-bold text-sm">{bet.pick}</span>
+            {/* Market badge */}
+            <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-medium tracking-wider">{mktLabel}</span>
+            {/* Timeframe badge */}
             {tfShort && (
-              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-medium">{tfShort}</span>
+              <span className="text-[9px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded font-medium">{tfShort}</span>
             )}
-            <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-medium">{mktLabel}</span>
-            {bet.line !== null && bet.line !== undefined && (
-              <span className="text-[10px] text-zinc-500 font-mono">{Number(bet.line) > 0 ? `+${bet.line}` : bet.line}</span>
+            {/* Line (only if not already in pick string) */}
+            {lineDisplay && (
+              <span className="text-[10px] text-zinc-500 font-mono">{lineDisplay}</span>
             )}
-            <span className={`text-[11px] font-bold font-mono ${bet.odds >= 0 ? "text-emerald-400" : "text-zinc-300"}`}>
+            {/* Odds */}
+            <span className={`text-[11px] font-bold font-mono ${
+              bet.odds >= 0 ? "text-emerald-400" : "text-zinc-300"
+            }`}>
               {fmtOdds(bet.odds)}
             </span>
           </div>
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button type="button" onClick={() => onEdit(bet)}
-            className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-all"
-            title="Edit bet"
-          >
-            <Pencil size={12} />
-          </button>
-          <button type="button" onClick={() => onDelete(bet.id)}
-            className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
-            title="Delete bet"
-          >
-            <Trash2 size={12} />
-          </button>
-        </div>
-      </div>
 
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="text-center">
-            <div className="text-[10px] text-zinc-600 uppercase tracking-wider">Risk</div>
-            <div className="text-xs font-mono text-zinc-300">{fmtStake(risk)}</div>
-          </div>
-          <div className="text-zinc-700">→</div>
-          <div className="text-center">
-            <div className="text-[10px] text-zinc-600 uppercase tracking-wider">To Win</div>
-            <div className="text-xs font-mono text-emerald-400">{fmtStake(toWin)}</div>
-          </div>
-          {bet.result !== "PENDING" && (
-            <>
-              <div className="text-zinc-700">→</div>
-              <div className="text-center">
-                <div className="text-[10px] text-zinc-600 uppercase tracking-wider">P/L</div>
-                <div className={`text-xs font-mono font-bold ${resultColor(bet.result as Result)}`}>
-                  {bet.result === "WIN"  ? `+${fmtStake(toWin)}`
-                   : bet.result === "LOSS" ? `-${fmtStake(risk)}`
-                   : bet.result === "PUSH" ? fmtStake(0)
-                   : "—"}
-                </div>
+          {/* Score display for complete/live games */}
+          {hasScore && (
+            <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1">
+                {bet.awayLogo && <img src={bet.awayLogo} alt="" className="w-3.5 h-3.5 object-contain" />}
+                <span className={`text-xs font-bold font-mono ${
+                  pickIsAway ? (result === "WIN" ? "text-green-400" : result === "LOSS" ? "text-red-400" : "text-white") : "text-zinc-400"
+                }`}>{awayScore}</span>
               </div>
-            </>
+              <span className="text-zinc-700 text-[10px]">-</span>
+              <div className="flex items-center gap-1">
+                <span className={`text-xs font-bold font-mono ${
+                  pickIsHome ? (result === "WIN" ? "text-green-400" : result === "LOSS" ? "text-red-400" : "text-white") : "text-zinc-400"
+                }`}>{homeScore}</span>
+                {bet.homeLogo && <img src={bet.homeLogo} alt="" className="w-3.5 h-3.5 object-contain" />}
+              </div>
+            </div>
           )}
         </div>
 
-        {/* Quick result buttons */}
-        <div className="flex items-center gap-1">
-          {(["WIN", "LOSS", "PUSH"] as const).map(r => (
-            <button key={r} type="button"
-              onClick={() => onResult(bet.id, r)}
-              className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-wider transition-all border ${
-                bet.result === r
-                  ? resultBg(r)
-                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400"
-              }`}
-            >
-              {r === "WIN" ? "W" : r === "LOSS" ? "L" : "P"}
-            </button>
-          ))}
-          <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${resultBg(bet.result as Result)}`}>
-            {bet.result}
-          </span>
-        </div>
-      </div>
+        {/* ── Row 3: Stake + P/L + Result buttons ── */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-3">
+            <div className="text-center">
+              <div className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">Risk</div>
+              <div className="text-xs font-mono text-zinc-300">{fmtStake(risk)}</div>
+            </div>
+            <div className="text-zinc-700 text-xs">→</div>
+            <div className="text-center">
+              <div className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">To Win</div>
+              <div className="text-xs font-mono text-emerald-400">{fmtStake(toWin)}</div>
+            </div>
+            {result !== "PENDING" && result !== "VOID" && (
+              <>
+                <div className="text-zinc-700 text-xs">→</div>
+                <div className="text-center">
+                  <div className="text-[9px] text-zinc-600 uppercase tracking-wider mb-0.5">P/L</div>
+                  <div className={`text-xs font-mono font-bold ${resultColor(result)}`}>
+                    {result === "WIN"  ? `+${fmtStake(toWin)}`
+                     : result === "LOSS" ? `-${fmtStake(risk)}`
+                     : result === "PUSH" ? "PUSH"
+                     : "—"}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
-      {bet.notes && (
-        <div className="text-[11px] text-zinc-500 bg-zinc-800/40 rounded-lg px-3 py-2 italic">
-          {bet.notes}
+          {/* Quick result buttons + status badge */}
+          <div className="flex items-center gap-1">
+            {(["WIN", "LOSS", "PUSH"] as const).map(r => (
+              <button key={r} type="button"
+                onClick={() => onResult(bet.id, r)}
+                className={`px-2 py-1 rounded-lg text-[9px] font-bold tracking-wider transition-all border ${
+                  result === r
+                    ? resultBg(r)
+                    : "border-zinc-800 text-zinc-700 hover:border-zinc-600 hover:text-zinc-400"
+                }`}
+              >
+                {r === "WIN" ? "W" : r === "LOSS" ? "L" : "P"}
+              </button>
+            ))}
+            <span className={`px-2 py-1 rounded-lg text-[9px] font-bold border ${
+              resultBg(result)
+            }`}>
+              {result}
+            </span>
+          </div>
         </div>
-      )}
+
+        {/* Notes */}
+        {bet.notes && (
+          <div className="text-[10px] text-zinc-500 bg-zinc-800/40 rounded-lg px-3 py-1.5 italic">
+            {bet.notes}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -783,14 +915,15 @@ export default function BetTracker() {
   const bets = listQuery.data ?? [];
 
   // Group bets by date for day-separator rows
+  const enrichedBets = bets as EnrichedBet[];
   const betsWithSeparators = useMemo(() => {
-    const result: Array<{ type: "separator"; date: string; wins: number; losses: number; pushes: number; pending: number } | { type: "bet"; bet: TrackedBet }> = [];
+    const result: Array<{ type: "separator"; date: string; wins: number; losses: number; pushes: number; pending: number } | { type: "bet"; bet: EnrichedBet }> = [];
     let lastDate = "";
-    for (const bet of (bets as TrackedBet[])) {
+    for (const bet of enrichedBets) {
       const d = bet.gameDate ?? "";
       if (d !== lastDate) {
         // Compute daily stats for this date
-        const dayBets = (bets as TrackedBet[]).filter(b => b.gameDate === d);
+        const dayBets = enrichedBets.filter(b => b.gameDate === d);
         const wins    = dayBets.filter(b => b.result === "WIN").length;
         const losses  = dayBets.filter(b => b.result === "LOSS").length;
         const pushes  = dayBets.filter(b => b.result === "PUSH").length;
@@ -801,7 +934,7 @@ export default function BetTracker() {
       result.push({ type: "bet", bet });
     }
     return result;
-  }, [bets]);
+  }, [enrichedBets]);
 
   // ── Access guard ──────────────────────────────────────────────────────────
   if (authLoading) {
@@ -1206,7 +1339,7 @@ export default function BetTracker() {
                 <button type="button" onClick={() => {
                     autoGradeMut.mutate({ sport: activeSport, gameDate: filterAllTime ? undefined : (filterDate || undefined) });
                   }}
-                  disabled={autoGradeMut.isPending || (bets as TrackedBet[]).filter(b => b.result === "PENDING").length === 0}
+                  disabled={autoGradeMut.isPending || enrichedBets.filter(b => b.result === "PENDING").length === 0}
                   title="Auto-grade all pending bets using official league scores"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold tracking-wider hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >

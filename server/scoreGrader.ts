@@ -116,7 +116,7 @@ function setCache(key: string, data: GameScoreData[]): void {
 // ─── MLB Score Fetcher ────────────────────────────────────────────────────────
 
 async function fetchMlbScores(date: string): Promise<GameScoreData[]> {
-  const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${date}&hydrate=linescore`;
+  const url = `https://statsapi.mlb.com/api/v1/schedule?sportId=1&date=${date}&hydrate=linescore,team`;
   console.log(`[ScoreGrader][STEP] MLB fetch: GET ${url}`);
 
   const res = await fetch(url);

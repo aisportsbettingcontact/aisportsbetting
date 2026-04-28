@@ -147,7 +147,50 @@ export const betTrackerRouter = router({
         .orderBy(desc(trackedBets.gameDate), desc(trackedBets.createdAt));
 
       console.log(`[BetTracker][OUTPUT] list: userId=${userId} → ${rows.length} bets returned`);
-      return rows;
+
+      // ── Enrich with SlateGame data (logos, full names, gameTime, status, live scores) ──
+      // Collect unique (sport, gameDate) pairs
+      const pairs = new Map<string, { sport: string; gameDate: string }>();
+      for (const row of rows) {
+        const key = `${row.sport}:${row.gameDate}`;
+        if (!pairs.has(key)) pairs.set(key, { sport: row.sport, gameDate: row.gameDate });
+      }
+
+      // Fetch slates for all unique pairs (cached)
+      const slateMap = new Map<number, import('../actionNetwork').SlateGame>(); // anGameId → SlateGame
+      await Promise.all(
+        Array.from(pairs.values()).map(async ({ sport, gameDate }) => {
+          try {
+            const games = await fetchAnSlate(sport, gameDate);
+            for (const g of games) slateMap.set(g.id, g);
+          } catch (e) {
+            console.warn(`[BetTracker][WARN] list: fetchAnSlate failed for ${sport}/${gameDate}:`, e);
+          }
+        })
+      );
+
+      // Merge slate data into each bet row
+      type RawBet = typeof rows[0];
+      const enriched = rows.map((row: RawBet) => {
+        const slate = row.anGameId ? slateMap.get(row.anGameId) : undefined;
+        return {
+          ...row,
+          awayLogo:     slate?.awayLogo     ?? null,
+          homeLogo:     slate?.homeLogo     ?? null,
+          awayFull:     slate?.awayFull     ?? null,
+          homeFull:     slate?.homeFull     ?? null,
+          awayNickname: slate?.awayNickname ?? null,
+          homeNickname: slate?.homeNickname ?? null,
+          awayColor:    slate?.awayColor    ?? null,
+          homeColor:    slate?.homeColor    ?? null,
+          gameTime:     slate?.gameTime     ?? null,
+          startUtc:     slate?.startUtc     ?? null,
+          gameStatus:   slate?.status       ?? null,
+        };
+      });
+
+      console.log(`[BetTracker][VERIFY] list: enriched ${enriched.filter((b: typeof enriched[0]) => b.awayLogo).length}/${enriched.length} bets with slate data`);
+      return enriched;
     }),
 
   /**
