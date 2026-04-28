@@ -2771,3 +2771,21 @@
 - [ ] Fix SD@COL (and any game) skip condition — diagnose why SD@COL was not modeled
 - [ ] Re-run production model for April 23 2026 after fixes
 - [ ] Verify all games on feed show matching book/model lines with correct odds
+
+## Bet Tracker — 2026 MLB Import + Multi-Handicapper Upgrade (2026-04-28)
+
+- [x] Clear 8 stale test bets (ids 1-8) before import
+- [x] Import 85 Prez 2026 MLB bets into tracked_bets (userId=1, sport=MLB, unit-based)
+- [x] Set 6 pending bets (04/21) to result=PENDING for auto-grading
+- [x] Extend getStats: add byType, bySize, byMonth, bySport, equityCurve, bestWin, worstLoss
+- [x] Add targetUserId param to list/getStats for owner/admin cross-handicapper view
+- [x] Enforce visibility: owner/admin see all handicappers; porter/hanksthebank see only own bets
+- [x] Add listHandicappers procedure (owner/admin only) for handicapper selector UI
+- [x] Build EquityChart React component (Canvas 2D, cumulative P/L over time)
+- [x] Build BreakdownGrid component (By Type / By Size / By Month / By Sport)
+- [x] Add Best Win + Worst Loss stat cards to header row
+- [x] Add day-separator rows with daily W-L summary to bet log table
+- [x] Add handicapper selector dropdown (owner/admin only) to BetTracker page
+- [ ] Wire auto-grading for 04/21 pending bets via MLB API scoreGrader
+- [x] Run vitest for betTracker router after all changes (487/487 passing)
+- [ ] Save checkpoint and deploy

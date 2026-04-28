@@ -1,22 +1,18 @@
 /**
- * BetTracker.tsx — Handicapper Bet Tracker v4
+ * BetTracker.tsx — Handicapper Bet Tracker v5
  *
- * Form structure (fully structured, no free-text):
- *   1. DATE        — date picker (defaults to today EST)
- *   2. GAME        — dropdown with team logos + time from Action Network slate
- *   3. TIMEFRAME   — sport-aware (MLB: Full/F5/F1 | NHL: Full/Regulation/1st Period | NBA: Full/1H/1Q)
- *   4. MARKET      — Moneyline | Run Line/Puck Line/Spread | Total
- *   5. PICK        — logo + team name + live odds (context-aware per market)
- *   6. ODDS        — auto-filled from AN slate; editable
- *   7. RISK / TO WIN — units or dollars; correct unit math (1u = 1 unit, not $1)
- *   8. NOTES       — optional textarea
- *
- * Unit math:
- *   - Risk field accepts units (e.g. 2 = 2u)
- *   - To Win = risk × (odds payout ratio) in units
- *   - Display: "2.00u to win 1.82u" — never dollars in unit mode
+ * New in v5:
+ *   - Handicapper selector (owner/admin can view any handicapper's bets)
+ *   - Analytics panel: equity curve + 6 breakdown dimensions
+ *     (By Type / By Unit Size / By Month / By Sport / By Timeframe / By Result)
+ *   - Best Win / Worst Loss stat cards
+ *   - All-Time toggle (removes date + sport filter for aggregate view)
+ *   - Day-separator rows in bet log
+ *   - Auto-grading of pending bets via MLB API
  *
  * Access: OWNER | ADMIN | HANDICAPPER only.
+ *   - OWNER / ADMIN: can view any handicapper's bets via selector
+ *   - HANDICAPPER: sees only their own bets
  *
  * Logging convention:
  *   [BetTracker][INPUT]  — user action / form input
@@ -33,9 +29,11 @@ import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import {
   Clock, TrendingUp, Minus, AlertCircle,
   ChevronLeft, Plus, Pencil, Trash2, CheckCircle2,
-  DollarSign, Hash, ChevronDown, Zap, RefreshCw,
+  DollarSign, Hash, ChevronDown, Zap, RefreshCw, BarChart2, Users,
 } from "lucide-react";
 import type { TrackedBet } from "@shared/types";
+import { EquityChart, BreakdownGrid, HandicapperSelector } from "@/components/BetTrackerAnalytics";
+import type { StatsData } from "@/components/BetTrackerAnalytics";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -113,10 +111,6 @@ function todayEst(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 }
 
-/**
- * Calculate toWin from American odds + risk amount (in any unit).
- * Works for both dollar and unit modes — the unit is preserved.
- */
 function calcToWin(odds: number, risk: number): number {
   if (!odds || !risk || risk <= 0) return 0;
   if (odds >= 100) return parseFloat((risk * (odds / 100)).toFixed(4));
@@ -133,11 +127,6 @@ function fmtDollar(n: number): string {
   return n < 0 ? `-$${str}` : `$${str}`;
 }
 
-/**
- * Format a unit value.
- * n is already in units (e.g. 2.5 → "2.50u").
- * No conversion needed — risk input IS in units.
- */
 function fmtUnits(n: number): string {
   const abs = Math.abs(n);
   const str = abs.toFixed(2);
@@ -181,7 +170,6 @@ function timeframeShort(tf: string): string {
   }
 }
 
-/** Get the live odds for a given pick from a GameOdds object */
 function getPickOdds(odds: GameOdds | null, market: Market, pickSide: PickSide): number | null {
   if (!odds) return null;
   switch (market) {
@@ -191,7 +179,6 @@ function getPickOdds(odds: GameOdds | null, market: Market, pickSide: PickSide):
   }
 }
 
-/** Get the line value (spread / total) for a given pick */
 function getPickLine(odds: GameOdds | null, market: Market, pickSide: PickSide): number | null {
   if (!odds) return null;
   switch (market) {
@@ -215,7 +202,6 @@ function StatCard({
   );
 }
 
-/** Native <select> wrapper with consistent dark styling */
 function SelectField({
   label, value, onChange, options, placeholder, disabled,
 }: {
@@ -247,10 +233,6 @@ function SelectField({
   );
 }
 
-/**
- * GamePickButton — a clickable card showing team logo + name + odds.
- * Used for the PICK selection (Away/Home/Over/Under).
- */
 function PickButton({
   selected, onClick, logo, teamAbbr, teamNickname, odds, line, side, disabled,
 }: {
@@ -280,28 +262,19 @@ function PickButton({
         ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
       `}
     >
-      {/* Selected indicator */}
       {selected && (
         <div className="absolute top-1.5 right-1.5">
           <CheckCircle2 size={12} className="text-emerald-400" />
         </div>
       )}
-
-      {/* Logo or icon */}
       {!isTotal && logo ? (
-        <img
-          src={logo}
-          alt={teamAbbr}
-          className="w-8 h-8 sm:w-10 sm:h-10 object-contain"
-          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }}
-        />
+        <img src={logo} alt={teamAbbr} className="w-8 h-8 sm:w-10 sm:h-10 object-contain"
+          onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
       ) : (
         <div className={`text-lg font-black ${isTotal ? (side === "OVER" ? "text-emerald-400" : "text-blue-400") : "text-zinc-400"}`}>
           {side === "OVER" ? "O" : side === "UNDER" ? "U" : ""}
         </div>
       )}
-
-      {/* Team abbr / side label */}
       <div className="text-center">
         {!isTotal ? (
           <>
@@ -312,15 +285,11 @@ function PickButton({
           <div className="text-[11px] font-black text-zinc-300 tracking-wider">{sideLabel}</div>
         )}
       </div>
-
-      {/* Line value (RL / Total) */}
       {line !== null && line !== undefined && (
         <div className="text-[10px] font-bold text-zinc-400">
           {line > 0 ? `+${line}` : `${line}`}
         </div>
       )}
-
-      {/* Odds */}
       <div className={`text-[11px] font-bold font-mono ${odds !== null ? (odds >= 0 ? "text-emerald-400" : "text-zinc-300") : "text-zinc-600"}`}>
         {odds !== null ? fmtOdds(odds) : "—"}
       </div>
@@ -328,17 +297,8 @@ function PickButton({
   );
 }
 
-/**
- * GameDropdownOption — renders a game option with team logos in the custom dropdown.
- * Since native <select> doesn't support images, we use a custom listbox.
- */
 function GameSelector({
-  games,
-  selectedId,
-  onSelect,
-  loading,
-  sport,
-  formDate,
+  games, selectedId, onSelect, loading, sport, formDate,
 }: {
   games:      SlateGame[];
   selectedId: number | null;
@@ -350,7 +310,6 @@ function GameSelector({
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -380,7 +339,6 @@ function GameSelector({
 
   return (
     <div ref={ref} className="relative">
-      {/* Trigger */}
       <button type="button" onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-colors text-left"
       >
@@ -403,8 +361,6 @@ function GameSelector({
         )}
         <ChevronDown size={14} className={`ml-auto text-zinc-500 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
-
-      {/* Dropdown list */}
       {open && (
         <div className="absolute z-50 top-full mt-1 left-0 right-0 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-72 overflow-y-auto">
           {games.map(g => (
@@ -412,22 +368,17 @@ function GameSelector({
               onClick={() => { onSelect(g); setOpen(false); }}
               className={`w-full flex items-center gap-2.5 px-3 py-2.5 hover:bg-zinc-800 transition-colors text-left ${g.id === selectedId ? "bg-emerald-500/10" : ""}`}
             >
-              {/* Away team */}
               <img src={g.awayLogo} alt={g.awayTeam} className="w-6 h-6 object-contain shrink-0"
                 onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
               <span className="font-bold text-white text-sm w-8 shrink-0">{g.awayTeam}</span>
               <span className="text-zinc-600 text-xs">@</span>
-              {/* Home team */}
               <img src={g.homeLogo} alt={g.homeTeam} className="w-6 h-6 object-contain shrink-0"
                 onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
               <span className="font-bold text-white text-sm w-8 shrink-0">{g.homeTeam}</span>
-              {/* Time */}
               <span className="text-zinc-500 text-xs ml-1">{g.gameTime} ET</span>
-              {/* Status badge */}
               {g.status !== "scheduled" && (
                 <span className="text-[9px] font-bold text-yellow-400 uppercase ml-auto shrink-0">{g.status}</span>
               )}
-              {/* ML odds preview */}
               {g.odds?.awayMl && (
                 <span className="text-[10px] text-zinc-600 ml-auto shrink-0 font-mono">
                   {fmtOdds(g.odds.awayMl.odds)} / {g.odds.homeMl ? fmtOdds(g.odds.homeMl.odds) : "—"}
@@ -458,7 +409,6 @@ function BetCard({
 
   function fmtStake(n: number): string {
     if (stakeMode === "$") return fmtDollar(n);
-    // In unit mode: risk/toWin stored as dollar amounts, convert to units
     return fmtUnits(unitSize > 0 ? n / unitSize : n);
   }
 
@@ -467,7 +417,6 @@ function BetCard({
 
   return (
     <div className="bg-zinc-900/80 border border-zinc-800 rounded-xl p-4 space-y-3">
-      {/* Header */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -485,59 +434,87 @@ function BetCard({
               <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-medium">{tfShort}</span>
             )}
             <span className="text-[10px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-medium">{mktLabel}</span>
+            {bet.line !== null && bet.line !== undefined && (
+              <span className="text-[10px] text-zinc-500 font-mono">{Number(bet.line) > 0 ? `+${bet.line}` : bet.line}</span>
+            )}
+            <span className={`text-[11px] font-bold font-mono ${bet.odds >= 0 ? "text-emerald-400" : "text-zinc-300"}`}>
+              {fmtOdds(bet.odds)}
+            </span>
           </div>
         </div>
-        <span className={`text-[10px] border rounded-full px-2 py-0.5 font-medium uppercase tracking-wide shrink-0 ${resultBg(bet.result as Result)}`}>
-          {bet.result}
-        </span>
-      </div>
-
-      {/* Odds / Stake */}
-      <div className="flex items-center gap-4 text-sm flex-wrap">
-        <span className="text-zinc-400 font-mono font-bold">{fmtOdds(bet.odds)}</span>
-        <span className="text-zinc-500">Risk: <span className="text-white font-medium">{fmtStake(risk)}</span></span>
-        <span className="text-zinc-500">To Win: <span className="text-emerald-400 font-medium">{fmtStake(toWin)}</span></span>
-      </div>
-
-      {/* Notes */}
-      {bet.notes && (
-        <p className="text-xs text-zinc-500 italic border-l-2 border-zinc-700 pl-2">{bet.notes}</p>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center justify-between gap-2 pt-1">
-        <div className="flex gap-1.5 flex-wrap">
-          {(["WIN", "LOSS", "PUSH"] as Result[]).map(r => (
-            <button type="button" key={r}
-              onClick={() => onResult(bet.id, r)}
-              className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-md border transition-all ${
-                bet.result === r ? resultBg(r) : "border-zinc-700 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 bg-transparent"
-              }`}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button type="button" onClick={() => onEdit(bet)}
-            className="p-1.5 rounded-lg text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors"
-            title="Edit"
+            className="p-1.5 rounded-lg text-zinc-600 hover:text-zinc-300 hover:bg-zinc-800 transition-all"
+            title="Edit bet"
           >
-            <Pencil size={13} />
+            <Pencil size={12} />
           </button>
           <button type="button" onClick={() => onDelete(bet.id)}
-            className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-            title="Delete"
+            className="p-1.5 rounded-lg text-zinc-600 hover:text-red-400 hover:bg-red-500/10 transition-all"
+            title="Delete bet"
           >
-            <Trash2 size={13} />
+            <Trash2 size={12} />
           </button>
         </div>
       </div>
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="text-center">
+            <div className="text-[10px] text-zinc-600 uppercase tracking-wider">Risk</div>
+            <div className="text-xs font-mono text-zinc-300">{fmtStake(risk)}</div>
+          </div>
+          <div className="text-zinc-700">→</div>
+          <div className="text-center">
+            <div className="text-[10px] text-zinc-600 uppercase tracking-wider">To Win</div>
+            <div className="text-xs font-mono text-emerald-400">{fmtStake(toWin)}</div>
+          </div>
+          {bet.result !== "PENDING" && (
+            <>
+              <div className="text-zinc-700">→</div>
+              <div className="text-center">
+                <div className="text-[10px] text-zinc-600 uppercase tracking-wider">P/L</div>
+                <div className={`text-xs font-mono font-bold ${resultColor(bet.result as Result)}`}>
+                  {bet.result === "WIN"  ? `+${fmtStake(toWin)}`
+                   : bet.result === "LOSS" ? `-${fmtStake(risk)}`
+                   : bet.result === "PUSH" ? fmtStake(0)
+                   : "—"}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Quick result buttons */}
+        <div className="flex items-center gap-1">
+          {(["WIN", "LOSS", "PUSH"] as const).map(r => (
+            <button key={r} type="button"
+              onClick={() => onResult(bet.id, r)}
+              className={`px-2 py-1 rounded-lg text-[10px] font-bold tracking-wider transition-all border ${
+                bet.result === r
+                  ? resultBg(r)
+                  : "border-zinc-800 text-zinc-600 hover:border-zinc-600 hover:text-zinc-400"
+              }`}
+            >
+              {r === "WIN" ? "W" : r === "LOSS" ? "L" : "P"}
+            </button>
+          ))}
+          <span className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${resultBg(bet.result as Result)}`}>
+            {bet.result}
+          </span>
+        </div>
+      </div>
+
+      {bet.notes && (
+        <div className="text-[11px] text-zinc-500 bg-zinc-800/40 rounded-lg px-3 py-2 italic">
+          {bet.notes}
+        </div>
+      )}
     </div>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function BetTracker() {
   const [, navigate] = useLocation();
@@ -549,6 +526,7 @@ export default function BetTracker() {
 
   const role      = appUser?.role ?? "user";
   const canAccess = ["owner", "admin", "handicapper"].includes(role);
+  const isOwnerOrAdmin = role === "owner" || role === "admin";
 
   // ── Stake mode ────────────────────────────────────────────────────────────
   const [stakeMode, setStakeMode] = useState<StakeMode>(() => {
@@ -561,10 +539,18 @@ export default function BetTracker() {
   useEffect(() => { try { localStorage.setItem("bt_stakeMode", stakeMode); } catch {} }, [stakeMode]);
   useEffect(() => { try { localStorage.setItem("bt_unitSize", String(unitSize)); } catch {} }, [unitSize]);
 
+  // ── Handicapper selector + analytics state ────────────────────────────────
+  const [targetUserId, setTargetUserId]   = useState<number | undefined>(undefined);
+  const [showAnalytics, setShowAnalytics] = useState(false);
+  const [filterAllTime, setFilterAllTime] = useState(false);
+
+  // Effective userId for queries (owner/admin can view others)
+  const effectiveUserId = isOwnerOrAdmin && targetUserId ? targetUserId : undefined;
+
   // ── Sport / filter state ──────────────────────────────────────────────────
-  const [activeSport, setActiveSport]     = useState<Sport>("MLB");
-  const [filterDate, setFilterDate]       = useState(todayEst);
-  const [filterResult, setFilterResult]   = useState<Result | "">("");
+  const [activeSport, setActiveSport]   = useState<Sport>("MLB");
+  const [filterDate, setFilterDate]     = useState(todayEst);
+  const [filterResult, setFilterResult] = useState<Result | "">("");
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [formDate, setFormDate]           = useState(todayEst);
@@ -573,15 +559,15 @@ export default function BetTracker() {
   const [formMarket, setFormMarket]       = useState<Market>("ML");
   const [formPickSide, setFormPickSide]   = useState<PickSide>("AWAY");
   const [formOdds, setFormOdds]           = useState("");
-  const [formRisk, setFormRisk]           = useState("2");   // default 2 units
+  const [formRisk, setFormRisk]           = useState("2");
   const [formNotes, setFormNotes]         = useState("");
   const [formError, setFormError]         = useState("");
 
   // Edit / delete modal
-  const [editBet, setEditBet]           = useState<TrackedBet | null>(null);
-  const [editNotes, setEditNotes]       = useState("");
-  const [editResult, setEditResult]     = useState<Result>("PENDING");
-  const [deleteId, setDeleteId]         = useState<number | null>(null);
+  const [editBet, setEditBet]     = useState<TrackedBet | null>(null);
+  const [editNotes, setEditNotes] = useState("");
+  const [editResult, setEditResult] = useState<Result>("PENDING");
+  const [deleteId, setDeleteId]   = useState<number | null>(null);
 
   // Auto-grade toast
   const [gradeToast, setGradeToast] = useState<{ graded: number; wins: number; losses: number; pushes: number; stillPending: number } | null>(null);
@@ -590,12 +576,6 @@ export default function BetTracker() {
   const oddsNum = parseInt(formOdds, 10);
   const riskNum = parseFloat(formRisk);
 
-  /**
-   * toWin calculation:
-   *   - In $ mode: risk is dollars → toWin is dollars
-   *   - In U mode: risk is units → toWin is units
-   *   Both use the same formula; the "unit" is just the input value.
-   */
   const toWinCalc = useMemo(() => {
     if (!isNaN(oddsNum) && oddsNum !== 0 && !isNaN(riskNum) && riskNum > 0) {
       return calcToWin(oddsNum, riskNum);
@@ -603,53 +583,35 @@ export default function BetTracker() {
     return null;
   }, [oddsNum, riskNum]);
 
-  // Risk label
-  const riskLabel = stakeMode === "$" ? "Risk $" : "Risk (u)";
+  const riskLabel  = stakeMode === "$" ? "Risk $" : "Risk (u)";
   const toWinLabel = stakeMode === "$" ? "To Win $" : "To Win (u)";
 
-  // Format toWin for display (same unit as risk input)
   function fmtToWin(n: number): string {
     if (stakeMode === "$") return fmtDollar(n);
-    return fmtUnits(n);  // n is already in units
+    return fmtUnits(n);
   }
 
-  // Format stake for bet cards (convert stored dollar amount to units if needed)
   function fmtStake(n: number): string {
     if (stakeMode === "$") return fmtDollar(n);
     return fmtUnits(unitSize > 0 ? n / unitSize : n);
   }
 
-  // Sport-aware timeframe options
   const timeframeOptions = TIMEFRAMES_BY_SPORT[activeSport];
 
-  // Reset timeframe when sport changes
-  useEffect(() => {
-    setFormTimeframe("FULL_GAME");
-  }, [activeSport]);
-
-  // Reset game + pickSide when date or sport changes
-  useEffect(() => {
-    setFormGame(null);
-    setFormPickSide("AWAY");
-    setFormOdds("");
-  }, [formDate, activeSport]);
-
-  // Reset pickSide when market changes
+  useEffect(() => { setFormTimeframe("FULL_GAME"); }, [activeSport]);
+  useEffect(() => { setFormGame(null); setFormPickSide("AWAY"); setFormOdds(""); }, [formDate, activeSport]);
   useEffect(() => {
     const newSide: PickSide = formMarket === "TOTAL" ? "OVER" : "AWAY";
     setFormPickSide(newSide);
-    // Auto-fill odds for new market + new side
     if (formGame?.odds) {
       const o = getPickOdds(formGame.odds, formMarket, newSide);
       setFormOdds(o !== null ? String(o) : "");
     }
   }, [formMarket]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-fill odds when game, market, or pickSide changes
   useEffect(() => {
     if (formGame?.odds) {
       const o = getPickOdds(formGame.odds, formMarket, formPickSide);
-      console.log(`[BetTracker][STATE] auto-fill odds: game=${formGame.awayTeam}@${formGame.homeTeam} market=${formMarket} side=${formPickSide} → odds=${o}`);
       setFormOdds(o !== null ? String(o) : "");
     }
   }, [formGame, formMarket, formPickSide]);
@@ -661,13 +623,28 @@ export default function BetTracker() {
   );
 
   const listQuery = trpc.betTracker.list.useQuery(
-    { sport: activeSport, gameDate: filterDate || undefined, result: filterResult || undefined },
+    {
+      sport: filterAllTime ? undefined : activeSport,
+      gameDate: filterAllTime ? undefined : (filterDate || undefined),
+      result: filterResult || undefined,
+      targetUserId: effectiveUserId,
+    },
     { enabled: canAccess }
   );
 
   const statsQuery = trpc.betTracker.getStats.useQuery(
-    { sport: activeSport, gameDate: filterDate || undefined },
+    {
+      sport: filterAllTime ? undefined : activeSport,
+      gameDate: filterAllTime ? undefined : (filterDate || undefined),
+      targetUserId: effectiveUserId,
+    },
     { enabled: canAccess }
+  );
+
+  // listHandicappers — owner/admin only
+  const handicappersQuery = trpc.betTracker.listHandicappers.useQuery(
+    undefined,
+    { enabled: canAccess && isOwnerOrAdmin }
   );
 
   const utils = trpc.useUtils();
@@ -695,17 +672,14 @@ export default function BetTracker() {
   const slateGames = (slateQuery.data ?? []) as SlateGame[];
 
   const handleGameSelect = useCallback((game: SlateGame) => {
-    console.log(`[BetTracker][INPUT] game selected: id=${game.id} ${game.awayTeam}@${game.homeTeam} odds=${JSON.stringify(game.odds)}`);
+    console.log(`[BetTracker][INPUT] game selected: id=${game.id} ${game.awayTeam}@${game.homeTeam}`);
     setFormGame(game);
     setFormPickSide("AWAY");
-    // Auto-fill ML odds for away by default
     const o = getPickOdds(game.odds, formMarket, "AWAY");
     setFormOdds(o !== null ? String(o) : "");
   }, [formMarket]);
 
-  // ── Pick side selection ───────────────────────────────────────────────────
   const handlePickSide = useCallback((side: PickSide) => {
-    console.log(`[BetTracker][INPUT] pick side: ${side} market=${formMarket}`);
     setFormPickSide(side);
     if (formGame?.odds) {
       const o = getPickOdds(formGame.odds, formMarket, side);
@@ -713,35 +687,21 @@ export default function BetTracker() {
     }
   }, [formGame, formMarket]);
 
-  // ── Pick buttons for current market ──────────────────────────────────────
   const pickButtons = useMemo(() => {
     if (!formGame) return null;
     const { odds, awayTeam, homeTeam, awayLogo, homeLogo, awayNickname, homeNickname } = formGame;
 
     if (formMarket === "TOTAL") {
-      const overLine  = getPickLine(odds, "TOTAL", "OVER");
-      const underLine = getPickLine(odds, "TOTAL", "UNDER");
       return (
         <div className="flex gap-2">
-          <PickButton
-            selected={formPickSide === "OVER"}
-            onClick={() => handlePickSide("OVER")}
-            odds={odds?.over?.odds ?? null}
-            line={overLine}
-            side="OVER"
-          />
-          <PickButton
-            selected={formPickSide === "UNDER"}
-            onClick={() => handlePickSide("UNDER")}
-            odds={odds?.under?.odds ?? null}
-            line={underLine}
-            side="UNDER"
-          />
+          <PickButton selected={formPickSide === "OVER"} onClick={() => handlePickSide("OVER")}
+            odds={odds?.over?.odds ?? null} line={getPickLine(odds, "TOTAL", "OVER")} side="OVER" />
+          <PickButton selected={formPickSide === "UNDER"} onClick={() => handlePickSide("UNDER")}
+            odds={odds?.under?.odds ?? null} line={getPickLine(odds, "TOTAL", "UNDER")} side="UNDER" />
         </div>
       );
     }
 
-    // ML or RL
     const awayOdds = formMarket === "ML" ? (odds?.awayMl?.odds ?? null) : (odds?.awayRl?.odds ?? null);
     const homeOdds = formMarket === "ML" ? (odds?.homeMl?.odds ?? null) : (odds?.homeRl?.odds ?? null);
     const awayLine = formMarket === "RL" ? (odds?.awayRl?.value ?? null) : null;
@@ -749,26 +709,12 @@ export default function BetTracker() {
 
     return (
       <div className="flex gap-2">
-        <PickButton
-          selected={formPickSide === "AWAY"}
-          onClick={() => handlePickSide("AWAY")}
-          logo={awayLogo}
-          teamAbbr={awayTeam}
-          teamNickname={awayNickname}
-          odds={awayOdds}
-          line={awayLine}
-          side="AWAY"
-        />
-        <PickButton
-          selected={formPickSide === "HOME"}
-          onClick={() => handlePickSide("HOME")}
-          logo={homeLogo}
-          teamAbbr={homeTeam}
-          teamNickname={homeNickname}
-          odds={homeOdds}
-          line={homeLine}
-          side="HOME"
-        />
+        <PickButton selected={formPickSide === "AWAY"} onClick={() => handlePickSide("AWAY")}
+          logo={awayLogo} teamAbbr={awayTeam} teamNickname={awayNickname}
+          odds={awayOdds} line={awayLine} side="AWAY" />
+        <PickButton selected={formPickSide === "HOME"} onClick={() => handlePickSide("HOME")}
+          logo={homeLogo} teamAbbr={homeTeam} teamNickname={homeNickname}
+          odds={homeOdds} line={homeLine} side="HOME" />
       </div>
     );
   }, [formGame, formMarket, formPickSide, handlePickSide]);
@@ -776,24 +722,18 @@ export default function BetTracker() {
   // ── Submit ────────────────────────────────────────────────────────────────
   const handleSubmit = async () => {
     setFormError("");
-
     if (!formGame) { setFormError("Select a game from the slate."); return; }
     if (isNaN(oddsNum) || oddsNum === 0) { setFormError("Enter valid American odds (e.g. -110, +145)."); return; }
     if (isNaN(riskNum) || riskNum <= 0)  { setFormError(`Enter a valid ${stakeMode === "U" ? "unit" : "dollar"} amount.`); return; }
 
-    // In unit mode: convert units to dollars for storage (risk × unitSize)
     const riskDollars  = stakeMode === "U" ? riskNum * unitSize : riskNum;
     const toWinDollars = stakeMode === "U" ? (toWinCalc ?? 0) * unitSize : (toWinCalc ?? calcToWin(oddsNum, riskNum));
 
-    console.log(`[BetTracker][INPUT] submit: game=${formGame.awayTeam}@${formGame.homeTeam} timeframe=${formTimeframe} market=${formMarket} pickSide=${formPickSide} odds=${oddsNum} risk=${riskNum}${stakeMode}(=$${riskDollars}) toWin=${toWinCalc}${stakeMode}(=$${toWinDollars})`);
-
-    // Derive the line value for RL/Total bets from the AN slate odds
     let linePick: number | undefined = undefined;
     if (formGame?.odds) {
       const lv = getPickLine(formGame.odds, formMarket, formPickSide);
       if (lv !== null && lv !== undefined) linePick = Math.abs(lv);
     }
-    console.log(`[BetTracker][STATE] submit: linePick=${linePick ?? "N/A"} (market=${formMarket} side=${formPickSide})`);
 
     await createMut.mutateAsync({
       anGameId:  formGame.id,
@@ -811,9 +751,6 @@ export default function BetTracker() {
       notes:     formNotes || undefined,
     });
 
-    console.log(`[BetTracker][OUTPUT] submit: SUCCESS — bet created`);
-
-    // Reset form (keep date + sport + stake mode)
     setFormGame(null);
     setFormTimeframe("FULL_GAME");
     setFormMarket("ML");
@@ -823,12 +760,10 @@ export default function BetTracker() {
     setFormNotes("");
   };
 
-  // ── Quick result ──────────────────────────────────────────────────────────
   const handleResult = async (id: number, result: Result) => {
     await updateMut.mutateAsync({ id, result });
   };
 
-  // ── Edit save ─────────────────────────────────────────────────────────────
   const handleEditSave = async () => {
     if (!editBet) return;
     await updateMut.mutateAsync({ id: editBet.id, notes: editNotes, result: editResult });
@@ -836,10 +771,37 @@ export default function BetTracker() {
   };
 
   // ── Stats ─────────────────────────────────────────────────────────────────
-  const stats = statsQuery.data ?? {
+  const stats = (statsQuery.data ?? {
     totalBets: 0, wins: 0, losses: 0, pushes: 0, pending: 0,
     totalRisk: 0, netProfit: 0, roi: 0,
-  };
+    bestWin: 0, worstLoss: 0,
+    byType: [], bySize: [], byMonth: [], bySport: [], byResult: [], byTimeframe: [],
+    equityCurve: [],
+  }) as StatsData;
+
+  // ── Bet list with day separators ──────────────────────────────────────────
+  const bets = listQuery.data ?? [];
+
+  // Group bets by date for day-separator rows
+  const betsWithSeparators = useMemo(() => {
+    const result: Array<{ type: "separator"; date: string; wins: number; losses: number; pushes: number; pending: number } | { type: "bet"; bet: TrackedBet }> = [];
+    let lastDate = "";
+    for (const bet of (bets as TrackedBet[])) {
+      const d = bet.gameDate ?? "";
+      if (d !== lastDate) {
+        // Compute daily stats for this date
+        const dayBets = (bets as TrackedBet[]).filter(b => b.gameDate === d);
+        const wins    = dayBets.filter(b => b.result === "WIN").length;
+        const losses  = dayBets.filter(b => b.result === "LOSS").length;
+        const pushes  = dayBets.filter(b => b.result === "PUSH").length;
+        const pending = dayBets.filter(b => b.result === "PENDING").length;
+        result.push({ type: "separator", date: d, wins, losses, pushes, pending });
+        lastDate = d;
+      }
+      result.push({ type: "bet", bet });
+    }
+    return result;
+  }, [bets]);
 
   // ── Access guard ──────────────────────────────────────────────────────────
   if (authLoading) {
@@ -862,8 +824,6 @@ export default function BetTracker() {
       </div>
     );
   }
-
-  const bets = listQuery.data ?? [];
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -907,6 +867,20 @@ export default function BetTracker() {
                 />
               </div>
             )}
+            {/* Analytics toggle */}
+            <button
+              type="button"
+              onClick={() => setShowAnalytics(v => !v)}
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                showAnalytics
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                  : "bg-zinc-900 border-zinc-700 text-zinc-400 hover:text-zinc-200"
+              }`}
+              title="Toggle Analytics Panel"
+            >
+              <BarChart2 size={13} />
+              <span className="hidden sm:inline">Analytics</span>
+            </button>
             {/* Role badge */}
             <span className={`text-[10px] font-bold tracking-widest px-2 py-0.5 rounded-full border uppercase ${
               role === "owner"      ? "bg-yellow-500/10 border-yellow-500/30 text-yellow-400"
@@ -935,8 +909,36 @@ export default function BetTracker() {
 
       {/* ── Stats bar ──────────────────────────────────────────────────────── */}
       <div className="bg-zinc-900/50 border-b border-zinc-800/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3">
-          <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 space-y-3">
+
+          {/* Handicapper selector + All-time toggle */}
+          <div className="flex flex-wrap items-center gap-2">
+            {isOwnerOrAdmin && (handicappersQuery.data?.length ?? 0) > 0 && (
+              <HandicapperSelector
+                handicappers={handicappersQuery.data ?? []}
+                selectedId={targetUserId}
+                onSelect={setTargetUserId}
+                currentUserId={appUser!.id}
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => setFilterAllTime(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                filterAllTime
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                  : "bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300"
+              }`}
+            >
+              All-Time
+            </button>
+            {statsQuery.isLoading && (
+              <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            )}
+          </div>
+
+          {/* Stat cards row */}
+          <div className="grid grid-cols-4 sm:grid-cols-9 gap-2">
             <StatCard label="Total"   value={stats.totalBets} />
             <StatCard label="Wins"    value={stats.wins}   color="text-green-400" />
             <StatCard label="Losses"  value={stats.losses} color="text-red-400" />
@@ -959,8 +961,23 @@ export default function BetTracker() {
                 sub={`on ${fmtStake(stats.totalRisk)} risked`}
               />
             </div>
+            <div className="hidden sm:block">
+              <StatCard
+                label="Best Win"
+                value={stats.bestWin > 0 ? `+${fmtStake(stats.bestWin)}` : "—"}
+                color="text-green-400"
+              />
+            </div>
+            <div className="hidden sm:block">
+              <StatCard
+                label="Worst L"
+                value={stats.worstLoss < 0 ? fmtStake(stats.worstLoss) : "—"}
+                color="text-red-400"
+              />
+            </div>
           </div>
-          {/* Mobile: P/L + ROI on second row */}
+
+          {/* Mobile: P/L + ROI + Best Win + Worst L on second row */}
           <div className="grid grid-cols-2 gap-2 mt-2 sm:hidden">
             <StatCard
               label="Net P/L"
@@ -976,6 +993,34 @@ export default function BetTracker() {
           </div>
         </div>
       </div>
+
+      {/* ── Analytics Panel ────────────────────────────────────────────────── */}
+      {showAnalytics && (
+        <div className="bg-zinc-900/30 border-b border-zinc-800/60">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+            {/* Equity Curve */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <TrendingUp size={14} className="text-emerald-400" />
+                <span className="text-xs font-bold tracking-widest text-zinc-400 uppercase">Equity Curve</span>
+                <span className="text-[10px] text-zinc-600 ml-1">
+                  {filterAllTime ? "All-Time" : `${activeSport} · ${filterDate ? fmtDate(filterDate) : "All Dates"}`}
+                </span>
+              </div>
+              <EquityChart points={stats.equityCurve} />
+            </div>
+
+            {/* Breakdown Grid */}
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <BarChart2 size={14} className="text-emerald-400" />
+                <span className="text-xs font-bold tracking-widest text-zinc-400 uppercase">Breakdowns</span>
+              </div>
+              <BreakdownGrid stats={stats} />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
@@ -1031,7 +1076,7 @@ export default function BetTracker() {
               }))}
             />
 
-            {/* PICK — logo buttons */}
+            {/* PICK */}
             <div className="flex flex-col gap-1.5">
               <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">Pick</label>
               {formGame ? (
@@ -1050,7 +1095,6 @@ export default function BetTracker() {
 
             {/* ODDS + RISK + TO WIN */}
             <div className="grid grid-cols-3 gap-3">
-              {/* ODDS */}
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">Odds</label>
                 <input
@@ -1061,8 +1105,6 @@ export default function BetTracker() {
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
                 />
               </div>
-
-              {/* RISK */}
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">{riskLabel}</label>
                 <input
@@ -1075,8 +1117,6 @@ export default function BetTracker() {
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
                 />
               </div>
-
-              {/* TO WIN (auto-calc) */}
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">{toWinLabel}</label>
                 <div className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm font-mono text-emerald-400 min-h-[42px] flex items-center">
@@ -1088,7 +1128,7 @@ export default function BetTracker() {
               </div>
             </div>
 
-            {/* Unit math explainer (U mode only) */}
+            {/* Unit math explainer */}
             {stakeMode === "U" && toWinCalc !== null && riskNum > 0 && (
               <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 bg-zinc-800/50 rounded-lg px-3 py-2">
                 <Hash size={10} className="text-emerald-400 shrink-0" />
@@ -1136,15 +1176,17 @@ export default function BetTracker() {
           <div className="space-y-4">
             {/* Filter bar */}
             <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex flex-col gap-1">
-                <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">Filter Date</label>
-                <input
-                  type="date"
-                  value={filterDate}
-                  onChange={e => setFilterDate(e.target.value)}
-                  className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
-                />
-              </div>
+              {!filterAllTime && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">Filter Date</label>
+                  <input
+                    type="date"
+                    value={filterDate}
+                    onChange={e => setFilterDate(e.target.value)}
+                    className="bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
+                  />
+                </div>
+              )}
               <div className="flex flex-col gap-1">
                 <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">Result</label>
                 <div className="relative">
@@ -1161,12 +1203,10 @@ export default function BetTracker() {
               </div>
               <div className="ml-auto flex items-center gap-2 self-end pb-2">
                 <span className="text-xs text-zinc-500">{bets.length} bet{bets.length !== 1 ? "s" : ""}</span>
-                {/* Grade Bets button — runs autoGrade for current sport + date */}
                 <button type="button" onClick={() => {
-                    console.log(`[BetTracker][INPUT] Grade Bets clicked: sport=${activeSport} date=${filterDate}`);
-                    autoGradeMut.mutate({ sport: activeSport, gameDate: filterDate || undefined });
+                    autoGradeMut.mutate({ sport: activeSport, gameDate: filterAllTime ? undefined : (filterDate || undefined) });
                   }}
-                  disabled={autoGradeMut.isPending || bets.filter((b: TrackedBet) => b.result === "PENDING").length === 0}
+                  disabled={autoGradeMut.isPending || (bets as TrackedBet[]).filter(b => b.result === "PENDING").length === 0}
                   title="Auto-grade all pending bets using official league scores"
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold tracking-wider hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                 >
@@ -1177,7 +1217,7 @@ export default function BetTracker() {
               </div>
             </div>
 
-            {/* Bet cards */}
+            {/* Bet cards with day separators */}
             {listQuery.isLoading ? (
               <div className="flex items-center justify-center py-16">
                 <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
@@ -1185,22 +1225,40 @@ export default function BetTracker() {
             ) : bets.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-center space-y-2">
                 <Clock size={28} className="text-zinc-700" />
-                <p className="text-zinc-500 text-sm">No bets tracked yet for {activeSport} on {fmtDate(filterDate)}.</p>
+                <p className="text-zinc-500 text-sm">
+                  {filterAllTime
+                    ? "No bets tracked yet."
+                    : `No bets tracked yet for ${activeSport} on ${fmtDate(filterDate)}.`}
+                </p>
                 <p className="text-zinc-600 text-xs">Use the form to add your first bet.</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {bets.map((bet: TrackedBet) => (
-                  <BetCard
-                    key={bet.id}
-                    bet={bet}
-                    stakeMode={stakeMode}
-                    unitSize={unitSize}
-                    onResult={handleResult}
-                    onDelete={id => setDeleteId(id)}
-                    onEdit={b => { setEditBet(b); setEditNotes(b.notes ?? ""); setEditResult(b.result as Result); }}
-                  />
-                ))}
+              <div className="space-y-2">
+                {betsWithSeparators.map((item, idx) => {
+                  if (item.type === "separator") {
+                    const record = `${item.wins}W-${item.losses}L${item.pushes > 0 ? `-${item.pushes}P` : ""}${item.pending > 0 ? ` (${item.pending} pending)` : ""}`;
+                    return (
+                      <div key={`sep-${item.date}-${idx}`} className="flex items-center gap-3 py-2">
+                        <div className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase">
+                          {item.date ? fmtDate(item.date) : "Unknown Date"}
+                        </div>
+                        <div className="flex-1 h-px bg-zinc-800" />
+                        <div className="text-[10px] font-mono text-zinc-600">{record}</div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <BetCard
+                      key={item.bet.id}
+                      bet={item.bet}
+                      stakeMode={stakeMode}
+                      unitSize={unitSize}
+                      onResult={handleResult}
+                      onDelete={id => setDeleteId(id)}
+                      onEdit={b => { setEditBet(b); setEditNotes(b.notes ?? ""); setEditResult(b.result as Result); }}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>

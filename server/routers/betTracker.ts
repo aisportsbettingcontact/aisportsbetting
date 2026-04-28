@@ -32,8 +32,8 @@ import { router } from "../_core/trpc";
 import { handicapperProcedure } from "./appUsers";
 import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
-import { trackedBets } from "../../drizzle/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { trackedBets, appUsers } from "../../drizzle/schema";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { fetchAnSlate } from "../actionNetwork";
 import { gradeTrackedBet, fetchScores, type Sport as GraderSport, type Timeframe as GraderTimeframe, type Market as GraderMarket, type PickSide as GraderPickSide } from "../scoreGrader";
 
@@ -91,18 +91,48 @@ function derivePickLabel(
 export const betTrackerRouter = router({
 
   /**
+   * listHandicappers — OWNER/ADMIN only: list all handicapper accounts.
+   * Used by the BetTracker handicapper selector dropdown.
+   */
+  listHandicappers: handicapperProcedure
+    .query(async ({ ctx }) => {
+      const role = ctx.appUser.role;
+      if (role !== "owner" && role !== "admin") {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Owner or Admin required" });
+      }
+      const db = await getDb();
+      const rows = await db
+        .select({ id: appUsers.id, username: appUsers.username, role: appUsers.role })
+        .from(appUsers)
+        .where(inArray(appUsers.role, ["owner", "admin", "handicapper"]))
+        .orderBy(appUsers.id);
+      console.log(`[BetTracker][OUTPUT] listHandicappers: ${rows.length} handicappers returned`);
+      return rows;
+    }),
+
+  /**
    * list — fetch all bets for the authenticated user.
    * Optional filters: sport, gameDate, result.
+   * Owner/Admin can pass targetUserId to view another handicapper's bets.
    */
   list: handicapperProcedure
     .input(z.object({
-      sport:    z.enum(SPORTS).optional(),
-      gameDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
-      result:   z.enum(RESULTS).optional(),
+      sport:         z.enum(SPORTS).optional(),
+      gameDate:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      result:        z.enum(RESULTS).optional(),
+      targetUserId:  z.number().int().positive().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      const userId = ctx.appUser.id;
-      console.log(`[BetTracker][INPUT] list: userId=${userId} sport=${input?.sport ?? "ALL"} date=${input?.gameDate ?? "ALL"} result=${input?.result ?? "ALL"}`);
+      const role = ctx.appUser.role;
+      // Visibility enforcement: only owner/admin can view other handicappers
+      let userId = ctx.appUser.id;
+      if (input?.targetUserId && input.targetUserId !== userId) {
+        if (role !== "owner" && role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Owner or Admin required to view other handicappers" });
+        }
+        userId = input.targetUserId;
+      }
+      console.log(`[BetTracker][INPUT] list: viewerId=${ctx.appUser.id} targetUserId=${userId} sport=${input?.sport ?? "ALL"} date=${input?.gameDate ?? "ALL"} result=${input?.result ?? "ALL"}`);
 
       const conditions = [eq(trackedBets.userId, userId)];
       if (input?.sport)    conditions.push(eq(trackedBets.sport, input.sport));
@@ -114,7 +144,7 @@ export const betTrackerRouter = router({
         .select()
         .from(trackedBets)
         .where(and(...conditions))
-        .orderBy(desc(trackedBets.createdAt));
+        .orderBy(desc(trackedBets.gameDate), desc(trackedBets.createdAt));
 
       console.log(`[BetTracker][OUTPUT] list: userId=${userId} → ${rows.length} bets returned`);
       return rows;
@@ -470,44 +500,146 @@ export const betTrackerRouter = router({
     }),
 
   /**
-   * getStats — aggregate stats for the current user's bets.
+   * getStats — full aggregate stats with all breakdown dimensions.
+   * Owner/Admin can pass targetUserId to view another handicapper's stats.
+   *
+   * Returns:
+   *   - Overall: wins, losses, pushes, pending, netProfit, roi, totalRisk, bestWin, worstLoss
+   *   - byType:  breakdown by market (ML / RL / TOTAL)
+   *   - bySize:  breakdown by unit size (Heavy 5U+ / Mid 2-5U / Light <2U)
+   *   - byMonth: breakdown by calendar month (YYYY-MM)
+   *   - bySport: breakdown by sport (MLB / NHL / NBA / etc.)
+   *   - equityCurve: [{date, cumPL}] sorted ascending for chart rendering
    */
   getStats: handicapperProcedure
     .input(z.object({
-      sport:    z.enum(SPORTS).optional(),
-      gameDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      sport:         z.enum(SPORTS).optional(),
+      gameDate:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      targetUserId:  z.number().int().positive().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
-      const userId = ctx.appUser.id;
-      console.log(`[BetTracker][INPUT] getStats: userId=${userId} sport=${input?.sport ?? "ALL"} date=${input?.gameDate ?? "ALL"}`);
+      const role = ctx.appUser.role;
+      let userId = ctx.appUser.id;
+      if (input?.targetUserId && input.targetUserId !== userId) {
+        if (role !== "owner" && role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Owner or Admin required to view other handicappers" });
+        }
+        userId = input.targetUserId;
+      }
+      console.log(`[BetTracker][INPUT] getStats: viewerId=${ctx.appUser.id} targetUserId=${userId} sport=${input?.sport ?? "ALL"} date=${input?.gameDate ?? "ALL"}`);
 
       const conditions = [eq(trackedBets.userId, userId)];
       if (input?.sport)    conditions.push(eq(trackedBets.sport, input.sport));
       if (input?.gameDate) conditions.push(eq(trackedBets.gameDate, input.gameDate));
 
       const db = await getDb();
-      const rows = await db.select().from(trackedBets).where(and(...conditions));
+      // Fetch all bets sorted by gameDate ascending (needed for equity curve)
+      const rows = await db
+        .select()
+        .from(trackedBets)
+        .where(and(...conditions))
+        .orderBy(trackedBets.gameDate, trackedBets.createdAt);
 
+      // ── Overall aggregation ──────────────────────────────────────────────────
       let wins = 0, losses = 0, pushes = 0, pending = 0, voids = 0;
       let totalRisk = 0, totalWon = 0, totalLost = 0;
+      let bestWin = 0, worstLoss = 0;
 
       for (const bet of rows) {
         const risk  = parseFloat(bet.risk);
         const toWin = parseFloat(bet.toWin);
         switch (bet.result) {
-          case "WIN":     wins++;    totalRisk += risk; totalWon  += toWin; break;
-          case "LOSS":    losses++;  totalRisk += risk; totalLost += risk;  break;
+          case "WIN":
+            wins++; totalRisk += risk; totalWon += toWin;
+            if (toWin > bestWin) bestWin = toWin;
+            break;
+          case "LOSS":
+            losses++; totalRisk += risk; totalLost += risk;
+            if (risk > worstLoss) worstLoss = risk;
+            break;
           case "PUSH":    pushes++;  break;
           case "PENDING": pending++; break;
           case "VOID":    voids++;   break;
         }
       }
-
       const netProfit = totalWon - totalLost;
       const roi       = totalRisk > 0 ? parseFloat(((netProfit / totalRisk) * 100).toFixed(2)) : 0;
 
+      // ── Breakdown helper ─────────────────────────────────────────────────────
+      type BreakdownEntry = {
+        key: string;
+        wins: number; losses: number; pushes: number;
+        totalRisk: number; netProfit: number; roi: number;
+      };
+      function buildBreakdown(keyFn: (bet: typeof rows[0]) => string): BreakdownEntry[] {
+        const map = new Map<string, { wins: number; losses: number; pushes: number; risk: number; won: number; lost: number }>();
+        for (const bet of rows) {
+          const key = keyFn(bet);
+          if (!map.has(key)) map.set(key, { wins: 0, losses: 0, pushes: 0, risk: 0, won: 0, lost: 0 });
+          const e = map.get(key)!;
+          const risk  = parseFloat(bet.risk);
+          const toWin = parseFloat(bet.toWin);
+          if (bet.result === "WIN")  { e.wins++;   e.risk += risk; e.won  += toWin; }
+          if (bet.result === "LOSS") { e.losses++; e.risk += risk; e.lost += risk;  }
+          if (bet.result === "PUSH") { e.pushes++; }
+        }
+        return Array.from(map.entries()).map(([key, e]) => {
+          const np = e.won - e.lost;
+          return {
+            key,
+            wins:       e.wins,
+            losses:     e.losses,
+            pushes:     e.pushes,
+            totalRisk:  parseFloat(e.risk.toFixed(2)),
+            netProfit:  parseFloat(np.toFixed(2)),
+            roi:        e.risk > 0 ? parseFloat(((np / e.risk) * 100).toFixed(2)) : 0,
+          };
+        }).sort((a, b) => a.key.localeCompare(b.key));
+      }
+
+      // ── By Bet Type (market) ─────────────────────────────────────────────────
+      const byType = buildBreakdown(bet => bet.market ?? bet.betType ?? "ML");
+
+      // ── By Unit Size ─────────────────────────────────────────────────────────
+      const bySize = buildBreakdown(bet => {
+        const r = parseFloat(bet.risk);
+        if (r >= 5) return "Heavy (5U+)";
+        if (r >= 2) return "Mid (2-5U)";
+        return "Light (<2U)";
+      });
+
+      // ── By Month ─────────────────────────────────────────────────────────────
+      const byMonth = buildBreakdown(bet => bet.gameDate.substring(0, 7)); // YYYY-MM
+
+      // ── By Sport ─────────────────────────────────────────────────────────────
+      const bySport = buildBreakdown(bet => bet.sport);
+
+      // ── By Result (WIN/LOSS breakdown for quick reference) ───────────────────
+      const byResult = buildBreakdown(bet => bet.result);
+
+      // ── By Timeframe ─────────────────────────────────────────────────────────
+      const byTimeframe = buildBreakdown(bet => bet.timeframe ?? "FULL_GAME");
+
+      // ── Equity Curve ─────────────────────────────────────────────────────────
+      // Cumulative P/L over time (settled bets only, sorted by gameDate asc)
+      let cumPL = 0;
+      const equityCurve: { date: string; cumPL: number; betId: number; pick: string; result: string; pl: number }[] = [];
+      for (const bet of rows) {
+        if (bet.result === "WIN") {
+          const pl = parseFloat(bet.toWin);
+          cumPL += pl;
+          equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "WIN", pl: parseFloat(pl.toFixed(2)) });
+        } else if (bet.result === "LOSS") {
+          const pl = -parseFloat(bet.risk);
+          cumPL += pl;
+          equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "LOSS", pl: parseFloat(pl.toFixed(2)) });
+        }
+        // PUSH/PENDING/VOID: no P/L impact on curve
+      }
+
       const stats = {
-        totalBets: rows.length,
+        // Overall
+        totalBets:  rows.length,
         wins, losses, pushes, pending, voids,
         gradedBets: wins + losses + pushes,
         totalRisk:  parseFloat(totalRisk.toFixed(2)),
@@ -515,9 +647,20 @@ export const betTrackerRouter = router({
         totalLost:  parseFloat(totalLost.toFixed(2)),
         netProfit:  parseFloat(netProfit.toFixed(2)),
         roi,
+        bestWin:    parseFloat(bestWin.toFixed(2)),
+        worstLoss:  parseFloat(worstLoss.toFixed(2)),
+        // Breakdowns
+        byType,
+        bySize,
+        byMonth,
+        bySport,
+        byResult,
+        byTimeframe,
+        // Equity curve
+        equityCurve,
       };
 
-      console.log(`[BetTracker][OUTPUT] getStats: userId=${userId} → totalBets=${stats.totalBets} wins=${stats.wins} losses=${stats.losses} roi=${stats.roi}%`);
+      console.log(`[BetTracker][OUTPUT] getStats: userId=${userId} → totalBets=${stats.totalBets} wins=${stats.wins} losses=${stats.losses} roi=${stats.roi}% equityCurve=${equityCurve.length} points`);
       return stats;
     }),
 });
