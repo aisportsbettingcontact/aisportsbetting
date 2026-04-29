@@ -1947,6 +1947,8 @@ export const trackedBets = mysqlTable("tracked_bets", {
     "FULL_GAME",
     "FIRST_5",
     "FIRST_INNING",
+    "NRFI",
+    "YRFI",
     "REGULATION",
     "FIRST_PERIOD",
     "FIRST_HALF",

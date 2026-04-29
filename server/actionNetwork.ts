@@ -188,7 +188,7 @@ export function todayEstDate(): string {
  * For MLB: use MLB.com SVG via mlbId from MLB_BY_ABBREV.
  * For other sports: use the AN-provided logo URL as fallback.
  */
-function resolveLogoUrl(sport: string, abbrev: string, anLogoUrl: string): string {
+export function resolveLogoUrl(sport: string, abbrev: string, anLogoUrl: string): string {
   if (sport === "MLB") {
     const team = MLB_BY_ABBREV.get(abbrev);
     if (team?.logoUrl) {

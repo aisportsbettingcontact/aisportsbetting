@@ -526,6 +526,13 @@
       "when": 1776711994680,
       "tag": "0074_wonderful_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "5",
+      "when": 1777421876459,
+      "tag": "0075_panoramic_manta",
+      "breakpoints": true
     }
   ]
 }

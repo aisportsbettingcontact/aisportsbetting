@@ -65,7 +65,7 @@ type LinescoreEntry = {
 const SPORTS = ["MLB", "NHL", "NBA", "NCAAM"] as const;
 type Sport = typeof SPORTS[number];
 
-type Timeframe = "FULL_GAME" | "FIRST_5" | "FIRST_INNING" | "REGULATION" | "FIRST_PERIOD" | "FIRST_HALF" | "FIRST_QUARTER";
+type Timeframe = "FULL_GAME" | "FIRST_5" | "FIRST_INNING" | "NRFI" | "YRFI" | "REGULATION" | "FIRST_PERIOD" | "FIRST_HALF" | "FIRST_QUARTER";
 type Market    = "ML" | "RL" | "TOTAL";
 type PickSide  = "AWAY" | "HOME" | "OVER" | "UNDER";
 type Result    = "PENDING" | "WIN" | "LOSS" | "PUSH" | "VOID";
@@ -102,8 +102,10 @@ interface SlateGame {
 const TIMEFRAMES_BY_SPORT: Record<Sport, { value: Timeframe; label: string }[]> = {
   MLB:   [
     { value: "FULL_GAME",    label: "Full Game" },
-    { value: "FIRST_5",      label: "First 5 Innings" },
+    { value: "FIRST_5",      label: "First 5 Innings (F5)" },
     { value: "FIRST_INNING", label: "First Inning" },
+    { value: "NRFI",         label: "NRFI (No Run First Inning)" },
+    { value: "YRFI",         label: "YRFI (Yes Run First Inning)" },
   ],
   NHL:   [
     { value: "FULL_GAME",    label: "Full Game (incl. OT/SO)" },
@@ -187,6 +189,8 @@ function timeframeShort(tf: string): string {
   switch (tf) {
     case "FIRST_5":       return "F5";
     case "FIRST_INNING":  return "F1";
+    case "NRFI":          return "NRFI";
+    case "YRFI":          return "YRFI";
     case "REGULATION":    return "REG";
     case "FIRST_PERIOD":  return "1P";
     case "FIRST_HALF":    return "1H";
@@ -541,18 +545,34 @@ function BetCard({
   const result  = bet.result as Result;
 
   // ── Game state ──────────────────────────────────────────────────────────────
-  // Use linescore status if available (more accurate), else fall back to AN status
-  const lsStatus  = linescore?.status ?? null;
-  const anStatus  = bet.gameStatus ?? null;
+  // Priority order for game state detection:
+  //   1. Bet is graded (result !== PENDING) → treat as Final (scores are in DB)
+  //   2. Linescore status (most accurate for today's games)
+  //   3. AN status (fallback)
+  const isGraded   = bet.result !== "PENDING" && bet.result !== "VOID";
+  const lsStatus   = linescore?.status ?? null;
+  const anStatus   = bet.gameStatus ?? null;
 
-  // Determine game state from best available source
-  const isFinal   = lsStatus === "Final" || anStatus === "complete";
-  const isLive    = !isFinal && (lsStatus === "Live" || anStatus === "in_progress");
-  const isUpcoming = !isFinal && !isLive;
+  const isFinal    = isGraded || lsStatus === "Final" || anStatus === "complete";
+  const isLive     = !isFinal && (lsStatus === "Live" || anStatus === "in_progress");
 
-  // Scores: prefer linescore totals, fall back to bet.awayScore/homeScore
-  const awayR = linescore?.awayR ?? (bet.awayScore !== null && bet.awayScore !== undefined ? parseInt(String(bet.awayScore), 10) : null);
-  const homeR = linescore?.homeR ?? (bet.homeScore !== null && bet.homeScore !== undefined ? parseInt(String(bet.homeScore), 10) : null);
+  // Scores:
+  //   - Graded bets: use DB-stored awayScore/homeScore (authoritative, always present)
+  //   - Live bets: use linescore totals (real-time)
+  //   - Upcoming: no scores
+  const dbAwayScore = bet.awayScore !== null && bet.awayScore !== undefined
+    ? parseFloat(String(bet.awayScore))
+    : null;
+  const dbHomeScore = bet.homeScore !== null && bet.homeScore !== undefined
+    ? parseFloat(String(bet.homeScore))
+    : null;
+
+  const awayR = isGraded
+    ? dbAwayScore
+    : (linescore?.awayR ?? dbAwayScore);
+  const homeR = isGraded
+    ? dbHomeScore
+    : (linescore?.homeR ?? dbHomeScore);
   const hasScore = awayR !== null && homeR !== null;
 
   // Inning indicator for live games
@@ -573,10 +593,7 @@ function BetCard({
     : bet.market === "RL" ? (bet.sport === "NHL" ? "PL" : "RL")
     : "TOT";
 
-  // Show linescore grid only for MLB bets that have linescore data
-  const showLinescore = bet.sport === "MLB" && linescore !== null && linescore !== undefined;
-
-  // Away/home abbreviations for linescore grid
+  // Away/home abbreviations (for display only)
   const awayAbbrev = linescore?.awayAbbrev || bet.awayTeam || "AWY";
   const homeAbbrev = linescore?.homeAbbrev || bet.homeTeam || "HME";
 
@@ -698,18 +715,7 @@ function BetCard({
           </div>
         </div>
 
-        {/* ── Row 2: 9-inning linescore grid (MLB only) ── */}
-        {showLinescore && (
-          <div className="bg-zinc-950/60 border border-zinc-800/60 rounded-lg px-3 py-2">
-            <LinescoreGrid
-              ls={linescore!}
-              awayAbbrev={awayAbbrev}
-              homeAbbrev={homeAbbrev}
-            />
-          </div>
-        )}
-
-        {/* ── Row 3: Pick + Bet Details ── */}
+        {/* ── Row 2: Pick + Bet Details ── */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 flex-wrap min-w-0">
             {/* Pick team logo highlight */}
@@ -882,6 +888,18 @@ export default function BetTracker() {
 
   useEffect(() => { setFormTimeframe("FULL_GAME"); }, [activeSport]);
   useEffect(() => { setFormGame(null); setFormPickSide("AWAY"); setFormOdds(""); }, [formDate, activeSport]);
+
+  // NRFI/YRFI: auto-set market=TOTAL and pickSide when timeframe changes
+  useEffect(() => {
+    if (formTimeframe === "NRFI") {
+      setFormMarket("TOTAL");
+      setFormPickSide("UNDER");
+    } else if (formTimeframe === "YRFI") {
+      setFormMarket("TOTAL");
+      setFormPickSide("OVER");
+    }
+  }, [formTimeframe]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     const newSide: PickSide = formMarket === "TOTAL" ? "OVER" : "AWAY";
     setFormPickSide(newSide);
@@ -1090,9 +1108,24 @@ export default function BetTracker() {
     const riskDollars  = stakeMode === "U" ? riskNum * unitSize : riskNum;
     const toWinDollars = stakeMode === "U" ? (toWinCalc ?? 0) * unitSize : (toWinCalc ?? calcToWin(oddsNum, riskNum));
 
+    // NRFI/YRFI: enforce market=TOTAL, line=0.5, and correct pickSide
+    // These are fixed by definition — not user-configurable
+    let effectiveMarket   = formMarket;
+    let effectivePickSide = formPickSide;
     let linePick: number | undefined = undefined;
-    if (formGame?.odds) {
-      const lv = getPickLine(formGame.odds, formMarket, formPickSide);
+
+    if (formTimeframe === "NRFI") {
+      effectiveMarket   = "TOTAL";
+      effectivePickSide = "UNDER";
+      linePick          = 0.5;
+      console.log(`[BetTracker][STATE] NRFI bet: enforcing market=TOTAL pickSide=UNDER line=0.5`);
+    } else if (formTimeframe === "YRFI") {
+      effectiveMarket   = "TOTAL";
+      effectivePickSide = "OVER";
+      linePick          = 0.5;
+      console.log(`[BetTracker][STATE] YRFI bet: enforcing market=TOTAL pickSide=OVER line=0.5`);
+    } else if (formGame?.odds) {
+      const lv = getPickLine(formGame.odds, effectiveMarket, effectivePickSide);
       if (lv !== null && lv !== undefined) linePick = Math.abs(lv);
     }
 
@@ -1103,8 +1136,8 @@ export default function BetTracker() {
       awayTeam:  formGame.awayTeam,
       homeTeam:  formGame.homeTeam,
       timeframe: formTimeframe,
-      market:    formMarket,
-      pickSide:  formPickSide,
+      market:    effectiveMarket,
+      pickSide:  effectivePickSide,
       odds:      oddsNum,
       risk:      riskDollars,
       toWin:     toWinDollars,
@@ -1421,33 +1454,50 @@ export default function BetTracker() {
               options={timeframeOptions}
             />
 
-            {/* MARKET */}
-            <SelectField
-              label={`Market — ${MARKET_LABELS[activeSport][formMarket]}`}
-              value={formMarket}
-              onChange={v => setFormMarket(v as Market)}
-              options={(["ML", "RL", "TOTAL"] as Market[]).map(m => ({
-                value: m,
-                label: MARKET_LABELS[activeSport][m],
-              }))}
-            />
+            {/* MARKET — hidden for NRFI/YRFI (auto-set to TOTAL) */}
+            {formTimeframe !== "NRFI" && formTimeframe !== "YRFI" && (
+              <SelectField
+                label={`Market — ${MARKET_LABELS[activeSport][formMarket]}`}
+                value={formMarket}
+                onChange={v => setFormMarket(v as Market)}
+                options={(["ML", "RL", "TOTAL"] as Market[]).map(m => ({
+                  value: m,
+                  label: MARKET_LABELS[activeSport][m],
+                }))}
+              />
+            )}
 
-            {/* PICK */}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">Pick</label>
-              {formGame ? (
-                pickButtons
-              ) : (
-                <div className="flex gap-2">
-                  {(formMarket === "TOTAL" ? ["OVER", "UNDER"] : ["AWAY", "HOME"]).map(s => (
-                    <div key={s} className="flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 border-zinc-800 bg-zinc-900/50 opacity-40">
-                      <div className="w-8 h-8 rounded-full bg-zinc-800" />
-                      <div className="text-[10px] text-zinc-600 font-bold">{s}</div>
-                    </div>
-                  ))}
+            {/* NRFI/YRFI locked info banner */}
+            {(formTimeframe === "NRFI" || formTimeframe === "YRFI") && (
+              <div className="flex items-start gap-2 bg-emerald-500/8 border border-emerald-500/20 rounded-lg px-3 py-2.5">
+                <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-zinc-300 leading-relaxed">
+                  <span className="font-bold text-emerald-400">{formTimeframe}</span>
+                  {formTimeframe === "NRFI"
+                    ? " — No Run First Inning. Auto-set: TOTAL UNDER 0.5 runs in inning 1. WIN if neither team scores in the 1st."
+                    : " — Yes Run First Inning. Auto-set: TOTAL OVER 0.5 runs in inning 1. WIN if either team scores in the 1st."}
                 </div>
-              )}
-            </div>
+              </div>
+            )}
+
+            {/* PICK — hidden for NRFI/YRFI (auto-set) */}
+            {formTimeframe !== "NRFI" && formTimeframe !== "YRFI" && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] tracking-widest text-zinc-500 uppercase font-medium">Pick</label>
+                {formGame ? (
+                  pickButtons
+                ) : (
+                  <div className="flex gap-2">
+                    {(formMarket === "TOTAL" ? ["OVER", "UNDER"] : ["AWAY", "HOME"]).map(s => (
+                      <div key={s} className="flex-1 flex flex-col items-center justify-center gap-1.5 p-3 rounded-xl border-2 border-zinc-800 bg-zinc-900/50 opacity-40">
+                        <div className="w-8 h-8 rounded-full bg-zinc-800" />
+                        <div className="text-[10px] text-zinc-600 font-bold">{s}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ODDS + RISK + TO WIN */}
             <div className="grid grid-cols-3 gap-3">

@@ -34,7 +34,7 @@ import { TRPCError } from "@trpc/server";
 import { getDb } from "../db";
 import { trackedBets, appUsers } from "../../drizzle/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
-import { fetchAnSlate } from "../actionNetwork";
+import { fetchAnSlate, resolveLogoUrl } from "../actionNetwork";
 import { gradeTrackedBet, fetchScores, type Sport as GraderSport, type Timeframe as GraderTimeframe, type Market as GraderMarket, type PickSide as GraderPickSide } from "../scoreGrader";
 
 // ─── Shared Zod enums ─────────────────────────────────────────────────────────
@@ -45,6 +45,8 @@ const TIMEFRAMES = [
   "FULL_GAME",
   "FIRST_5",
   "FIRST_INNING",
+  "NRFI",
+  "YRFI",
   "REGULATION",
   "FIRST_PERIOD",
   "FIRST_HALF",
@@ -67,17 +69,22 @@ function calcToWin(odds: number, risk: number): number {
 /**
  * Derive a human-readable pick string from structured inputs.
  * Examples:
- *   AWAY + ML  → "HOU ML"
- *   HOME + RL  → "SEA RL"
- *   OVER + TOTAL → "OVER"
- *   UNDER + TOTAL → "UNDER"
+ *   AWAY + ML        → "HOU ML"
+ *   HOME + RL        → "SEA RL"
+ *   OVER + TOTAL     → "OVER"
+ *   UNDER + TOTAL    → "UNDER"
+ *   NRFI timeframe   → "NRFI"
+ *   YRFI timeframe   → "YRFI"
  */
 function derivePickLabel(
   pickSide: typeof PICK_SIDES[number],
   market: typeof MARKETS[number],
   awayTeam: string,
   homeTeam: string,
+  timeframe?: typeof TIMEFRAMES[number],
 ): string {
+  if (timeframe === "NRFI") return "NRFI";
+  if (timeframe === "YRFI") return "YRFI";
   if (market === "TOTAL") {
     return pickSide === "OVER" ? "OVER" : "UNDER";
   }
@@ -170,13 +177,26 @@ export const betTrackerRouter = router({
       );
 
       // Merge slate data into each bet row
+      // For bets where the AN slate is unavailable (historical dates), fall back to
+      // resolveLogoUrl which builds logos directly from team abbreviations.
       type RawBet = typeof rows[0];
       const enriched = rows.map((row: RawBet) => {
         const slate = row.anGameId ? slateMap.get(row.anGameId) : undefined;
+
+        // Logo fallback: resolve from MLB_BY_ABBREV when slate is unavailable
+        const awayLogo = slate?.awayLogo
+          ?? (row.awayTeam ? resolveLogoUrl(row.sport, row.awayTeam, "") || null : null);
+        const homeLogo = slate?.homeLogo
+          ?? (row.homeTeam ? resolveLogoUrl(row.sport, row.homeTeam, "") || null : null);
+
+        if (!slate && (awayLogo || homeLogo)) {
+          console.log(`[BetTracker][STATE] list: bet id=${row.id} — no slate, logo fallback: ${row.awayTeam}=${awayLogo ? 'OK' : 'MISS'} ${row.homeTeam}=${homeLogo ? 'OK' : 'MISS'}`);
+        }
+
         return {
           ...row,
-          awayLogo:     slate?.awayLogo     ?? null,
-          homeLogo:     slate?.homeLogo     ?? null,
+          awayLogo,
+          homeLogo,
           awayFull:     slate?.awayFull     ?? null,
           homeFull:     slate?.homeFull     ?? null,
           awayNickname: slate?.awayNickname ?? null,
@@ -189,7 +209,8 @@ export const betTrackerRouter = router({
         };
       });
 
-      console.log(`[BetTracker][VERIFY] list: enriched ${enriched.filter((b: typeof enriched[0]) => b.awayLogo).length}/${enriched.length} bets with slate data`);
+      const withLogo = enriched.filter((b: typeof enriched[0]) => b.awayLogo).length;
+      console.log(`[BetTracker][VERIFY] list: enriched ${withLogo}/${enriched.length} bets with logos (${enriched.length - withLogo} missing)`);
       return enriched;
     }),
 
@@ -222,7 +243,7 @@ export const betTrackerRouter = router({
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.appUser.id;
       const toWin  = input.toWin ?? calcToWin(input.odds, input.risk);
-      const pick   = derivePickLabel(input.pickSide, input.market, input.awayTeam, input.homeTeam);
+      const pick   = derivePickLabel(input.pickSide, input.market, input.awayTeam, input.homeTeam, input.timeframe);
 
       console.log(`[BetTracker][INPUT] create: userId=${userId} sport=${input.sport} date=${input.gameDate} anGameId=${input.anGameId} timeframe=${input.timeframe} market=${input.market} pickSide=${input.pickSide} pick="${pick}" odds=${input.odds} risk=${input.risk} toWin=${toWin}`);
       console.log(`[BetTracker][STATE] create: awayTeam=${input.awayTeam} homeTeam=${input.homeTeam} derivedPick="${pick}"`);

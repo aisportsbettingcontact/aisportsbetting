@@ -41,7 +41,9 @@ export type Timeframe =
   | "FIRST_HALF"
   | "FIRST_QUARTER"
   | "FIRST_5"
-  | "FIRST_INNING";
+  | "FIRST_INNING"
+  | "NRFI"
+  | "YRFI";
 
 export type Market = "ML" | "RL" | "TOTAL";
 export type PickSide = "AWAY" | "HOME" | "OVER" | "UNDER";
@@ -167,18 +169,36 @@ async function fetchMlbScores(date: string): Promise<GameScoreData[]> {
     const inn1 = innings.find(i => i.num === 1);
     const awayF1 = inn1?.away?.runs ?? 0;
     const homeF1 = inn1?.home?.runs ?? 0;
-    const isFinalF1 = innings.length >= 1 && (isFinalFull || (ls.currentInning ?? 0) > 1);
+    // F1 is final when inning 1 is complete:
+    //   - game is over (isFinalFull), OR
+    //   - we are past inning 1 (currentInning > 1), OR
+    //   - we are in the bottom of inning 1 and home has scored (inningState = End/Middle = top complete)
+    const isFinalF1 = innings.length >= 1 && (
+      isFinalFull ||
+      (ls.currentInning ?? 0) > 1
+    );
+
+    // NRFI/YRFI: same window as FIRST_INNING but graded as TOTAL (0.5 line)
+    // NRFI = UNDER 0.5 total runs in inning 1 (no runs scored = WIN for NRFI)
+    // YRFI = OVER 0.5 total runs in inning 1 (at least 1 run scored = WIN for YRFI)
+    // Both use the same score window as FIRST_INNING
+    const awayNrfi = awayF1;
+    const homeNrfi = homeF1;
+    const isFinalNrfi = isFinalF1;
 
     // First 5 innings score (sum innings 1-5)
     const awayF5 = innings.filter(i => i.num <= 5).reduce((s, i) => s + (i.away?.runs ?? 0), 0);
     const homeF5 = innings.filter(i => i.num <= 5).reduce((s, i) => s + (i.home?.runs ?? 0), 0);
+    // F5 is final when inning 5 is complete:
+    //   - game is over (isFinalFull), OR
+    //   - we are past inning 5 (currentInning > 5)
     const isFinalF5 = isFinalFull || (ls.currentInning ?? 0) > 5;
 
     // Derive abbreviation from team name if not present
     const awayAbbrev = g.teams.away.team.abbreviation ?? g.teams.away.team.name.split(" ").pop() ?? "UNK";
     const homeAbbrev = g.teams.home.team.abbreviation ?? g.teams.home.team.name.split(" ").pop() ?? "UNK";
 
-    console.log(`[ScoreGrader][STATE] MLB game=${g.gamePk} ${awayAbbrev}@${homeAbbrev} state=${gameState} full=${awayFull}-${homeFull} f5=${awayF5}-${homeF5} f1=${awayF1}-${homeF1}`);
+    console.log(`[ScoreGrader][STATE] MLB game=${g.gamePk} ${awayAbbrev}@${homeAbbrev} state=${gameState} full=${awayFull}-${homeFull} f5=${awayF5}-${homeF5} f1=${awayF1}-${homeF1} nrfi/yrfi_total=${awayF1+homeF1} isFinalF1=${isFinalF1} isFinalF5=${isFinalF5}`);
 
     return {
       sport: "MLB" as Sport,
@@ -187,9 +207,11 @@ async function fetchMlbScores(date: string): Promise<GameScoreData[]> {
       homeAbbrev,
       gameState,
       scores: {
-        FULL_GAME:    { awayScore: awayFull, homeScore: homeFull, isFinal: isFinalFull, label: "Full Game" },
-        FIRST_5:      { awayScore: awayF5,   homeScore: homeF5,   isFinal: isFinalF5,   label: "First 5 Innings" },
-        FIRST_INNING: { awayScore: awayF1,   homeScore: homeF1,   isFinal: isFinalF1,   label: "First Inning" },
+        FULL_GAME:    { awayScore: awayFull,  homeScore: homeFull,  isFinal: isFinalFull,  label: "Full Game" },
+        FIRST_5:      { awayScore: awayF5,    homeScore: homeF5,    isFinal: isFinalF5,    label: "First 5 Innings" },
+        FIRST_INNING: { awayScore: awayF1,    homeScore: homeF1,    isFinal: isFinalF1,    label: "First Inning" },
+        NRFI:         { awayScore: awayNrfi,  homeScore: homeNrfi,  isFinal: isFinalNrfi,  label: "NRFI (Inning 1 Total)" },
+        YRFI:         { awayScore: awayNrfi,  homeScore: homeNrfi,  isFinal: isFinalNrfi,  label: "YRFI (Inning 1 Total)" },
       },
     };
   });
