@@ -89,6 +89,10 @@ export interface BetGradeOutput {
   homeScore: number | null;
   gameState: string;
   reason: string;
+  /** Actual away abbreviation from the official API (may differ from stored awayTeam) */
+  awayAbbrev: string | null;
+  /** Actual home abbreviation from the official API (may differ from stored homeTeam) */
+  homeAbbrev: string | null;
 }
 
 // ─── Score cache (5-min TTL, keyed by "sport:date") ──────────────────────────
@@ -657,6 +661,8 @@ export async function gradeTrackedBet(input: BetGradeInput): Promise<BetGradeOut
       homeScore: null,
       gameState: "NOT_FOUND",
       reason: `Game ${input.awayTeam}@${input.homeTeam} not found in ${input.sport} scores for ${input.gameDate}`,
+      awayAbbrev: null,
+      homeAbbrev: null,
     };
   }
 
@@ -669,6 +675,8 @@ export async function gradeTrackedBet(input: BetGradeInput): Promise<BetGradeOut
       homeScore: game.scores.FULL_GAME?.homeScore ?? null,
       gameState: game.gameState,
       reason: `Timeframe ${input.timeframe} not supported for ${input.sport}`,
+      awayAbbrev: game.awayAbbrev,
+      homeAbbrev: game.homeAbbrev,
     };
   }
 
@@ -680,6 +688,8 @@ export async function gradeTrackedBet(input: BetGradeInput): Promise<BetGradeOut
       homeScore: tfScore.homeScore,
       gameState: game.gameState,
       reason: `Game in progress or not yet started (state=${game.gameState})`,
+      awayAbbrev: game.awayAbbrev,
+      homeAbbrev: game.homeAbbrev,
     };
   }
 
@@ -692,6 +702,8 @@ export async function gradeTrackedBet(input: BetGradeInput): Promise<BetGradeOut
       homeScore: tfScore.homeScore,
       gameState: game.gameState,
       reason: "Grading failed — missing line or unsupported market",
+      awayAbbrev: game.awayAbbrev,
+      homeAbbrev: game.homeAbbrev,
     };
   }
 
@@ -703,5 +715,7 @@ export async function gradeTrackedBet(input: BetGradeInput): Promise<BetGradeOut
     homeScore: tfScore.homeScore,
     gameState: game.gameState,
     reason: `${tfScore.label}: ${tfScore.awayScore}-${tfScore.homeScore} | ${input.market} ${input.pickSide}${input.line != null ? ` ${input.line}` : ""} → ${result}`,
+    awayAbbrev: game.awayAbbrev,
+    homeAbbrev: game.homeAbbrev,
   };
 }

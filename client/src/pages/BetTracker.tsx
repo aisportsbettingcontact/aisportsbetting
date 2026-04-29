@@ -651,7 +651,17 @@ function BetCard({
                     pickIsHome ? (result === "WIN" ? "text-green-400" : result === "LOSS" ? "text-red-400" : "text-white") : "text-zinc-300"
                   }`}>{homeR}</span>
                 </div>
-                <span className="text-[9px] font-bold text-zinc-500 tracking-widest uppercase">Final</span>
+                <span className="text-[9px] font-bold text-zinc-500 tracking-widest uppercase">
+                  {bet.timeframe === "FIRST_5" ? "F5" :
+                   bet.timeframe === "FIRST_INNING" ? "INN 1" :
+                   bet.timeframe === "NRFI" ? "NRFI" :
+                   bet.timeframe === "YRFI" ? "YRFI" :
+                   bet.timeframe === "FIRST_PERIOD" ? "P1" :
+                   bet.timeframe === "FIRST_HALF" ? "1H" :
+                   bet.timeframe === "FIRST_QUARTER" ? "Q1" :
+                   bet.timeframe === "REGULATION" ? "REG" :
+                   "Final"}
+                </span>
               </div>
             ) : isLive && hasScore ? (
               <div className="flex flex-col items-center gap-0.5">

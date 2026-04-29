@@ -471,13 +471,24 @@ export const betTrackerRouter = router({
           continue;
         }
 
-        // Update bet result + final scores in DB
+        // Update bet result + final scores + actual team abbreviations in DB
+        // awayAbbrev/homeAbbrev from the grader are the official API abbreviations;
+        // use them to fix any placeholder values (e.g. "OPP") stored at bet creation time.
+        const teamUpdates: Record<string, string | null> = {
+          result:    gradeOut.result,
+          awayScore: gradeOut.awayScore !== null ? String(gradeOut.awayScore) : null,
+          homeScore: gradeOut.homeScore !== null ? String(gradeOut.homeScore) : null,
+        };
+        if (gradeOut.awayAbbrev && (!bet.awayTeam || bet.awayTeam === 'OPP' || bet.awayTeam.trim() === '')) {
+          teamUpdates.awayTeam = gradeOut.awayAbbrev;
+          console.log(`[BetTracker][STATE] autoGrade: betId=${bet.id} — fixing awayTeam from "${bet.awayTeam}" to "${gradeOut.awayAbbrev}"`);
+        }
+        if (gradeOut.homeAbbrev && (!bet.homeTeam || bet.homeTeam === 'OPP' || bet.homeTeam.trim() === '')) {
+          teamUpdates.homeTeam = gradeOut.homeAbbrev;
+          console.log(`[BetTracker][STATE] autoGrade: betId=${bet.id} — fixing homeTeam from "${bet.homeTeam}" to "${gradeOut.homeAbbrev}"`);
+        }
         await db.update(trackedBets)
-          .set({
-            result:    gradeOut.result,
-            awayScore: gradeOut.awayScore !== null ? String(gradeOut.awayScore) : null,
-            homeScore: gradeOut.homeScore !== null ? String(gradeOut.homeScore) : null,
-          })
+          .set(teamUpdates)
           .where(eq(trackedBets.id, bet.id));
 
         graded++;
@@ -542,12 +553,20 @@ export const betTrackerRouter = router({
 
         if (gradeOut.result === "PENDING") { stillPending++; continue; }
 
+        // Fix any placeholder team names (e.g. "OPP") using actual API abbreviations
+        const allUpdates: Record<string, string | null> = {
+          result:    gradeOut.result,
+          awayScore: gradeOut.awayScore !== null ? String(gradeOut.awayScore) : null,
+          homeScore: gradeOut.homeScore !== null ? String(gradeOut.homeScore) : null,
+        };
+        if (gradeOut.awayAbbrev && (!bet.awayTeam || bet.awayTeam === 'OPP' || bet.awayTeam.trim() === '')) {
+          allUpdates.awayTeam = gradeOut.awayAbbrev;
+        }
+        if (gradeOut.homeAbbrev && (!bet.homeTeam || bet.homeTeam === 'OPP' || bet.homeTeam.trim() === '')) {
+          allUpdates.homeTeam = gradeOut.homeAbbrev;
+        }
         await db.update(trackedBets)
-          .set({
-            result:    gradeOut.result,
-            awayScore: gradeOut.awayScore !== null ? String(gradeOut.awayScore) : null,
-            homeScore: gradeOut.homeScore !== null ? String(gradeOut.homeScore) : null,
-          })
+          .set(allUpdates)
           .where(eq(trackedBets.id, bet.id));
 
         graded++;
@@ -555,7 +574,7 @@ export const betTrackerRouter = router({
         if (gradeOut.result === "LOSS") losses++;
         if (gradeOut.result === "PUSH") pushes++;
 
-        console.log(`[BetTracker][OUTPUT] autoGradeAll: betId=${bet.id} userId=${bet.userId} → ${gradeOut.result} score=${gradeOut.awayScore}-${gradeOut.homeScore}`);
+        console.log(`[BetTracker][OUTPUT] autoGradeAll: betId=${bet.id} userId=${bet.userId} → ${gradeOut.result} score=${gradeOut.awayScore}-${gradeOut.homeScore} awayTeam=${allUpdates.awayTeam ?? bet.awayTeam} homeTeam=${allUpdates.homeTeam ?? bet.homeTeam}`);
       }
 
       const summary = { graded, wins, losses, pushes, stillPending, total: pending.length };
