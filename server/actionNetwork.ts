@@ -188,14 +188,31 @@ export function todayEstDate(): string {
  * For MLB: use MLB.com SVG via mlbId from MLB_BY_ABBREV.
  * For other sports: use the AN-provided logo URL as fallback.
  */
+/**
+ * MLB abbreviation aliases: some sources (MLB Stats API) use different abbreviations
+ * than Action Network / MLB_BY_ABBREV. Normalize before lookup.
+ */
+const MLB_ABBREV_ALIASES: Record<string, string> = {
+  "AZ":  "ARI",  // Arizona Diamondbacks: MLB API uses "AZ", AN/MLB_BY_ABBREV uses "ARI"
+  "CWS": "CWS", // Chicago White Sox: consistent
+  "KC":  "KC",  // Kansas City Royals: consistent
+  "SD":  "SD",  // San Diego Padres: consistent
+  "SF":  "SF",  // San Francisco Giants: consistent
+  "TB":  "TB",  // Tampa Bay Rays: consistent
+  "WSH": "WSH", // Washington Nationals: consistent
+  "ATH": "ATH", // Athletics: consistent
+};
+
 export function resolveLogoUrl(sport: string, abbrev: string, anLogoUrl: string): string {
   if (sport === "MLB") {
-    const team = MLB_BY_ABBREV.get(abbrev);
+    // Normalize abbreviation via alias map before lookup
+    const normalized = MLB_ABBREV_ALIASES[abbrev] ?? abbrev;
+    const team = MLB_BY_ABBREV.get(normalized) ?? MLB_BY_ABBREV.get(abbrev);
     if (team?.logoUrl) {
-      console.log(`[AN][STEP]  Logo resolved: sport=MLB abbrev=${abbrev} → mlbId=${team.mlbId} url=${team.logoUrl}`);
+      console.log(`[AN][STEP]  Logo resolved: sport=MLB abbrev=${abbrev} (normalized=${normalized}) → mlbId=${team.mlbId} url=${team.logoUrl}`);
       return team.logoUrl;
     }
-    console.warn(`[AN][STATE] Logo fallback: sport=MLB abbrev=${abbrev} not in MLB_BY_ABBREV — using AN logo`);
+    console.warn(`[AN][STATE] Logo fallback: sport=MLB abbrev=${abbrev} (normalized=${normalized}) not in MLB_BY_ABBREV — using AN logo`);
   }
   return anLogoUrl;
 }
