@@ -274,6 +274,65 @@ export const betTrackerRouter = router({
       console.log(`[BetTracker][OUTPUT] create: SUCCESS — insertId=${insertId} userId=${userId} pick="${pick}"`);
       console.log(`[BetTracker][VERIFY] create: PASS — bet inserted with id=${insertId}`);
 
+      // ── Auto-grade-on-create ──────────────────────────────────────────────────
+      // If the game date is in the past (already concluded), immediately attempt
+      // to grade the bet so the user sees the final result right away without
+      // waiting for the background polling cycle.
+      const todayUtc = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+      const isPastDate = input.gameDate < todayUtc;
+
+      console.log(`[BetTracker][STEP] create: autoGradeOnCreate check — gameDate=${input.gameDate} todayUtc=${todayUtc} isPastDate=${isPastDate}`);
+
+      if (isPastDate) {
+        try {
+          console.log(`[BetTracker][STEP] create: autoGradeOnCreate — attempting to grade betId=${insertId} (past date)`);
+
+          const gradeOut = await gradeTrackedBet({
+            sport:     input.sport as GraderSport,
+            gameDate:  input.gameDate,
+            awayTeam:  input.awayTeam,
+            homeTeam:  input.homeTeam,
+            timeframe: input.timeframe as GraderTimeframe,
+            market:    input.market as GraderMarket,
+            pickSide:  input.pickSide as GraderPickSide,
+            odds:      input.odds,
+            line:      input.line ?? null,
+            anGameId:  input.anGameId,
+          });
+
+          console.log(`[BetTracker][STATE] create: autoGradeOnCreate result=${gradeOut.result} reason=${gradeOut.reason}`);
+
+          if (gradeOut.result !== "PENDING") {
+            // Game is final — update the bet with the graded result and scores
+            const teamUpdates: Record<string, string | null> = {
+              result:    gradeOut.result,
+              awayScore: gradeOut.awayScore !== null ? String(gradeOut.awayScore) : null,
+              homeScore: gradeOut.homeScore !== null ? String(gradeOut.homeScore) : null,
+            };
+            // Also fix team abbreviations if the grader resolved them from the API
+            if (gradeOut.awayAbbrev && gradeOut.awayAbbrev !== input.awayTeam) {
+              teamUpdates.awayTeam = gradeOut.awayAbbrev;
+              console.log(`[BetTracker][STATE] create: autoGradeOnCreate — updating awayTeam from "${input.awayTeam}" to "${gradeOut.awayAbbrev}"`);
+            }
+            if (gradeOut.homeAbbrev && gradeOut.homeAbbrev !== input.homeTeam) {
+              teamUpdates.homeTeam = gradeOut.homeAbbrev;
+              console.log(`[BetTracker][STATE] create: autoGradeOnCreate — updating homeTeam from "${input.homeTeam}" to "${gradeOut.homeAbbrev}"`);
+            }
+
+            await db.update(trackedBets).set(teamUpdates).where(eq(trackedBets.id, insertId));
+
+            console.log(`[BetTracker][OUTPUT] create: autoGradeOnCreate COMPLETE — betId=${insertId} result=${gradeOut.result} score=${gradeOut.awayScore}-${gradeOut.homeScore}`);
+            console.log(`[BetTracker][VERIFY] create: autoGradeOnCreate PASS — betId=${insertId} graded=${gradeOut.result}`);
+          } else {
+            console.log(`[BetTracker][STATE] create: autoGradeOnCreate — betId=${insertId} still PENDING (game not final yet): ${gradeOut.reason}`);
+          }
+        } catch (gradeErr) {
+          // Auto-grade failure must never block the create response — log and continue
+          console.error(`[BetTracker][ERROR] create: autoGradeOnCreate FAILED for betId=${insertId} — ${String(gradeErr)}`);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
       const [created] = await db.select().from(trackedBets).where(eq(trackedBets.id, insertId));
       return created;
     }),
