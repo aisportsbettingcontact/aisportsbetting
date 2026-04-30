@@ -310,10 +310,10 @@ function StatCard({
   label, value, sub, color,
 }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
-    <div className="bg-white/4 border border-white/8 rounded-lg px-3 py-2.5 flex flex-col gap-0.5 min-w-0">
-      <div className={`text-base sm:text-lg font-bold truncate ${color ?? "text-white"}`}>{value}</div>
-      <div className="text-[10px] text-zinc-500 tracking-wider uppercase truncate">{label}</div>
-      {sub && <div className="text-[10px] text-zinc-600 truncate">{sub}</div>}
+    <div className="bg-white/4 border border-white/8 rounded-xl px-4 py-3 flex flex-col justify-center gap-1 min-w-0 h-[72px]">
+      <div className={`text-lg sm:text-xl lg:text-2xl font-bold truncate leading-none ${color ?? "text-white"}`}>{value}</div>
+      <div className="text-[10px] text-zinc-500 tracking-widest uppercase truncate">{label}</div>
+      {sub && <div className="text-[9px] text-zinc-600 truncate">{sub}</div>}
     </div>
   );
 }
@@ -1770,7 +1770,7 @@ export default function BetTracker() {
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <header className="sticky top-0 z-30 bg-zinc-950/95 backdrop-blur border-b border-zinc-800/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
+        <div className="w-full px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <button type="button" onClick={() => navigate("/")} className="text-zinc-500 hover:text-white transition-colors p-1">
               <ChevronLeft size={18} />
@@ -1832,7 +1832,7 @@ export default function BetTracker() {
         </div>
 
         {/* Sport tabs */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex gap-1 pb-0">
+        <div className="w-full px-4 sm:px-6 lg:px-8 flex gap-1 pb-0">
           {SPORTS.map(s => (
             <button type="button" key={s}
               onClick={() => setActiveSport(s)}
@@ -1848,7 +1848,7 @@ export default function BetTracker() {
 
       {/* ── Stats bar ──────────────────────────────────────────────────────── */}
       <div className="bg-zinc-900/50 border-b border-zinc-800/60">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 space-y-3">
+        <div className="w-full px-4 sm:px-6 lg:px-8 py-3 space-y-3">
 
           {/* Handicapper selector + All-time toggle */}
           <div className="flex flex-wrap items-center gap-2">
@@ -1877,7 +1877,7 @@ export default function BetTracker() {
           </div>
 
           {/* Stat cards row */}
-          <div className="grid grid-cols-4 sm:grid-cols-9 gap-2">
+          <div className="grid grid-cols-4 sm:grid-cols-9 gap-2 sm:gap-3">
             <StatCard label="Total"   value={stats.totalBets} />
             <StatCard label="Wins"    value={stats.wins}   color="text-green-400" />
             <StatCard label="Losses"  value={stats.losses} color="text-red-400" />
@@ -1936,7 +1936,7 @@ export default function BetTracker() {
       {/* ── Analytics Panel ────────────────────────────────────────────────── */}
       {showAnalytics && (
         <div className="bg-zinc-900/30 border-b border-zinc-800/60">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+          <div className="w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4">
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <TrendingUp size={14} className="text-emerald-400" />
@@ -1947,20 +1947,14 @@ export default function BetTracker() {
               </div>
               <EquityChart points={stats.equityCurve} />
             </div>
-            <div>
-              <div className="flex items-center gap-2 mb-3">
-                <BarChart2 size={14} className="text-emerald-400" />
-                <span className="text-xs font-bold tracking-widest text-zinc-400 uppercase">Breakdowns</span>
-              </div>
-              <BreakdownGrid stats={stats} />
-            </div>
+
           </div>
         </div>
       )}
 
       {/* ── Main content ───────────────────────────────────────────────────── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6">
-        <div className="grid grid-cols-1 lg:grid-cols-[440px_1fr] gap-6">
+      <div className="w-full px-4 sm:px-6 lg:px-8 py-4">
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(300px,360px)_minmax(260px,300px)_1fr] gap-4 xl:gap-6 items-start">
 
           {/* ── Add Bet Form ──────────────────────────────────────────────── */}
           <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 space-y-4 h-fit">
@@ -2184,6 +2178,14 @@ export default function BetTracker() {
             </button>
           </div>
 
+          {/* ── Breakdowns Column ────────────────────────────────────────── */}
+          <div className="hidden lg:flex flex-col gap-3 sticky top-[57px] self-start max-h-[calc(100vh-80px)] overflow-y-auto pr-1 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-zinc-700">
+            <div className="flex items-center gap-2 pb-1 border-b border-zinc-800">
+              <BarChart2 size={13} className="text-emerald-400" />
+              <span className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">Breakdowns</span>
+            </div>
+            <BreakdownGrid stats={stats} vertical />
+          </div>
           {/* ── Right Panel: Tabs (BETS | LOGS) ──────────────────────────── */}
           <div className="space-y-4">
 

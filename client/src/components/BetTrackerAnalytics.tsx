@@ -463,34 +463,21 @@ function remapEntries(
   return entries.map((e) => ({ ...e, key: remapKey(dimension, e.key) }));
 }
 
-export function BreakdownGrid({ stats }: { stats: StatsData }) {
+export function BreakdownGrid({ stats, vertical = false }: { stats: StatsData; vertical?: boolean }) {
+  const panels = [
+    <BreakdownPanel key="type" title="By Bet Type" icon={<BarChart2 size={12} />} entries={remapEntries("type", stats.byType)} />,
+    <BreakdownPanel key="size" title="By Unit Size" icon={<Activity size={12} />} entries={remapEntries("size", stats.bySize)} />,
+    <BreakdownPanel key="month" title="By Month" icon={<Activity size={12} />} entries={remapEntries("month", stats.byMonth)} />,
+    <BreakdownPanel key="sport" title="By Sport" icon={<Activity size={12} />} entries={remapEntries("sport", stats.bySport)} />,
+    <BreakdownPanel key="timeframe" title="By Timeframe" icon={<Activity size={12} />} entries={remapEntries("timeframe", stats.byTimeframe)} />,
+  ];
+  if (vertical) {
+    // Vertical stack for sidebar column — no gaps, full width, no grid stretching
+    return <div className="flex flex-col gap-2 w-full">{panels}</div>;
+  }
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
-      <BreakdownPanel
-        title="By Bet Type"
-        icon={<BarChart2 size={12} />}
-        entries={remapEntries("type", stats.byType)}
-      />
-      <BreakdownPanel
-        title="By Unit Size"
-        icon={<Activity size={12} />}
-        entries={remapEntries("size", stats.bySize)}
-      />
-      <BreakdownPanel
-        title="By Month"
-        icon={<Activity size={12} />}
-        entries={remapEntries("month", stats.byMonth)}
-      />
-      <BreakdownPanel
-        title="By Sport"
-        icon={<Activity size={12} />}
-        entries={remapEntries("sport", stats.bySport)}
-      />
-      <BreakdownPanel
-        title="By Timeframe"
-        icon={<Activity size={12} />}
-        entries={remapEntries("timeframe", stats.byTimeframe)}
-      />
+      {panels}
     </div>
   );
 }
