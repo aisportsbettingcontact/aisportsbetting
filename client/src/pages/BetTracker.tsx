@@ -321,10 +321,10 @@ function StatCard({
   label, value, sub, color,
 }: { label: string; value: string | number; sub?: string; color?: string }) {
   return (
-    <div className="bg-white/4 border border-white/8 rounded-xl px-4 py-3 flex flex-col justify-center gap-1 min-w-0 min-h-[72px] h-auto overflow-visible">
-      <div className={`text-lg sm:text-xl lg:text-2xl font-bold truncate leading-none ${color ?? "text-white"}`}>{value}</div>
-      <div className="text-[10px] text-zinc-500 tracking-widest uppercase truncate">{label}</div>
-      {sub && <div className="text-[9px] text-zinc-600 truncate">{sub}</div>}
+    <div className="bg-white/4 border border-white/8 rounded-xl px-4 py-3 flex flex-col justify-center gap-0.5 min-w-0 min-h-[76px] h-auto overflow-visible">
+      <div className={`text-lg sm:text-xl lg:text-2xl font-bold leading-tight whitespace-nowrap ${color ?? "text-white"}`}>{value}</div>
+      <div className="text-[10px] text-zinc-500 tracking-widest uppercase leading-tight">{label}</div>
+      {sub && <div className="text-[9px] text-zinc-600 leading-tight mt-0.5">{sub}</div>}
     </div>
   );
 }
@@ -1807,29 +1807,29 @@ export default function BetTracker() {
             <span className="font-bold tracking-wider text-sm sm:text-base">BET TRACKER</span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             {/* $ / Units toggle */}
             <div className="flex items-center bg-zinc-900 border border-zinc-700 rounded-lg p-0.5">
               <button type="button" onClick={() => setStakeMode("$")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${stakeMode === "$" ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all ${stakeMode === "$" ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
               >
-                <DollarSign size={11} />$
+                <DollarSign size={10} />$
               </button>
               <button type="button" onClick={() => setStakeMode("U")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${stakeMode === "U" ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
+                className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs font-bold transition-all ${stakeMode === "U" ? "bg-emerald-500 text-white" : "text-zinc-500 hover:text-zinc-300"}`}
               >
-                <Hash size={11} />U
+                <Hash size={10} />U
               </button>
             </div>
-            {/* Unit size (only in U mode) */}
+            {/* Unit size (only in U mode) — narrower on mobile */}
             {stakeMode === "U" && (
               <div className="flex items-center gap-1">
-                <span className="text-[10px] text-zinc-500">1u=$</span>
+                <span className="text-[9px] text-zinc-500 hidden xs:inline">1u=$</span>
                 <input
                   type="number"
                   value={unitSize}
                   onChange={e => setUnitSize(parseFloat(e.target.value) || 100)}
-                  className="w-16 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-12 sm:w-16 bg-zinc-900 border border-zinc-700 rounded px-1.5 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-emerald-500"
                   min={1}
                 />
               </div>
@@ -1860,17 +1860,20 @@ export default function BetTracker() {
         </div>
 
         {/* Sport tabs */}
-        <div className="w-full px-4 sm:px-6 lg:px-8 flex gap-1 pb-0">
-          {(["ALL", ...SPORTS] as SportOrAll[]).map(s => (
-            <button type="button" key={s}
-              onClick={() => setActiveSport(s)}
-              className={`px-4 py-2.5 text-xs font-bold tracking-wider transition-all border-b-2 ${
-                activeSport === s ? "border-emerald-400 text-emerald-400" : "border-transparent text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+        {/* Sport tabs: scrollable on mobile so all tabs are always visible */}
+        <div className="w-full overflow-x-auto scrollbar-none">
+          <div className="flex gap-0 px-4 sm:px-6 lg:px-8 min-w-max sm:min-w-0">
+            {(["ALL", ...SPORTS] as SportOrAll[]).map(s => (
+              <button type="button" key={s}
+                onClick={() => setActiveSport(s)}
+                className={`flex-shrink-0 px-4 py-2.5 text-xs font-bold tracking-wider transition-all border-b-2 ${
+                  activeSport === s ? "border-emerald-400 text-emerald-400" : "border-transparent text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
         </div>
       </header>
 
@@ -1879,7 +1882,7 @@ export default function BetTracker() {
         <div className="w-full px-4 sm:px-6 lg:px-8 py-3 space-y-3">
 
           {/* Handicapper selector + Date range pills */}
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
             {isOwnerOrAdmin && (handicappersQuery.data?.length ?? 0) > 0 && (
               <HandicapperSelector
                 handicappers={handicappersQuery.data ?? []}
@@ -1888,66 +1891,77 @@ export default function BetTracker() {
                 currentUserId={appUser!.id}
               />
             )}
-            {/* Date range filter pills */}
-            {(["ALL_TIME", "TODAY", "L7", "L14", "1M"] as const).map(r => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => {
-                  setDateRange(r);
-                  setFilterAllTime(r === "ALL_TIME");
-                  console.log(`[BetTracker][INPUT] dateRange changed to ${r}`);
-                }}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                  dateRange === r
-                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                    : "bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300"
-                }`}
-              >
-                {r === "ALL_TIME" ? "All-Time" : r === "TODAY" ? "Today" : r === "L7" ? "L7 Days" : r === "L14" ? "L14 Days" : "1M"}
-              </button>
-            ))}
-            {statsQuery.isLoading && (
-              <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            )}
+            {/* Date range filter pills — single scrollable row on mobile, wrap on sm+ */}
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap sm:overflow-visible">
+              {(["ALL_TIME", "TODAY", "L7", "L14", "1M"] as const).map(r => (
+                <button
+                  key={r}
+                  type="button"
+                  onClick={() => {
+                    setDateRange(r);
+                    setFilterAllTime(r === "ALL_TIME");
+                    console.log(`[BetTracker][INPUT] dateRange changed to ${r}`);
+                  }}
+                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                    dateRange === r
+                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                      : "bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300"
+                  }`}
+                >
+                  {r === "ALL_TIME" ? "All-Time" : r === "TODAY" ? "Today" : r === "L7" ? "L7 Days" : r === "L14" ? "L14 Days" : "1M"}
+                </button>
+              ))}
+              {statsQuery.isLoading && (
+                <div className="flex-shrink-0 w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+              )}
+            </div>
           </div>
 
-          {/* Stat cards — desktop/tablet: single centered row; mobile: 3x2 grid */}
+          {/* Stat cards — desktop/tablet: centered flex-wrap row with equal spacing */}
           <div className="hidden sm:flex flex-wrap justify-center gap-2 sm:gap-3">
-            <StatCard label="Total Bets" value={stats.totalBets} />
-            <StatCard label="Wins"       value={stats.wins}   color="text-green-400" />
-            <StatCard label="Losses"     value={stats.losses} color="text-red-400" />
+            {/* Each pill gets a consistent min-width so they're all the same height */}
+            <div className="min-w-[100px]"><StatCard label="Total Bets" value={stats.totalBets} /></div>
+            <div className="min-w-[100px]"><StatCard label="Wins"       value={stats.wins}   color="text-green-400" /></div>
+            <div className="min-w-[100px]"><StatCard label="Losses"     value={stats.losses} color="text-red-400" /></div>
             {stats.pushes > 0 && (
-              <StatCard label="Pushes"   value={stats.pushes} color="text-yellow-400" />
+              <div className="min-w-[100px]"><StatCard label="Pushes"   value={stats.pushes} color="text-yellow-400" /></div>
             )}
             {stats.pending > 0 && (
-              <StatCard label="Pending"  value={stats.pending} color="text-zinc-400" />
+              <div className="min-w-[100px]"><StatCard label="Pending"  value={stats.pending} color="text-zinc-400" /></div>
             )}
-            <StatCard
-              label="WP%"
-              value={`${stats.wins + stats.losses > 0 ? ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(1) : "0.0"}%`}
-              color="text-white"
-            />
-            <StatCard
-              label="ROI%"
-              value={`${stats.roi}%`}
-              color={stats.roi >= 0 ? "text-green-400" : "text-red-400"}
-              sub={`on ${stakeMode === "$" ? fmtDollar(stats.totalRisk * unitSize) : fmtUnits(stats.totalRisk)} risked`}
-            />
-            <StatCard
-              label="Biggest Day"
-              value={(stats.biggestDayUnits ?? 0) > 0 ? `+${fmtUnits(stats.biggestDayUnits ?? 0)}` : "—"}
-              color="text-green-400"
-              sub={stats.biggestDayDate ? stats.biggestDayDate.substring(5) : undefined}
-            />
-            <StatCard
-              label="Win Streak"
-              value={(stats.longestWinStreak ?? 0) > 0 ? `${stats.longestWinStreak}W` : "—"}
-              color="text-emerald-400"
-            />
+            <div className="min-w-[100px]">
+              <StatCard
+                label="WP%"
+                value={`${stats.wins + stats.losses > 0 ? ((stats.wins / (stats.wins + stats.losses)) * 100).toFixed(1) : "0.0"}%`}
+                color="text-white"
+              />
+            </div>
+            <div className="min-w-[110px]">
+              <StatCard
+                label="ROI%"
+                value={`${stats.roi}%`}
+                color={stats.roi >= 0 ? "text-green-400" : "text-red-400"}
+                sub={`on ${stakeMode === "$" ? fmtDollar(stats.totalRisk * unitSize) : fmtUnits(stats.totalRisk)} risked`}
+              />
+            </div>
+            <div className="min-w-[110px]">
+              <StatCard
+                label="Biggest Day"
+                value={(stats.biggestDayUnits ?? 0) > 0 ? `+${fmtUnits(stats.biggestDayUnits ?? 0)}` : "—"}
+                color="text-green-400"
+                sub={stats.biggestDayDate ? stats.biggestDayDate.substring(5) : undefined}
+              />
+            </div>
+            <div className="min-w-[100px]">
+              <StatCard
+                label="Win Streak"
+                value={(stats.longestWinStreak ?? 0) > 0 ? `${stats.longestWinStreak}W` : "—"}
+                color="text-emerald-400"
+              />
+            </div>
           </div>
 
-          {/* Mobile: 3x2 grid — Total Bets / +Units / Wins / Losses / WP% / ROI% */}
+          {/* Mobile: strict 3×2 grid — row1: Total Bets / +Units / Wins; row2: Losses / WP% / ROI% */}
           <div className="grid grid-cols-3 gap-2 sm:hidden">
             <StatCard label="Total Bets" value={stats.totalBets} />
             <StatCard label="+/- Units"  value={fmtUnits(stats.netProfit)} color={stats.netProfit >= 0 ? "text-green-400" : "text-red-400"} />
@@ -1974,9 +1988,9 @@ export default function BetTracker() {
           <div className="w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4">
             <div>
               <div className="flex flex-col items-center justify-center gap-1 mb-3">
-                <div className="flex items-center gap-2">
-                  <TrendingUp size={22} className={stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"} />
-                  <span className={`text-xl font-bold tracking-widest uppercase ${stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                <div className="flex items-center gap-2.5">
+                  <TrendingUp size={28} className={stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"} />
+                  <span className={`text-3xl sm:text-4xl font-bold tracking-widest uppercase ${stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
                     {stats.netProfit >= 0 ? "+" : ""}{fmtUnits(stats.netProfit)}
                   </span>
                 </div>

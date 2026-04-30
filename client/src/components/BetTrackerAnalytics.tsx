@@ -80,9 +80,14 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
       const entry = entries[0];
       if (!entry) return;
       const w = entry.contentRect.width;
-      // Dynamic height: 28% of width, clamped [160, 340]
-      const h = Math.round(Math.min(340, Math.max(160, w * 0.28)));
-      console.log(`[EquityChart][STATE] ResizeObserver: w=${w} h=${h}`);
+      // Dynamic height:
+      //   mobile (<400px wide): 70% of width so chart is tall enough to show all labels
+      //   tablet (400-900px):   40% of width
+      //   desktop (>900px):     30% of width
+      // Clamped to [200, 380] absolute pixels
+      const ratio = w < 400 ? 0.70 : w < 900 ? 0.40 : 0.30;
+      const h = Math.round(Math.min(380, Math.max(200, w * ratio)));
+      console.log(`[EquityChart][STATE] ResizeObserver: w=${w} h=${h} ratio=${ratio}`);
       setDims({ w, h });
     });
     ro.observe(el);
@@ -105,14 +110,15 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
     canvas.height = Math.round(H * dpr);
     ctx.scale(dpr, dpr);
 
-    // Padding: measure widest y-label to set dynamic left padding
+    // ── Y-axis: measure widest label to set dynamic left padding ───────────────
     const gridCount = 5;
     const values0 = points.map((p) => p.cumPL);
     const minV0 = Math.min(0, ...values0);
     const maxV0 = Math.max(0, ...values0);
     const range0 = maxV0 - minV0 || 1;
-    const labelFontSizeEst = Math.max(9, Math.round(W / 80));
-    ctx.font = `${labelFontSizeEst}px JetBrains Mono, monospace`;
+    // Font size: larger on small screens so labels are readable, cap at 11px on wide screens
+    const yLabelFontSize = Math.max(10, Math.min(11, Math.round(W / 60)));
+    ctx.font = `bold ${yLabelFontSize}px JetBrains Mono, monospace`;
     let maxLabelW = 0;
     for (let i = 0; i <= gridCount; i++) {
       const v = minV0 + (range0 * i) / gridCount;
@@ -120,12 +126,14 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
       const w = ctx.measureText(lbl).width;
       if (w > maxLabelW) maxLabelW = w;
     }
+    // PAD.left = measured label width + 14px gap + 4px safety margin
     const PAD = {
       top: 20,
-      right: 16,
-      bottom: 40,
-      left: Math.ceil(maxLabelW) + 12,
+      right: 18,
+      bottom: 46, // extra space for X-axis labels below the chart
+      left: Math.ceil(maxLabelW) + 18,
     };
+    console.log(`[EquityChart][STATE] PAD.left=${PAD.left} maxLabelW=${maxLabelW.toFixed(1)} yLabelFontSize=${yLabelFontSize}`);
     const chartW = W - PAD.left - PAD.right;
     const chartH = H - PAD.top - PAD.bottom;
 
@@ -154,13 +162,13 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
       ctx.moveTo(PAD.left, y);
       ctx.lineTo(W - PAD.right, y);
       ctx.stroke();
-      ctx.fillStyle = "rgba(255,255,255,0.38)";
-      ctx.font = `${Math.max(9, Math.round(W / 80))}px JetBrains Mono, monospace`;
+      ctx.fillStyle = "rgba(255,255,255,0.45)";
+      ctx.font = `bold ${yLabelFontSize}px JetBrains Mono, monospace`;
       ctx.textAlign = "right";
       ctx.fillText(
         `${v >= 0 ? "+" : ""}${v.toFixed(1)}u`,
         PAD.left - 6,
-        y + 4
+        y + Math.round(yLabelFontSize * 0.4)
       );
     }
 
@@ -213,26 +221,34 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
       ctx.fill();
     });
 
-    // X-axis date labels — compute step from available width
-    // Minimum 52px per label to avoid clamping
-    const minLabelPx = 44;
+    // ── X-axis date labels ──────────────────────────────────────────────────────
+    // Font: 10px minimum so labels are always readable, scale up slightly on wide screens
+    const xLabelFontSize = Math.max(10, Math.min(11, Math.round(W / 65)));
+    // Minimum pixels between label centers to prevent overlap (label ~28px wide at 10px font)
+    const minLabelPx = Math.max(40, xLabelFontSize * 4);
     const maxLabels = Math.max(2, Math.floor(chartW / minLabelPx));
     const step = Math.max(1, Math.ceil((points.length - 1) / maxLabels));
-    const labelFontSize = Math.max(8, Math.min(10, Math.round(W / 90)));
-    ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.font = `${labelFontSize}px monospace`;
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.font = `${xLabelFontSize}px monospace`;
     ctx.textAlign = "center";
+    // Track last rendered label X to prevent overlap
+    let lastLabelX = -999;
+    const xLabelY = H - PAD.bottom + 18; // 18px below chart bottom edge
     points.forEach((p, i) => {
-      if (i % step === 0 || i === points.length - 1) {
-        const d = p.date.substring(5); // MM-DD
-        const xPos = toX(i);
-        // Clamp label within canvas bounds
-        const clampedX = Math.max(PAD.left + 12, Math.min(W - PAD.right - 12, xPos));
-        ctx.fillText(d, clampedX, H - PAD.bottom + 16);
-      }
+      const isStep = i % step === 0;
+      const isLast = i === points.length - 1;
+      if (!isStep && !isLast) return;
+      const d = p.date.substring(5); // MM-DD
+      const xPos = toX(i);
+      // Clamp to stay within canvas left/right bounds
+      const clampedX = Math.max(PAD.left + xLabelFontSize * 1.5, Math.min(W - PAD.right - xLabelFontSize * 1.5, xPos));
+      // Skip if too close to previous label (prevents overlap on dense data)
+      if (clampedX - lastLabelX < minLabelPx * 0.75) return;
+      ctx.fillText(d, clampedX, xLabelY);
+      lastLabelX = clampedX;
     });
 
-    console.log(`[EquityChart][OUTPUT] Rendered: W=${W} H=${H} points=${points.length} step=${step} maxLabels=${maxLabels}`);
+    console.log(`[EquityChart][OUTPUT] Rendered: W=${W} H=${H} points=${points.length} step=${step} maxLabels=${maxLabels} PAD.left=${PAD.left} xLabelFontSize=${xLabelFontSize}`);
   }, [points, dims]);
 
   // ── Mouse interaction ───────────────────────────────────────────────────────
@@ -246,10 +262,21 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
 
       const W = dims.w;
       const H = dims.h;
-      const PAD_LEFT = 58;
-      const PAD_RIGHT = 16;
+      // Compute PAD_LEFT dynamically — same formula as draw function
+      // so tooltip tracks the correct data point at any screen width
+      const yLabelFontSizeM = Math.max(10, Math.min(11, Math.round(W / 60)));
+      const values0M = points.map((p) => p.cumPL);
+      const minV0M = Math.min(0, ...values0M);
+      const maxV0M = Math.max(0, ...values0M);
+      const range0M = maxV0M - minV0M || 1;
+      // Estimate max label width using character count (monospace approximation)
+      const sampleLabel = `${minV0M < 0 ? "-" : "+"}${Math.max(Math.abs(minV0M), Math.abs(maxV0M)).toFixed(1)}u`;
+      const estCharW = yLabelFontSizeM * 0.62; // monospace char width ratio
+      const estMaxLabelW = sampleLabel.length * estCharW;
+      const PAD_LEFT = Math.ceil(estMaxLabelW) + 18;
+      const PAD_RIGHT = 18;
       const PAD_TOP = 20;
-      const PAD_BOTTOM = 40;
+      const PAD_BOTTOM = 46;
       const chartW = W - PAD_LEFT - PAD_RIGHT;
       const chartH = H - PAD_TOP - PAD_BOTTOM;
 

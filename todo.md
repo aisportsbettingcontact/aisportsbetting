@@ -2881,3 +2881,16 @@
 - [x] games.listPostponed tRPC procedure — owner-only, returns all postponed/suspended games
 - [x] games.markGameStatus tRPC procedure — owner-only manual status override
 - [x] listGames feed filter extended — excludes both 'postponed' AND 'suspended' from public feed
+
+## Session: BetTracker v16 — Responsive Layout Fixes
+- [x] Sport tabs: horizontal scroll on mobile (no wrapping, all tabs always visible)
+- [x] Date range pills: single scrollable row on mobile, flex-wrap on sm+
+- [x] Stat pills mobile: strict 3x2 grid (Total Bets / +Units / Wins | Losses / WP% / ROI%)
+- [x] Stat pills desktop/tablet: centered flex-wrap, each pill min-w-[100px], equal spacing both sides
+- [x] StatCard: removed truncate, whitespace-nowrap value, overflow-visible, min-h-[76px]
+- [x] Chart title: text-3xl sm:text-4xl, TrendingUp size=28
+- [x] EquityChart height: responsive ratio (0.70 mobile / 0.40 tablet / 0.30 desktop), clamped [200, 380]
+- [x] EquityChart Y-axis: bold font, yLabelFontSize=max(10,min(11,W/60)), PAD.left = maxLabelW+18
+- [x] EquityChart X-axis: xLabelFontSize=max(10,min(11,W/65)), lastLabelX dedup, PAD.bottom=46
+- [x] Mouse handler: dynamic PAD_LEFT computed from same formula as draw (no hardcoded 58)
+- [x] Header: flex-shrink-0 right side, narrower unit input on mobile (w-12 sm:w-16)
