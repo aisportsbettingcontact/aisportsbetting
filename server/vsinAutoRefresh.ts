@@ -22,7 +22,7 @@ import { NHL_VALID_DB_SLUGS, NHL_BY_ABBREV, NHL_BY_DB_SLUG, NHL_BY_VSIN_SLUG, NH
 import { MLB_BY_ABBREV, MLB_BY_VSIN_SLUG, MLB_VALID_ABBREVS, getMlbTeamByAnSlug, getMlbTeamByVsinSlug, VSIN_MLB_HREF_ALIASES } from "../shared/mlbTeams";
 import type { InsertGame } from "../drizzle/schema";
 
-const INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — all sports refresh cadence
+const INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — all sports refresh cadence (24/7, no time gates)
 
 // Rolling window: today through N days ahead
 const RANGE_DAYS_AHEAD = 6; // fetch today + 6 more days = 7-day window
@@ -109,6 +109,22 @@ function isWithinActiveHours(): boolean {
   const afterStart = utcHour > 14 || (utcHour === 14 && utcMinute >= 1);
   const beforeEnd  = utcHour < 4  || (utcHour === 4  && utcMinute <= 59);
   return afterStart || beforeEnd;
+}
+
+/**
+ * Returns true if the current wall-clock time is at or after 7:00 AM EST (12:00 UTC).
+ * Used to gate same-day F5/NRFI and props scrapers that require FanDuel/AN markets
+ * to be open. These markets do not post until the morning of game day.
+ */
+function isAfter7amEst(): boolean {
+  const now = new Date();
+  const utcHour = now.getUTCHours();
+  const utcMinute = now.getUTCMinutes();
+  // 7:00 AM EST = 12:00 UTC (EST is UTC-5)
+  // 7:00 AM EDT = 11:00 UTC (EDT is UTC-4) — use 11:00 UTC as the safe lower bound
+  // We use 12:00 UTC (noon UTC) as the gate — this is 7 AM EST / 8 AM EDT.
+  // This ensures F5/NRFI/props never run before 7 AM EST regardless of DST.
+  return utcHour >= 12;
 }
 
 /** Returns a date string as YYYY-MM-DD in Pacific Time. */
@@ -755,7 +771,7 @@ async function refreshMlb(todayStr: string): Promise<{
  *
  * Non-fatal: errors are caught and logged.
  */
-async function refreshAnApiOdds(
+export async function refreshAnApiOdds(
   dateStr: string,
   sports: AnSport[] = ["ncaab", "nba", "nhl"],
   source: "auto" | "manual" = "auto"
@@ -876,38 +892,127 @@ async function refreshAnApiOdds(
         const openAwayML = teamsSwapped ? anGame.openHomeML : anGame.openAwayML;
         const openHomeML = teamsSwapped ? anGame.openAwayML : anGame.openHomeML;
 
-        // Populate DK NJ current lines + Open lines
-        // fmtSpread: converts numeric spread/total to signed string (e.g. 1.5 → "+1.5", -1.5 → "-1.5", 7 → "7")
-        // Totals are never signed (always positive), but spreads must be signed for display correctness.
+        // ── FORMAT HELPERS ──────────────────────────────────────────────────────
+        // fmtSpread: converts numeric spread to signed string (+1.5, -1.5, 0)
+        // fmtTotal:  converts numeric total to plain string (no sign — always positive)
         const fmtSpread = (v: number | null): string | null =>
           v === null ? null : v > 0 ? `+${v}` : `${v}`;
         const fmtTotal = (v: number | null): string | null =>
           v === null ? null : `${v}`;
 
+        // ── ATOMIC DK-VS-OPEN SWITCH ────────────────────────────────────────────
+        // Rule: Use DK NJ for ALL 9 fields ONLY IF DK has ALL 3 markets complete:
+        //   - Spread: dkAwaySpread + dkAwaySpreadOdds both non-null
+        //   - Total:  dkTotal + dkOverOdds + dkUnderOdds all non-null
+        //   - ML:     dkAwayML + dkHomeML both non-null
+        // If ANY market is incomplete → use Opening line for ALL 9 fields.
+        // There is NEVER a partial/null state. Every game always has either DK or Open.
+        //
+        // [STEP] Evaluate DK NJ completeness across all 3 markets
+        const dkSpreadComplete = dkAwaySpread !== null && dkAwaySpreadOdds !== null &&
+                                  dkHomeSpread !== null && dkHomeSpreadOdds !== null;
+        const dkTotalComplete  = anGame.dkTotal !== null && anGame.dkOverOdds !== null &&
+                                  anGame.dkUnderOdds !== null;
+        const dkMlComplete     = dkAwayML !== null && dkHomeML !== null;
+        const dkAllComplete    = dkSpreadComplete && dkTotalComplete && dkMlComplete;
+
+        // [STATE] Log DK completeness check
+        console.log(
+          `[ANApiOdds][${dbSport}][DK_CHECK] ${dbGame.awayTeam}@${dbGame.homeTeam} (${dateStr}) ` +
+          `dkSpread=${dkSpreadComplete ? '✓' : '✗'} ` +
+          `dkTotal=${dkTotalComplete ? '✓' : '✗'} ` +
+          `dkML=${dkMlComplete ? '✓' : '✗'} ` +
+          `→ source=${dkAllComplete ? 'DK' : 'OPEN'} | ` +
+          `DK: spread=${dkAwaySpread ?? 'null'}(${dkAwaySpreadOdds ?? 'null'}) ` +
+          `total=${anGame.dkTotal ?? 'null'}(${anGame.dkOverOdds ?? 'null'}/${anGame.dkUnderOdds ?? 'null'}) ` +
+          `ml=${dkAwayML ?? 'null'}/${dkHomeML ?? 'null'} | ` +
+          `OPEN: spread=${openAwaySpread ?? 'null'}(${openAwaySpreadOdds ?? 'null'}) ` +
+          `total=${anGame.openTotal ?? 'null'}(${anGame.openOverOdds ?? 'null'}/${anGame.openUnderOdds ?? 'null'}) ` +
+          `ml=${openAwayML ?? 'null'}/${openHomeML ?? 'null'}`
+        );
+
+        // [STEP] Select source atomically — DK if all 3 markets complete, else Opening line
+        const oddsSource: 'dk' | 'open' = dkAllComplete ? 'dk' : 'open';
+        const useAwaySpread     = dkAllComplete ? fmtSpread(dkAwaySpread)     : fmtSpread(openAwaySpread);
+        const useAwaySpreadOdds = dkAllComplete ? dkAwaySpreadOdds            : openAwaySpreadOdds;
+        const useHomeSpread     = dkAllComplete ? fmtSpread(dkHomeSpread)     : fmtSpread(openHomeSpread);
+        const useHomeSpreadOdds = dkAllComplete ? dkHomeSpreadOdds            : openHomeSpreadOdds;
+        const useTotal          = dkAllComplete ? fmtTotal(anGame.dkTotal)    : fmtTotal(anGame.openTotal);
+        const useOverOdds       = dkAllComplete ? anGame.dkOverOdds           : anGame.openOverOdds;
+        const useUnderOdds      = dkAllComplete ? anGame.dkUnderOdds          : anGame.openUnderOdds;
+        const useAwayML         = dkAllComplete ? dkAwayML                    : openAwayML;
+        const useHomeML         = dkAllComplete ? dkHomeML                    : openHomeML;
+
+        // [STATE] Log final resolved values
+        console.log(
+          `[ANApiOdds][${dbSport}][RESOLVED] ${dbGame.awayTeam}@${dbGame.homeTeam} (${dateStr}) ` +
+          `oddsSource=${oddsSource} | ` +
+          `spread=${useAwaySpread ?? '-'}(${useAwaySpreadOdds ?? '-'}) / ${useHomeSpread ?? '-'}(${useHomeSpreadOdds ?? '-'}) ` +
+          `total=${useTotal ?? '-'} over=${useOverOdds ?? '-'} under=${useUnderOdds ?? '-'} ` +
+          `ml=${useAwayML ?? '-'}/${useHomeML ?? '-'}`
+        );
+
+        // Alias for backwards compat with snapshot/history block below
+        const rAwaySpread     = { value: useAwaySpread };
+        const rAwaySpreadOdds = { value: useAwaySpreadOdds };
+        const rHomeSpread     = { value: useHomeSpread };
+        const rHomeSpreadOdds = { value: useHomeSpreadOdds };
+        const rTotal          = { value: useTotal };
+        const rOverOdds       = { value: useOverOdds };
+        const rUnderOdds      = { value: useUnderOdds };
+        const rAwayML         = { value: useAwayML };
+        const rHomeML         = { value: useHomeML };
+
+        // ── DB WRITE: primary book columns + open lines + oddsSource ───────────
+        // ── MLB DUAL-WRITE: spread → awayRunLine + awayBookSpread ────────────────────
+        // For MLB, the AN spread market IS the run line (+1.5/-1.5).
+        // The model reads awayRunLine/homeRunLine (varchar) for its run line input.
+        // awayBookSpread/homeBookSpread (decimal) are used for display.
+        // We write BOTH so the model and display always have the same data.
+        const mlbRunLineFields = sport === 'mlb' ? {
+          awayRunLine:     rAwaySpread.value,
+          homeRunLine:     rHomeSpread.value,
+          awayRunLineOdds: rAwaySpreadOdds.value,
+          homeRunLineOdds: rHomeSpreadOdds.value,
+        } : {};
+        if (sport === 'mlb' && rAwaySpread.value !== null) {
+          console.log(
+            `[ANApiOdds][MLB][DUAL_WRITE] ${dbGame.awayTeam}@${dbGame.homeTeam} ` +
+            `awayRunLine=${rAwaySpread.value}(${rAwaySpreadOdds.value ?? '-'}) ` +
+            `homeRunLine=${rHomeSpread.value}(${rHomeSpreadOdds.value ?? '-'}) ` +
+            `→ writing to BOTH awayBookSpread AND awayRunLine columns`
+          );
+        }
+
         await updateAnOdds(dbGame.id, {
-          // DK NJ current line
-          awayBookSpread: fmtSpread(dkAwaySpread),
-          awaySpreadOdds: dkAwaySpreadOdds,
-          homeBookSpread: fmtSpread(dkHomeSpread),
-          homeSpreadOdds: dkHomeSpreadOdds,
-          bookTotal: fmtTotal(anGame.dkTotal),
-          overOdds: anGame.dkOverOdds,
-          underOdds: anGame.dkUnderOdds,
-          awayML: dkAwayML,
-          homeML: dkHomeML,
-          // Open line (only update if AN has open data)
+          // Resolved primary book columns (DK NJ or Open-line — atomic switch)
+          awayBookSpread:  rAwaySpread.value,
+          awaySpreadOdds:  rAwaySpreadOdds.value,
+          homeBookSpread:  rHomeSpread.value,
+          homeSpreadOdds:  rHomeSpreadOdds.value,
+          bookTotal:       rTotal.value,
+          overOdds:        rOverOdds.value,
+          underOdds:       rUnderOdds.value,
+          awayML:          rAwayML.value,
+          homeML:          rHomeML.value,
+          // Computed odds source label — always 'dk' or 'open', never null or partial
+          oddsSource,
+          // MLB run line dual-write — same values as awayBookSpread/homeBookSpread
+          ...mlbRunLineFields,
+          // Open line reference columns (always write when AN has open data)
           ...(openAwaySpread !== null ? {
-            openAwaySpread: fmtSpread(openAwaySpread),
+            openAwaySpread:     fmtSpread(openAwaySpread),
             openAwaySpreadOdds: openAwaySpreadOdds,
-            openHomeSpread: fmtSpread(openHomeSpread),
+            openHomeSpread:     fmtSpread(openHomeSpread),
             openHomeSpreadOdds: openHomeSpreadOdds,
-            openTotal: fmtTotal(anGame.openTotal),
-            openAwayML: openAwayML,
-            openHomeML: openHomeML,
+            openTotal:          fmtTotal(anGame.openTotal),
+            openAwayML:         openAwayML,
+            openHomeML:         openHomeML,
           } : {}),
         });
 
-        // ── ODDS HISTORY: snapshot the DK NJ lines + current VSIN splits ───────
+        // ── ODDS HISTORY SNAPSHOT ───────────────────────────────────────────────
+        // Snapshot the resolved lines (DK or Open fallback) + current VSIN splits.
         // Splits are read from the DB game row (written by the VSIN refresh step
         // that runs in the same cycle, before refreshAnApiOdds is called).
         // Apply the 0/0 guard: treat both-zero as "not yet available" (null).
@@ -920,48 +1025,99 @@ async function refreshAnApiOdds(
         const _mlBothZero =
           (dbGame.mlAwayBetsPct === 0 || dbGame.mlAwayBetsPct === null) &&
           (dbGame.mlAwayMoneyPct === 0 || dbGame.mlAwayMoneyPct === null);
+
+        // lineSource for the snapshot mirrors the computed oddsSource — always 'dk' or 'open'
+        const lineSource: 'dk' | 'open' = oddsSource;
+
         await insertOddsHistory(
           dbGame.id,
           dbSport,
           source,
           {
-            awaySpread: fmtSpread(dkAwaySpread),
-            awaySpreadOdds: dkAwaySpreadOdds,
-            homeSpread: fmtSpread(dkHomeSpread),
-            homeSpreadOdds: dkHomeSpreadOdds,
-            total: fmtTotal(anGame.dkTotal),
-            overOdds: anGame.dkOverOdds,
-            underOdds: anGame.dkUnderOdds,
-            awayML: dkAwayML,
-            homeML: dkHomeML,
+            awaySpread:    rAwaySpread.value,
+            awaySpreadOdds: rAwaySpreadOdds.value,
+            homeSpread:    rHomeSpread.value,
+            homeSpreadOdds: rHomeSpreadOdds.value,
+            total:         rTotal.value,
+            overOdds:      rOverOdds.value,
+            underOdds:     rUnderOdds.value,
+            awayML:        rAwayML.value,
+            homeML:        rHomeML.value,
+            lineSource,
             // VSIN splits — null if market not yet open (0/0 guard)
-            spreadAwayBetsPct: _spreadBothZero ? null : (dbGame.spreadAwayBetsPct ?? null),
+            spreadAwayBetsPct:  _spreadBothZero ? null : (dbGame.spreadAwayBetsPct ?? null),
             spreadAwayMoneyPct: _spreadBothZero ? null : (dbGame.spreadAwayMoneyPct ?? null),
-            totalOverBetsPct: _totalBothZero ? null : (dbGame.totalOverBetsPct ?? null),
-            totalOverMoneyPct: _totalBothZero ? null : (dbGame.totalOverMoneyPct ?? null),
-            mlAwayBetsPct: _mlBothZero ? null : (dbGame.mlAwayBetsPct ?? null),
-            mlAwayMoneyPct: _mlBothZero ? null : (dbGame.mlAwayMoneyPct ?? null),
+            totalOverBetsPct:   _totalBothZero  ? null : (dbGame.totalOverBetsPct ?? null),
+            totalOverMoneyPct:  _totalBothZero  ? null : (dbGame.totalOverMoneyPct ?? null),
+            mlAwayBetsPct:      _mlBothZero     ? null : (dbGame.mlAwayBetsPct ?? null),
+            mlAwayMoneyPct:     _mlBothZero     ? null : (dbGame.mlAwayMoneyPct ?? null),
           }
         );
-        console.log(
-          `[OddsHistory] Splits snapshot: ${dbGame.awayTeam}@${dbGame.homeTeam} ` +
-          `spread=${_spreadBothZero ? 'pending' : `${dbGame.spreadAwayBetsPct}%B/${dbGame.spreadAwayMoneyPct}%M`} ` +
-          `total=${_totalBothZero ? 'pending' : `${dbGame.totalOverBetsPct}%B/${dbGame.totalOverMoneyPct}%M`} ` +
-          `ml=${_mlBothZero ? 'pending' : `${dbGame.mlAwayBetsPct}%B/${dbGame.mlAwayMoneyPct}%M`}`
-        );
 
+        // [OUTPUT] Confirm update with full resolved values
         updated++;
         console.log(
-          `[ANApiOdds][${dbSport}] Updated: ${dbGame.awayTeam} @ ${dbGame.homeTeam} (${dateStr}) source=${source}${teamsSwapped ? ' [SWAPPED]' : ''} | ` +
-          `spread=${dkAwaySpread}/${dkHomeSpread} ` +
-          `total=${anGame.dkTotal} ` +
-          `ml=${dkAwayML}/${dkHomeML}`
+          `[ANApiOdds][${dbSport}][UPDATED] ${dbGame.awayTeam}@${dbGame.homeTeam} (${dateStr}) ` +
+          `source=${source} oddsSource=${oddsSource ?? 'null'}${teamsSwapped ? ' [SWAPPED]' : ''} | ` +
+          `spread=${rAwaySpread.value ?? '-'}/${rHomeSpread.value ?? '-'} ` +
+          `total=${rTotal.value ?? '-'} ` +
+          `ml=${rAwayML.value ?? '-'}/${rHomeML.value ?? '-'} | ` +
+          `splits: spread=${_spreadBothZero ? 'PENDING' : `${dbGame.spreadAwayBetsPct}%B/${dbGame.spreadAwayMoneyPct}%M`} ` +
+          `total=${_totalBothZero ? 'PENDING' : `${dbGame.totalOverBetsPct}%B/${dbGame.totalOverMoneyPct}%M`} ` +
+          `ml=${_mlBothZero ? 'PENDING' : `${dbGame.mlAwayBetsPct}%B/${dbGame.mlAwayMoneyPct}%M`}`
         );
       }
 
       console.log(`[ANApiOdds][${dbSport}] ${dateStr}: updated=${updated} skipped=${skipped} frozen=${totalFrozen} total=${anGames.length}`);
       totalUpdated += updated;
       totalSkipped += skipped;
+
+      // ── POST-CYCLE COMPLETENESS VALIDATION GATE ──────────────────────────────
+      // After every AN odds cycle, re-query the DB and report every game that still
+      // has any null primary field. This is the single source of truth for data gaps.
+      // [VERIFY] Run completeness check for all games on this date
+      try {
+        const afterGames = await listGamesByDate(dateStr, dbSport);
+        const incomplete = afterGames.filter(g =>
+          g.awayBookSpread == null ||
+          g.homeBookSpread == null ||
+          g.bookTotal == null ||
+          g.awayML == null ||
+          g.homeML == null ||
+          g.awaySpreadOdds == null ||
+          g.homeSpreadOdds == null ||
+          g.overOdds == null ||
+          g.underOdds == null
+        );
+        if (incomplete.length === 0) {
+          console.log(
+            `[ANApiOdds][${dbSport}][COMPLETENESS] ✅ PASS — all ${afterGames.length} games on ${dateStr} have full primary odds`
+          );
+        } else {
+          console.warn(
+            `[ANApiOdds][${dbSport}][COMPLETENESS] ⚠️  ${incomplete.length}/${afterGames.length} games on ${dateStr} have MISSING primary fields:`
+          );
+          for (const g of incomplete) {
+            const missing: string[] = [];
+            if (g.awayBookSpread == null)  missing.push('awayBookSpread');
+            if (g.homeBookSpread == null)  missing.push('homeBookSpread');
+            if (g.bookTotal == null)       missing.push('bookTotal');
+            if (g.awayML == null)          missing.push('awayML');
+            if (g.homeML == null)          missing.push('homeML');
+            if (g.awaySpreadOdds == null)  missing.push('awaySpreadOdds');
+            if (g.homeSpreadOdds == null)  missing.push('homeSpreadOdds');
+            if (g.overOdds == null)        missing.push('overOdds');
+            if (g.underOdds == null)       missing.push('underOdds');
+            console.warn(
+              `[ANApiOdds][${dbSport}][COMPLETENESS]   INCOMPLETE gameId=${g.id} ` +
+              `${g.awayTeam}@${g.homeTeam} oddsSource=${(g as any).oddsSource ?? 'null'} ` +
+              `MISSING=[${missing.join(', ')}]`
+            );
+          }
+        }
+      } catch (completenessErr) {
+        console.warn(`[ANApiOdds][${dbSport}][COMPLETENESS] WARN: completeness check failed: ${completenessErr instanceof Error ? completenessErr.message : String(completenessErr)}`);
+      }
     } catch (err) {
       const msg = `[ANApiOdds][${sport.toUpperCase()}] Failed for ${dateStr}: ${err instanceof Error ? err.message : String(err)}`;
       console.warn(msg);
@@ -1058,7 +1214,7 @@ export async function runVsinRefresh(): Promise<RefreshResult | null> {
 }
 
 const SCORE_INTERVAL_MS = 15 * 1000; // 15 seconds
-const MLB_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes — MLB scores + splits + AN odds
+const MLB_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes — MLB scores + splits + AN odds (24/7, no time gates)
 
 /**
  * Refreshes NBA live/final scores and game status from the NBA live scoreboard API.
@@ -1356,34 +1512,26 @@ export async function runVsinRefreshManual(
  * so the pre-game DK NJ line is permanently locked in the DB once the game starts.
  */
 export function startVsinAutoRefresh() {
-  if (isWithinActiveHours()) {
-    void runVsinRefresh();
-  } else {
-    console.log("[VSiNAutoRefresh] Outside active hours (14:01\u201304:59 UTC / 6:01 AM\u201311:59 PM EST) \u2014 waiting for next tick.");
-  }
+  // 24/7 — no active hours gate
+  void runVsinRefresh();
 
   // Fire score refresh immediately on startup (don't wait for first 15-sec tick)
   void refreshAllScoresNow();
 
+  // 24/7 — runs every 5 minutes with no time gate
   setInterval(() => {
-    if (isWithinActiveHours()) {
-      void runVsinRefresh();
-       } else {
-      console.log("[VSiNAutoRefresh] Tick skipped — outside active hours (14:01–04:59 UTC / 6:01 AM–11:59 PM EST).");
-    }
+    void runVsinRefresh();
   }, INTERVAL_MS);
 
-  // 15-second score refresh (runs independently of the hourly full refresh)
-  // NBA, NHL only — MLB has its own 10-minute cycle below
+  // 15-second score refresh (runs independently of the main refresh) — 24/7, no gate
+  // NBA, NHL only — MLB has its own 5-minute cycle below
   setInterval(() => {
-    if (isWithinActiveHours()) {
-      void refreshNbaScores();
-      void refreshNhlScores();
-    }
+    void refreshNbaScores();
+    void refreshNhlScores();
   }, SCORE_INTERVAL_MS);
 
-  // ─── MLB 10-minute refresh cycle ──────────────────────────────────────────────
-  // Runs every 10 minutes during active hours:
+  // ─── MLB 5-minute refresh cycle ──────────────────────────────────────────────
+  // Runs every 5 minutes 24/7 (no time gates):
   //   1. MLB Stats API live scores (runs, hits, errors, inning, status, pitchers)
   //   2. VSiN MLB betting splits (run line, total, ML percentages)
   //   3. Action Network DK NJ odds (run line, total, ML lines)
@@ -1391,12 +1539,40 @@ export function startVsinAutoRefresh() {
   // Fires immediately on startup so MLB data is never stale after a restart.
   // Non-fatal: each step is isolated; errors in one do not block the others.
   const runMlbCycle = async () => {
-    if (!isWithinActiveHours()) {
-      console.log("[MLBCycle] Tick skipped \u2014 outside active hours (14:01\u201304:59 UTC / 6:01 AM\u201311:59 PM EST).");
-      return;
-    }
+    // 24/7 — no active hours gate
     const todayStr = datePst();
     console.log(`[MLBCycle] ► START — ${new Date().toISOString()} | date: ${todayStr}`);
+
+    // Step 0: Postponed/Suspended game lifecycle tracking
+    // — Rescheduled game detection: scans MLB Stats API schedule for next 14 days
+    //   to detect when a postponed game has been assigned a new gamePk/date.
+    // — Suspended game resume detection: checks if any suspended games are now final.
+    // Non-fatal — errors are swallowed so the main cycle continues.
+    try {
+      const { detectRescheduledGames, detectResumedSuspendedGames } = await import("./mlbPostponedTracker.js");
+      const [reschedResult, resumeResult] = await Promise.allSettled([
+        detectRescheduledGames(),
+        detectResumedSuspendedGames(),
+      ]);
+      if (reschedResult.status === 'fulfilled') {
+        console.log(
+          `[MLBCycle] PostponedTracker: rescheduled=${reschedResult.value.detected}` +
+          ` | checked postponed/suspended games for reschedule in next 14 days`
+        );
+      } else {
+        console.warn("[MLBCycle] PostponedTracker rescheduled detection failed (non-fatal):", reschedResult.reason);
+      }
+      if (resumeResult.status === 'fulfilled') {
+        console.log(
+          `[MLBCycle] PostponedTracker: resumed=${resumeResult.value.resumed}` +
+          ` errors=${resumeResult.value.errors.length}`
+        );
+      } else {
+        console.warn("[MLBCycle] PostponedTracker resume detection failed (non-fatal):", resumeResult.reason);
+      }
+    } catch (err) {
+      console.warn("[MLBCycle] PostponedTracker failed (non-fatal):", err);
+    }
 
     // Step 1: Live scores from MLB Stats API
     // newlyFinalGamePks captures games that transitioned to 'final' this cycle
@@ -1467,6 +1643,27 @@ export function startVsinAutoRefresh() {
         `(today=${lineupResult.today.cardsParsed} tomorrow=${lineupResult.tomorrow.cardsParsed}) ` +
         `parseErrors=${totalErrors}`
       );
+      // ── Per-game pitcher/lineup detail log (structured Rotowire watcher output) ────────────────────────────────────
+      // Emits one line per game with: matchup, pitcher names+hand, lineup status
+      const logRotowireGames = (gamesArr: import('./rotowireLineupScraper').RotoLineupGame[], scope: string) => {
+        for (const g of gamesArr) {
+          const awayP = g.awayPitcher
+            ? `${g.awayPitcher.name} (${g.awayPitcher.hand})${g.awayPitcher.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}`
+            : 'TBD';
+          const homeP = g.homePitcher
+            ? `${g.homePitcher.name} (${g.homePitcher.hand})${g.homePitcher.confirmed ? ' [CONFIRMED]' : ' [EXPECTED]'}`
+            : 'TBD';
+          const awayLO = g.awayLineupConfirmed ? 'CONFIRMED' : (g.awayLineup.length > 0 ? 'EXPECTED' : 'NONE');
+          const homeLO = g.homeLineupConfirmed ? 'CONFIRMED' : (g.homeLineup.length > 0 ? 'EXPECTED' : 'NONE');
+          console.log(
+            `[MLBCycle][Roto][${scope}] ${g.awayAbbrev}@${g.homeAbbrev} | ` +
+            `away_p=${awayP} home_p=${homeP} | ` +
+            `away_lo=${awayLO} home_lo=${homeLO}`
+          );
+        }
+      };
+      logRotowireGames(lineupResult.today.games, 'TODAY');
+      logRotowireGames(lineupResult.tomorrow.games, 'TOMORROW');
       // Upsert today games (separate from tomorrow for watcher scoping)
       // Pass targetDate=todayStr to restrict DB lookup to today's games only,
       // preventing tomorrow's scrape from overwriting today's lineup records
@@ -1578,12 +1775,25 @@ export function startVsinAutoRefresh() {
         console.log(
           `[MLBCycle] K-Props upsert: inserted=${upsertResult.inserted} updated=${upsertResult.updated} skipped=${upsertResult.skipped} errors=${upsertResult.errors}`
         );
-        // Run K-Props model EV after upsert
-        const { modelKPropsForDate } = await import('./mlbKPropsModelService');
-        const kModelResult = await modelKPropsForDate(todayStr);
+      } else {
+        console.log(`[MLBCycle] K-Props upsert: skipped (0 AN props fetched)`);
+      }
+      // Run K-Props model EV unconditionally every cycle — not gated on AN scrape success.
+      // This ensures EV is recalculated even when AN returns 0 props (network error, empty slate).
+      // modelKPropsForDate is idempotent: it re-scores existing mlb_strikeout_props rows.
+      const { modelKPropsForDate, resolveKPropsMlbamIdsForDate } = await import('./mlbKPropsModelService');
+      const kModelResult = await modelKPropsForDate(todayStr);
+      console.log(
+        `[MLBCycle] K-Props model EV: modeled=${kModelResult.modeled} edges=${kModelResult.edges} skipped=${kModelResult.skipped} errors=${kModelResult.errors}`
+      );
+      // Auto-resolve MLBAM IDs for pitcher headshots — fires every cycle, no-ops if all IDs present
+      try {
+        const mlbamResult = await resolveKPropsMlbamIdsForDate(todayStr);
         console.log(
-          `[MLBCycle] K-Props model EV: modeled=${kModelResult.modeled} edges=${kModelResult.edges} skipped=${kModelResult.skipped} errors=${kModelResult.errors}`
+          `[MLBCycle] [MLBAM_BACKFILL] resolved=${mlbamResult.resolved} alreadyHad=${mlbamResult.alreadyHad} unresolved=${mlbamResult.unresolved} errors=${mlbamResult.errors}`
         );
+      } catch (mlbamErr) {
+        console.warn('[MLBCycle] [MLBAM_BACKFILL] MLBAM ID resolution failed (non-fatal):', mlbamErr);
       }
 
       // 3. Run backtest for today's completed games
@@ -1656,26 +1866,43 @@ export function startVsinAutoRefresh() {
       }
     }
 
-    // ── Step 7: F5/NRFI odds scrape (FanDuel NJ) ────────────────────────────
-    // Runs every 10-minute cycle. Idempotent upsert — safe to re-run.
-    // Scrapes FanDuel NJ F5 ML/RL/Total + NRFI/YRFI for today's MLB games.
-    try {
-      const { scrapeAndStoreF5Nrfi } = await import('./mlbF5NrfiScraper');
-      const f5Result = await scrapeAndStoreF5Nrfi(todayStr);
+    // ── Step 7: F5/NRFI odds scrape (FanDuel NJ) ────────────────────────────────
+    // Runs every 10-minute cycle BUT only after 7:00 AM EST (12:00 UTC).
+    // FanDuel NJ does not post F5/NRFI markets until morning of game day.
+    // Day-prior seeding is intentionally excluded — these markets are same-day only.
+    if (!isAfter7amEst()) {
       console.log(
-        `[MLBCycle] F5/NRFI (FanDuel NJ): processed=${f5Result.processed} ` +
-        `matched=${f5Result.matched} unmatched=${f5Result.unmatched.length} ` +
-        `errors=${f5Result.errors.length}`
+        `[MLBCycle] F5/NRFI SKIPPED — before 7:00 AM EST (UTC hour=${new Date().getUTCHours()}) ` +
+        `— FanDuel NJ F5/NRFI markets not yet posted`
       );
-      if (f5Result.errors.length > 0) {
-        console.warn('[MLBCycle] F5/NRFI scrape errors:', f5Result.errors.slice(0, 3));
+    } else {
+      try {
+        const { scrapeAndStoreF5Nrfi } = await import('./mlbF5NrfiScraper');
+        const f5Result = await scrapeAndStoreF5Nrfi(todayStr);
+        console.log(
+          `[MLBCycle] F5/NRFI (FanDuel NJ): processed=${f5Result.processed} ` +
+          `matched=${f5Result.matched} unmatched=${f5Result.unmatched.length} ` +
+          `errors=${f5Result.errors.length}`
+        );
+        if (f5Result.errors.length > 0) {
+          console.warn('[MLBCycle] F5/NRFI scrape errors:', f5Result.errors.slice(0, 3));
+        }
+      } catch (err) {
+        console.warn('[MLBCycle] F5/NRFI scrape failed (non-fatal):', err);
       }
-    } catch (err) {
-      console.warn('[MLBCycle] F5/NRFI scrape failed (non-fatal):', err);
     }
 
-    // ── Step 8: HR Props scrape (Consensus) + model EV computation ───────────
-    // Runs every 10-minute cycle. Upserts consensus HR prop odds from Action Network,
+    // ── Step 8: HR Props scrape (Consensus) + model EV computation ───────────────────────
+    // Runs every 10-minute cycle BUT only after 7:00 AM EST (12:00 UTC).
+    // AN/consensus HR prop markets do not post until morning of game day.
+    // Day-prior seeding is intentionally excluded — these markets are same-day only.
+    if (!isAfter7amEst()) {
+      console.log(
+        `[MLBCycle] HR Props SKIPPED — before 7:00 AM EST (UTC hour=${new Date().getUTCHours()}) ` +
+        `— AN/consensus HR prop markets not yet posted`
+      );
+    } else {
+    // Upserts consensus HR prop odds from Action Network,
     // then resolves mlbamId for each player and computes modelPHr, modelOverOdds,
     // edgeOver, evOver, verdict using the HR Props model service.
     try {
@@ -1706,6 +1933,7 @@ export function startVsinAutoRefresh() {
     } catch (err) {
       console.warn('[MLBCycle] HR Props scrape failed (non-fatal):', err);
     }
+    } // end isAfter7amEst() gate for HR Props
 
     console.log(`[MLBCycle] ✅ DONE — ${new Date().toISOString()}`);
   };

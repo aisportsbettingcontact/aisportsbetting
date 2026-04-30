@@ -7,7 +7,8 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
-import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, Star, Link2, FlaskConical, ShieldAlert } from "lucide-react";
+import { useUrlState, type Sport } from "@/hooks/useUrlState";
+import { User, LogOut, BarChart3, Loader2, Crown, Send, Search, X, Clock, Star, Link2, FlaskConical, ShieldAlert, BarChart2, TrendingUp, AlertTriangle } from "lucide-react";
 import { CalendarPicker, todayUTC } from "@/components/CalendarPicker";
 import { AnimatePresence, motion } from "framer-motion";
 
@@ -17,6 +18,7 @@ import { GameCard } from "@/components/GameCard";
 import { MlbLineupCard } from "@/components/MlbLineupCard";
 import MlbPropsCard, { type StrikeoutPropRow } from "@/components/MlbPropsCard";
 import MlbF5NrfiCard, { type F5NrfiGame } from "@/components/MlbF5NrfiCard";
+import MlbCheatSheetCard, { type CheatSheetGame, CheatSheetView, type CheatSheetLineup } from "@/components/MlbCheatSheetCard";
 import MlbHrPropsCard, { type HrPropRow } from "@/components/MlbHrPropsCard";
 import { AgeModal } from "@/components/AgeModal";
 import { toast } from "sonner";
@@ -143,8 +145,7 @@ function SearchResultRow({ game, onClick }: { game: GameRow; onClick: () => void
   const dateShort = formatDateShort(game.gameDate);
 
   return (
-    <button
-      onClick={onClick}
+    <button type="button" onClick={onClick}
       className="w-full hover:bg-white/5 active:bg-white/10 transition-colors text-left border-b border-white/8 last:border-0"
     >
       <div className="flex items-center px-3 py-2.5 gap-2">
@@ -218,8 +219,7 @@ function FavNotificationBanner({ notif, onDismiss }: { notif: FavNotification; o
           {awayName} @ {homeName}
         </p>
       </div>
-      <button
-        onClick={() => onDismiss(notif.id)}
+      <button type="button" onClick={() => onDismiss(notif.id)}
         style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}
       >
         <X style={{ width: 12, height: 12 }} />
@@ -270,7 +270,15 @@ export default function ModelProjections() {
   const [, setLocation] = useLocation();
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [selectedSport, setSelectedSport] = useState<"MLB" | "NBA" | "NHL">("MLB");
+  // Architecture: URL query params for feed state (sport, date, tab, statuses)
+  // Enables browser back/forward and bookmarkable URLs
+  const {
+    selectedSport, setSelectedSport,
+    selectedDate, setSelectedDate,
+    feedMobileTab: urlFeedMobileTab, setFeedMobileTab: setUrlFeedMobileTab,
+    selectedStatuses, setSelectedStatuses,
+    resetFilters: resetUrlFilters,
+  } = useUrlState();
 
   // Query which sports have games today or tomorrow (UTC) — hides pills with no games
   const { data: activeSports } = trpc.games.activeSports.useQuery(undefined, {
@@ -284,12 +292,10 @@ export default function ModelProjections() {
     if (!sportActive) {
       // Pick the first active sport in display order: MLB → NHL → NBA
       const fallback = (['MLB', 'NHL', 'NBA'] as const).find(s => activeSports[s]);
-      if (fallback) setSelectedSport(fallback);
+      if (fallback) setSelectedSport(fallback, true); // isAutoSwitch=true → replace, don't push history
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSports]);
-  const [selectedStatuses, setSelectedStatuses] = useState<Set<"upcoming" | "live" | "final">>(new Set());
-  const [selectedDate, setSelectedDate] = useState<string>(() => todayUTC());
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFocused, setSearchFocused] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
@@ -298,6 +304,11 @@ export default function ModelProjections() {
   const [headerHeight, setHeaderHeight] = useState(88);
   const [showModel, setShowModel] = useState(true);
   const toggleModel = () => setShowModel((v) => !v);
+  // ── Tab bar scroll fade indicator ─────────────────────────────────────────
+  // tabsShowFade: true when the tab bar has overflowing content AND user hasn't
+  // scrolled to the end. Drives the fade-right gradient mask in the tab bar wrapper.
+  const tabsScrollRef = useRef<HTMLDivElement>(null);
+  const [tabsShowFade, setTabsShowFade] = useState(false);
 
   // ── Main page tab: projections | splits ───────────────────────────────────
 
@@ -305,19 +316,10 @@ export default function ModelProjections() {
   // Tabs: MODEL PROJECTIONS (dual) | BETTING SPLITS (splits) | LINEUPS (lineups, MLB only)
   //       K PROPS (props, MLB only) | F5/NRFI (f5nrfi, MLB only) | HR PROPS (hrprops, MLB only)
   type FeedMobileTab = 'dual' | 'splits' | 'lineups' | 'props' | 'f5nrfi' | 'hrprops';
-  const FEED_TAB_KEY = 'prez_bets_mobile_tab_v4';
-  const getPersistedFeedTab = (): FeedMobileTab => {
-    try {
-      const stored = localStorage.getItem(FEED_TAB_KEY);
-      const valid: FeedMobileTab[] = ['dual', 'splits', 'lineups', 'props', 'f5nrfi', 'hrprops'];
-      if (valid.includes(stored as FeedMobileTab)) return stored as FeedMobileTab;
-    } catch { /* ignore */ }
-    return 'dual';
-  };
-  const [feedMobileTab, setFeedMobileTab] = useState<FeedMobileTab>(getPersistedFeedTab);
+  // feedMobileTab now comes from URL params (via useUrlState), with localStorage fallback
+  const feedMobileTab = urlFeedMobileTab;
   const handleFeedTabChange = (next: FeedMobileTab) => {
-    setFeedMobileTab(next);
-    try { localStorage.setItem(FEED_TAB_KEY, next); } catch { /* ignore */ }
+    setUrlFeedMobileTab(next);
   };
   const feedIsDual = feedMobileTab === 'dual';
   // Tabs: MODEL PROJECTIONS | BETTING SPLITS | LINEUPS (MLB only) | K PROPS (MLB only) | F5/NRFI (MLB only) | HR PROPS (MLB only)
@@ -327,7 +329,7 @@ export default function ModelProjections() {
         { id: 'splits',  label: 'SPLITS' },
         { id: 'lineups', label: 'LINEUPS' },
         { id: 'props',   label: 'K PROPS' },
-        { id: 'f5nrfi',  label: 'F5/NRFI' },
+        { id: 'f5nrfi',  label: 'CHEAT SHEETS' },
         { id: 'hrprops', label: 'HR PROPS' },
       ]
     : [
@@ -359,6 +361,52 @@ export default function ModelProjections() {
      return () => obs.disconnect();
   }, []);
 
+  // ── Tab bar scroll fade: show right-edge gradient when content overflows ───────────
+  // Logic: fade is visible when (scrollWidth > clientWidth) AND (not scrolled to end).
+  // Updates on: mount, scroll, resize, and FEED_TABS change (sport switch).
+  useEffect(() => {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    const update = () => {
+      // scrollWidth > clientWidth means content overflows
+      const hasOverflow = el.scrollWidth > el.clientWidth + 1; // +1 for sub-pixel rounding
+      // atEnd: within 4px of the right edge (accounts for fractional pixel rounding)
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 4;
+      setTabsShowFade(hasOverflow && !atEnd);
+    };
+    update(); // initial check
+    el.addEventListener('scroll', update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', update);
+      ro.disconnect();
+    };
+  // Re-run when FEED_TABS changes (sport switch changes tab count)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSport]);
+
+  // ── Scroll active tab into view on sport switch ─────────────────────────────
+  // When selectedSport changes, the FEED_TABS array changes length (MLB=6, NHL/NBA=2).
+  // The active tab (feedMobileTab) may be off-screen if the previous sport had more tabs.
+  // Use requestAnimationFrame to wait for the DOM to reflect the new tab list before scrolling.
+  useEffect(() => {
+    const el = tabsScrollRef.current;
+    if (!el) return;
+    // rAF: wait one paint cycle so the new tab buttons are rendered before measuring
+    const raf = requestAnimationFrame(() => {
+      const activeBtn = el.querySelector<HTMLElement>('[data-active="true"]');
+      if (activeBtn) {
+        activeBtn.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
+      } else {
+        // Fallback: scroll to start when no active tab found (e.g. tab not in new sport)
+        el.scrollTo({ left: 0, behavior: 'smooth' });
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSport]);
+
   // ── Mobile debug logging ──────────────────────────────────────────────────────
   // Logs viewport, scale, safe-area insets, header height, and feed budget
   // on every mount and resize. No-op in production. Filter by [MobileDebug:ModelProjections]
@@ -374,10 +422,9 @@ export default function ModelProjections() {
   const { user, isAuthenticated } = useAuth();
   const { appUser, isOwner, loading: appAuthLoading, refetch: refetchAppUser } = useAppAuth();
 
-  useEffect(() => {
-    if (!appAuthLoading && !appUser) setLocation("/");
-  }, [appUser, appAuthLoading]);
-
+  // [PUBLIC MODE 2026-04-30] Auth wall removed — site open to unauthenticated viewers.
+  // Original redirect: if (!appAuthLoading && !appUser) setLocation("/");
+  // Age modal still shown for logged-in users who haven't accepted terms.
   useEffect(() => {
     if (!appAuthLoading && appUser && !appUser.termsAccepted) setShowAgeModal(true);
   }, [appAuthLoading, appUser]);
@@ -447,14 +494,24 @@ export default function ModelProjections() {
     onSuccess: () => { refetchAppUser(); setShowAgeModal(false); },
   });
 
+  const closeSessionMutation = trpc.metrics.closeSession.useMutation();
+  const heartbeatMutation = trpc.metrics.sessionHeartbeat.useMutation();
   const appLogoutMutation = trpc.appUsers.logout.useMutation({
     onSuccess: () => { setLocation("/"); toast.success("Signed out"); },
   });
-  const appLogout = () => appLogoutMutation.mutate();
+  const appLogout = () => { closeSessionMutation.mutate(); appLogoutMutation.mutate(); };
+  // Heartbeat every 5 minutes to track active session duration
+  // [PUBLIC MODE] Only fire heartbeat for authenticated users — prevents UNAUTHORIZED noise for public viewers
+  useEffect(() => {
+    if (!appUser) return;
+    const interval = setInterval(() => { heartbeatMutation.mutate(); }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [Boolean(appUser)]);
 
   useEffect(() => {
-    setSelectedStatuses(new Set());
-    setSelectedDate(todayUTC());
+    resetUrlFilters();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedSport]);
 
   const { data: allGames, isLoading: gamesLoading } = trpc.games.list.useQuery(
@@ -542,12 +599,10 @@ export default function ModelProjections() {
   }, [mlbHrPropsRaw]);
 
   const toggleStatus = (status: "upcoming" | "live" | "final") => {
-    setSelectedStatuses(prev => {
-      const next = new Set(prev);
-      if (next.has(status)) next.delete(status); else next.add(status);
-      if (next.size === 3) return new Set();
-      return next;
-    });
+    const next = new Set(selectedStatuses);
+    if (next.has(status)) next.delete(status); else next.add(status);
+    if (next.size === 3) setSelectedStatuses(new Set());
+    else setSelectedStatuses(next);
   };
 
   // All unique dates available for the current sport (sorted ascending)
@@ -770,7 +825,7 @@ export default function ModelProjections() {
          * user icon are flex-shrink-0 on the right. Gap between them is handled by
          * flex-1 spacer. This guarantees zero overlap at every viewport width.
          */}
-        <div className="flex items-center gap-2 px-4 pt-2 pb-1 w-full min-w-0">
+        <div className="flex items-center gap-2 px-4 pt-2 pb-1 md:pt-3 md:pb-2 w-full min-w-0">
           {/* ── Brand: left-aligned, shrinks gracefully on narrow screens ── */}
           <div className="flex items-center gap-1.5 flex-shrink-0 min-w-0">
             <BarChart3 className="flex-shrink-0 text-primary" style={{ width: "clamp(14px, 3.5vw, 20px)", height: "clamp(14px, 3.5vw, 20px)" }} />
@@ -863,7 +918,7 @@ export default function ModelProjections() {
           )}
           {/* User menu */}
           <div className="flex-shrink-0 relative">
-            <button onClick={() => setShowUserMenu(!showUserMenu)} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors" title={user ? user.name ?? "Account" : "Sign in"}>
+            <button type="button" onClick={() => setShowUserMenu(!showUserMenu)} className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center hover:bg-accent transition-colors" title={user ? user.name ?? "Account" : "Sign in"}>
               <User className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
             {showUserMenu && (
@@ -879,23 +934,31 @@ export default function ModelProjections() {
                         </div>
                         <p className="text-[11px] text-muted-foreground truncate">{appUser.email}</p>
                       </div>
+                      {(isOwner || appUser.role === "admin" || appUser.role === "handicapper") && (
+                        <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/bet-tracker"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <BarChart2 className="w-3.5 h-3.5 text-emerald-400" /> Bet Tracker
+                        </button>
+                      )}
                       {isOwner && (
                         <>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/publish"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Send className="w-3.5 h-3.5 text-green-400" /> Publish Projections
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/users"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <Crown className="w-3.5 h-3.5 text-yellow-400" /> User Management
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/model-results"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-                            <FlaskConical className="w-3.5 h-3.5 text-blue-400" /> THE MODEL
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/model-results"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                            <FlaskConical className="w-3.5 h-3.5 text-blue-400" /> THE MODEL RESULTS
                           </button>
-                          <button onClick={() => { setShowUserMenu(false); setLocation("/admin/security"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/security"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                             <ShieldAlert className="w-3.5 h-3.5 text-red-400" /> Security Events
+                          </button>
+                          <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/admin/postponed-games"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400" /> Postponed Games
                           </button>
                         </>
                       )}
-                      <button onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                      <button type="button" onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                         <LogOut className="w-3.5 h-3.5" /> Sign out
                       </button>
                     </>
@@ -905,12 +968,12 @@ export default function ModelProjections() {
                         <p className="text-xs font-semibold text-foreground truncate">{user.name ?? "User"}</p>
                         <p className="text-[11px] text-muted-foreground truncate">{user.email ?? ""}</p>
                       </div>
-                      <button onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                      <button type="button" onClick={() => { setShowUserMenu(false); appLogout(); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
                         <LogOut className="w-3.5 h-3.5" /> Sign out
                       </button>
                     </>
                   ) : (
-                    <button onClick={() => { setShowUserMenu(false); setLocation("/login"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Sign in</button>
+                    <button type="button" onClick={() => { setShowUserMenu(false); setLocation("/login"); }} className="w-full flex items-center gap-2 px-3 py-2.5 text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">Sign in</button>
                   )}
                 </div>
               </>
@@ -922,14 +985,13 @@ export default function ModelProjections() {
         {/* Row 3: Unified filter bar — FAVORITES | DATE | MLB | NHL | NBA | Search */}
         {/* Mobile: gap-1 px-2 to keep all pills + search on one row within 375-430px screens */}
         {/* sm+: gap-2 px-3 (unchanged from original) */}
-        <div ref={searchRef} className="relative px-2 sm:px-3 pt-1 pb-0 flex items-center gap-1 sm:gap-2">
+        <div ref={searchRef} className="relative px-2 sm:px-3 md:px-4 pt-1 pb-0 md:pt-2 md:pb-1 flex items-center gap-1 sm:gap-2 md:gap-3">
 
           {/* FAVORITES tab — shown when user is authenticated AND has ≥1 active favorite */}
           {/* NOTE: must use isAppAuthedForFav (Boolean(appUser)) — NOT isAuthenticated (Manus OAuth always null) */}
           {isAppAuthedForFav && activeFavCount >= 1 && (
-            <button
-              onClick={() => setShowFavoritesTab(v => !v)}
-              className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+            <button type="button" onClick={() => setShowFavoritesTab(v => !v)}
+              className="flex items-center gap-1 sm:gap-1.5 md:gap-2 px-1.5 sm:px-2.5 md:px-3 py-1 sm:py-1.5 md:py-2 rounded-full text-[10px] sm:text-[11px] md:text-[13px] font-bold tracking-wide transition-all flex-shrink-0"
               style={showFavoritesTab
                 ? { background: "rgba(255,215,0,0.18)", color: "#FFD700", border: "1px solid rgba(255,215,0,0.55)", boxShadow: "0 0 8px rgba(255,215,0,0.15)" }
                 : { background: "hsl(var(--card))", color: "rgba(255,215,0,0.75)", border: "1px solid rgba(255,215,0,0.35)" }
@@ -951,27 +1013,27 @@ export default function ModelProjections() {
 
           {/* MLB pill — only shown when MLB has games today or tomorrow */}
           {(!activeSports || activeSports.MLB) && (
-            <button onClick={() => setSelectedSport("MLB")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-              style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "MLB" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-              <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
+            <button type="button" onClick={() => setSelectedSport("MLB")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+              style={{ fontSize: 'clamp(10px, 1.7vw, 13px)', ...(selectedSport === "MLB" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+              <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" className="w-[10px] h-[10px] md:w-[14px] md:h-[14px]" style={{ objectFit: "contain", opacity: selectedSport === "MLB" ? 1 : 0.5, flexShrink: 0 }} />
               MLB
             </button>
           )}
 
           {/* NHL pill — only shown when NHL has games today or tomorrow */}
           {(!activeSports || activeSports.NHL) && (
-            <button onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-              style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-              <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
+            <button type="button" onClick={() => setSelectedSport("NHL")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+              style={{ fontSize: 'clamp(10px, 1.7vw, 13px)', ...(selectedSport === "NHL" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+              <img src="https://media.d3.nhle.com/image/private/t_q-best/prd/assets/nhl/logos/nhl_shield_wm_on_dark_fqkbph" alt="NHL" className="w-[10px] h-[10px] md:w-[14px] md:h-[14px]" style={{ objectFit: "contain", opacity: selectedSport === "NHL" ? 1 : 0.5, flexShrink: 0 }} />
               NHL
             </button>
           )}
 
           {/* NBA pill — only shown when NBA has games today or tomorrow */}
           {(!activeSports || activeSports.NBA) && (
-            <button onClick={() => setSelectedSport("NBA")} className="flex items-center gap-0.5 sm:gap-1 px-1.5 sm:px-2 py-1 rounded-full font-bold tracking-wide transition-all flex-shrink-0"
-              style={{ fontSize: 'clamp(10px, 2.5vw, var(--fs-nav, 11px))', ...(selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
-              <img src={CDN_NBA} alt="NBA" width={10} height={10} style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
+            <button type="button" onClick={() => setSelectedSport("NBA")} className="flex items-center gap-0.5 sm:gap-1 md:gap-1.5 px-1.5 sm:px-2 md:px-3 py-1 md:py-2 min-h-[44px] rounded-full font-bold tracking-wide transition-all flex-shrink-0"
+              style={{ fontSize: 'clamp(10px, 1.7vw, 13px)', ...(selectedSport === "NBA" ? { background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,0.6)" } : { background: "hsl(var(--card))", color: "rgba(255,255,255,0.45)", border: "1px solid hsl(var(--border))" }) }}>
+              <img src={CDN_NBA} alt="NBA" className="w-[10px] h-[10px] md:w-[14px] md:h-[14px]" style={{ objectFit: "contain", opacity: selectedSport === "NBA" ? 1 : 0.5, flexShrink: 0 }} />
               NBA
             </button>
           )}
@@ -981,11 +1043,11 @@ export default function ModelProjections() {
           {/* Search bar — always visible, shrinks when Favorites button is present */}
           {/* Mobile: min-w-[28px] so it always shows at least the icon; flex-1 fills remaining space */}
           <div className="flex-1 min-w-0" style={{ minWidth: 28 }}>
-            <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-full border transition-all duration-150"
+            <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2.5 px-2 sm:px-2.5 md:px-3 py-1 sm:py-1.5 md:py-2 rounded-full border transition-all duration-150"
               style={{ background: "hsl(var(--secondary))", borderColor: searchFocused ? "rgba(34,197,94,0.5)" : "hsl(var(--border))", boxShadow: searchFocused ? "0 0 0 1px rgba(34,197,94,0.15)" : "none" }}>
-              <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-              <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs text-foreground placeholder:text-muted-foreground outline-none" />
-              {searchQuery && <button onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3" /></button>}
+              <Search className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground flex-shrink-0" />
+              <input ref={inputRef} type="text" placeholder="Search…" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} onFocus={() => setSearchFocused(true)} className="flex-1 min-w-0 bg-transparent text-xs md:text-[13px] text-foreground placeholder:text-muted-foreground outline-none" />
+              {searchQuery && <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => { setSearchQuery(""); inputRef.current?.focus(); }} className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0"><X className="w-3 h-3 md:w-4 md:h-4" /></button>}
             </div>
           </div>
 
@@ -1016,7 +1078,7 @@ export default function ModelProjections() {
             shrinks proportionally via font-size: clamp(9px, 2.4vw, ...) for the league label.
             sm+ breakpoints are unchanged from the original design. */}
         {!showFavoritesTab && !gamesLoading && sortedDates.length > 0 && (
-          <div className="w-full flex items-center justify-center px-2 py-1 border-b border-border bg-background/95 sm:px-4" style={{ overflow: 'hidden' }}>
+          <div className="w-full flex items-center justify-center px-2 py-1 md:py-2 border-b border-border bg-background/95 sm:px-4" style={{ overflow: 'hidden' }}>
             {/* Single-line pill: all three spans in one nowrap flex row, centered in full width */}
             <div
               className="flex items-center justify-center"
@@ -1052,7 +1114,8 @@ export default function ModelProjections() {
                   color: '#a3a3a3',
                   letterSpacing: '0.04em',
                   /* Mobile: 8px at 375px keeps "MEN'S COLLEGE BASKETBALL" fully visible */
-                  fontSize: 'clamp(8px, 2.1vw, 12px)',
+                  /* Tablet: clamp hits 12px at 571px; bump max to 14px for 768px readability */
+                  fontSize: 'clamp(8px, 2.1vw, 14px)',
                   textTransform: 'uppercase',
                   whiteSpace: 'nowrap',
                   flexShrink: 0,
@@ -1064,9 +1127,9 @@ export default function ModelProjections() {
 
         {/* Row 4 (favorites mode): Favorites header */}
         {showFavoritesTab && (
-          <div className="flex items-center px-4 py-1 border-b border-border bg-background/95 gap-2">
+          <div className="flex items-center px-4 py-1 md:py-2 border-b border-border bg-background/95 gap-2">
             <div className="flex-1" />
-            <span className="font-bold tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 13px)", color: "#FFD700" }}>
+            <span className="font-bold tracking-widest uppercase" style={{ fontSize: "clamp(11px, 2vw, 15px)", color: "#FFD700" }}>
               FAVORITED GAMES
             </span>
             <div className="flex-1" />
@@ -1074,9 +1137,24 @@ export default function ModelProjections() {
         )}
 
         {/* Row 5: Feed-wide mobile tab filter — MODEL PROJECTIONS | BETTING SPLITS | LINEUPS (MLB) */}
-        {/* Tab bar: mobile always shown; desktop shown when MLB is selected (for LINEUPS tab) */}
-        <div className="grid" style={{
-            gridTemplateColumns: `repeat(${FEED_TABS.length}, 1fr)`,
+        {/* Tab bar: Fix #9 — flex + overflow-x:auto + scroll-snap for 6-tab MLB row */}
+        {/* Fade wrapper: position:relative so the ::after pseudo-element can be absolutely */}
+        {/* positioned over the right edge. tabsShowFade drives the CSS class. */}
+        <div className="feed-tabs-wrapper" style={{ position: 'relative' }}>
+        <div ref={tabsScrollRef} className="feed-tabs-scroll" style={{
+            display: 'flex',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            scrollSnapType: 'x mandatory',
+            WebkitOverflowScrolling: 'touch',
+            scrollbarWidth: 'none',
+            // Prevent vertical scroll from propagating to the page when swiping horizontally.
+            // overscrollBehaviorX: contain — stops the horizontal swipe from triggering
+            // the parent page's vertical scroll chain on iOS/Android.
+            // touchAction: pan-x — tells the browser this element only scrolls horizontally,
+            // so vertical swipes are immediately handed off to the page scroll handler.
+            overscrollBehaviorX: 'contain',
+            touchAction: 'pan-x',
             borderBottom: '2px solid hsl(var(--border) / 0.5)',
             background: 'hsl(var(--card))',
           }}>
@@ -1086,11 +1164,15 @@ export default function ModelProjections() {
                 handleFeedTabChange(tab.id);
               };
               return (
-                <button
-                  key={tab.id}
+                <button type="button" key={tab.id}
                   onClick={handleClick}
+                  className="feed-tab"
+                  data-active={isActive ? "true" : undefined}
                   style={{
-                    padding: '7px 2px',
+                    flex: '0 0 auto',
+                    scrollSnapAlign: 'start',
+                    padding: '7px 12px',
+                    minHeight: 44,
                     fontSize: '13px',
                     fontWeight: isActive ? 800 : 500,
                     letterSpacing: '0.06em',
@@ -1103,6 +1185,7 @@ export default function ModelProjections() {
                     transition: 'color 0.15s, border-color 0.15s',
                     textTransform: 'uppercase',
                     lineHeight: 1.2,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   {tab.label}
@@ -1110,6 +1193,23 @@ export default function ModelProjections() {
               );
             })}
           </div>
+          {/* Fade-right gradient overlay: visible when tabsShowFade=true (scroll needed) */}
+          {/* Pointer-events:none so clicks pass through to the tab buttons beneath */}
+          <div
+            aria-hidden="true"
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              bottom: 0,
+              width: 48,
+              background: 'linear-gradient(to right, transparent, hsl(var(--card)))',
+              pointerEvents: 'none',
+              opacity: tabsShowFade ? 1 : 0,
+              transition: 'opacity 0.2s ease',
+            }}
+          />
+        </div>{/* end feed-tabs-wrapper */}
       </header>
 
       {/* ── Sticky global column header (mobile only) — MATCHUP | SPREAD/PUCK LINE | TOTAL | ML ── */}
@@ -1253,7 +1353,7 @@ export default function ModelProjections() {
                 gamesLoading ? (
                   <div className="flex flex-col items-center justify-center py-24 gap-3">
                     <Loader2 className="w-8 h-8 text-primary animate-spin" />
-                    <p className="text-sm text-muted-foreground">Loading F5/NRFI data…</p>
+                    <p className="text-sm text-muted-foreground">Loading Cheat Sheets…</p>
                   </div>
                 ) : sortedDates.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-24 gap-4 text-center px-4">
@@ -1266,14 +1366,12 @@ export default function ModelProjections() {
                 ) : (
                   <div style={{ padding: '10px 10px 0' }}>
                     {sortedDates.map((date) => (
-                      <div key={date}>
-                        {gamesByDate[date]!.map((game) => (
-                          <MlbF5NrfiCard
-                            key={game!.id}
-                            game={game as unknown as F5NrfiGame}
-                          />
-                        ))}
-                      </div>
+                      <CheatSheetView
+                        key={date}
+                        games={gamesByDate[date]!.map(g => g as unknown as CheatSheetGame)}
+                        lineupsMap={mlbLineupsMap as unknown as Map<number, CheatSheetLineup>}
+                        dateLabel={formatDateHeader(date)}
+                      />
                     ))}
                   </div>
                 )

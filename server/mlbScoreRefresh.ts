@@ -47,8 +47,10 @@
  *   We match by mlbGamePk (primary) or by awayTeam+homeTeam abbreviation (fallback).
  */
 
+import { eq } from "drizzle-orm";
+import { games } from "../drizzle/schema";
 import { MLB_BY_ABBREV, MLB_BY_ID } from "../shared/mlbTeams";
-import { listGamesByDate, updateNcaaStartTime, updateBookOdds } from "./db";
+import { getDb, listGamesByDate, updateNcaaStartTime, updateBookOdds } from "./db";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -83,11 +85,12 @@ export interface MlbLiveGame {
   homeRuns: number | null;
   /**
    * Mapped DB game status:
-   *   "upcoming" — not yet started (Preview, Scheduled, Postponed, Suspended, Warmup, Delayed)
-   *   "live"     — in progress (Live, In Progress)
-   *   "final"    — completed (Final, Game Over, Completed Early)
+   *   "upcoming"   — not yet started (Preview, Scheduled, Warmup, Delayed)
+   *   "live"       — in progress (Live, In Progress)
+   *   "final"      — completed (Final, Game Over, Completed Early)
+   *   "postponed"  — game postponed, suspended, or cancelled (hidden from feed)
    */
-  gameStatus: "upcoming" | "live" | "final";
+  gameStatus: "upcoming" | "live" | "final" | "postponed";
   /**
    * Human-readable game clock string for display:
    *   Live:    "Top 3rd" | "Bot 3rd" | "Mid 3rd" | "End 3rd" | "Top 10th (Extra)" etc.
@@ -109,6 +112,25 @@ export interface MlbLiveGame {
   rawDetailedState: string;
   /** Total innings played (for extra-inning detection) */
   totalInnings: number | null;
+  /**
+   * Away team F5 runs (sum of innings 1–5 away runs).
+   * Only set for final games with full linescore.innings data (≥5 innings).
+   * null for live/upcoming games or when innings data is unavailable.
+   */
+  awayF5Runs: number | null;
+  /**
+   * Home team F5 runs (sum of innings 1–5 home runs).
+   * Only set for final games with full linescore.innings data (≥5 innings).
+   * null for live/upcoming games or when innings data is unavailable.
+   */
+  homeF5Runs: number | null;
+  /**
+   * NRFI result derived from 1st inning linescore.
+   * "NRFI" = both teams scored 0 runs in the 1st inning.
+   * "YRFI" = at least one team scored ≥1 run in the 1st inning.
+   * null for live/upcoming games or when innings data is unavailable.
+   */
+  nrfiResult: "NRFI" | "YRFI" | null;
 }
 
 // ─── Raw API types ────────────────────────────────────────────────────────────
@@ -188,15 +210,15 @@ interface MlbApiScheduleResponse {
  *   abstractGameState="Preview"  → "upcoming"  (includes: Scheduled, Pre-Game, Warmup, Delayed Start)
  *   abstractGameState="Live"     → "live"       (includes: In Progress, Manager Challenge, Replay Review)
  *   abstractGameState="Final"    → "final"      (includes: Final, Game Over, Completed Early)
- *   detailedState="Postponed"    → "upcoming"   (override: game not played today)
- *   detailedState="Suspended"    → "upcoming"   (override: game suspended, not final)
- *   detailedState="Cancelled"    → "upcoming"   (override: treat as not played)
+ *   detailedState="Postponed"    → "postponed"  (override: game not played today — hidden from feed)
+ *   detailedState="Suspended"    → "postponed"  (override: game suspended — hidden from feed)
+ *   detailedState="Cancelled"    → "postponed"  (override: treat as not played — hidden from feed)
  */
 function mapMlbStatus(
   abstractState: string,
   detailedState: string
-): "upcoming" | "live" | "final" {
-  // Explicit overrides for special states
+): "upcoming" | "live" | "final" | "postponed" {
+  // Explicit overrides for special states — these games are NOT played and must be hidden from feed
   const detailedLower = detailedState.toLowerCase();
   if (
     detailedLower.includes("postponed") ||
@@ -204,7 +226,7 @@ function mapMlbStatus(
     detailedLower.includes("cancelled") ||
     detailedLower.includes("canceled")
   ) {
-    return "upcoming";
+    return "postponed";
   }
 
   switch (abstractState) {
@@ -231,11 +253,11 @@ function mapMlbStatus(
  *   Upcoming          → null
  */
 function buildMlbGameClock(
-  status: "upcoming" | "live" | "final",
+  status: "upcoming" | "live" | "final" | "postponed",
   linescore: MlbApiLinescore | undefined,
   totalInnings: number | null
 ): string | null {
-  if (status === "upcoming") return null;
+  if (status === "upcoming" || status === "postponed") return null;
 
   if (status === "final") {
     if (totalInnings != null && totalInnings > 9) {
@@ -382,6 +404,46 @@ export async function fetchMlbLiveScores(dateStr: string): Promise<MlbLiveGame[]
     const winningPitcher = g.decisions?.winner?.fullName ?? null;
     const losingPitcher = g.decisions?.loser?.fullName ?? null;
 
+    // ── F5 scores: sum innings 1–5 (indices 0–4) ────────────────────────────
+    // Only compute for final games with full innings data (≥5 innings played).
+    // For live games or games with incomplete innings, set null.
+    let awayF5Runs: number | null = null;
+    let homeF5Runs: number | null = null;
+    let nrfiResult: "NRFI" | "YRFI" | null = null;
+
+    if (gameStatus === "final" && linescore?.innings && linescore.innings.length >= 5) {
+      // F5 = sum of innings 1–5 (array indices 0–4)
+      awayF5Runs = linescore.innings
+        .slice(0, 5)
+        .reduce((sum, inn) => sum + (inn.away?.runs ?? 0), 0);
+      homeF5Runs = linescore.innings
+        .slice(0, 5)
+        .reduce((sum, inn) => sum + (inn.home?.runs ?? 0), 0);
+      console.log(
+        `[MLBScoreRefresh] F5 computed: gamePk=${g.gamePk} ${awayAbbrev}@${homeAbbrev}` +
+        ` | awayF5=${awayF5Runs} homeF5=${homeF5Runs}` +
+        ` | innings_available=${linescore.innings.length}`
+      );
+    } else if (gameStatus === "final" && linescore?.innings && linescore.innings.length < 5) {
+      console.warn(
+        `[MLBScoreRefresh] F5 SKIP: gamePk=${g.gamePk} ${awayAbbrev}@${homeAbbrev}` +
+        ` — only ${linescore.innings.length} innings in linescore (need ≥5 for F5)`
+      );
+    }
+
+    // ── NRFI: 1st inning both teams scored 0 runs ─────────────────────────────
+    // Requires at least 1 inning of data. For final games only.
+    if (gameStatus === "final" && linescore?.innings && linescore.innings.length >= 1) {
+      const inn1 = linescore.innings[0];
+      const inn1Away = inn1.away?.runs ?? 0;
+      const inn1Home = inn1.home?.runs ?? 0;
+      nrfiResult = (inn1Away === 0 && inn1Home === 0) ? "NRFI" : "YRFI";
+      console.log(
+        `[MLBScoreRefresh] NRFI computed: gamePk=${g.gamePk} ${awayAbbrev}@${homeAbbrev}` +
+        ` | inn1Away=${inn1Away} inn1Home=${inn1Home} → ${nrfiResult}`
+      );
+    }
+
     const game: MlbLiveGame = {
       gamePk: g.gamePk,
       awayAbbrev,
@@ -397,6 +459,9 @@ export async function fetchMlbLiveScores(dateStr: string): Promise<MlbLiveGame[]
       rawAbstractState: abstractState,
       rawDetailedState: detailedState,
       totalInnings,
+      awayF5Runs,
+      homeF5Runs,
+      nrfiResult,
     };
 
     results.push(game);
@@ -591,6 +656,80 @@ export async function refreshMlbScores(dateStr: string): Promise<{
         homeScore: apiGame.homeRuns,
         gameClock: apiGame.gameClock,
       });
+
+      // ── Write actual scores + F5 + NRFI for final games ──────────────────────
+      // These columns are consumed by mlbMultiMarketBacktest.ts for WIN/LOSS grading.
+      // Only write when the game is final AND we have valid score data.
+      // Uses a separate direct DB update to keep updateNcaaStartTime sport-agnostic.
+      if (apiGame.gameStatus === "final" && apiGame.awayRuns !== null && apiGame.homeRuns !== null) {
+        const db = await getDb();
+        if (db) {
+          // Build the update payload — only include F5/NRFI when computed
+          const actualScoreUpdate: Record<string, number | string> = {
+            actualAwayScore: apiGame.awayRuns,
+            actualHomeScore: apiGame.homeRuns,
+          };
+
+          if (apiGame.awayF5Runs !== null && apiGame.homeF5Runs !== null) {
+            actualScoreUpdate.actualF5AwayScore = apiGame.awayF5Runs;
+            actualScoreUpdate.actualF5HomeScore = apiGame.homeF5Runs;
+          }
+
+          if (apiGame.nrfiResult !== null) {
+            actualScoreUpdate.nrfiActualResult = apiGame.nrfiResult;
+          }
+
+          await db
+            .update(games)
+            .set(actualScoreUpdate)
+            .where(eq(games.id, dbGame.id));
+
+          // ── Post-write verification ───────────────────────────────────────────
+          const [verify] = await db
+            .select({
+              actualAwayScore: games.actualAwayScore,
+              actualHomeScore: games.actualHomeScore,
+              actualF5AwayScore: games.actualF5AwayScore,
+              actualF5HomeScore: games.actualF5HomeScore,
+              nrfiActualResult: games.nrfiActualResult,
+            })
+            .from(games)
+            .where(eq(games.id, dbGame.id));
+
+          const fgMatch =
+            verify.actualAwayScore === apiGame.awayRuns &&
+            verify.actualHomeScore === apiGame.homeRuns;
+          const f5Match =
+            apiGame.awayF5Runs === null
+              ? true
+              : verify.actualF5AwayScore === apiGame.awayF5Runs &&
+                verify.actualF5HomeScore === apiGame.homeF5Runs;
+          const nrfiMatch =
+            apiGame.nrfiResult === null
+              ? true
+              : verify.nrfiActualResult === apiGame.nrfiResult;
+
+          if (fgMatch && f5Match && nrfiMatch) {
+            console.log(
+              `${tag} [VERIFY PASS] id=${dbGame.id} ${apiGame.awayAbbrev}@${apiGame.homeAbbrev}` +
+              ` | actualFG=${verify.actualAwayScore}-${verify.actualHomeScore}` +
+              ` | actualF5=${verify.actualF5AwayScore ?? "null"}-${verify.actualF5HomeScore ?? "null"}` +
+              ` | nrfi=${verify.nrfiActualResult ?? "null"}`
+            );
+          } else {
+            console.error(
+              `${tag} [VERIFY FAIL] id=${dbGame.id} ${apiGame.awayAbbrev}@${apiGame.homeAbbrev}` +
+              ` | fgMatch=${fgMatch} f5Match=${f5Match} nrfiMatch=${nrfiMatch}` +
+              ` | expected FG=${apiGame.awayRuns}-${apiGame.homeRuns}` +
+              ` F5=${apiGame.awayF5Runs ?? "null"}-${apiGame.homeF5Runs ?? "null"}` +
+              ` nrfi=${apiGame.nrfiResult ?? "null"}` +
+              ` | got FG=${verify.actualAwayScore}-${verify.actualHomeScore}` +
+              ` F5=${verify.actualF5AwayScore ?? "null"}-${verify.actualF5HomeScore ?? "null"}` +
+              ` nrfi=${verify.nrfiActualResult ?? "null"}`
+            );
+          }
+        }
+      }
 
       // Update pitcher info if changed
       if (awayPitcherChanged || homePitcherChanged) {

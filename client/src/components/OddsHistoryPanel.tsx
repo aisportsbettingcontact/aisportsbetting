@@ -20,9 +20,9 @@
  *   - Timezone is implied by the TIME (EST) column header — not repeated per row
  *   - Uses America/New_York for correct EDT/EST conversion
  *
- * Deduplication: consecutive rows with identical values for the active market
- * are collapsed — only the first occurrence of each unique state is shown.
- * A footer note shows "X consecutive duplicates hidden" when applicable.
+ * Deduplication: consecutive rows with identical values for the active market are hidden —
+ * only the first occurrence of each unique state is shown.
+ * Duplicate count is logged server-side only — not shown in the UI.
  * The snapshot count badge is NOT shown in the toggle header.
  *
  * Responsive scaling:
@@ -60,6 +60,8 @@ interface OddsHistoryPanelProps {
   homeTeam: string;
   /** Mirrors the SPREAD/TOTAL/MONEYLINE toggle from BettingSplitsPanel */
   activeMarket: ActiveMarket;
+  /** IntersectionObserver gate — only fetch data when card is in viewport */
+  enabled?: boolean;
 }
 
 // ── Logging ────────────────────────────────────────────────────────────────────
@@ -147,6 +149,7 @@ type HistoryRow = {
   id: number;
   scrapedAt: number;
   source: string | null;
+  lineSource: string | null;
   awaySpread: string | null;
   homeSpread: string | null;
   awaySpreadOdds: string | null;
@@ -197,6 +200,74 @@ function deduplicateRows(rows: HistoryRow[], market: ActiveMarket): HistoryRow[]
     }
   }
   return out;
+}
+
+// ── Source badge ─────────────────────────────────────────────────────────────
+
+/**
+ * Renders the odds line source indicator:
+ *   'dk'   → DraftKings logo image (official DK OSB logo)
+ *   'open' → Plain "OPEN" text label (amber)
+ *
+ * Never null, never partial. Every game always has either DK or Open.
+ * Applied to MLB and NHL only (F5/NRFI/K-Props/HR Props have no source column).
+ */
+const DK_LOGO_URL = "https://www.draftkings.com/v2/landingpages-assets/blt02fb52e5e7a6fbb9/blta03e790d330c9bf1/65821604c3fb27b9ef19b9e4/OSB.png";
+
+function SourceBadge({ lineSource }: { lineSource: string | null }) {
+  if (!lineSource) {
+    // Should never happen — every game has either 'dk' or 'open'
+    return <span style={{ color: "rgba(255,255,255,0.25)", fontFamily: "monospace", fontSize: "inherit" }}>—</span>;
+  }
+
+  if (lineSource.toLowerCase() === 'dk') {
+    return (
+      <img
+        src={DK_LOGO_URL}
+        alt="DraftKings"
+        title="DraftKings NJ — live market odds"
+        style={{
+          height: 14,
+          width: "auto",
+          objectFit: "contain",
+          display: "inline-block",
+          verticalAlign: "middle",
+          filter: "brightness(1.1) saturate(1.2)",
+        }}
+        onError={(e) => {
+          // Fallback to text if image fails to load
+          const el = e.currentTarget as HTMLImageElement;
+          el.style.display = "none";
+          const span = document.createElement("span");
+          span.textContent = "DK";
+          span.style.cssText = "color:#39FF14;font-family:monospace;font-weight:700;font-size:inherit;";
+          el.parentNode?.insertBefore(span, el.nextSibling);
+        }}
+      />
+    );
+  }
+
+  // 'open' — AN Opening line fallback
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "1px 5px",
+        borderRadius: 3,
+        background: "rgba(255,200,80,0.10)",
+        color: "#FFC850",
+        border: "1px solid rgba(255,200,80,0.35)",
+        fontFamily: "monospace",
+        fontWeight: 700,
+        fontSize: "inherit",
+        letterSpacing: "0.05em",
+        whiteSpace: "nowrap",
+      }}
+      title="Opening line (DK NJ not yet fully posted)"
+    >
+      OPEN
+    </span>
+  );
 }
 
 // ── Market color map ───────────────────────────────────────────────────────────
@@ -278,13 +349,18 @@ export function OddsHistoryPanel({
   awayTeam,
   homeTeam,
   activeMarket,
+  enabled = true,
 }: OddsHistoryPanelProps) {
   const [open, setOpen] = useState(false);
 
   // ── Data fetch (lazy — only when panel is expanded) ────────────────────────
   const { data, isLoading, error } = trpc.oddsHistory.listForGame.useQuery(
     { gameId },
-    { enabled: open, staleTime: 30_000 }
+    {
+      enabled: (enabled ?? true) && open,
+      staleTime: 30_000,
+      refetchInterval: 30_000, // auto-poll every 30s when panel is open — keeps odds history current
+    }
   );
 
   // ── Team colors + logos (try MLB → NHL → NBA) ──────────────────────────────
@@ -313,18 +389,39 @@ export function OddsHistoryPanel({
 
   // ── Row processing ─────────────────────────────────────────────────────────
   const rawRows = (data?.history ?? []) as HistoryRow[];
-  const rows    = deduplicateRows(rawRows, activeMarket);
-  const hiddenCount = rawRows.length - rows.length;
+
+  // ── OPEN line pinning ────────────────────────────────────────────────────────
+  // Find the first OPEN row that has at least one non-null market value.
+  // OPEN rows are the oldest (at the end of the DESC-ordered array).
+  function hasMarketValue(row: HistoryRow, market: ActiveMarket): boolean {
+    if (market === 'spread') return !!(row.awaySpread || row.homeSpread || row.awaySpreadOdds || row.homeSpreadOdds);
+    if (market === 'total')  return !!(row.total || row.overOdds || row.underOdds);
+    return !!(row.awayML || row.homeML);
+  }
+
+  // Separate OPEN rows from DK rows
+  const openRows = rawRows.filter(r => r.lineSource === 'open');
+  const dkRows   = rawRows.filter(r => r.lineSource !== 'open');
+
+  // Pin: first OPEN row with non-null market values (oldest = last in DESC array)
+  const pinnedOpenRow = openRows.find(r => hasMarketValue(r, activeMarket)) ?? null;
+
+  // Filter null-value rows from DK dedup display
+  const dkRowsFiltered = dkRows.filter(r => hasMarketValue(r, activeMarket));
+  const rows    = deduplicateRows(dkRowsFiltered, activeMarket);
+  const hiddenCount = rawRows.length - rows.length - (pinnedOpenRow ? 1 : 0);
 
   // ── Logging ────────────────────────────────────────────────────────────────
   if (open && !isLoading && !error && rawRows.length > 0) {
     log("OUTPUT",
       `gameId=${gameId} market=${activeMarket} | ` +
-      `raw=${rawRows.length} deduped=${rows.length} hidden=${hiddenCount} | ` +
+      `raw=${rawRows.length} openRows=${openRows.length} dkRows=${dkRows.length} ` +
+      `pinnedOpen=${pinnedOpenRow ? fmtTimestamp(pinnedOpenRow.scrapedAt) : 'none'} ` +
+      `deduped=${rows.length} hidden=${hiddenCount} | ` +
       `latest=${fmtTimestamp(rawRows[0]?.scrapedAt ?? 0)} ` +
       `oldest=${fmtTimestamp(rawRows[rawRows.length - 1]?.scrapedAt ?? 0)}`
     );
-    log("VERIFY", rows.length > 0 ? "PASS — rows populated" : "WARN — 0 deduped rows after dedup");
+    log("VERIFY", (rows.length > 0 || pinnedOpenRow) ? "PASS — rows populated" : "WARN — 0 rows after processing");
   }
   if (open && error) {
     log("ERROR", `gameId=${gameId} | ${error.message}`);
@@ -369,9 +466,7 @@ export function OddsHistoryPanel({
     <div className="border-t" style={{ borderColor: "rgba(57,255,20,0.15)" }}>
 
       {/* ── Toggle header ─────────────────────────────────────────────────── */}
-      <button
-        type="button"
-        onClick={handleToggle}
+      <button type="button" onClick={handleToggle}
         className="w-full flex items-center justify-between px-4 py-2.5 hover:bg-white/5 transition-colors"
         aria-expanded={open}
       >
@@ -413,7 +508,7 @@ export function OddsHistoryPanel({
             <p className="text-xs text-center py-4" style={{ color: "#ff4444" }}>
               Failed to load odds &amp; splits history.
             </p>
-          ) : rows.length === 0 ? (
+          ) : rows.length === 0 && !pinnedOpenRow ? (
             <p className="text-xs text-center py-4" style={{ color: "rgba(255,255,255,0.35)" }}>
               No snapshots yet — history populates after the next 10-min refresh cycle.
             </p>
@@ -440,6 +535,14 @@ export function OddsHistoryPanel({
                     {/* TIME (EST) */}
                     <th style={{ ...TH, textAlign: "left" }}>
                       Time&nbsp;(EST)
+                    </th>
+
+                    {/* SOURCE */}
+                    <th
+                      style={{ ...TH, textAlign: "center" }}
+                      title="Odds line source: DK NJ logo = live DraftKings NJ market | OPEN = AN Opening line (DK not yet fully posted)"
+                    >
+                      SRC
                     </th>
 
                     {/* ── SPREAD: [AwayLogo AwayName] Line 🎟️ 💰 | [HomeLogo HomeName] Line 🎟️ 💰 ── */}
@@ -493,6 +596,156 @@ export function OddsHistoryPanel({
                 </thead>
 
                 <tbody>
+                  {/* ── PINNED OPENING LINE ── */}
+                  {pinnedOpenRow && (() => {
+                    const row = pinnedOpenRow;
+                    const spreadPending =
+                      (row.spreadAwayBetsPct == null || row.spreadAwayBetsPct === 0) &&
+                      (row.spreadAwayMoneyPct == null || row.spreadAwayMoneyPct === 0);
+                    const totalPending =
+                      (row.totalOverBetsPct == null || row.totalOverBetsPct === 0) &&
+                      (row.totalOverMoneyPct == null || row.totalOverMoneyPct === 0);
+                    const mlPending =
+                      (row.mlAwayBetsPct == null || row.mlAwayBetsPct === 0) &&
+                      (row.mlAwayMoneyPct == null || row.mlAwayMoneyPct === 0);
+                    const spreadHomeBets  = spreadPending || row.spreadAwayBetsPct  == null ? null : 100 - row.spreadAwayBetsPct;
+                    const spreadHomeMoney = spreadPending || row.spreadAwayMoneyPct == null ? null : 100 - row.spreadAwayMoneyPct;
+                    const totalUnderBets  = totalPending  || row.totalOverBetsPct   == null ? null : 100 - row.totalOverBetsPct;
+                    const totalUnderMoney = totalPending  || row.totalOverMoneyPct  == null ? null : 100 - row.totalOverMoneyPct;
+                    const mlHomeBets      = mlPending     || row.mlAwayBetsPct      == null ? null : 100 - row.mlAwayBetsPct;
+                    const mlHomeMoney     = mlPending     || row.mlAwayMoneyPct     == null ? null : 100 - row.mlAwayMoneyPct;
+                    const dimColor = "rgba(255,255,255,0.28)";
+                    const colSpan = activeMarket === 'spread' ? 8 : activeMarket === 'total' ? 8 : 8;
+                    return (
+                      <>
+                        {/* Separator row */}
+                        <tr>
+                          <td
+                            colSpan={colSpan}
+                            style={{
+                              padding: "3px 8px",
+                              background: "rgba(255,200,80,0.08)",
+                              borderTop: "1px solid rgba(255,200,80,0.3)",
+                              borderBottom: "1px solid rgba(255,200,80,0.3)",
+                              textAlign: "center",
+                              fontSize: "clamp(8px, 1.6vw, 9.5px)",
+                              fontWeight: 700,
+                              letterSpacing: "0.12em",
+                              color: "#FFC850",
+                              textTransform: "uppercase",
+                              fontFamily: "monospace",
+                            }}
+                          >
+                            &#9660; OPENING LINE
+                          </td>
+                        </tr>
+                        {/* Pinned OPEN row */}
+                        <tr
+                          style={{
+                            background: "rgba(255,200,80,0.04)",
+                            borderBottom: "1px solid rgba(255,200,80,0.15)",
+                          }}
+                        >
+                          <td style={{ ...TD, textAlign: "left", color: "rgba(255,255,255,0.7)" }}>
+                            {fmtTimestamp(row.scrapedAt)}
+                          </td>
+                          <td style={{ ...TD, textAlign: "center" }}>
+                            <SourceBadge lineSource={row.lineSource} />
+                          </td>
+                          {activeMarket === "spread" && (
+                            <>
+                              <td style={{ ...TD, ...BORDER_L, color: marketColor, textAlign: "center" }}>
+                                {fmtSpread(row.awaySpread, row.awaySpreadOdds)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: spreadPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {spreadPending ? "\u2014" : fmtPct(row.spreadAwayBetsPct)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: spreadPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {spreadPending ? "\u2014" : fmtPct(row.spreadAwayMoneyPct)}
+                              </td>
+                              <td style={{ ...TD, ...BORDER_L, color: marketColor, textAlign: "center" }}>
+                                {fmtSpread(row.homeSpread, row.homeSpreadOdds)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: spreadPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {spreadPending ? "\u2014" : fmtPct(spreadHomeBets)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: spreadPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {spreadPending ? "\u2014" : fmtPct(spreadHomeMoney)}
+                              </td>
+                            </>
+                          )}
+                          {activeMarket === "total" && (
+                            <>
+                              <td style={{ ...TD, ...BORDER_L, color: marketColor, textAlign: "center" }}>
+                                {fmtOver(row.total, row.overOdds)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: totalPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {totalPending ? "\u2014" : fmtPct(row.totalOverBetsPct)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: totalPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {totalPending ? "\u2014" : fmtPct(row.totalOverMoneyPct)}
+                              </td>
+                              <td style={{ ...TD, ...BORDER_L, color: marketColor, textAlign: "center" }}>
+                                {fmtUnder(row.total, row.underOdds)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: totalPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {totalPending ? "\u2014" : fmtPct(totalUnderBets)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: totalPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {totalPending ? "\u2014" : fmtPct(totalUnderMoney)}
+                              </td>
+                            </>
+                          )}
+                          {activeMarket === "ml" && (
+                            <>
+                              <td style={{ ...TD, ...BORDER_L, color: marketColor, textAlign: "center" }}>
+                                {fmtML(row.awayML)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: mlPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {mlPending ? "\u2014" : fmtPct(row.mlAwayBetsPct)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: mlPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {mlPending ? "\u2014" : fmtPct(row.mlAwayMoneyPct)}
+                              </td>
+                              <td style={{ ...TD, ...BORDER_L, color: marketColor, textAlign: "center" }}>
+                                {fmtML(row.homeML)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: mlPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {mlPending ? "\u2014" : fmtPct(mlHomeBets)}
+                              </td>
+                              <td style={{ ...TD, textAlign: "center", color: mlPending ? dimColor : "rgba(255,255,255,0.88)" }}>
+                                {mlPending ? "\u2014" : fmtPct(mlHomeMoney)}
+                              </td>
+                            </>
+                          )}
+                        </tr>
+                        {/* Separator between OPEN and DK rows */}
+                        {rows.length > 0 && (
+                          <tr>
+                            <td
+                              colSpan={colSpan}
+                              style={{
+                                padding: "3px 8px",
+                                background: "rgba(57,255,20,0.05)",
+                                borderTop: "1px solid rgba(57,255,20,0.15)",
+                                borderBottom: "1px solid rgba(57,255,20,0.15)",
+                                textAlign: "center",
+                                fontSize: "clamp(8px, 1.6vw, 9.5px)",
+                                fontWeight: 700,
+                                letterSpacing: "0.12em",
+                                color: "rgba(57,255,20,0.7)",
+                                textTransform: "uppercase",
+                                fontFamily: "monospace",
+                              }}
+                            >
+                              &#9660; LIVE MARKET MOVEMENT
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })()}
+
                   {rows.map((row, idx) => {
                     const isEven = idx % 2 === 0;
 
@@ -530,6 +783,11 @@ export function OddsHistoryPanel({
                         {/* Timestamp */}
                         <td style={{ ...TD, textAlign: "left", color: "rgba(255,255,255,0.7)" }}>
                           {fmtTimestamp(row.scrapedAt)}
+                        </td>
+
+                        {/* SOURCE badge */}
+                        <td style={{ ...TD, textAlign: "center" }}>
+                          <SourceBadge lineSource={row.lineSource} />
                         </td>
 
                         {/* ── SPREAD cells ── */}
@@ -609,20 +867,7 @@ export function OddsHistoryPanel({
                 </tbody>
               </table>
 
-              {/* ── Footer: hidden duplicates note ── */}
-              {hiddenCount > 0 && (
-                <div
-                  style={{
-                    padding: "4px 10px",
-                    textAlign: "right",
-                    fontSize: 9,
-                    color: "rgba(255,255,255,0.28)",
-                    borderTop: "1px solid rgba(57,255,20,0.07)",
-                  }}
-                >
-                  {hiddenCount} consecutive duplicate{hiddenCount !== 1 ? "s" : ""} hidden
-                </div>
-              )}
+              {/* Duplicate suppression count is logged server-side only — no UI noise */}
             </div>
           )}
         </div>

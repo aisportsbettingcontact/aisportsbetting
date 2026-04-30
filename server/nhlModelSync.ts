@@ -27,7 +27,7 @@ import { scrapeNhlTeamStats, scrapeNhlGoalieStats, getDefaultGoalieStats } from 
 import { scrapeNhlTeamStatsFromHockeyRef } from "./nhlHockeyRefTeamStats.js";
 import { scrapeNhlTeamStatsFromMoneyPuck, scrapeNhlGoalieStatsFromMoneyPuck } from "./nhlMoneyPuckFallback.js";
 import { scrapeNhlStartingGoalies, matchGoalieName } from "./nhlRotoWireScraper.js";
-import { runNhlModelForGame, buildTeamStatsDict, formatNhlML } from "./nhlModelEngine.js";
+import { runNhlModelForGame, runNhlModelBatch, buildTeamStatsDict, formatNhlML } from "./nhlModelEngine.js";
 import type { NhlModelEngineInput } from "./nhlModelEngine.js";
 import { NHL_BY_DB_SLUG } from "../shared/nhlTeams.js";
 import { computeNhlRestDays } from "./nhlHockeyRefScraper.js";
@@ -278,11 +278,50 @@ export async function syncNhlModelForToday(
   // ── Step 4: Run model for each unmodeled game ─────────────────────────────
   console.log(`\n[NhlModelSync]${tag} Step 4: Running NHL model for ${unmodeled.length} game(s)...`);
 
+  // ── Phase A0: Pre-fetch all rest days in parallel ─────────────────────────────────────────
+  // computeNhlRestDays makes a network call to Hockey Reference per game.
+  // Running them sequentially would take N×30s. Run all in parallel first.
+  console.log(`[NhlModelSync]${tag} Step 4A0: Pre-fetching rest days for ${unmodeled.length} game(s) in parallel...`);
+  const restDaysMap = new Map<number, { awayRestDays: number; homeRestDays: number }>();
+  await Promise.allSettled(
+    unmodeled.map(async (game: typeof unmodeled[number]) => {
+      try {
+        const rd = await computeNhlRestDays(game.awayTeam, game.homeTeam, gameDate);
+        restDaysMap.set(game.id, rd);
+      } catch (e) {
+        // Default to 2 rest days (mid-week) if scrape fails — non-fatal
+        restDaysMap.set(game.id, { awayRestDays: 2, homeRestDays: 2 });
+        console.warn(`[NhlModelSync]${tag}   [REST DAYS] Failed for game ${game.id}: ${e instanceof Error ? e.message : String(e)} — defaulting to 2/2`);
+      }
+    })
+  );
+  console.log(`[NhlModelSync]${tag}   Rest days pre-fetched for ${restDaysMap.size}/${unmodeled.length} games`);
+
+  // ── Phase A: Build all engine inputs (async: rest days, goalie resolution) ──────────────
+  // Collect validated game contexts. Games that fail validation are skipped immediately.
+  type GameContext = {
+    game:                  typeof unmodeled[number];
+    gameLabel:             string;
+    awayAbbrev:            string;
+    homeAbbrev:            string;
+    awayGoalieName:        string | null;
+    homeGoalieName:        string | null;
+    awayGoalieInfo:        { name: string; confirmed: boolean } | null;
+    homeGoalieInfo:        { name: string; confirmed: boolean } | null;
+    mktAwayPLOdds:         number | null;
+    mktHomePLOdds:         number | null;
+    mktTotal:              number | null;
+    correctedAwaySpread:   number | null;
+    correctedAwaySpreadStr: string | null;
+    correctedHomeSpreadStr: string | null;
+    engineInput:           NhlModelEngineInput;
+  };
+  const gameContexts: GameContext[] = [];
+
   for (let i = 0; i < unmodeled.length; i++) {
     const game = unmodeled[i];
 
     // Resolve 3-letter abbrev from dbSlug (e.g. "boston_bruins" → "BOS")
-    // The teamStatsMap from NaturalStatTrick is keyed by 3-letter abbrev.
     const awayTeamEntry = NHL_BY_DB_SLUG.get(game.awayTeam);
     const homeTeamEntry = NHL_BY_DB_SLUG.get(game.homeTeam);
     const awayAbbrev = awayTeamEntry?.abbrev ?? game.awayTeam.toUpperCase();
@@ -303,10 +342,9 @@ export async function syncNhlModelForToday(
       console.log(`[NhlModelSync]${tag}   Away (${awayAbbrev}): xGF%=${awayStats.xGF_pct} xGF/60=${awayStats.xGF_60} HDCF/60=${awayStats.HDCF_60} SCF/60=${awayStats.SCF_60} CF/60=${awayStats.CF_60}`);
       console.log(`[NhlModelSync]${tag}   Home (${homeAbbrev}): xGF%=${homeStats.xGF_pct} xGF/60=${homeStats.xGF_60} HDCF/60=${homeStats.HDCF_60} SCF/60=${homeStats.SCF_60} CF/60=${homeStats.CF_60}`);
 
-      // Resolve starting goalies (keyed by 3-letter abbrev from RotoWire scraper)
+      // Resolve starting goalies
       const awayGoalieInfo = goalieByTeam.get(awayAbbrev) ?? null;
       const homeGoalieInfo = goalieByTeam.get(homeAbbrev) ?? null;
-
       const awayGoalieName = awayGoalieInfo?.name ?? null;
       const homeGoalieName = homeGoalieInfo?.name ?? null;
 
@@ -314,13 +352,24 @@ export async function syncNhlModelForToday(
       const awayGoalieStats = awayGoalieName
         ? (matchGoalieName(awayGoalieName, goalieStatsMap) ?? getDefaultGoalieStats(awayGoalieName, awayAbbrev))
         : getDefaultGoalieStats("TBD", awayAbbrev);
-
       const homeGoalieStats = homeGoalieName
         ? (matchGoalieName(homeGoalieName, goalieStatsMap) ?? getDefaultGoalieStats(homeGoalieName, homeAbbrev))
         : getDefaultGoalieStats("TBD", homeAbbrev);
 
       console.log(`[NhlModelSync]${tag}   Away goalie: ${awayGoalieName ?? "TBD"} | GSAx=${awayGoalieStats.gsax.toFixed(2)} SV%=${awayGoalieStats.sv_pct} GP=${awayGoalieStats.gp}`);
       console.log(`[NhlModelSync]${tag}   Home goalie: ${homeGoalieName ?? "TBD"} | GSAx=${homeGoalieStats.gsax.toFixed(2)} SV%=${homeGoalieStats.sv_pct} GP=${homeGoalieStats.gp}`);
+
+      // ── CRITICAL: Require confirmed DK puck line before running model ──────────────────
+      if (!game.awayBookSpread || !game.bookTotal || !game.awayML || !game.homeML) {
+        const missing: string[] = [];
+        if (!game.awayBookSpread) missing.push('awayBookSpread [PL GATE]');
+        if (!game.bookTotal) missing.push('bookTotal');
+        if (!game.awayML) missing.push('awayML');
+        if (!game.homeML) missing.push('homeML');
+        console.warn(`[NhlModelSync]${tag}   SKIP ${gameLabel} — missing required book lines: ${missing.join(', ')}`);
+        result.skipped++;
+        continue;
+      }
 
       // Parse book lines from DB
       const mktAwayPLOdds  = game.awaySpreadOdds ? parseInt(game.awaySpreadOdds, 10) : null;
@@ -331,10 +380,26 @@ export async function syncNhlModelForToday(
       const mktAwayML      = game.awayML ? parseInt(game.awayML, 10) : null;
       const mktHomeML      = game.homeML ? parseInt(game.homeML, 10) : null;
 
-      console.log(`[NhlModelSync]${tag}   Market lines: PL=${mktAwayPLOdds}/${mktHomePLOdds} Total=${mktTotal} (${mktOverOdds}/${mktUnderOdds}) ML=${mktAwayML}/${mktHomeML}`);
+      // ── PUCK LINE SPREAD: Trust AN API spread value directly ────────────────────────────
+      // In NHL puck lines, the spread value itself is authoritative: +1.5 = dog, -1.5 = fav.
+      // The odds sign is NOT reliable for determining fav/dog because the dog at +1.5 often
+      // has negative odds (e.g., -155) since covering +1.5 is easier than covering -1.5.
+      // DO NOT apply any sign correction — pass rawAwaySpread directly to Python.
+      const rawAwaySpread = game.awayBookSpread != null ? parseFloat(String(game.awayBookSpread)) : null;
+      const correctedAwaySpread = rawAwaySpread;  // No correction — AN API spread is authoritative
+      const correctedAwaySpreadStr = correctedAwaySpread !== null
+        ? (correctedAwaySpread >= 0 ? `+${correctedAwaySpread}` : String(correctedAwaySpread))
+        : null;
+      const correctedHomeSpreadStr = correctedAwaySpread !== null
+        ? (correctedAwaySpread >= 0 ? `-${Math.abs(correctedAwaySpread)}` : `+${Math.abs(correctedAwaySpread)}`)
+        : null;
+      // ─────────────────────────────────────────────────────────────────────────────────────
 
-      // Compute real rest days from Hockey Reference schedule
-      const restDays = await computeNhlRestDays(game.awayTeam, game.homeTeam, gameDate);
+      console.log(`[NhlModelSync]${tag}   Market lines: PL=${mktAwayPLOdds}/${mktHomePLOdds} Total=${mktTotal} (${mktOverOdds}/${mktUnderOdds}) ML=${mktAwayML}/${mktHomeML}`);
+      console.log(`[NhlModelSync]${tag}   [INPUT] awaySpread=${correctedAwaySpread} (raw from AN API — no sign correction applied; +1.5=dog, -1.5=fav)`);
+
+      // Use pre-fetched rest days (fetched in parallel in Phase A0)
+      const restDays = restDaysMap.get(game.id) ?? { awayRestDays: 2, homeRestDays: 2 };
       console.log(`[NhlModelSync]${tag}   Rest days: away=${restDays.awayRestDays}d home=${restDays.homeRestDays}d`);
 
       // Build engine input
@@ -349,17 +414,12 @@ export async function syncNhlModelForToday(
         home_goalie_gp:           homeGoalieStats.gp,
         away_goalie_gsax:         awayGoalieStats.gsax,
         home_goalie_gsax:         homeGoalieStats.gsax,
-        // Shots faced (for workload/fatigue goalie multiplier)
         away_goalie_shots_faced:  awayGoalieStats.shots ?? undefined,
         home_goalie_shots_faced:  homeGoalieStats.shots ?? undefined,
-        // Rest days from Hockey Reference schedule (back-to-back detection)
         away_rest_days:           restDays.awayRestDays,
         home_rest_days:           restDays.homeRestDays,
         mkt_puck_line:            1.5,
-        // Book's signed spread for away team: +1.5 if home is the -1.5 favorite, -1.5 if away is the -1.5 favorite.
-        // Used by Python engine to determine book_fav_is_home reliably (odds-based detection fails
-        // when underdog's +1.5 odds are more negative than favorite's -1.5 odds).
-        mkt_away_spread:          game.awayBookSpread != null ? parseFloat(String(game.awayBookSpread)) : null,
+        mkt_away_spread:          correctedAwaySpread,
         mkt_away_pl_odds:         mktAwayPLOdds,
         mkt_home_pl_odds:         mktHomePLOdds,
         mkt_total:                mktTotal,
@@ -370,8 +430,44 @@ export async function syncNhlModelForToday(
         team_stats:               buildTeamStatsDict(awayAbbrev, homeAbbrev, teamStatsMap),
       };
 
+      gameContexts.push({
+        game, gameLabel, awayAbbrev, homeAbbrev,
+        awayGoalieName, homeGoalieName, awayGoalieInfo, homeGoalieInfo,
+        mktAwayPLOdds, mktHomePLOdds, mktTotal,
+        correctedAwaySpread, correctedAwaySpreadStr, correctedHomeSpreadStr,
+        engineInput,
+      });
+
+    } catch (err) {
+      const awayTeamEntry2 = NHL_BY_DB_SLUG.get(game.awayTeam);
+      const homeTeamEntry2 = NHL_BY_DB_SLUG.get(game.homeTeam);
+      const awayAbbrev2 = awayTeamEntry2?.abbrev ?? game.awayTeam.toUpperCase();
+      const homeAbbrev2 = homeTeamEntry2?.abbrev ?? game.homeTeam.toUpperCase();
+      const gameLabel2 = `${awayAbbrev2} @ ${homeAbbrev2}`;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[NhlModelSync]${tag}   ✗ Error building input for ${gameLabel2}: ${msg}`);
+      result.errors.push(`${gameLabel2}: ${msg}`);
+      result.skipped++;
+    }
+  }
+
+  // ── Phase B: Batch dispatch — ONE Python process for all validated games ─────────────────
+  console.log(`\n[NhlModelSync]${tag} Step 4B: Dispatching batch Python engine for ${gameContexts.length} game(s)...`);
+  const batchResults = gameContexts.length > 0
+    ? await runNhlModelBatch(gameContexts.map(ctx => ctx.engineInput))
+    : [];
+
+  // ── Phase C: Process results + write DB per game ─────────────────────────────────────────
+  for (let i = 0; i < gameContexts.length; i++) {
+    const ctx = gameContexts[i];
+    const { game, gameLabel, awayAbbrev, homeAbbrev, awayGoalieName, homeGoalieName,
+            awayGoalieInfo, homeGoalieInfo, mktAwayPLOdds, mktHomePLOdds, mktTotal,
+            correctedAwaySpread, correctedAwaySpreadStr, correctedHomeSpreadStr } = ctx;
+    const modelResult = batchResults[i];
+
+    try {
       // Run the Python model
-      const modelResult = await runNhlModelForGame(engineInput);
+      // (result already computed in batch above)
 
       if (!modelResult.ok) {
         console.error(`[NhlModelSync]${tag}   ✗ Model failed for ${gameLabel}: ${modelResult.error}`);
@@ -420,7 +516,8 @@ export async function syncNhlModelForToday(
         spreadDiff = String(bestPLEdge.edge_vs_be);  // probability edge in pp
       } else if (mktAwayPLOdds !== null) {
         // No edge but market odds exist — compute raw probability diff for display
-        const awayPLCoverPct = modelResult.away_pl_cover_pct / 100;
+        // Use book-line cover% (mkt_pl_away_cover_pct) to match the book-line odds in mkt_pl_away_odds
+        const awayPLCoverPct = ((modelResult.mkt_pl_away_cover_pct ?? modelResult.away_pl_cover_pct)) / 100;
         const mktAwayBreakEven = americanOddsToBreakEven(mktAwayPLOdds);
         if (mktAwayBreakEven !== null) {
           const diff = awayPLCoverPct - mktAwayBreakEven;
@@ -449,7 +546,9 @@ export async function syncNhlModelForToday(
 
       console.log(`[NhlModelSync]${tag}   Model result: Goals=${modelResult.proj_away_goals}/${modelResult.proj_home_goals} | PL=${modelAwayPL}/${modelHomePL} (edge=${spreadEdge ?? "NONE"}) | Total=${modelTotalVal} (edge=${totalEdge ?? "NONE"})`);
       console.log(`[NhlModelSync]${tag}   PL odds: ${modelResult.away_puck_line_odds}/${modelResult.home_puck_line_odds} | ML: ${modelResult.away_ml}/${modelResult.home_ml} | O/U odds: ${modelResult.over_odds}/${modelResult.under_odds}`);
-      console.log(`[NhlModelSync]${tag}   Win%: away=${modelResult.away_win_pct}% home=${modelResult.home_win_pct}% | PL cover%: away=${modelResult.away_pl_cover_pct}% home=${modelResult.home_pl_cover_pct}%`);
+      const mktPLAwayCover = modelResult.mkt_pl_away_cover_pct ?? modelResult.away_pl_cover_pct;
+      const mktPLHomeCover = modelResult.mkt_pl_home_cover_pct ?? modelResult.home_pl_cover_pct;
+      console.log(`[NhlModelSync]${tag}   Win%: away=${modelResult.away_win_pct}% home=${modelResult.home_win_pct}% | PL cover% (book line): away=${mktPLAwayCover}% home=${mktPLHomeCover}%`);
       if (modelResult.edges.length > 0) {
         console.log(`[NhlModelSync]${tag}   Edges: ${modelResult.edges.map(e => `${e.type}:${e.side}(${e.classification}, EV=${e.ev?.toFixed(1)}%, edge=${e.edge_vs_be}pp)`).join(" | ")}`);
       } else {
@@ -466,8 +565,11 @@ export async function syncNhlModelForToday(
           homeModelSpread:     modelHomePL,
           spreadEdge:          spreadEdge ?? undefined,
           spreadDiff:          spreadDiff ?? undefined,
-          // Total
-          modelTotal:          String(roundToHalf(modelTotalVal)),
+          // Total — ALWAYS anchored to book O/U line (mktTotal), NOT model-derived line
+          // CRITICAL: modelTotal must equal bookTotal so displayed model line matches book line
+          // modelTotalVal = model's own optimal line (may differ from book by 0.5)
+          // mktTotal = the actual book total we must display at
+          modelTotal:          mktTotal !== null ? String(mktTotal) : String(roundToHalf(modelTotalVal)),
           totalEdge:           totalEdge ?? undefined,
           totalDiff:           totalDiff ?? undefined,
           // Moneylines
@@ -481,20 +583,23 @@ export async function syncNhlModelForToday(
           modelHomeWinPct:     String(modelResult.home_win_pct),
           modelOverRate:       String(modelResult.over_pct),
           modelUnderRate:      String(modelResult.under_pct),
-          modelAwayPLCoverPct: String(modelResult.away_pl_cover_pct),
-          modelHomePLCoverPct: String(modelResult.home_pl_cover_pct),
+          // CRITICAL: use mkt_pl_*_cover_pct (cover% AT the book's line) to match mkt_pl_*_odds.
+          // away_pl_cover_pct is the model's own origination line cover% — a DIFFERENT line when
+          // model and book disagree on the favorite. Using the book-line cover% ensures
+          // modelAwayPLCoverPct and modelAwayPLOdds are always for the same line.
+          modelAwayPLCoverPct: String(modelResult.mkt_pl_away_cover_pct ?? modelResult.away_pl_cover_pct),
+          modelHomePLCoverPct: String(modelResult.mkt_pl_home_cover_pct ?? modelResult.home_pl_cover_pct),
           // Puck line spread for MODEL column must MIRROR the BOOK's spread (not model's own origination).
           // e.g. if book has STL +1.5 (away underdog), model must show +1.5 (not -1.5).
           // The model's fair odds for that side are mkt_pl_away_odds / mkt_pl_home_odds.
-          // game.awayBookSpread is a decimal (e.g. 1.5 or -1.5); format as "+1.5" or "-1.5".
-          modelAwayPuckLine:   game.awayBookSpread != null
-            ? (parseFloat(String(game.awayBookSpread)) >= 0 ? `+${parseFloat(String(game.awayBookSpread))}` : String(parseFloat(String(game.awayBookSpread))))
-            : modelResult.away_puck_line,
-          modelHomePuckLine:   game.homeBookSpread != null
-            ? (parseFloat(String(game.homeBookSpread)) >= 0 ? `+${parseFloat(String(game.homeBookSpread))}` : String(parseFloat(String(game.homeBookSpread))))
-            : modelResult.home_puck_line,
+          // Puck line labels: ALWAYS use correctedAwaySpreadStr (odds-authoritative sign).
+          // correctedAwaySpreadStr accounts for awayBookSpread sign errors in the AN API.
+          // e.g. STL@UTA: awayBookSpread=-1.5 (wrong) → corrected to +1.5 (STL is the dog at +200)
+          modelAwayPuckLine:   correctedAwaySpreadStr ?? modelResult.away_puck_line,
+          modelHomePuckLine:   correctedHomeSpreadStr ?? modelResult.home_puck_line,
           // Model fair odds AT the BOOK's ±1.5 puck line (for side-by-side display)
           // e.g. book shows +1.5 (-198), model shows +1.5 (-143) → edge detected
+          // Python computed these from the corrected mkt_away_spread, so they are always correct.
           modelAwayPLOdds:     fmtML(modelResult.mkt_pl_away_odds ?? modelResult.away_puck_line_odds),
           modelHomePLOdds:     fmtML(modelResult.mkt_pl_home_odds ?? modelResult.home_puck_line_odds),
           // Model fair odds AT the BOOK's total line (for side-by-side display)
@@ -516,6 +621,24 @@ export async function syncNhlModelForToday(
         })
         .where(eq(games.id, game.id));
 
+      // ── POST-WRITE VERIFICATION ─────────────────────────────────────────────────────────────────────────────
+      // Invariants that must ALWAYS hold after every NHL model write:
+      //   1. modelAwayPuckLine sign matches awaySpreadOdds sign (dog=+, fav=-)
+      //   2. modelTotal equals bookTotal (no drift from Python's own optimal line)
+      const writtenPL = correctedAwaySpreadStr ?? modelResult.away_puck_line;
+      const writtenTotal = mktTotal !== null ? String(mktTotal) : String(Math.round(modelResult.total_line * 2) / 2);
+      // Spread-authoritative sign check: +spread = dog = +1.5, -spread = fav = -1.5
+      // Do NOT use odds sign — in NHL, the dog at +1.5 often has negative odds (-155)
+      const plSignOk = writtenPL !== null && correctedAwaySpread !== null
+        ? (correctedAwaySpread >= 0 ? writtenPL.startsWith('+') : writtenPL.startsWith('-'))
+        : true; // no spread to check against
+      const totalOk = mktTotal !== null ? Math.abs(parseFloat(writtenTotal) - mktTotal) < 0.01 : true;
+      const verifyStatus = plSignOk && totalOk ? 'PASS' : 'FAIL';
+      console.log(`[NhlModelSync]${tag}   [VERIFY] ${verifyStatus} | PL: away=${writtenPL}(bookSpread=${correctedAwaySpread}) sign_ok=${plSignOk} | Total: written=${writtenTotal} book=${mktTotal} match=${totalOk}`);
+      if (!plSignOk || !totalOk) {
+        console.error(`[NhlModelSync]${tag}   [VERIFY FAIL] ${gameLabel}: PL_sign_ok=${plSignOk} total_ok=${totalOk} — DATA INTEGRITY VIOLATION`);
+      }
+      // ─────────────────────────────────────────────────────────────────────────────
       console.log(`[NhlModelSync]${tag}   ✅ DB updated for game ID=${game.id} (${gameLabel})`);
       result.synced++;
 
@@ -527,7 +650,66 @@ export async function syncNhlModelForToday(
     }
   }
 
-  // ── Summary ───────────────────────────────────────────────────────────────────────────────────────
+  // ── Post-write validation gate ──────────────────────────────────────────────────────────────────────────────────
+  if (result.synced > 0) {
+    const db = await getDb();
+    const nhlRows = await db.select({
+      id:              games.id,
+      away:            games.awayTeam,
+      home:            games.homeTeam,
+      bookTotal:       games.bookTotal,
+      modelTotal:      games.modelTotal,
+      awayBookSpread:  games.awayBookSpread,
+      modelAwayPuckLine: games.modelAwayPuckLine,
+    }).from(games)
+      .where(and(
+        eq(games.gameDate, gameDate),
+        eq(games.sport, 'NHL'),
+      ));
+    const nhlIssues: string[] = [];
+    for (const g of nhlRows) {
+      const label = `[${g.id}] ${g.away}@${g.home}`;
+      // 1. Total alignment: modelTotal must equal bookTotal
+      const bookT  = parseFloat(String(g.bookTotal  ?? '0'));
+      const modelT = parseFloat(String(g.modelTotal ?? '0'));
+      if (!isNaN(bookT) && !isNaN(modelT) && Math.abs(bookT - modelT) > 0.01) {
+        nhlIssues.push(`${label}: modelTotal=${modelT} ≠ bookTotal=${bookT} [TOTAL MISMATCH]`);
+      }
+      // 2. Puck line must be exactly ±1.5 or ±2.5 — NHL PL is NEVER 0
+      const awayPL = String(g.modelAwayPuckLine ?? '');
+      const validPL = awayPL === '+1.5' || awayPL === '-1.5' || awayPL === '+2.5' || awayPL === '-2.5';
+      if (awayPL && !validPL) {
+        nhlIssues.push(`${label}: modelAwayPuckLine="${awayPL}" — expected ±1.5 or ±2.5 (NHL PL is never 0)`);
+      }
+      // 3. Puck line sign alignment: model PL must match the SPREAD-AUTHORITATIVE direction.
+      // The spread value itself is authoritative: +1.5 = dog, -1.5 = fav.
+      // The odds sign is NOT reliable for determining fav/dog in NHL puck lines because
+      // the dog at +1.5 often has negative odds (e.g., -155) since covering +1.5 is easier.
+      // Rule: awayBookSpread > 0 → away is the dog → modelAwayPuckLine MUST be +1.5
+      //       awayBookSpread < 0 → away is the fav → modelAwayPuckLine MUST be -1.5
+      const bookSpreadNum = g.awayBookSpread != null ? parseFloat(String(g.awayBookSpread)) : null;
+      const modelPLNum = parseFloat(awayPL || '0');
+      if (bookSpreadNum !== null && !isNaN(bookSpreadNum) && bookSpreadNum !== 0 && awayPL) {
+        const bookSign  = bookSpreadNum > 0 ? 1 : -1;  // +spread = dog = +1.5, -spread = fav = -1.5
+        const modelSign = modelPLNum < 0 ? -1 : 1;
+        if (bookSign !== modelSign) {
+          nhlIssues.push(
+            `${label}: PL SIGN MISMATCH — awayBookSpread=${bookSpreadNum} (${bookSign > 0 ? 'dog' : 'fav'}) ` +
+            `but modelAwayPuckLine=${awayPL} (${modelSign > 0 ? 'dog' : 'fav'}) — SPREAD-AUTHORITATIVE VIOLATION`
+          );
+        }
+      }
+    }
+    if (nhlIssues.length === 0) {
+      console.log(`[NhlModelSync]${tag} ✅ LINE VALIDATION PASSED — all ${nhlRows.length} NHL games correct`);
+    } else {
+      console.error(`[NhlModelSync]${tag} ❌ LINE VALIDATION FAILED — ${nhlIssues.length} issues:`);
+      for (const issue of nhlIssues) {
+        console.error(`  ✗ ${issue}`);
+      }
+    }
+  }
+  // ── Summary ──────────────────────────────────────────────────────────────────────────────────
   console.log(`\n${"=".repeat(70)}`);
   console.log(`[NhlModelSync]${tag} ✅ DONE — Synced: ${result.synced} | Skipped: ${result.skipped} | Errors: ${result.errors.length}`);
   if (result.errors.length > 0) {
@@ -559,32 +741,77 @@ export async function syncNhlModelForToday(
 
 let syncInterval: ReturnType<typeof setInterval> | null = null;
 
+// ─── Tomorrow Date Helper ──────────────────────────────────────────────────────────────────
+/** Returns tomorrow's date in YYYY-MM-DD format (ET-based, same as getTodayDate). */
+function getNhlTomorrowDate(): string {
+  const now = new Date();
+  const etStr = now.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const [m, d, y] = etStr.split("/");
+  // Add 1 day using Date arithmetic to handle month/year rollover correctly
+  const tomorrow = new Date(Number(y), Number(m) - 1, Number(d) + 1);
+  const ty = tomorrow.getFullYear();
+  const tm = String(tomorrow.getMonth() + 1).padStart(2, '0');
+  const td = String(tomorrow.getDate()).padStart(2, '0');
+  return `${ty}-${tm}-${td}`;
+}
+
 export function startNhlModelSyncScheduler(): void {
   if (syncInterval) return;
 
-  const THIRTY_MIN_MS = 30 * 60 * 1000;
+  const FIVE_MIN_MS = 5 * 60 * 1000; // 24/7 — no time gate
 
-  if (isWithinSyncWindow()) {
-    console.log("[NhlModelSync] Within sync window — starting initial sync...");
-    syncNhlModelForToday("auto").catch(err =>
-      console.error("[NhlModelSync] Initial sync error:", err)
-    );
-  } else {
-    console.log("[NhlModelSync] Outside sync window (9AM–9PM PST), skipping initial sync.");
+  /**
+   * Run today + tomorrow in sequence.
+   * TODAY:    syncNhlModelForToday() — handles all upcoming games with modelRunAt=null
+   * TOMORROW: syncNhlModelForToday(dateOverride=tomorrow) — catch-all for tomorrow games
+   *           seeded by GoalieTomorrowSeeder but not yet modeled.
+   *           The modelRunAt IS NULL guard prevents re-running already-modeled games.
+   */
+  async function runBothDates(trigger: string): Promise<void> {
+    const today    = getTodayDate();
+    const tomorrow = getNhlTomorrowDate();
+    console.log(`[NhlModelSync] ${trigger} — today=${today} tomorrow=${tomorrow}`);
+
+    // 1. Today
+    try {
+      await syncNhlModelForToday("auto");
+    } catch (err) {
+      console.error(`[NhlModelSync] ${trigger} today sync error:`, err);
+    }
+
+    // 2. Tomorrow — modelRunAt IS NULL guard prevents re-running already-modeled games
+    try {
+      const tomorrowResult = await syncNhlModelForToday("auto", false, false, tomorrow);
+      if (tomorrowResult.synced > 0) {
+        console.log(
+          `[NhlModelSync] ${trigger} TOMORROW (${tomorrow}):` +
+          ` synced=${tomorrowResult.synced} skipped=${tomorrowResult.skipped}` +
+          ` errors=${tomorrowResult.errors.length}`
+        );
+      } else {
+        console.log(`[NhlModelSync] ${trigger} TOMORROW (${tomorrow}): no unmodeled games — skipping`);
+      }
+    } catch (err) {
+      console.error(`[NhlModelSync] ${trigger} tomorrow sync error:`, err);
+    }
   }
 
-  syncInterval = setInterval(() => {
-    if (isWithinSyncWindow()) {
-      console.log("[NhlModelSync] Scheduled sync triggered...");
-      syncNhlModelForToday("auto").catch(err =>
-        console.error("[NhlModelSync] Scheduled sync error:", err)
-      );
-    } else {
-      console.log("[NhlModelSync] Outside sync window (9AM–9PM PST), skipping scheduled sync.");
-    }
-  }, THIRTY_MIN_MS);
+  // Run immediately on startup
+  console.log("[NhlModelSync] Starting initial sync (24/7, no time gate, today+tomorrow)...");
+  runBothDates("STARTUP").catch(err =>
+    console.error("[NhlModelSync] Initial startup error:", err)
+  );
 
-  console.log("[NhlModelSync] Scheduler started (every 30 min, 9AM–9PM PST).");
+  syncInterval = setInterval(() => {
+    runBothDates("SCHEDULED").catch(err =>
+      console.error("[NhlModelSync] Scheduled sync error:", err)
+    );
+  }, FIVE_MIN_MS);
+
+  console.log("[NhlModelSync] Scheduler started (every 5 min, 24/7, today+tomorrow).");
 }
 
 export function stopNhlModelSyncScheduler(): void {

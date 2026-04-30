@@ -1,0 +1,1 @@
+ALTER TABLE `tracked_bets` ADD `line` decimal(6,1);

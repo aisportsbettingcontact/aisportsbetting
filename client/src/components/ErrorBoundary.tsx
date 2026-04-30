@@ -21,6 +21,12 @@ class ErrorBoundary extends Component<Props, State> {
     return { hasError: true, error };
   }
 
+  componentDidCatch(error: Error, info: { componentStack: string }) {
+    console.error('[ErrorBoundary] Caught error:', error);
+    console.error('[ErrorBoundary] Error message:', error.message);
+    console.error('[ErrorBoundary] Component stack:', info.componentStack);
+  }
+
   render() {
     if (this.state.hasError) {
       return (
@@ -34,13 +40,15 @@ class ErrorBoundary extends Component<Props, State> {
             <h2 className="text-xl mb-4">An unexpected error occurred.</h2>
 
             <div className="p-4 w-full rounded bg-muted overflow-auto mb-6">
-              <pre className="text-sm text-muted-foreground whitespace-break-spaces">
+              <pre className="text-sm text-destructive font-bold whitespace-break-spaces mb-2">
+                {this.state.error?.message}
+              </pre>
+              <pre className="text-xs text-muted-foreground whitespace-break-spaces">
                 {this.state.error?.stack}
               </pre>
             </div>
 
-            <button
-              onClick={() => window.location.reload()}
+            <button type="button" onClick={() => window.location.reload()}
               className={cn(
                 "flex items-center gap-2 px-4 py-2 rounded-lg",
                 "bg-primary text-primary-foreground",

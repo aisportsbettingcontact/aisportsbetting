@@ -2,6 +2,7 @@ import "dotenv/config";
 import express from "express";
 import { createServer } from "http";
 import net from "net";
+import compression from "compression";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
@@ -19,6 +20,17 @@ import { startDiscordBot } from "../discord/bot";
 import { startMlbPlayerSyncScheduler } from "../mlbPlayerSync";
 import { insertSecurityEvent } from "../db";
 import { startSecurityDigestScheduler } from "../securityDigest";
+import { startWeeklySecurityDigestScheduler } from "../weeklySecurityDigest";
+import { postSecurityAlert } from "../discord/discordSecurityAlert";
+import { startMlbScheduleHistoryScheduler } from "../mlbScheduleHistoryScheduler";
+import { startNbaScheduleHistoryScheduler } from "../nbaScheduleHistoryScheduler";
+import { startNhlScheduleHistoryScheduler } from "../nhlScheduleHistoryScheduler";
+import { startMlbNightlyTrendsScheduler } from "../mlbNightlyTrendsRefresh";
+import { prewarmSlateCache } from "../actionNetwork";
+import { startBetAutoGradeScheduler } from "../betAutoGradeScheduler";
+import { startMlbOutcomeAndDriftScheduler } from "../mlbOutcomeAndDriftScheduler";
+import { startMlbModelSyncScheduler } from "../mlbModelRunner";
+import { getCircuitStatus, getCacheStats } from "../dbCircuitBreaker";
 
 // ─── Rate limit event helper ─────────────────────────────────────────────────
 // Fire-and-forget: writes a RATE_LIMIT row to security_events.
@@ -68,6 +80,18 @@ function fireRateLimitEvent(
     occurredAt: now,
   }).catch((err) =>
     console.error(`${tag} DB insert failed: ${(err as Error).message}`)
+  );
+  // [STEP] Post structured embed to 🗒️-𝗦𝗘𝗖𝗨𝗥𝗜𝗧𝗬-𝗘𝗩𝗘𝗡𝗧𝗦 Discord channel (async, non-blocking)
+  postSecurityAlert({
+    eventType: "RATE_LIMIT",
+    ip,
+    path,
+    method,
+    userAgent: ua,
+    context: limitType,
+    occurredAt: now,
+  }).catch((err) =>
+    console.error(`${tag} Discord alert failed: ${(err as Error).message}`)
   );
 }
 
@@ -163,6 +187,12 @@ async function startServer() {
   const app = express();
   const server = createServer(app);
 
+  // ─── Gzip/Brotli response compression ───────────────────────────────────────
+  // Compresses all JSON/HTML responses. tRPC payloads (often 50-200KB for large
+  // bet lists) shrink 70-85% — dramatically reducing network transfer time.
+  // threshold=512: skip compression for tiny responses where overhead > benefit.
+  app.use(compression({ threshold: 512 }));
+
   // Trust the first proxy (Cloudflare / Manus edge) so req.protocol reflects
   // the original HTTPS scheme and cookies are set correctly (sameSite+secure).
   // Also required for express-rate-limit to read the real client IP from
@@ -201,7 +231,25 @@ async function startServer() {
   // Lightweight endpoint for load balancer health probes and uptime monitoring.
   // Returns 200 immediately without hitting the DB so it never times out.
   app.get("/health", (_req, res) => {
-    res.status(200).json({ status: "ok", ts: Date.now() });
+    const circuit = getCircuitStatus();
+    const dbOk = circuit.state === 'CLOSED';
+    res.status(dbOk ? 200 : 503).json({
+      status: dbOk ? 'ok' : 'degraded',
+      ts: Date.now(),
+      db: { state: circuit.state, consecutiveFailures: circuit.consecutiveFailures },
+    });
+  });
+
+  // ─── DB status endpoint ───────────────────────────────────────────────────
+  // Detailed circuit breaker + user cache stats for operational monitoring.
+  app.get("/api/db-status", (_req, res) => {
+    const circuit = getCircuitStatus();
+    const cache = getCacheStats();
+    res.json({
+      ts: Date.now(),
+      circuit,
+      userCache: cache,
+    });
   });
 
   // ─── Global API rate limiter ──────────────────────────────────────────────
@@ -286,8 +334,46 @@ async function startServer() {
     startDiscordBot();
     // MLB player sync — nightly at 08:00 UTC, updates active rosters from MLB Stats API
     startMlbPlayerSyncScheduler();
+    // MLB schedule history — startup 7-day backfill + refresh every 4h (6AM–midnight EST)
+    startMlbScheduleHistoryScheduler();
+    // MLB TRENDS nightly refresh — fires at 2:59 AM EST (11:59 PM PST) every night
+    // Re-ingests yesterday + today, runs 30-team cross-validation, notifies owner
+    startMlbNightlyTrendsScheduler();
+    // NBA schedule history — startup 7-day backfill + refresh every 4h (6AM–midnight EST)
+    startNbaScheduleHistoryScheduler();
+    // NHL schedule history — startup 7-day backfill + refresh every 4h (6AM–midnight EST)
+    startNhlScheduleHistoryScheduler();
+    // Pre-warm Action Network slate cache for today — eliminates cold-start latency on first BetTracker load
+    prewarmSlateCache().catch(err => console.error("[AN][PREWARM] Failed:", err));
+    // Automated bet grading — 15-min polling during game hours + nightly 11:30 PM EST sweep
+    startBetAutoGradeScheduler();
+    // MLB outcome ingestion + f5_share drift detection + auto-recalibration
+    // Nightly at 12:30 AM PST: ingest final game outcomes → compute Brier scores → check f5_share drift
+    // Monthly on 1st at 3:00 AM PST: full recalibration regardless of drift
+    startMlbOutcomeAndDriftScheduler();
+    // MLB model sync — standalone 5-min heartbeat for today+tomorrow, 24/7, no time gates
+    // Catch-all safety net: models any game with pitchers+lines but modelRunAt=null
+    // Idempotent: modelRunAt IS NULL guard prevents re-running already-modeled games
+    startMlbModelSyncScheduler();
     // Security digest — daily at 08:00 EST (13:00 UTC), sends 24h threat summary via notifyOwner()
     startSecurityDigestScheduler();
+    // Weekly security threat trend digest — every Sunday at 08:00 EST, 7-day bar chart + top IPs
+    startWeeklySecurityDigestScheduler();
+    // OddsHistory lineSource backfill — sets lineSource on historical rows where it is NULL
+    // Uses game.oddsSource as ground truth. Runs once at startup, no-ops if all rows already set.
+    import('../db').then(({ backfillOddsHistoryLineSource }) => {
+      backfillOddsHistoryLineSource()
+        .catch((err: unknown) => console.warn('[Startup] [OddsHistory][BACKFILL] lineSource backfill failed (non-fatal):', err));
+    }).catch((err: unknown) => console.warn('[Startup] [OddsHistory][BACKFILL] Import failed (non-fatal):', err));
+    // K-Props MLBAM ID startup backfill — resolves all historical rows missing pitcher headshot IDs
+    // Runs once on server start, non-fatal, no-ops if all rows already resolved
+    import('../mlbKPropsModelService').then(({ backfillAllKPropsMlbamIds }) => {
+      backfillAllKPropsMlbamIds()
+        .then((r: { resolved: number; alreadyHad: number; unresolved: number; errors: number }) =>
+          console.log(`[Startup] [MLBAM_BACKFILL] K-Props: resolved=${r.resolved} alreadyHad=${r.alreadyHad} unresolved=${r.unresolved} errors=${r.errors}`)
+        )
+        .catch((err: unknown) => console.warn('[Startup] [MLBAM_BACKFILL] K-Props startup backfill failed (non-fatal):', err));
+    }).catch((err: unknown) => console.warn('[Startup] [MLBAM_BACKFILL] Import failed (non-fatal):', err));
   });
 }
 

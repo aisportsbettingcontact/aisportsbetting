@@ -1,22 +1,22 @@
 /**
  * GameCard — Model Projection Card
  *
- * Layout (desktop ≥ lg):
- *   ┌──────────────────┬──────────────────────────────┬──────────────────┐
- *   │  SCORE PANEL     │  ODDS/LINES                  │  BETTING SPLITS  │
- *   │  Clock/Status    │  Column headers              │                  │
- *   │  Away logo+name  │  Away row                    │                  │
- *   │  [score]         │  Home row                    │                  │
- *   │  Home logo+name  │  Edge verdict                │                  │
- *   │  [score]         │                              │                  │
- *   └──────────────────┴──────────────────────────────┴──────────────────┘
+ * 3-tier responsive layout:
  *
- * Layout (mobile < lg):
- *   ┌────────────────────────────────────────────────────────────────────┐
- *   │  SCORE PANEL  (full width, top row)                               │
- *   ├─────────────────────────────┬──────────────────────────────────────┤
- *   │  ODDS/LINES (left)          │  BETTING SPLITS (right)             │
- *   └─────────────────────────────┴──────────────────────────────────────┘
+ * Desktop + Tablet (≥ md / 768px): single horizontal row
+ *   ┌──────────────────┬──────────────────────────────┬──────────────────┐
+ *   │  SCORE PANEL     │  ODDS/LINES (3 SectionCols)  │  EDGE VERDICT    │
+ *   │  Clock/Status    │  SPREAD | TOTAL | ML         │                  │
+ *   │  Away logo+name  │  BOOK | MODEL per col        │                  │
+ *   │  Home logo+name  │  Splits bars below           │                  │
+ *   └──────────────────┴──────────────────────────────┴──────────────────┘
+ *   ScorePanel: clamp(170px,22vw,260px) — scales 170px@768 → 260px@1182+
+ *   EdgeVerdict: clamp(120px,11.5vw,190px) — floor 120px for tablet readability
+ *
+ * Mobile (< md / 768px): frozen-panel grid + horizontal scroll
+ *   ┌─────────────────────────────────────────────────────────────────────┐
+ *   │  SCORE PANEL (frozen, clamp(140px,38%,180px)) │ ODDS scroll area  │
+ *   └─────────────────────────────────────────────────────────────────────┘
  */
 
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -26,13 +26,18 @@ import { toast } from "sonner";
 import type { inferRouterOutputs } from "@trpc/server";
 import type { AppRouter } from "@/lib/trpc";
 import { getNbaTeamByDbSlug } from "@shared/nbaTeams";
-import { NHL_BY_DB_SLUG } from "@shared/nhlTeams";
+import { NHL_BY_DB_SLUG, NHL_BY_ABBREV } from "@shared/nhlTeams";
 import { MLB_BY_ABBREV } from "@shared/mlbTeams";
+import { getGameTeamColorsClient } from "@shared/teamColors";
+import { useVisibility } from "@/hooks/useVisibility";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import { BettingSplitsPanel } from "./BettingSplitsPanel";
 import { OddsHistoryPanel } from "./OddsHistoryPanel";
+import MlbLast5Panel from "./MlbLast5Panel";
+import RecentSchedulePanel from "./RecentSchedulePanel";
+import SituationalResultsPanel from "./SituationalResultsPanel";
 
 type RouterOutput = inferRouterOutputs<AppRouter>;
 type GameRow = RouterOutput["games"]["list"][number];
@@ -151,13 +156,57 @@ function parseSideFromLabel(label: string | null | undefined): string | null {
 }
 
 // ── Normalize edge label ──────────────────────────────────────────────────────
+// Strips bracket classification tags like [ELITE EDGE], [STRONG EDGE], [SMALL EDGE], etc.
+// Also resolves NBA db slugs (e.g. "los_angeles_lakers") to display names.
+// NHL labels: "UTA +1.5 [ELITE EDGE]" → "UTA +1.5"
+// NBA labels: "los_angeles_lakers (+2.5)" → "Los Angeles Lakers (+2.5)"
 function normalizeEdgeLabel(label: string | null | undefined): string {
   if (!label || label.toUpperCase() === "PASS") return "PASS";
-  return label.replace(/^([a-z][a-z0-9_]*)(\s+\()/i, (_, slug, rest) => {
+  // Strip bracket classification tags: [ELITE EDGE], [STRONG EDGE], [PLAYABLE EDGE], [SMALL EDGE], [LEAN], etc.
+  let normalized = label.replace(/\s*\[[^\]]*\]/g, '').trim();
+  // Resolve NBA db slugs (e.g. "los_angeles_lakers (+2.5)")
+  normalized = normalized.replace(/^([a-z][a-z0-9_]*)(\s+\()/i, (_, slug, rest) => {
     const nba = getNbaTeamByDbSlug(slug);
     if (nba) return nba.name + rest;
     return slug.replace(/_/g, " ") + rest;
   });
+  return normalized;
+}
+
+// ── Parse team abbreviation from edge label ───────────────────────────────────
+// NHL edge labels: "UTA +1.5 [ELITE EDGE]" → "UTA"
+// NBA edge labels: "los_angeles_lakers (+2.5)" → null (uses slug matching)
+// Returns the 2-3 char uppercase abbreviation if present, otherwise null.
+function parseAbbrFromEdgeLabel(label: string | null | undefined): string | null {
+  if (!label || label.toUpperCase() === 'PASS') return null;
+  // Match 2-4 uppercase letters at the start of the label (e.g. "UTA", "STL", "NSH")
+  const m = label.match(/^([A-Z]{2,4})\s/);
+  return m ? m[1] : null;
+}
+
+// ── Determine if edge label refers to the away team ───────────────────────────
+// AUTHORITATIVE for NHL: parse abbrev from label, compare to awayAbbr.
+// Fallback for NBA/MLB: use normalizeEdgeLabel().startsWith(awayDisplayName).
+// This replaces the flawed "+1.5" string check which fails for home favorites.
+function edgeLabelIsAway(
+  label: string | null | undefined,
+  awayAbbr: string,
+  awayDisplayName: string | undefined,
+  sport: string
+): boolean {
+  if (!label || label.toUpperCase() === 'PASS') return false;
+  if (sport === 'NHL' || sport === 'MLB') {
+    const abbr = parseAbbrFromEdgeLabel(label);
+    if (abbr) {
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`%c[edgeLabelIsAway] sport=${sport} label="${label}" abbr=${abbr} awayAbbr=${awayAbbr} → ${abbr === awayAbbr}`, 'color:#FF9900;font-size:9px');
+      }
+      return abbr === awayAbbr;
+    }
+  }
+  // NBA fallback: display name match
+  const normalized = normalizeEdgeLabel(label);
+  return awayDisplayName ? normalized.toLowerCase().startsWith(awayDisplayName.toLowerCase()) : false;
 }
 
 // ── TeamLogo ──────────────────────────────────────────────────────────────────
@@ -186,112 +235,20 @@ function TeamLogo({ slug, name, logoUrl, size = 36 }: { slug: string; name: stri
     <img
       src={logoUrl}
       alt={name}
-      style={{ width: cssSize, height: cssSize, minWidth: Math.round(size * 0.7), minHeight: Math.round(size * 0.7), objectFit: "contain", mixBlendMode: "screen", flexShrink: 0 }}
+      style={{
+        width: cssSize, height: cssSize,
+        minWidth: Math.round(size * 0.7), minHeight: Math.round(size * 0.7),
+        objectFit: "contain",
+        mixBlendMode: "screen",
+        flexShrink: 0,
+        // Brightness boost: lifts dark-primary-color logos (A's #003831, Pirates #000000,
+        // White Sox #000000) off the dark card background. The 1.25 multiplier is subtle
+        // enough to not blow out bright logos (NYY, LAD, etc.) while making dark ones visible.
+        filter: "brightness(1.25) drop-shadow(0 0 2px rgba(255,255,255,0.10))",
+      }}
       onError={() => setError(true)}
     />
   );
-}
-
-// ── useAutoFontSize ─────────────────────────────────────────────────────────
-/**
- * Measures the actual rendered width of a text string at a given font size
- * using an off-screen Canvas context (no DOM reflow, sub-millisecond).
- * Returns the minimum font size (px) at which the text fits within maxWidth.
- *
- * Algorithm:
- *   1. Start at maxFontSize and step down by 0.5px increments.
- *   2. At each size, measure text width with Canvas measureText.
- *   3. Return the first size where textWidth ≤ maxWidth.
- *   4. If even minFontSize overflows, return minFontSize (text will wrap
- *      gracefully via overflowWrap: anywhere).
- *
- * Debug logging (console group [AutoFontSize]) fires whenever the computed
- * size changes, reporting: name, container width, text width at each tried
- * size, and the final chosen size.
- */
-const _autoFontCanvas = typeof document !== "undefined" ? document.createElement("canvas") : null;
-const _autoFontCtx = _autoFontCanvas?.getContext("2d") ?? null;
-
-function measureTextWidth(text: string, fontPx: number, fontWeight: number): number {
-  if (!_autoFontCtx) return 0;
-  _autoFontCtx.font = `${fontWeight} ${fontPx}px Inter, system-ui, sans-serif`;
-  return _autoFontCtx.measureText(text).width;
-}
-
-function computeAutoFontSize(
-  text: string,
-  containerWidth: number,
-  fontWeight: number,
-  maxFontPx: number,
-  minFontPx: number,
-  debugLabel?: string
-): number {
-  if (containerWidth <= 0 || !text) return maxFontPx;
-  const STEP = 0.5;
-  let chosen = minFontPx;
-  const triedSizes: { size: number; textWidth: number }[] = [];
-  for (let size = maxFontPx; size >= minFontPx; size -= STEP) {
-    const tw = measureTextWidth(text, size, fontWeight);
-    triedSizes.push({ size: parseFloat(size.toFixed(1)), textWidth: parseFloat(tw.toFixed(1)) });
-    if (tw <= containerWidth) {
-      chosen = size;
-      break;
-    }
-  }
-  // Debug: only log when the chosen size is below maxFontPx (i.e. scaling kicked in)
-  if (chosen < maxFontPx - 0.5 && debugLabel) {
-    console.groupCollapsed(
-      `%c[AutoFontSize] "${text}" → ${chosen.toFixed(1)}px (container=${containerWidth}px)`,
-      "color:#39FF14;font-weight:700;font-size:10px"
-    );
-    console.log(`  label        : ${debugLabel}`);
-    console.log(`  containerW   : ${containerWidth}px`);
-    console.log(`  maxFont      : ${maxFontPx}px  minFont: ${minFontPx}px`);
-    console.log(`  chosen       : ${chosen.toFixed(1)}px`);
-    console.log(`  sizes tried  :`, triedSizes.slice(0, 20)); // cap at 20 entries
-    console.groupEnd();
-  }
-  return chosen;
-}
-
-/**
- * React hook: returns a [ref, fontSize] pair.
- * Attach `ref` to the container element whose width constrains the text.
- * `fontSize` is the largest px value at which `text` fits in one line.
- */
-function useAutoFontSize(
-  text: string,
-  fontWeight: number,
-  maxFontPx: number,
-  minFontPx: number,
-  debugLabel?: string
-): [React.RefObject<HTMLDivElement | null>, number] {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [fontSize, setFontSize] = useState(maxFontPx);
-
-  const recompute = useCallback((width: number) => {
-    const next = computeAutoFontSize(text, width, fontWeight, maxFontPx, minFontPx, debugLabel);
-    setFontSize(prev => {
-      if (Math.abs(prev - next) < 0.25) return prev; // avoid micro-updates
-      return next;
-    });
-  }, [text, fontWeight, maxFontPx, minFontPx, debugLabel]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    // Initial measure
-    recompute(el.getBoundingClientRect().width);
-    // Watch for container resize
-    const ro = new ResizeObserver(entries => {
-      const w = entries[0]?.contentRect.width ?? 0;
-      recompute(w);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [recompute]);
-
-  return [containerRef, fontSize];
 }
 
 // ── MobileTeamNameBlock ─────────────────────────────────────────────────────
@@ -466,9 +423,12 @@ function EdgeVerdict({
   const spreadIsStronger = (spreadDiff ?? 0) >= (totalDiff ?? 0);
 
   // Determine which team logo to show for the spread edge
-  // The spread edge label starts with the team's display name
-  const spreadEdgeIsAway = spreadEdge && awayDisplayName
-    ? normalizeEdgeLabel(spreadEdge).toLowerCase().startsWith(awayDisplayName.toLowerCase())
+  // Use edgeLabelIsAway: for NHL/MLB parses abbrev from label; for NBA uses display name match.
+  // Resolve official abbreviation from DB slug via NHL_BY_DB_SLUG (e.g. "utah_mammoth" → "UTA").
+  // [VERIFY] This replaces the flawed "+1.5" check and the startsWith(displayName) check.
+  const awayAbbrForVerdict = (awaySlug ? (NHL_BY_DB_SLUG.get(awaySlug)?.abbrev ?? awaySlug.split('_').map(w=>w[0]?.toUpperCase()||'').join('')) : '');
+  const spreadEdgeIsAway = spreadEdge
+    ? edgeLabelIsAway(spreadEdge, awayAbbrForVerdict, awayDisplayName, 'NHL')
     : false;
   const spreadLogoUrl = spreadEdgeIsAway ? awayLogoUrl : homeLogoUrl;
   const spreadSlug = spreadEdgeIsAway ? awaySlug : homeSlug;
@@ -754,12 +714,9 @@ function DesktopMergedPanel({
   onToggleModel,
   game,
 }: DesktopMergedPanelProps) {
-  // ── Team colors for split bars ────────────────────────────────────────────
+  // ── Team colors for split bars (Fix #5: client-side registry, zero round-trips) ──
   const sport = (game.sport ?? 'NBA') as 'MLB' | 'NBA' | 'NHL';
-  const { data: colors } = trpc.teamColors.getForGame.useQuery(
-    { awayTeam: game.awayTeam, homeTeam: game.homeTeam, sport },
-    { staleTime: 1000 * 60 * 60 }
-  );
+  const colors = getGameTeamColorsClient(game.awayTeam, game.homeTeam, sport);
 
   const FALLBACK_AWAY = '#1a4a8a';
   const FALLBACK_HOME = '#c84b0c';
@@ -858,6 +815,7 @@ function DesktopMergedPanel({
   const displayHomeML     = game.homeML ?? '—';
 
   // For NHL/MLB games, append model odds in parentheses
+
   const isNhlGame   = game.sport === 'NHL';
   const isMlbGame   = game.sport === 'MLB';
   const mdlAwayPLOdds = game.modelAwayPLOdds ?? null;
@@ -882,9 +840,18 @@ function DesktopMergedPanel({
           ? `${spreadSign(mdlHomeSpread)} (${mdlHomeSpreadOdds})`
           : spreadSign(mdlHomeSpread))
     : '—';
-  // For NHL: display BOOK's total line with model fair odds at that line
-  // For MLB: display model's own total with model fair odds at that line
-  const mdlDisplayTotal = isNhlGame && !isNaN(bkTotal) ? bkTotal : mdlTotal;
+  // CRITICAL: ALWAYS display the BOOK's total line with model fair odds at that line.
+  // The book O/U is the NON-NEGOTIABLE reference for edge detection and display across ALL sports.
+  // modelTotal in DB is now anchored to bookTotal (fixed in mlbModelRunner/nhlModelSync/nbaModelSync)
+  // but we enforce it here as a defense-in-depth guard: if bkTotal is available, use it.
+  const mdlDisplayTotal = !isNaN(bkTotal) ? bkTotal : mdlTotal;
+  // Validation audit: warn in console if model total diverges from book total (should never happen)
+  if (process.env.NODE_ENV !== 'production' && !isNaN(mdlTotal) && !isNaN(bkTotal) && Math.abs(mdlTotal - bkTotal) > 0.01) {
+    console.warn(
+      `[LINE AUDIT] ${game.awayTeam}@${game.homeTeam} (${game.sport}): ` +
+      `modelTotal=${mdlTotal} ≠ bookTotal=${bkTotal} — displaying bookTotal per policy`
+    );
+  }
   const mdlOver = hasModelData && !isNaN(mdlDisplayTotal)
     ? ((isNhlGame || isMlbGame) && mdlOverOdds
         ? `${String(mdlDisplayTotal)} (${mdlOverOdds})`
@@ -902,16 +869,19 @@ function DesktopMergedPanel({
   // For NHL: puck line is always ±1.5 or ±2.5 from the simulation.
   // Comparing mdlAwaySpread < awaySpread is meaningless (both are ±1.5).
   // Edge direction is determined by the Python engine and stored in computedSpreadEdge.
+  // AUTHORITATIVE: parse team abbreviation from the edge label, compare to awayAbbr.
+  // This replaces the flawed "+1.5" string check (fails for home favorites like "COL -1.5 [STRONG EDGE]").
+  const awayAbbrDesktop = awayAbbr; // awayAbbr is resolved from NHL_BY_DB_SLUG via getGameTeamColorsClient
   const spreadEdgeIsAway = (() => {
     if (isNaN(spreadDiff) || spreadDiff <= 0) return null;
     if (isNhlGame) {
-      // For NHL: parse edge direction from computedSpreadEdge string (e.g. "MTL +1.5 [LEAN]")
-      // The Python engine sets spreadEdge to the team that has the probability edge.
-      // We detect away by checking if the edge string contains the away team name.
       if (!computedSpreadEdge || computedSpreadEdge === 'PASS') return null;
-      // computedSpreadEdge format: "TEAM_NAME +1.5 [CLASS]" or "TEAM_NAME -1.5 [CLASS]"
-      // Away edge = contains "+1.5" (away is always the underdog getting +1.5)
-      return computedSpreadEdge.includes('+1.5') || computedSpreadEdge.includes('+2.5');
+      // Use edgeLabelIsAway: parses abbrev from label (e.g. "UTA" from "UTA +1.5 [ELITE EDGE]")
+      // and compares to awayAbbr (e.g. "STL" for st_louis_blues).
+      // [VERIFY] "COL -1.5 [STRONG EDGE]" → abbr="COL", awayAbbr="SEA" → false (home edge) ✅
+      // [VERIFY] "UTA +1.5 [ELITE EDGE]" → abbr="UTA", awayAbbr="STL" → false (home edge) ✅
+      // [VERIFY] "SJS +1.5 [STRONG EDGE]" → abbr="SJS", awayAbbr="SJS" → true (away edge) ✅
+      return edgeLabelIsAway(computedSpreadEdge, awayAbbrDesktop, awayDisplayName, sport);
     }
     if (!isNaN(mdlAwaySpread) && !isNaN(awaySpread)) return mdlAwaySpread < awaySpread;
     return null;
@@ -962,8 +932,40 @@ function DesktopMergedPanel({
   const homeSpreadModelStyle = showModel ? (hasSpreadEdge && !spreadEdgeIsAway ? modelGreen : modelWhite) : dimCell;
   const overTotalModelStyle  = showModel ? (hasTotalEdge  && totalEdgeIsOver   ? modelGreen : modelWhite) : dimCell;
   const underTotalModelStyle = showModel ? (hasTotalEdge  && !totalEdgeIsOver  ? modelGreen : modelWhite) : dimCell;
-  const awayMlModelStyle     = showModel ? (hasSpreadEdge && spreadEdgeIsAway  ? modelGreen : modelWhite) : dimCell;
-  const homeMlModelStyle     = showModel ? (hasSpreadEdge && !spreadEdgeIsAway ? modelGreen : modelWhite) : dimCell;
+
+  // ── ML edge detection ──────────────────────────────────────────────────────
+  // ML edge direction must match spread edge direction (same team that covers the spread
+  // is also the team to back on the ML).
+  // Compute ML edge pp independently from book/model ML odds.
+  const bkAwayMlNum = toNum(awayMl);
+  const bkHomeMlNum = toNum(homeMl);
+  const mdlAwayMlNum = toNum(modelAwayML);
+  const mdlHomeMlNum = toNum(modelHomeML);
+  const awayMlEdgePP = calculateEdge(bkAwayMlNum, mdlAwayMlNum);
+  const homeMlEdgePP = calculateEdge(bkHomeMlNum, mdlHomeMlNum);
+  // ML edge exists when the model-favored side (matching spread edge direction) has positive pp
+  const mlEdgePP = spreadEdgeIsAway === true ? awayMlEdgePP
+    : spreadEdgeIsAway === false ? homeMlEdgePP
+    : NaN;
+  const hasMlEdge = !isNaN(mlEdgePP) && mlEdgePP > 0.5;
+  // ML edge display label: "TEAM ABBR ML" (e.g. "UTA ML" or "STL ML")
+  const mlEdgeLabel = spreadEdgeIsAway === true ? `${awayAbbr} ML`
+    : spreadEdgeIsAway === false ? `${homeAbbr} ML`
+    : null;
+  const mlEdgeLogoUrl = spreadEdgeIsAway === true ? awayLogoUrl : homeLogoUrl;
+  const mlEdgeSlug    = spreadEdgeIsAway === true ? awaySlug : homeSlug;
+  const mlEdgeTeam    = spreadEdgeIsAway === true ? awayDisplayName : homeDisplayName;
+  if (process.env.NODE_ENV === 'development' && (!isNaN(awayMlEdgePP) || !isNaN(homeMlEdgePP))) {
+    console.log(
+      `%c[ML EDGE] ${game.awayTeam}@${game.homeTeam} spreadEdgeIsAway=${spreadEdgeIsAway} ` +
+      `awayMlEdgePP=${isNaN(awayMlEdgePP)?'NaN':awayMlEdgePP.toFixed(2)} ` +
+      `homeMlEdgePP=${isNaN(homeMlEdgePP)?'NaN':homeMlEdgePP.toFixed(2)} ` +
+      `mlEdgePP=${isNaN(mlEdgePP)?'NaN':mlEdgePP.toFixed(2)} hasMlEdge=${hasMlEdge}`,
+      'color:#00BFFF;font-size:9px'
+    );
+  }
+  const awayMlModelStyle     = showModel ? (hasMlEdge && spreadEdgeIsAway === true  ? modelGreen : modelWhite) : dimCell;
+  const homeMlModelStyle     = showModel ? (hasMlEdge && spreadEdgeIsAway === false ? modelGreen : modelWhite) : dimCell;
 
   // ── Splits data ───────────────────────────────────────────────────────────
   const awaySpreadLabel = !isNaN(awaySpread) ? `${awayAbbr} (${spreadSign(awaySpread)})` : awayAbbr;
@@ -1176,8 +1178,10 @@ function DesktopMergedPanel({
   const spreadPass = normalizeEdgeLabel(computedSpreadEdge) === 'PASS' || (spreadDiff ?? 0) <= 0;
   const totalPass  = normalizeEdgeLabel(computedTotalEdge)  === 'PASS' || (totalDiff  ?? 0) <= 0;
   const spreadIsStronger = (spreadDiff ?? 0) >= (totalDiff ?? 0);
-  const spreadEdgeIsAwayForVerdict = computedSpreadEdge && awayDisplayName
-    ? normalizeEdgeLabel(computedSpreadEdge).toLowerCase().startsWith(awayDisplayName.toLowerCase())
+  // Use edgeLabelIsAway for the edge panel logo — same authoritative abbrev-based detection.
+  // awayAbbr is already resolved from NHL_BY_DB_SLUG via getGameTeamColorsClient above.
+  const spreadEdgeIsAwayForVerdict = computedSpreadEdge
+    ? edgeLabelIsAway(computedSpreadEdge, awayAbbr, awayDisplayName, sport)
     : false;
   const spreadLogoUrl = spreadEdgeIsAwayForVerdict ? awayLogoUrl : homeLogoUrl;
   const spreadVerdictSlug = spreadEdgeIsAwayForVerdict ? awaySlug : homeSlug;
@@ -1231,38 +1235,41 @@ function DesktopMergedPanel({
       <div style={{ width: 1, background: 'rgba(255,255,255,0.12)', flexShrink: 0, alignSelf: 'stretch' }} />
       {/* EdgeVerdict column */}
       {showModel ? (
-        <div className="flex flex-col items-start justify-center" style={{ flex: '0 0 clamp(150px,11.5vw,190px)', width: 'clamp(150px,11.5vw,190px)', padding: '10px 12px', gap: 0 }}>
+        <div className="flex flex-col items-start justify-center" style={{ flex: '0 0 clamp(148px,13vw,210px)', width: 'clamp(148px,13vw,210px)', padding: '10px 10px', gap: 0 }}>
           {/* EDGE header */}
           <span style={{ fontSize: 'clamp(9px,0.7vw,11px)', fontWeight: 800, color: 'rgba(255,255,255,0.28)', letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: 8, alignSelf: 'center' }}>EDGE</span>
-          {spreadPass && totalPass ? (
+          {spreadPass && totalPass && !hasMlEdge ? (
             <div style={{ alignSelf: 'center', padding: '4px 10px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}>
               <span style={{ fontSize: 'clamp(10px,0.85vw,13px)', fontWeight: 600, color: 'rgba(255,255,255,0.25)', letterSpacing: '0.1em' }}>PASS</span>
             </div>
           ) : (
             <div className="flex flex-col w-full" style={{ gap: 6 }}>
+              {/* ── Spread / Puck Line / Run Line edge row ────────────────────────────── */}
               {!spreadPass && (() => {
                 const diff = isNaN(spreadDiff) ? null : spreadDiff;
                 const edgeColor = getEdgeColor(diff ?? 0);
                 const normalized = normalizeEdgeLabel(computedSpreadEdge);
                 const showArrow = (diff ?? 0) >= 3;
+                const mktLabel = sport === 'NHL' ? 'PUCK LINE' : sport === 'MLB' ? 'RUN LINE' : 'SPREAD';
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '5px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: `1px solid ${edgeColor}33` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
                       {(spreadLogoUrl || spreadVerdictSlug) && (
                         <TeamLogo slug={spreadVerdictSlug ?? ''} name={spreadVerdictTeam ?? ''} logoUrl={spreadLogoUrl} size={16} />
                       )}
-                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 700, color: 'hsl(var(--foreground))', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <span style={{ fontSize: 'clamp(9px,0.78vw,12px)', fontWeight: 700, color: 'hsl(var(--foreground))', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 }}>
                         {showArrow && <span style={{ color: edgeColor, marginRight: 2, fontSize: '0.8em' }}>▲</span>}
                         {normalized}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Spread</span>
-                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 800, color: edgeColor, letterSpacing: '0.02em' }}>{diff}{diff === 1 ? 'PT' : 'PTS'}</span>
+                      <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{mktLabel}</span>
+                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 800, color: edgeColor, letterSpacing: '0.02em' }}>{diff !== null ? `${diff}${diff === 1 ? 'PT' : 'PTS'}` : '—'}</span>
                     </div>
                   </div>
                 );
               })()}
+              {/* ── Total edge row ──────────────────────────────────────────────────────── */}
               {!totalPass && (() => {
                 const diff = isNaN(totalDiff) ? null : totalDiff;
                 const edgeColor = getEdgeColor(diff ?? 0);
@@ -1270,14 +1277,37 @@ function DesktopMergedPanel({
                 const showArrow = (diff ?? 0) >= 3;
                 return (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '5px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: `1px solid ${edgeColor}33` }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 700, color: 'hsl(var(--foreground))', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                      <span style={{ fontSize: 'clamp(9px,0.78vw,12px)', fontWeight: 700, color: 'hsl(var(--foreground))', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 }}>
                         {showArrow && <span style={{ color: edgeColor, marginRight: 2, fontSize: '0.8em' }}>▲</span>}
                         {normalized}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total</span>
+                      <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>TOTAL</span>
+                      <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 800, color: edgeColor, letterSpacing: '0.02em' }}>{diff !== null ? `${diff}${diff === 1 ? 'PT' : 'PTS'}` : '—'}</span>
+                    </div>
+                  </div>
+                );
+              })()}
+              {/* ── ML edge row (shown when spread edge exists and ML edge pp > 0.5) ─────────── */}
+              {hasMlEdge && mlEdgeLabel && (() => {
+                const diff = Math.round(mlEdgePP * 10) / 10;
+                const edgeColor = getEdgeColor(diff);
+                const showArrow = diff >= 3;
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '5px 8px', borderRadius: 8, background: 'rgba(255,255,255,0.04)', border: `1px solid ${edgeColor}33` }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, minWidth: 0 }}>
+                      {(mlEdgeLogoUrl || mlEdgeSlug) && (
+                        <TeamLogo slug={mlEdgeSlug ?? ''} name={mlEdgeTeam ?? ''} logoUrl={mlEdgeLogoUrl} size={16} />
+                      )}
+                      <span style={{ fontSize: 'clamp(9px,0.78vw,12px)', fontWeight: 700, color: 'hsl(var(--foreground))', letterSpacing: '0.04em', textTransform: 'uppercase', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: 1 }}>
+                        {showArrow && <span style={{ color: edgeColor, marginRight: 2, fontSize: '0.8em' }}>▲</span>}
+                        {mlEdgeLabel}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 'clamp(8px,0.65vw,10px)', color: 'rgba(255,255,255,0.35)', fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase' }}>MONEYLINE</span>
                       <span style={{ fontSize: 'clamp(9px,0.75vw,11px)', fontWeight: 800, color: edgeColor, letterSpacing: '0.02em' }}>{diff}{diff === 1 ? 'PT' : 'PTS'}</span>
                     </div>
                   </div>
@@ -1681,9 +1711,18 @@ function OddsLinesPanel({
           ? `${spreadSign(mdlHomeSpread)} (${modelHomeSpreadOdds})`
           : spreadSign(mdlHomeSpread))
     : '—';
-  // For NHL: display BOOK's total line with model fair odds at that line
-  // For MLB: display model's own total with model fair odds at that line
-  const mdlDisplayTotal = isNhlGame && !isNaN(bkTotal) ? bkTotal : mdlTotal;
+  // CRITICAL: ALWAYS display the BOOK's total line with model fair odds at that line.
+  // The book O/U is the NON-NEGOTIABLE reference for edge detection and display across ALL sports.
+  // modelTotal in DB is now anchored to bookTotal (fixed in mlbModelRunner/nhlModelSync/nbaModelSync)
+  // but we enforce it here as a defense-in-depth guard: if bkTotal is available, use it.
+  const mdlDisplayTotal = !isNaN(bkTotal) ? bkTotal : mdlTotal;
+  // Validation audit: warn in console if model total diverges from book total (should never happen)
+  if (process.env.NODE_ENV !== 'production' && !isNaN(mdlTotal) && !isNaN(bkTotal) && Math.abs(mdlTotal - bkTotal) > 0.01) {
+    console.warn(
+      `[LINE AUDIT] ${awayDisplayName ?? 'AWAY'}@${homeDisplayName ?? 'HOME'} (${sport ?? '?'}): ` +
+      `modelTotal=${mdlTotal} ≠ bookTotal=${bkTotal} — displaying bookTotal per policy`
+    );
+  }
   const mdlOverTotal = hasModelData && !isNaN(mdlDisplayTotal)
     ? ((isNhlGame || isMlbGame) && modelOverOdds
         ? `${String(mdlDisplayTotal)} (${modelOverOdds})`
@@ -1973,10 +2012,17 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       onFavoriteNotify(game.id);
     }
   }, [isAppAuthed, onToggleFavorite, game.id, toggleFavMutation, isFavorited, onFavoriteNotify]);
-  const awayBookSpread = toNum(game.awayBookSpread);
-  const homeBookSpread = toNum(game.homeBookSpread);
   const isNhlGame   = game.sport === 'NHL';
   const isMlbGame   = game.sport === 'MLB';
+  // NHL puck line spread: trust the AN API spread value directly.
+  // The spread value itself is authoritative: +1.5 = dog, -1.5 = fav.
+  // The odds sign is NOT reliable for determining fav/dog in NHL puck lines because
+  // the dog at +1.5 often has negative odds (e.g., -155) since covering +1.5 is easier.
+  // DO NOT apply any odds-based sign correction — awayBookSpread from DB is correct.
+  const awayBookSpread = toNum(game.awayBookSpread);
+  const homeBookSpread = toNum(game.homeBookSpread);
+  // IntersectionObserver-gated visibility — secondary panels only fetch when card is in viewport
+  const [cardRef, isCardVisible] = useVisibility({ rootMargin: "200px" });
   // For NHL: use modelAwayPuckLine/modelHomePuckLine (simulation-derived, e.g. "+1.5"/"-1.5")
   // instead of awayModelSpread/homeModelSpread (which may contain stale goal-differential values).
   // For NBA: use awayModelSpread/homeModelSpread as before.
@@ -2025,7 +2071,9 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const openUnderStr      = _fmtLine(game.openTotal, game.openUnderOdds);
   const openAwayMlStr     = game.openAwayML ?? null;
   const openHomeMlStr     = game.openHomeML ?? null;
-  // ── Display strings: use awayBookSpread (DK line from AN HTML ingest) ─────
+  // ── Display strings: use awayBookSpread (already NHL-corrected at top of component) ─────
+  // awayBookSpread/homeBookSpread are already odds-corrected above (dog=+1.5, fav=-1.5).
+  // No secondary correction needed here.
   const _spreadSign = (n: number) => n > 0 ? `+${n}` : String(n);
   const _bkAwaySpreadStr = !isNaN(awayBookSpread)
     ? (game.awaySpreadOdds ? `${_spreadSign(awayBookSpread)} (${game.awaySpreadOdds})` : _spreadSign(awayBookSpread))
@@ -2205,29 +2253,33 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
   const compactAwayLabel = isNba ? (awayNickname || awayName) : awayName;
   const compactHomeLabel = isNba ? (homeNickname || homeName) : homeName;
 
-  // Mobile abbreviations: city-based 3-char uppercase label for frozen score panel
-  // NHL: use official abbrev (e.g. "NSH", "EDM"). NBA/MLB: derive from city name.
-  const makeCityAbbr = (nhlEntry: typeof awayNhl, _nbaEntry: typeof awayNba, name: string): string => {
-    if (nhlEntry?.abbrev) return nhlEntry.abbrev;          // NHL: official 3-letter abbrev
-    // NBA / MLB fallback: first word of city/school name, max 4 chars
+  // Mobile abbreviations: official abbreviation for frozen score panel.
+  // Priority: NHL official abbrev → NBA official abbrev → MLB official abbrev → city-derived fallback
+  // [INPUT] nhlEntry: NhlTeam | null, nbaEntry: NbaTeam | null, mlbEntry: MlbTeam | null, name: string
+  // [OUTPUT] 2-3 char official abbreviation (e.g. "NYY", "LAL", "NSH") or city-derived fallback
+  const makeCityAbbr = (nhlEntry: typeof awayNhl, nbaEntry: typeof awayNba, mlbEntry: typeof awayMlb, name: string): string => {
+    if (nhlEntry?.abbrev) return nhlEntry.abbrev;          // NHL: official 3-letter abbrev (e.g. "NSH", "EDM", "TBL")
+    if (nbaEntry?.abbrev) return nbaEntry.abbrev;          // NBA: official 3-letter abbrev (e.g. "NYK", "LAL", "GSW", "OKC")
+    if (mlbEntry?.abbrev) return mlbEntry.abbrev;          // MLB: official 2-3 letter abbrev (e.g. "NYY", "LAD", "CWS", "STL")
+    // Fallback: first word of city/school name, max 4 chars (should never reach here for MLB/NBA/NHL)
     const word = (name || '').split(/\s+/)[0] ?? name;
     return word.slice(0, 4).toUpperCase();
   };
-  const awayAbbr = makeCityAbbr(awayNhl, awayNba, awayName);
-  const homeAbbr = makeCityAbbr(homeNhl, homeNba, homeName);
+  const awayAbbr = makeCityAbbr(awayNhl, awayNba, awayMlb, awayName);
+  const homeAbbr = makeCityAbbr(homeNhl, homeNba, homeMlb, homeName);
 
   const CompactScorePanel = () => (
     <div className="flex flex-col justify-center h-full px-2 py-3 gap-2" style={{ minWidth: 0 }}>
       {/* Status: [star] [clock] [LIVE] */}
       <div className="flex items-center gap-1 mb-1">
         {isAppAuthed && (
-          <button
-            onClick={handleStarClick}
+          <button type="button" onClick={handleStarClick}
             aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
             title={isFavorited ? "Remove from favorites" : "Add to favorites"}
             style={{
               background: "none", border: "none", cursor: "pointer",
               padding: "2px 3px", lineHeight: 1, flexShrink: 0,
+              minWidth: 44, minHeight: 44,
               display: "flex", alignItems: "center", justifyContent: "center",
               color: isFavorited ? "#FFD700" : "rgba(255,255,255,0.65)",
               opacity: 1,
@@ -2266,8 +2318,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       <div className="flex items-center justify-between gap-1 w-full">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <TeamLogo slug={game.awayTeam} name={awayName} logoUrl={awayLogoUrl} size={22} />
-          <span className="font-bold truncate" style={{ fontSize: 11, color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))", fontWeight: awayWins ? 800 : 600 }}>
-            {compactAwayLabel}
+          <span className="font-bold" style={{ fontSize: 11, color: awayWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))", fontWeight: awayWins ? 800 : 600, whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>
+            {awayAbbr}
           </span>
         </div>
         {(isLive || isFinal) && hasScores && (
@@ -2284,8 +2336,8 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       <div className="flex items-center justify-between gap-1 w-full">
         <div className="flex items-center gap-1.5 min-w-0 flex-1">
           <TeamLogo slug={game.homeTeam} name={homeName} logoUrl={homeLogoUrl} size={22} />
-          <span className="font-bold truncate" style={{ fontSize: 11, color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))", fontWeight: homeWins ? 800 : 600 }}>
-            {compactHomeLabel}
+          <span className="font-bold" style={{ fontSize: 11, color: homeWins ? "hsl(var(--foreground))" : isFinal ? "hsl(var(--muted-foreground))" : "hsl(var(--foreground))", fontWeight: homeWins ? 800 : 600, whiteSpace: 'nowrap', letterSpacing: '0.05em' }}>
+            {homeAbbr}
           </span>
         </div>
         {(isLive || isFinal) && hasScores && (
@@ -2335,8 +2387,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
       <div className="flex items-center gap-1.5 mb-0.5">
         {/* Star / Favorite button — always left of status */}
         {isAppAuthed && (
-          <button
-            onClick={handleStarClick}
+          <button type="button" onClick={handleStarClick}
             aria-label={isFavorited ? "Remove from favorites" : "Add to favorites"}
             title={isFavorited ? "Remove from favorites" : "Add to favorites"}
             style={{
@@ -2346,6 +2397,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               padding: isDesktop ? "3px 4px" : "3px 4px",
               lineHeight: 1,
               flexShrink: 0,
+              minWidth: 44, minHeight: 44,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
@@ -2593,6 +2645,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
         className="w-full relative"
+        ref={cardRef}
         style={{
           background: "hsl(var(--card))",
           borderTop: "1px solid hsl(var(--border))",
@@ -2612,12 +2665,13 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
 
         {/* ── Desktop layout ── */}
         {/* MIN-HEIGHT: ensures a consistent baseline card height while allowing taller content (e.g. OPEN sub-rows) to expand naturally without clipping */}
-        <div className="hidden lg:flex items-stretch w-full" style={{ minHeight: 'clamp(160px,14vw,220px)' }}>
+        {/* ── Desktop + Tablet layout (≥ md / 768px) ── */}
+        <div className="hidden md:flex items-stretch w-full" style={{ minHeight: 'clamp(160px,14vw,220px)' }}>
           {/* Col 1: Score panel — fixed width so all SPREAD/TOTAL/ML/EDGE borders align at same horizontal position */}
           <div
             style={{
-              flex: mode === "splits" ? "1 1 30%" : "0 0 clamp(200px,16vw,260px)",
-              width: mode === "splits" ? undefined : 'clamp(200px,16vw,260px)',
+              flex: mode === "splits" ? "1 1 30%" : "0 0 clamp(170px,22vw,260px)",
+              width: mode === "splits" ? undefined : 'clamp(170px,22vw,260px)',
               borderRight: "1px solid hsl(var(--border) / 0.5)",
             }}
           >
@@ -2721,6 +2775,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
               <div className="px-3 py-2">
                 <BettingSplitsPanel
                   gameId={game.id}
+            enabled={isCardVisible}
                   game={game}
                   awayLabel={awayName}
                   homeLabel={homeName}
@@ -2755,14 +2810,15 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
           This completely eliminates the z-index bleed issue because the score
           panel and the scroll container are siblings, not parent/child.
         */}
-        <div className="lg:hidden w-full">
+        {/* ── Mobile layout (< md / 768px) ── */}
+        <div className="md:hidden w-full">
 
           {/* Projections mode */}
           {mode === "projections" && (
             <div className="flex flex-col w-full">
               {/* Grid row: fixed score column | scrollable odds column */}
-              {/* Score panel: 160px — wide enough for team name+score, narrow enough to give Odds/Lines full space */}
-              <div style={{ display: "grid", gridTemplateColumns: "160px 1fr", width: "100%" }}>
+              {/* Score panel: clamp(140px,38%,180px) — Fix #7: responsive frozen panel */}
+              <div style={{ display: "grid", gridTemplateColumns: "clamp(140px, 38%, 180px) 1fr", width: "100%" }}>
                 {/* Fixed score panel — NOT inside scroll container */}
                 <div
                   style={{
@@ -3091,13 +3147,17 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
             }
 
                // ── Edge direction helpers ────────────────────────────────────
+            // AUTHORITATIVE: use edgeLabelIsAway for NHL/MLB — parses abbrev from label.
+            // awayAbbr is resolved from NHL_BY_DB_SLUG via makeCityAbbr (see above).
             const spreadEdgeIsAway = (() => {
               if (isNaN(spreadDiff) || spreadDiff <= 0) return null;
               // For NHL: puck line is always ±1.5/±2.5 from simulation.
               // Line arithmetic is invalid — use computedSpreadEdge (from Python engine P(margin>=2)).
               if (isNhlGame) {
                 if (!computedSpreadEdge || computedSpreadEdge === 'PASS') return null;
-                return computedSpreadEdge.includes('+1.5') || computedSpreadEdge.includes('+2.5');
+                // [FIX] Replace flawed '+1.5' string check with abbrev-based detection.
+                // '+1.5' check fails for home favorites (e.g. 'COL -1.5 [STRONG EDGE]' is home edge).
+                return edgeLabelIsAway(computedSpreadEdge, awayAbbr, awayDisplayName, 'NHL');
               }
               if (!isNaN(awayModelSpread) && !isNaN(awayBookSpread)) return awayModelSpread < awayBookSpread;
               return null;
@@ -3635,8 +3695,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
                     borderBottom: '1px solid rgba(255,255,255,0.10)',
                   }}>
                     {isAppAuthed && (
-                      <button
-                        onClick={handleStarClick}
+                      <button type="button" onClick={handleStarClick}
                         aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
                         style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '1px 1px', lineHeight: 1, flexShrink: 0, display: 'flex', alignItems: 'center', color: isFavorited ? '#FFD700' : 'rgba(255,255,255,0.65)', filter: isFavorited ? 'drop-shadow(0 0 4px #FFD700)' : 'none', transition: 'color 0.15s' }}
                       >
@@ -3737,11 +3796,10 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
 
       {/* ── ODDS & SPLITS HISTORY — Full-width, below the card body ──
            Rendered outside all overflow:hidden containers so the collapsible
-           table can expand freely. Shown for ALL modes (splits, projections,
-           full, default) whenever a gameId is available. The border-left
-           matches the card's accent stripe for visual continuity.
+           table can expand freely. Shown ONLY when the SPLITS tab is active.
+           The border-left matches the card's accent stripe for visual continuity.
       */}
-      {game.id != null && (
+      {mobileTab === 'splits' && game.id != null && (
         <div
           className="w-full"
           style={{
@@ -3752,6 +3810,7 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         >
           <OddsHistoryPanel
             gameId={game.id}
+            enabled={isCardVisible}
             awayTeam={game.awayTeam}
             homeTeam={game.homeTeam}
             activeMarket={activeMarket}
@@ -3759,6 +3818,44 @@ export function GameCard({ game, mode = "full", showModel: showModelProp, onTogg
         </div>
       )}
 
+      {/* ── Recent Schedule + Situational Results ─────────────────────────────
+           Shown ONLY when the SPLITS tab is active AND sport is MLB.
+           Each panel is collapsed by default — user taps the header to expand.
+           NBA/NHL panels are intentionally omitted until their DBs are backfilled.
+           Panels are rendered outside overflow:hidden so they can expand freely.
+      */}
+      {mobileTab === 'splits' && game.sport === 'MLB' && awayMlb?.anSlug && homeMlb?.anSlug && (
+        <>
+          <RecentSchedulePanel
+            sport="MLB"
+            enabled={isCardVisible}
+            awaySlug={awayMlb.anSlug}
+            homeSlug={homeMlb.anSlug}
+            awayAbbr={awayAbbr}
+            homeAbbr={homeAbbr}
+            awayName={awayName}
+            homeName={homeName}
+            awayLogoUrl={awayLogoUrl}
+            homeLogoUrl={homeLogoUrl}
+            borderColor={borderColor}
+            defaultCollapsed={true}
+          />
+          <SituationalResultsPanel
+            sport="MLB"
+            enabled={isCardVisible}
+            awaySlug={awayMlb.anSlug}
+            homeSlug={homeMlb.anSlug}
+            awayAbbr={awayAbbr}
+            homeAbbr={homeAbbr}
+            awayName={awayName}
+            homeName={homeName}
+            awayLogoUrl={awayLogoUrl}
+            homeLogoUrl={homeLogoUrl}
+            borderColor={borderColor}
+            defaultCollapsed={true}
+          />
+        </>
+      )}
     </>
   );
 }

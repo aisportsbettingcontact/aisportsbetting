@@ -327,6 +327,24 @@ export async function syncNbaModelFromSheet(): Promise<{ synced: number; skipped
 
     const game = existing[0];
 
+    // ── CRITICAL: Require confirmed book spread + total before writing model ───────────────
+    // Missing awayBookSpread causes edge detection to fail (can't compute spread diff).
+    // Missing bookTotal causes modelTotal to be displayed without a book anchor.
+    if (!game.awayBookSpread || !game.bookTotal) {
+      const missing: string[] = [];
+      if (!game.awayBookSpread) missing.push('awayBookSpread [SPREAD GATE]');
+      if (!game.bookTotal) missing.push('bookTotal [TOTAL GATE]');
+      result.errors.push(`SKIP ${awaySlug}@${homeSlug} (${gameDate}) — missing: ${missing.join(', ')}`);
+      console.warn(`[NBAModelSync] SKIP ${awayAbbrev}@${homeAbbrev} — missing required book lines: ${missing.join(', ')}`);
+      result.skipped++;
+      continue;
+    }
+
+    // Anchor modelTotal to book total — NEVER display model's own derived total
+    // CRITICAL: the book O/U line is the reference; model odds are computed at that line
+    const bookTotalAnchor = parseFloat(String(game.bookTotal));
+    const displayTotal = !isNaN(bookTotalAnchor) ? bookTotalAnchor : modelTotal;
+
     // Compute edges from model vs book
     const edges = computeEdges(
       game.awayBookSpread,
@@ -345,7 +363,7 @@ export async function syncNbaModelFromSheet(): Promise<{ synced: number; skipped
       .set({
         awayModelSpread: String(awayModelSpread),
         homeModelSpread: String(homeModelSpread),
-        modelTotal: String(modelTotal),
+        modelTotal: String(displayTotal),  // ALWAYS book-anchored
         modelAwayML,
         modelHomeML,
         spreadEdge: edges.spreadEdge,

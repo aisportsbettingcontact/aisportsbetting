@@ -297,12 +297,45 @@ export async function fetchActionNetworkOdds(
   );
   console.log(`[ActionNetwork][v2] URL: ${url}`);
 
-  const resp = await fetch(url, { headers: AN_HEADERS });
-  if (!resp.ok) {
-    throw new Error(
-      `[ActionNetwork][v2] API request failed for ${sport} ${date}: HTTP ${resp.status}`
-    );
+  // ── Fetch with exponential backoff retry (3 attempts: 2s → 4s → 8s) ──────────
+  // Handles transient TLS/network failures ("Client network socket disconnected").
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAYS_MS = [2000, 4000, 8000];
+  let resp: Response | null = null;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      console.log(
+        `[ActionNetwork][v2] ${sport.toUpperCase()} ${date}: fetch attempt ${attempt}/${MAX_ATTEMPTS}`
+      );
+      const r = await fetch(url, { headers: AN_HEADERS });
+      if (!r.ok) {
+        throw new Error(
+          `[ActionNetwork][v2] HTTP ${r.status} for ${sport} ${date}`
+        );
+      }
+      console.log(
+        `[ActionNetwork][v2] ${sport.toUpperCase()} ${date}: fetch OK on attempt ${attempt}/${MAX_ATTEMPTS} (status=${r.status})`
+      );
+      resp = r;
+      break;
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (attempt < MAX_ATTEMPTS) {
+        const delayMs = RETRY_DELAYS_MS[attempt - 1];
+        console.warn(
+          `[ActionNetwork][v2] ${sport.toUpperCase()} ${date}: attempt ${attempt}/${MAX_ATTEMPTS} FAILED — ` +
+          `retrying in ${delayMs}ms | error: ${errMsg}`
+        );
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+      } else {
+        console.error(
+          `[ActionNetwork][v2] ${sport.toUpperCase()} ${date}: ALL ${MAX_ATTEMPTS} attempts FAILED | last error: ${errMsg}`
+        );
+        throw err;
+      }
+    }
   }
+  if (!resp) throw new Error(`[ActionNetwork][v2] No response after ${MAX_ATTEMPTS} attempts for ${sport} ${date}`);
 
   const data = (await resp.json()) as AnV2ApiResponse;
   const games = data?.games ?? [];

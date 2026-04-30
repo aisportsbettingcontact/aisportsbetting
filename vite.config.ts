@@ -170,6 +170,29 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          // MLB-specific panels — only loaded when user is on MLB tab
+          if (
+            id.includes('MlbLineupCard') ||
+            id.includes('MlbPropsCard') ||
+            id.includes('MlbHrPropsCard') ||
+            id.includes('MlbF5NrfiCard') ||
+            id.includes('MlbLast5Panel')
+          ) {
+            return 'mlb-panels';
+          }
+          // Admin/analytics pages — only loaded for admin users
+          if (
+            id.includes('pages/ModelResults') ||
+            id.includes('pages/SecurityEvents')
+          ) {
+            return 'analytics';
+          }
+        },
+      },
+    },
   },
   server: {
     host: true,

@@ -7,6 +7,7 @@ import { getSessionCookieOptions } from "../_core/cookies";
 import { SignJWT, jwtVerify } from "jose";
 import { ENV } from "../_core/env";
 import type { Request } from "express";
+import { postSecurityAlert } from "../discord/discordSecurityAlert";
 
 import {
   createAppUser,
@@ -21,6 +22,7 @@ import {
   incrementAllTokenVersions,
   insertSecurityEvent,
 } from "../db";
+import { getCachedAppUser, setCachedAppUser, invalidateCachedAppUser } from "../dbCircuitBreaker";
 
 const APP_USER_COOKIE = "app_session";
 
@@ -59,6 +61,7 @@ export async function verifyAppUserToken(token: string) {
 }
 
 // Owner-only middleware — validates tokenVersion against DB to support force-logout
+// DB-resilient: falls back to in-memory user cache when DB is unavailable
 export const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
   if (!token) {
@@ -71,21 +74,64 @@ export const ownerProcedure = publicProcedure.use(async ({ ctx, next }) => {
     console.log(`[AppAuth] ownerProcedure: REJECTED — role=${payload.role} (not owner)`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Owner access required" });
   }
-  const user = await getAppUserById(payload.userId);
+  let user = await getAppUserById(payload.userId);
+  const fromCache = !user;
+  if (!user) {
+    user = getCachedAppUser(payload.userId);
+    if (user) console.log(`[AppAuth] ownerProcedure: DB unavailable — serving userId=${payload.userId} from cache`);
+  } else {
+    setCachedAppUser(user);
+  }
   if (!user || !user.hasAccess) {
     console.log(`[AppAuth] ownerProcedure: REJECTED — user not found or no access`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
-  // tokenVersion check: if tv in JWT doesn't match DB, the session was force-invalidated
-  if (payload.tv !== null && payload.tv !== user.tokenVersion) {
+  // tokenVersion check: only enforce when DB is available
+  if (!fromCache && payload.tv !== null && payload.tv !== user.tokenVersion) {
     console.log(`[AppAuth] ownerProcedure: REJECTED — tokenVersion mismatch: jwt.tv=${payload.tv} db.tv=${user.tokenVersion} userId=${user.id}`);
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Session invalidated. Please log in again." });
   }
-  console.log(`[AppAuth] ownerProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion}`);
+  console.log(`[AppAuth] ownerProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion} fromCache=${fromCache}`);
+  return next({ ctx: { ...ctx, appUser: user } });
+});
+
+// Handicapper procedure — grants access to owner, admin, and handicapper roles
+// DB-resilient: falls back to in-memory user cache when DB is unavailable
+export const handicapperProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  const token = getAppCookie(ctx.req);
+  if (!token) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — no app_session cookie`);
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Not authenticated" });
+  }
+  const payload = await verifyAppUserToken(token);
+  if (!payload) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid session" });
+  let user = await getAppUserById(payload.userId);
+  const fromCache = !user;
+  if (!user) {
+    user = getCachedAppUser(payload.userId);
+    if (user) console.log(`[AppAuth] handicapperProcedure: DB unavailable — serving userId=${payload.userId} from cache`);
+  } else {
+    setCachedAppUser(user);
+  }
+  if (!user || !user.hasAccess) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — user not found or no access`);
+    throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
+  }
+  if (!fromCache && payload.tv !== null && payload.tv !== user.tokenVersion) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — tokenVersion mismatch: jwt.tv=${payload.tv} db.tv=${user.tokenVersion} userId=${user.id}`);
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "Session invalidated. Please log in again." });
+  }
+  const allowed = ["owner", "admin", "handicapper"] as const;
+  if (!allowed.includes(user.role as typeof allowed[number])) {
+    console.log(`[AppAuth] handicapperProcedure: REJECTED — role=${user.role} not in [owner, admin, handicapper]`);
+    throw new TRPCError({ code: "FORBIDDEN", message: "Handicapper access required" });
+  }
+  console.log(`[AppAuth] handicapperProcedure: GRANTED — userId=${user.id} username=${user.username} role=${user.role} fromCache=${fromCache}`);
   return next({ ctx: { ...ctx, appUser: user } });
 });
 
 // Authenticated app user middleware — validates tokenVersion against DB to support force-logout
+// DB-resilient: falls back to in-memory user cache when DB is unavailable (circuit open)
 export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
   const token = getAppCookie(ctx.req);
   if (!token) {
@@ -94,17 +140,30 @@ export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
   }
   const payload = await verifyAppUserToken(token);
   if (!payload) throw new TRPCError({ code: "UNAUTHORIZED", message: "Invalid session" });
-  const user = await getAppUserById(payload.userId);
+
+  // Try DB first; fall back to cache if DB is unavailable
+  let user = await getAppUserById(payload.userId);
+  const fromCache = !user;
   if (!user) {
-    console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${payload.userId} not found`);
+    user = getCachedAppUser(payload.userId);
+    if (user) {
+      console.log(`[AppAuth] appUserProcedure: DB unavailable — serving userId=${payload.userId} from cache`);
+    }
+  } else {
+    // DB succeeded — update cache with fresh data
+    setCachedAppUser(user);
+  }
+
+  if (!user) {
+    console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${payload.userId} not found (DB + cache miss)`);
     throw new TRPCError({ code: "UNAUTHORIZED", message: "User not found" });
   }
   if (!user.hasAccess) {
     console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${user.id} hasAccess=false`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Access denied" });
   }
-  // tokenVersion check: if tv in JWT doesn't match DB, the session was force-invalidated
-  if (payload.tv !== null && payload.tv !== user.tokenVersion) {
+  // tokenVersion check: only enforce when DB is available (cache may have stale tv)
+  if (!fromCache && payload.tv !== null && payload.tv !== user.tokenVersion) {
     console.log(`[AppAuth] appUserProcedure: REJECTED — tokenVersion mismatch: jwt.tv=${payload.tv} db.tv=${user.tokenVersion} userId=${user.id}`);
     throw new TRPCError({ code: "UNAUTHORIZED", message: "Session invalidated. Please log in again." });
   }
@@ -113,7 +172,7 @@ export const appUserProcedure = publicProcedure.use(async ({ ctx, next }) => {
     console.log(`[AppAuth] appUserProcedure: REJECTED — userId=${user.id} account expired`);
     throw new TRPCError({ code: "FORBIDDEN", message: "Account expired" });
   }
-  console.log(`[AppAuth] appUserProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion}`);
+  console.log(`[AppAuth] appUserProcedure: GRANTED — userId=${user.id} username=${user.username} tv=${user.tokenVersion} fromCache=${fromCache}`);
   return next({ ctx: { ...ctx, appUser: user } });
 });
 
@@ -140,10 +199,27 @@ export const appUsersRouter = router({
           .trim() ?? ctx.req.socket?.remoteAddress ?? "unknown";
         const ua = (ctx.req.headers["user-agent"] as string | undefined) ?? null;
         const tag = "[AppAuth][AUTH_FAIL]";
+
+        // Sanitize the identifier for logging — show first 3 chars + *** to avoid
+        // logging full credentials in plaintext while still being useful for debugging.
+        // For emails: show first 3 chars of the local part (before @) + *** + @domain
+        // For usernames: show first 3 chars + ***
+        const rawId = input.emailOrUsername;
+        const isEmailId = rawId.includes("@");
+        const sanitizedId = isEmailId
+          ? (() => {
+              const atIdx = rawId.indexOf("@");
+              const local = rawId.substring(0, atIdx);
+              const domain = rawId.substring(atIdx); // includes the @
+              return `${local.substring(0, 3)}***${domain}`;
+            })()
+          : `${rawId.replace(/^@/, "").substring(0, 3)}***`;
+
         console.warn(
           `${tag} BLOCKED | IP=${ip} reason="${reason}"` +
-          ` identifier="${input.emailOrUsername.substring(0, 3)}***" ua="${ua?.substring(0, 60) ?? "none"}"`
+          ` identifier="${sanitizedId}" ua="${ua?.substring(0, 60) ?? "none"}"`
         );
+        const authFailAt = Date.now();
         insertSecurityEvent({
           eventType: "AUTH_FAIL",
           ip,
@@ -152,9 +228,24 @@ export const appUsersRouter = router({
           httpMethod: ctx.req.method ?? "POST",
           userAgent: ua,
           context: reason,
-          occurredAt: Date.now(),
+          occurredAt: authFailAt,
         }).catch((err) =>
           console.error(`${tag} DB insert failed: ${(err as Error).message}`)
+        );
+        // [STEP] Post structured embed to 🗒️-𝗦𝗘𝗖𝗨𝗥𝗜𝗧𝗬-𝗘𝗩𝗘𝗡𝗧𝗦 Discord channel (async, non-blocking)
+        // targetIdentifier: the sanitized login credential the attacker used.
+        // Shows WHAT account was targeted without exposing the full credential in logs.
+        postSecurityAlert({
+          eventType: "AUTH_FAIL",
+          ip,
+          path: "appUsers.login",
+          method: ctx.req.method ?? "POST",
+          userAgent: ua,
+          context: reason,
+          targetIdentifier: sanitizedId,
+          occurredAt: authFailAt,
+        }).catch((err) =>
+          console.error(`${tag} Discord alert failed: ${(err as Error).message}`)
         );
       };
 
@@ -211,8 +302,14 @@ export const appUsersRouter = router({
       };
     }),
 
-  logout: publicProcedure.mutation(({ ctx }) => {
+  logout: publicProcedure.mutation(async ({ ctx }) => {
     const cookieOptions = getSessionCookieOptions(ctx.req);
+    // Invalidate user cache on logout so stale entries don't persist
+    const token = getAppCookie(ctx.req);
+    if (token) {
+      const payload = await verifyAppUserToken(token);
+      if (payload) invalidateCachedAppUser(payload.userId);
+    }
     ctx.res.clearCookie(APP_USER_COOKIE, { ...cookieOptions, maxAge: -1 });
     return { success: true };
   }),
@@ -275,7 +372,7 @@ export const appUsersRouter = router({
       email: z.string().email(),
       username: z.string().min(2).max(64).regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
       password: z.string().min(8),
-      role: z.enum(["owner", "admin", "user"]).default("user"),
+      role: z.enum(["owner", "admin", "handicapper", "user"]).default("user"),
       hasAccess: z.boolean().default(true),
       expiryDate: z.number().nullable().default(null), // null = lifetime
     }))
@@ -306,7 +403,7 @@ export const appUsersRouter = router({
       email: z.string().email().optional(),
       username: z.string().min(2).max(64).optional(),
       password: z.string().min(8).optional(),
-      role: z.enum(["owner", "admin", "user"]).optional(),
+      role: z.enum(["owner", "admin", "handicapper", "user"]).optional(),
       hasAccess: z.boolean().optional(),
       expiryDate: z.number().nullable().optional(),
     }))

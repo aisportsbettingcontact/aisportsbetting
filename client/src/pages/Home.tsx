@@ -65,8 +65,12 @@ export default function Home() {
     return () => document.removeEventListener("mousedown", handler);
   }, [showLoginPanel]);
 
+  // Fire-and-forget session open — creates a user_sessions row for DAU/MAU/WAU tracking
+  const openSessionMutation = trpc.metrics.openSession.useMutation();
+
   const loginMutation = trpc.appUsers.login.useMutation({
     onSuccess: () => {
+      openSessionMutation.mutate();
       refetch();
       toast.success("Welcome back!");
       setLocation("/feed");
@@ -111,8 +115,7 @@ export default function Home() {
           </span>
         </div>
 
-        <button
-          onClick={() => setShowLoginPanel(true)}
+        <button type="button" onClick={() => setShowLoginPanel(true)}
           className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold text-muted-foreground border border-border hover:text-foreground hover:border-primary/40 transition-colors"
         >
           Sign in
@@ -152,8 +155,7 @@ export default function Home() {
         </div>
 
         {/* CTA */}
-        <button
-          onClick={() => setShowLoginPanel(true)}
+        <button type="button" onClick={() => setShowLoginPanel(true)}
           className="w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl font-bold text-sm text-white bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all"
         >
           <LogIn className="w-4 h-4" />
@@ -179,8 +181,7 @@ export default function Home() {
                 <BarChart3 className="w-4 h-4 text-primary" />
                 <span className="text-sm font-bold text-foreground tracking-wide">Member Sign In</span>
               </div>
-              <button
-                onClick={() => setShowLoginPanel(false)}
+              <button type="button" onClick={() => setShowLoginPanel(false)}
                 className="text-muted-foreground hover:text-foreground transition-colors text-lg leading-none"
                 aria-label="Close"
               >
@@ -220,9 +221,7 @@ export default function Home() {
                     required
                     className="w-full px-3 py-2.5 pr-10 rounded-lg bg-secondary border border-border text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary/60 transition-colors"
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                     tabIndex={-1}
                     aria-label={showPassword ? "Hide password" : "Show password"}
@@ -251,8 +250,7 @@ export default function Home() {
                 <span className="text-xs text-muted-foreground">Stay logged in</span>
               </label>
 
-              <button
-                type="submit"
+              <button type="submit"
                 disabled={loginMutation.isPending}
                 className="w-full flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold text-sm text-white bg-primary hover:bg-primary/90 active:scale-[0.98] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >

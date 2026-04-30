@@ -386,6 +386,195 @@
       "when": 1775852537536,
       "tag": "0054_short_annihilus",
       "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "5",
+      "when": 1775868007928,
+      "tag": "0055_easy_photon",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "5",
+      "when": 1775869637301,
+      "tag": "0056_absent_mandrill",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "5",
+      "when": 1775870525071,
+      "tag": "0057_slimy_scream",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "5",
+      "when": 1775895165758,
+      "tag": "0058_amused_captain_universe",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "5",
+      "when": 1775944637754,
+      "tag": "0059_funny_timeslip",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "5",
+      "when": 1775945979288,
+      "tag": "0060_omniscient_rafael_vega",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "5",
+      "when": 1776131420678,
+      "tag": "0061_petite_unus",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "5",
+      "when": 1776136745441,
+      "tag": "0062_lovely_monster_badoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "5",
+      "when": 1776138374426,
+      "tag": "0063_magenta_saracen",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "5",
+      "when": 1776139101444,
+      "tag": "0064_jittery_iron_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "5",
+      "when": 1776150355968,
+      "tag": "0065_graceful_bug",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "5",
+      "when": 1776156797505,
+      "tag": "0066_productive_firelord",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "5",
+      "when": 1776160408972,
+      "tag": "0067_violet_human_robot",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "5",
+      "when": 1776162064629,
+      "tag": "0068_clammy_kingpin",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "5",
+      "when": 1776200962719,
+      "tag": "0069_big_hellcat",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "5",
+      "when": 1776211415318,
+      "tag": "0070_amusing_shiva",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "5",
+      "when": 1776213541684,
+      "tag": "0071_sleepy_guardsmen",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "5",
+      "when": 1776231889128,
+      "tag": "0072_brainy_cerebro",
+      "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "5",
+      "when": 1776634350942,
+      "tag": "0073_powerful_rattler",
+      "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "5",
+      "when": 1776711994680,
+      "tag": "0074_wonderful_lifeguard",
+      "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "5",
+      "when": 1777421876459,
+      "tag": "0075_panoramic_manta",
+      "breakpoints": true
+    },
+    {
+      "idx": 76,
+      "version": "5",
+      "when": 1777503715829,
+      "tag": "0076_dry_patriot",
+      "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "5",
+      "when": 1777506644053,
+      "tag": "0077_cool_triathlon",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "5",
+      "when": 1777521125907,
+      "tag": "0078_bitter_kree",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "5",
+      "when": 1777521868552,
+      "tag": "0079_overrated_rocket_raccoon",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "5",
+      "when": 1777526819176,
+      "tag": "0080_brave_blindfold",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "5",
+      "when": 1777528652528,
+      "tag": "0081_classy_iron_patriot",
+      "breakpoints": true
     }
   ]
 }

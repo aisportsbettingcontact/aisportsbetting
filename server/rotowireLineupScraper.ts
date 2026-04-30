@@ -316,10 +316,17 @@ function parseLineupHtml(
           const throwsRaw = $highlight.find(".lineup__throws").text().trim();
           const hand = normalizePitcherHand(throwsRaw || "R");
 
-          // Stats: "12-4 · 3.06 ERA" from .lineup__stats
-          const statsRaw = $highlight.find(".lineup__stats").text().trim();
-          // Clean up whitespace/newlines
-          const era = statsRaw.replace(/\s+/g, " ").trim() || "0-0 · 0.00 ERA";
+          // Stats: "12-4 · 3.06 ERA" — try both class names (page updated to .lineup__player-highlight-stats)
+          const statsRaw = (
+            $highlight.find(".lineup__player-highlight-stats").text().trim() ||
+            $highlight.find(".lineup__stats").text().trim()
+          );
+          // Normalize: convert "2-2&nbsp;5.21 ERA" or "2-2 5.21 ERA" to "2-2 · 5.21 ERA"
+          const eraRaw = statsRaw.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+          // If format is "W-L ERA" (no middle dot), insert the dot
+          const era = eraRaw
+            ? eraRaw.replace(/^(\d+-\d+)\s+([.\d]+\s*ERA)$/, "$1 · $2")
+            : "0-0 · 0.00 ERA";
 
           // Confirmed: check .lineup__status text in the column
           const statusText = $col.find(".lineup__status").first().text().trim();

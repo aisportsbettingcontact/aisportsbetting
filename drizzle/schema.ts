@@ -46,7 +46,7 @@ export const appUsers = mysqlTable("app_users", {
   email: varchar("email", { length: 320 }).notNull().unique(),
   username: varchar("username", { length: 64 }).notNull().unique(),
   passwordHash: varchar("passwordHash", { length: 255 }).notNull(),
-  role: mysqlEnum("role", ["owner", "admin", "user"]).default("user").notNull(),
+  role: mysqlEnum("role", ["owner", "admin", "handicapper", "user"]).default("user").notNull(),
   hasAccess: boolean("hasAccess").default(true).notNull(),
   /** NULL means lifetime access; otherwise a UTC timestamp in ms */
   expiryDate: bigint("expiryDate", { mode: "number" }),
@@ -250,8 +250,8 @@ export const games = mysqlTable("games", {
   nextBracketGameId: int("nextBracketGameId"),
   /** Whether the winner of this game fills the 'top' or 'bottom' slot in the next game */
   nextBracketSlot: mysqlEnum("nextBracketSlot", ["top", "bottom"]),
-  /** Game status: 'upcoming' (pre-game), 'live' (in-progress), 'final' (completed) */
-  gameStatus: mysqlEnum("gameStatus", ["upcoming", "live", "final"]).notNull().default("upcoming"),
+  /** Game status: 'upcoming' (pre-game), 'live' (in-progress), 'final' (completed), 'postponed' (game postponed/cancelled) */
+  gameStatus: mysqlEnum("gameStatus", ["upcoming", "live", "final", "postponed", "suspended"]).notNull().default("upcoming"),
   /** Away team current/final score (null = not started) */
   awayScore: int("awayScore"),
   /** Home team current/final score (null = not started) */
@@ -376,10 +376,18 @@ export const games = mysqlTable("games", {
   modelF5AwayRLCoverPct: decimal("modelF5AwayRLCoverPct", { precision: 5, scale: 2 }),
   /** Model F5 home run line cover probability (0-100) */
   modelF5HomeRLCoverPct: decimal("modelF5HomeRLCoverPct", { precision: 5, scale: 2 }),
+  /** Model F5 away run line fair value odds, e.g. "-118" */
+  modelF5AwayRlOdds: varchar("modelF5AwayRlOdds", { length: 16 }),
+  /** Model F5 home run line fair value odds, e.g. "+104" */
+  modelF5HomeRlOdds: varchar("modelF5HomeRlOdds", { length: 16 }),
   /** Model F5 over fair value odds, e.g. "-108" */
   modelF5OverOdds: varchar("modelF5OverOdds", { length: 16 }),
   /** Model F5 under fair value odds, e.g. "+108" */
   modelF5UnderOdds: varchar("modelF5UnderOdds", { length: 16 }),
+  /** Model P(F5 push/tie) — three-way Bayesian-blended push probability (0-100) */
+  modelF5PushPct: decimal("modelF5PushPct", { precision: 6, scale: 4 }),
+  /** Raw simulation P(F5 push/tie) before Bayesian blending with empirical 15.07% (0-100, diagnostic) */
+  modelF5PushRaw: decimal("modelF5PushRaw", { precision: 6, scale: 4 }),
   /** Actual away team score through 5 innings (populated after game) */
   actualF5AwayScore: int("actualF5AwayScore"),
   /** Actual home team score through 5 innings (populated after game) */
@@ -418,6 +426,18 @@ export const games = mysqlTable("games", {
   nrfiCorrect: tinyint("nrfiCorrect"),
   /** UTC ms when NRFI backtest was last run */
   nrfiBacktestRunAt: bigint("nrfiBacktestRunAt", { mode: "number" }),
+  /**
+   * Combined pitcher NRFI signal = (awayPitcherNrfiRate + homePitcherNrfiRate) / 2
+   * Computed from 3-year empirical NRFI rates (n=5,109 games, seeded 2026-04-14).
+   * Optimal filter threshold: >= 0.56 (grid search: 69.38% win rate, 32.46% ROI)
+   * Null if either pitcher lacks 3yr NRFI data (< 3 starts).
+   */
+  nrfiCombinedSignal: double("nrfiCombinedSignal"),
+  /**
+   * Whether the game passes the 3yr NRFI filter (combinedSignal >= 0.56).
+   * 1 = passes (strong NRFI edge), 0 = fails, null = no data.
+   */
+  nrfiFilterPass: tinyint("nrfiFilterPass"),
 
   // ─── HR Props (team-level from MLBAIModel.py) ────────────────────────────────
   /** Model P(away team hits ≥1 HR) (0-100) */
@@ -430,6 +450,113 @@ export const games = mysqlTable("games", {
   modelAwayExpHr: decimal("modelAwayExpHr", { precision: 4, scale: 2 }),
   /** Model expected HR count for home team */
   modelHomeExpHr: decimal("modelHomeExpHr", { precision: 4, scale: 2 }),
+
+  // ─── Inning-by-Inning Projections (I1-I9, backtest-calibrated 2026-04-13) ────
+  /**
+   * JSON array [I1..I9]: expected home runs per inning from Monte Carlo simulation.
+   * Backtest-calibrated weights: I1=0.1162, I2-I5=0.1085, I6-I9=0.1124 (normalized).
+   * Format: number[9], e.g. [0.52, 0.49, 0.49, 0.49, 0.49, 0.50, 0.51, 0.51, 0.51]
+   */
+  modelInningHomeExp: text("modelInningHomeExp"),
+  /**
+   * JSON array [I1..I9]: expected away runs per inning from Monte Carlo simulation.
+   * Format: number[9]
+   */
+  modelInningAwayExp: text("modelInningAwayExp"),
+  /**
+   * JSON array [I1..I9]: expected combined runs per inning (home + away).
+   * Format: number[9]
+   */
+  modelInningTotalExp: text("modelInningTotalExp"),
+  /**
+   * JSON array [I1..I9]: P(home team scores >= 1 run) per inning.
+   * Format: number[9] in [0,1]
+   */
+  modelInningPHomeScores: text("modelInningPHomeScores"),
+  /**
+   * JSON array [I1..I9]: P(away team scores >= 1 run) per inning.
+   * Format: number[9] in [0,1]
+   */
+  modelInningPAwayScores: text("modelInningPAwayScores"),
+  /**
+   * JSON array [I1..I9]: P(neither team scores) per inning — NRFI probability per inning.
+   * I1 value is the primary NRFI market probability (consistent with modelPNrfi).
+   * Format: number[9] in [0,1]
+   */
+  modelInningPNeitherScores: text("modelInningPNeitherScores"),
+
+  /**
+   * Tracks the source of the current primary book columns (awayBookSpread, homeBookSpread,
+   * bookTotal, awayML, homeML, awaySpreadOdds, homeSpreadOdds, overOdds, underOdds).
+   *
+   * 'open' — All 9 primary fields are sourced from the AN Opening line (DK not yet fully posted)
+   * 'dk'   — All 3 DK NJ markets complete (spread+odds, total+odds, ML) — using DK for all 9 fields
+   * Never null, never partial. Every game always has either DK or Open.
+   */
+  oddsSource: mysqlEnum("oddsSource", ["open", "dk"]),
+
+  // ─── Outcome Ingestion + Brier Scores (populated by mlbOutcomeIngestor after game final) ──
+  /**
+   * Actual full-game total runs (awayFinalScore + homeFinalScore).
+   * Populated by mlbOutcomeIngestor.ts after gameStatus = 'final'.
+   * Used for Brier score computation and rolling f5_share drift detection.
+   * Precision 5,1 matches actualAwayScore + actualHomeScore (both int, sum ≤ 99.0).
+   */
+  actualFgTotal: decimal("actualFgTotal", { precision: 5, scale: 1 }),
+  /**
+   * Actual F5 total runs (actualF5AwayScore + actualF5HomeScore).
+   * Populated by mlbOutcomeIngestor.ts after game is final.
+   * Used for rolling f5_share = actualF5Total / actualFgTotal drift detection.
+   * Precision 5,1 matches F5 score fields.
+   */
+  actualF5Total: decimal("actualF5Total", { precision: 5, scale: 1 }),
+  /**
+   * Actual NRFI result: 1 = no run scored in inning 1, 0 = at least one run scored.
+   * Populated by mlbOutcomeIngestor.ts from MLB Stats API linescore.innings[0].
+   * Null = game not yet final or linescore unavailable.
+   */
+  actualNrfiBinary: tinyint("actualNrfiBinary"),
+  /**
+   * Brier score for FG Total prediction: (p_over - outcome_over)^2
+   * p_over = modelFgOverRate / 100 (model probability of over)
+   * outcome_over = 1 if actualFgTotal > bookTotal, 0 if under, null if push/no-line
+   * Range [0, 1]. Lower = better calibration. Null if bookTotal or scores unavailable.
+   */
+  brierFgTotal: decimal("brierFgTotal", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for F5 Total prediction: (p_f5_over - outcome_f5_over)^2
+   * p_f5_over = modelF5OverRate / 100
+   * outcome_f5_over = 1 if actualF5Total > bookF5Total, 0 if under, null if push/no-line
+   * Range [0, 1]. Lower = better calibration. Null if F5 book total or scores unavailable.
+   */
+  brierF5Total: decimal("brierF5Total", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for NRFI prediction: (p_nrfi - outcome_nrfi)^2
+   * p_nrfi = modelPNrfi / 100
+   * outcome_nrfi = actualNrfiBinary (1 = NRFI, 0 = YRFI)
+   * Range [0, 1]. Lower = better calibration. Null if modelPNrfi or linescore unavailable.
+   */
+  brierNrfi: decimal("brierNrfi", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for FG ML prediction: (p_home_win - outcome_home_win)^2
+   * p_home_win = modelHomeWinPct / 100
+   * outcome_home_win = 1 if actualHomeScore > actualAwayScore, 0 if home lost, null if tie
+   * Range [0, 1]. Null if modelHomeWinPct or final scores unavailable.
+   */
+  brierFgMl: decimal("brierFgMl", { precision: 7, scale: 6 }),
+  /**
+   * Brier score for F5 ML prediction: (p_f5_home_win - outcome_f5_home_win)^2
+   * p_f5_home_win = modelF5HomeWinPct / 100
+   * outcome_f5_home_win = 1 if actualF5HomeScore > actualF5AwayScore, 0 if away led, null if tie
+   * Range [0, 1]. Null if modelF5HomeWinPct or F5 scores unavailable.
+   */
+  brierF5Ml: decimal("brierF5Ml", { precision: 7, scale: 6 }),
+  /**
+   * UTC ms when mlbOutcomeIngestor last populated this game's outcome fields.
+   * Null = not yet ingested. Used to skip re-ingestion of already-complete games.
+   * Set on every successful ingestion run (even if scores were already present).
+   */
+  outcomeIngestedAt: bigint("outcomeIngestedAt", { mode: "number" }),
 
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, (t) => ({
@@ -652,6 +779,13 @@ export const oddsHistory = mysqlTable("odds_history", {
   scrapedAt: bigint("scrapedAt", { mode: "number" }).notNull(),
   /** Source: 'auto' (hourly cron) or 'manual' (Refresh Now button) */
   source: mysqlEnum("source", ["auto", "manual"]).notNull().default("auto"),
+  /**
+   * Odds line source for this snapshot.
+   * 'open' — All lines in this snapshot are from the AN Opening line (DK not yet fully posted)
+   * 'dk'   — All lines are from DK NJ current market (all 3 markets complete)
+   * Never null, never partial.
+   */
+  lineSource: mysqlEnum("lineSource", ["open", "dk"]),
   // ── DK NJ Spread snapshot ──
   awaySpread: varchar("awaySpread", { length: 16 }),
   awaySpreadOdds: varchar("awaySpreadOdds", { length: 16 }),
@@ -929,6 +1063,27 @@ export const mlbPitcherStats = mysqlTable("mlb_pitcher_stats", {
   throwsHand: varchar("throwsHand", { length: 1 }),
   /** UTC timestamp (ms) when stats were last fetched */
   lastFetchedAt: bigint("lastFetchedAt", { mode: "number" }),
+
+  // ─── 3-Year Rolling NRFI Calibration Fields (seeded from 3yr backtest) ──────
+  /** Total starts in 3yr NRFI sample (2024+2025+2026) */
+  nrfiStarts: int("nrfiStarts"),
+  /** Number of starts where inning 1 was scoreless (NRFI) */
+  nrfiCount: int("nrfiCount"),
+  /** NRFI rate = nrfiCount / nrfiStarts (0.0–1.0, 4 decimal places) */
+  nrfiRate: double("nrfiRate"),
+  /** Mean F5 runs allowed per start over 3yr sample */
+  f5RunsAllowedMean: double("f5RunsAllowedMean"),
+  /** Mean full-game runs allowed per start over 3yr sample */
+  fgRunsAllowedMean: double("fgRunsAllowedMean"),
+  /** Mean innings pitched per start over 3yr sample */
+  ipMean3yr: double("ipMean3yr"),
+  /** Comma-separated list of seasons included in NRFI sample, e.g. '2024,2025,2026' */
+  nrfiSampleSeasons: varchar("nrfiSampleSeasons", { length: 32 }),
+  /** Calibration version tag, e.g. '2026-04-14-3yr-v1' */
+  nrfiCalibVersion: varchar("nrfiCalibVersion", { length: 32 }),
+  /** UTC ms when 3yr NRFI data was last seeded */
+  nrfiSeededAt: bigint("nrfiSeededAt", { mode: "number" }),
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, (t) => ({
@@ -990,6 +1145,14 @@ export const mlbTeamBattingSplits = mysqlTable("mlb_team_batting_splits", {
   k9: double("k9"),
   /** Derived: wOBA approximation = (0.69*BB + 0.888*1B + 1.271*2B + 1.616*3B + 2.101*HR) / (AB+BB) */
   woba: double("woba"),
+  /** Season runs per game for this team (hand-agnostic, same value for L and R rows).
+   *  Computed from MLB Stats API team season stats: R / G.
+   *  Replaces the frozen TEAM_STATS_2025.rpg constant. */
+  rpg: double("rpg"),
+  /** Average innings pitched per game by the starting rotation (hand-agnostic).
+   *  Computed from MLB Stats API team pitching stats: IP / G.
+   *  Replaces the frozen TEAM_STATS_2025.ip_per_game constant. */
+  ipPerGame: double("ipPerGame"),
   /** UTC timestamp (ms) when stats were last fetched */
   lastFetchedAt: bigint("lastFetchedAt", { mode: "number" }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -1344,6 +1507,78 @@ export const mlbModelLearningLog = mysqlTable("mlb_model_learning_log", {
 export type MlbModelLearningLogRow = typeof mlbModelLearningLog.$inferSelect;
 export type InsertMlbModelLearningLog = typeof mlbModelLearningLog.$inferInsert;
 
+// ─── MLB Drift State (rolling metric state per market) ───────────────────────
+/**
+ * Persists the live drift detection state across scheduler runs.
+ * One row per market — upserted on every drift check.
+ * Markets: 'F5_SHARE' | 'FG_ML' | 'FG_TOTAL' | 'F5_ML' | 'F5_TOTAL' | 'NRFI' | 'K_PROPS' | 'HR_PROPS'
+ */
+export const mlbDriftState = mysqlTable("mlb_drift_state", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Market identifier, e.g. 'F5_SHARE', 'FG_ML', 'NRFI' */
+  market: varchar("market", { length: 32 }).notNull(),
+  /** Rolling window size used (games) */
+  windowSize: int("windowSize").notNull().default(50),
+  /** Rolling metric value (f5_share, accuracy, etc.) */
+  rollingValue: decimal("rollingValue", { precision: 8, scale: 6 }),
+  /** Baseline value (calibrated constant) */
+  baselineValue: decimal("baselineValue", { precision: 8, scale: 6 }),
+  /** Absolute delta: |rolling - baseline| */
+  delta: decimal("delta", { precision: 8, scale: 6 }),
+  /** Direction of drift: 'HIGH' | 'LOW' | 'STABLE' */
+  direction: varchar("direction", { length: 8 }),
+  /** Whether drift was detected on last check: 1=yes 0=no */
+  driftDetected: tinyint("driftDetected").default(0),
+  /** Number of games in the rolling window */
+  sampleSize: int("sampleSize"),
+  /** UTC ms of last drift check */
+  lastCheckedAt: bigint("lastCheckedAt", { mode: "number" }),
+  /** UTC ms of last recalibration triggered by this market */
+  lastRecalibrationAt: bigint("lastRecalibrationAt", { mode: "number" }),
+  /** Number of consecutive drift detections (resets on recalibration) */
+  consecutiveDriftCount: int("consecutiveDriftCount").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  uqMarket: uniqueIndex("uq_drift_market").on(t.market),
+}));
+export type MlbDriftStateRow = typeof mlbDriftState.$inferSelect;
+export type InsertMlbDriftState = typeof mlbDriftState.$inferInsert;
+
+// ─── MLB Calibration Constants (live model parameter store) ──────────────────
+/**
+ * Persists live calibration constants for each model component.
+ * One row per parameter — upserted by the recalibration pipeline.
+ * Examples: f5_share, nrfi_rate, k_calibration_factor, hr_base_rate
+ */
+export const mlbCalibrationConstants = mysqlTable("mlb_calibration_constants", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Parameter name, e.g. 'f5_share', 'nrfi_rate', 'k_calibration_factor' */
+  paramName: varchar("paramName", { length: 64 }).notNull(),
+  /** Current live value (decimal string for precision) */
+  currentValue: decimal("currentValue", { precision: 12, scale: 8 }).notNull(),
+  /** Baseline value at last manual calibration */
+  baselineValue: decimal("baselineValue", { precision: 12, scale: 8 }),
+  /** Previous value before last recalibration */
+  previousValue: decimal("previousValue", { precision: 12, scale: 8 }),
+  /** Sample size used to compute current value */
+  sampleSize: int("sampleSize"),
+  /** Confidence interval lower bound (95%) */
+  ciLower: decimal("ciLower", { precision: 12, scale: 8 }),
+  /** Confidence interval upper bound (95%) */
+  ciUpper: decimal("ciUpper", { precision: 12, scale: 8 }),
+  /** Source of last update: 'AUTO_RECAL' | 'MANUAL' | 'INIT' */
+  updateSource: varchar("updateSource", { length: 16 }).default("INIT"),
+  /** UTC ms of last update */
+  lastUpdatedAt: bigint("lastUpdatedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  uqParam: uniqueIndex("uq_cal_param").on(t.paramName),
+  idxUpdated: index("idx_cal_updated").on(t.lastUpdatedAt),
+}));
+export type MlbCalibrationConstantRow = typeof mlbCalibrationConstants.$inferSelect;
+export type InsertMlbCalibrationConstant = typeof mlbCalibrationConstants.$inferInsert;
+
 // ─── Security Events (CSRF blocks, auth anomalies) ───────────────────────────
 /**
  * One row per security event detected by server-side middleware.
@@ -1383,3 +1618,505 @@ export const securityEvents = mysqlTable("security_events", {
 
 export type SecurityEventRow = typeof securityEvents.$inferSelect;
 export type InsertSecurityEvent = typeof securityEvents.$inferInsert;
+
+// ─── User Sessions (DAU / MAU / WAU / avg session duration tracking) ─────────
+/**
+ * One row per user session. A session starts on login and ends when the user
+ * logs out or when the heartbeat stops for > 30 min (SESSION_IDLE_THRESHOLD_MS).
+ *
+ * Fields:
+ *   startedAt     — UTC ms when the session began (login event)
+ *   endedAt       — UTC ms when the session ended; NULL = still active
+ *   durationMs    — Computed on close: endedAt - startedAt; NULL while active
+ *   lastHeartbeat — UTC ms of the most recent client ping (every 5 min)
+ *
+ * Indexes:
+ *   idx_sess_user_id    — fast per-user queries
+ *   idx_sess_started_at — fast time-window aggregations (DAU/MAU/WAU)
+ *   idx_sess_ended_at   — fast active-session queries (WHERE endedAt IS NULL)
+ */
+export const userSessions = mysqlTable("user_sessions", {
+  id:            int("id").autoincrement().primaryKey(),
+  /** app_users.id of the user who owns this session */
+  userId:        int("userId").notNull(),
+  /** UTC ms when the session started */
+  startedAt:     bigint("startedAt", { mode: "number" }).notNull(),
+  /** UTC ms when the session ended; NULL = session still active */
+  endedAt:       bigint("endedAt",   { mode: "number" }),
+  /** Duration in ms (endedAt - startedAt); NULL while active */
+  durationMs:    bigint("durationMs", { mode: "number" }),
+  /** UTC ms of the most recent heartbeat ping from the client */
+  lastHeartbeat: bigint("lastHeartbeat", { mode: "number" }),
+  createdAt:     timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  idxUserId:    index("idx_sess_user_id").on(t.userId),
+  idxStartedAt: index("idx_sess_started_at").on(t.startedAt),
+  idxEndedAt:   index("idx_sess_ended_at").on(t.endedAt),
+}));
+export type UserSession = typeof userSessions.$inferSelect;
+export type InsertUserSession = typeof userSessions.$inferInsert;
+
+// ─── MLB Schedule History (Action Network DK NJ odds + results per game) ─────
+/**
+ * One row per MLB game, populated from the Action Network v2 API using
+ * DraftKings NJ (book_id=68) as the sole odds source.
+ *
+ * Purpose:
+ *   - Powers the "Last 5 Games" panel on each MLB matchup card
+ *   - Powers the full Team Schedule page for every MLB team
+ *   - Stores pre-game DK NJ run line / total / moneyline odds
+ *   - Stores final scores and derived result columns (covered/won/O-U)
+ *
+ * Result derivation (computed when status='complete'):
+ *   awayRunLineCovered  — true if away team covered the run line
+ *   homeRunLineCovered  — true if home team covered the run line
+ *   totalResult         — 'OVER' | 'UNDER' | 'PUSH' based on final score vs dkTotal
+ *   awayWon             — true if away team won outright
+ *
+ * Deduplication key: anGameId (Action Network internal game ID)
+ */
+export const mlbScheduleHistory = mysqlTable("mlb_schedule_history", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Action Network internal game ID — primary deduplication key */
+  anGameId: int("anGameId").notNull().unique(),
+  /** Game date in YYYY-MM-DD format (EST) */
+  gameDate: varchar("gameDate", { length: 10 }).notNull(),
+  /** Game start time as ISO 8601 UTC string from AN API */
+  startTimeUtc: varchar("startTimeUtc", { length: 32 }).notNull(),
+  /** Game status: 'scheduled' | 'inprogress' | 'complete' */
+  gameStatus: varchar("gameStatus", { length: 16 }).notNull().default("scheduled"),
+  // ─── Away Team ──────────────────────────────────────────────────────────────
+  /** Away team Action Network URL slug, e.g. "arizona-diamondbacks" */
+  awaySlug: varchar("awaySlug", { length: 128 }).notNull(),
+  /** Away team abbreviation from AN, e.g. "ARI" */
+  awayAbbr: varchar("awayAbbr", { length: 8 }).notNull(),
+  /** Away team full name from AN, e.g. "Arizona Diamondbacks" */
+  awayName: varchar("awayName", { length: 128 }).notNull(),
+  /** Away team Action Network numeric ID */
+  awayTeamId: int("awayTeamId").notNull(),
+  /** Away team final score (null = game not yet final) */
+  awayScore: int("awayScore"),
+  // ─── Home Team ──────────────────────────────────────────────────────────────
+  /** Home team Action Network URL slug, e.g. "philadelphia-phillies" */
+  homeSlug: varchar("homeSlug", { length: 128 }).notNull(),
+  /** Home team abbreviation from AN, e.g. "PHI" */
+  homeAbbr: varchar("homeAbbr", { length: 8 }).notNull(),
+  /** Home team full name from AN, e.g. "Philadelphia Phillies" */
+  homeName: varchar("homeName", { length: 128 }).notNull(),
+  /** Home team Action Network numeric ID */
+  homeTeamId: int("homeTeamId").notNull(),
+  /** Home team final score (null = game not yet final) */
+  homeScore: int("homeScore"),
+  // ─── DK NJ Pre-Game Odds (book_id=68, is_live=false) ────────────────────────
+  /** DK NJ away run line spread, e.g. 1.5 (positive = underdog) */
+  dkAwayRunLine: decimal("dkAwayRunLine", { precision: 4, scale: 1 }),
+  /** DK NJ away run line juice in American format, e.g. "-144" */
+  dkAwayRunLineOdds: varchar("dkAwayRunLineOdds", { length: 16 }),
+  /** DK NJ home run line spread, e.g. -1.5 */
+  dkHomeRunLine: decimal("dkHomeRunLine", { precision: 4, scale: 1 }),
+  /** DK NJ home run line juice in American format, e.g. "+119" */
+  dkHomeRunLineOdds: varchar("dkHomeRunLineOdds", { length: 16 }),
+  /** DK NJ game total (over line), e.g. 8.5 */
+  dkTotal: decimal("dkTotal", { precision: 5, scale: 1 }),
+  /** DK NJ over juice in American format, e.g. "-112" */
+  dkOverOdds: varchar("dkOverOdds", { length: 16 }),
+  /** DK NJ under juice in American format, e.g. "-108" */
+  dkUnderOdds: varchar("dkUnderOdds", { length: 16 }),
+  /** DK NJ away team moneyline in American format, e.g. "+153" */
+  dkAwayML: varchar("dkAwayML", { length: 16 }),
+  /** DK NJ home team moneyline in American format, e.g. "-186" */
+  dkHomeML: varchar("dkHomeML", { length: 16 }),
+  // ─── DK NJ Closing Odds (captured at first pitch / game start) ─────────────────
+  /** DK NJ closing away run line spread captured at game start, e.g. -1.5 */
+  dkClosingAwayRunLine: decimal("dkClosingAwayRunLine", { precision: 4, scale: 1 }),
+  /** DK NJ closing away run line juice in American format, e.g. "-144" */
+  dkClosingAwayRunLineOdds: varchar("dkClosingAwayRunLineOdds", { length: 16 }),
+  /** DK NJ closing home run line spread captured at game start, e.g. +1.5 */
+  dkClosingHomeRunLine: decimal("dkClosingHomeRunLine", { precision: 4, scale: 1 }),
+  /** DK NJ closing home run line juice in American format, e.g. "+119" */
+  dkClosingHomeRunLineOdds: varchar("dkClosingHomeRunLineOdds", { length: 16 }),
+  /** DK NJ closing game total captured at game start, e.g. 8.5 */
+  dkClosingTotal: decimal("dkClosingTotal", { precision: 5, scale: 1 }),
+  /** DK NJ closing over juice in American format, e.g. "-112" */
+  dkClosingOverOdds: varchar("dkClosingOverOdds", { length: 16 }),
+  /** DK NJ closing under juice in American format, e.g. "-108" */
+  dkClosingUnderOdds: varchar("dkClosingUnderOdds", { length: 16 }),
+  /** DK NJ closing away moneyline in American format, e.g. "+153" */
+  dkClosingAwayML: varchar("dkClosingAwayML", { length: 16 }),
+  /** DK NJ closing home moneyline in American format, e.g. "-186" */
+  dkClosingHomeML: varchar("dkClosingHomeML", { length: 16 }),
+  /** UTC ms timestamp when closing lines were locked (first pitch detected) */
+  closingLineLockedAt: bigint("closingLineLockedAt", { mode: "number" }),
+  // ─── Derived Result Columns (populated after game is complete) ───────────────
+  /** true = away team covered the run line; false = did not cover; null = game not final or no line */
+  awayRunLineCovered: boolean("awayRunLineCovered"),
+  /** true = home team covered the run line; false = did not cover; null = game not final or no line */
+  homeRunLineCovered: boolean("homeRunLineCovered"),
+  /** 'OVER' | 'UNDER' | 'PUSH' — based on final combined score vs dkTotal; null = game not final or no total */
+  totalResult: varchar("totalResult", { length: 8 }),
+  /** true = away team won outright; false = home team won; null = game not final */
+  awayWon: boolean("awayWon"),
+  /** UTC ms timestamp of the last data refresh for this row */
+  lastRefreshedAt: bigint("lastRefreshedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  idxAnGameId:   index("idx_msh_an_game_id").on(t.anGameId),
+  idxGameDate:   index("idx_msh_game_date").on(t.gameDate),
+  idxAwaySlug:   index("idx_msh_away_slug").on(t.awaySlug),
+  idxHomeSlug:   index("idx_msh_home_slug").on(t.homeSlug),
+  idxGameStatus: index("idx_msh_game_status").on(t.gameStatus),
+}));
+export type MlbScheduleHistoryRow = typeof mlbScheduleHistory.$inferSelect;
+export type InsertMlbScheduleHistory = typeof mlbScheduleHistory.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NBA SCHEDULE HISTORY
+// Stores every NBA game with DK NJ pre-game odds (spread, total, moneyline)
+// and derived result columns (covered, O/U, won) for Recent Schedule and
+// Situational Results panels. Source: Action Network v2 API, book_id=68.
+// ═══════════════════════════════════════════════════════════════════════════════
+export const nbaScheduleHistory = mysqlTable("nba_schedule_history", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Action Network internal game ID — primary deduplication key */
+  anGameId: int("anGameId").notNull().unique(),
+  /** Game date in YYYY-MM-DD format (EST) */
+  gameDate: varchar("gameDate", { length: 10 }).notNull(),
+  /** Game start time as ISO 8601 UTC string from AN API */
+  startTimeUtc: varchar("startTimeUtc", { length: 32 }).notNull(),
+  /** Game status: 'scheduled' | 'inprogress' | 'complete' */
+  gameStatus: varchar("gameStatus", { length: 16 }).notNull().default("scheduled"),
+  // ─── Away Team ──────────────────────────────────────────────────────────────
+  /** Away team Action Network URL slug, e.g. "boston-celtics" */
+  awaySlug: varchar("awaySlug", { length: 128 }).notNull(),
+  /** Away team abbreviation from AN, e.g. "BOS" */
+  awayAbbr: varchar("awayAbbr", { length: 8 }).notNull(),
+  /** Away team full name from AN, e.g. "Boston Celtics" */
+  awayName: varchar("awayName", { length: 128 }).notNull(),
+  /** Away team Action Network numeric ID */
+  awayTeamId: int("awayTeamId").notNull(),
+  /** Away team final score (null = game not yet final) */
+  awayScore: int("awayScore"),
+  // ─── Home Team ──────────────────────────────────────────────────────────────
+  /** Home team Action Network URL slug, e.g. "los-angeles-lakers" */
+  homeSlug: varchar("homeSlug", { length: 128 }).notNull(),
+  /** Home team abbreviation from AN, e.g. "LAL" */
+  homeAbbr: varchar("homeAbbr", { length: 8 }).notNull(),
+  /** Home team full name from AN, e.g. "Los Angeles Lakers" */
+  homeName: varchar("homeName", { length: 128 }).notNull(),
+  /** Home team Action Network numeric ID */
+  homeTeamId: int("homeTeamId").notNull(),
+  /** Home team final score (null = game not yet final) */
+  homeScore: int("homeScore"),
+  // ─── DK NJ Pre-Game Odds (book_id=68, is_live=false) ────────────────────────
+  /** DK NJ away spread value, e.g. 11.5 (positive = underdog) */
+  dkAwaySpread: decimal("dkAwaySpread", { precision: 5, scale: 1 }),
+  /** DK NJ away spread juice in American format, e.g. "-108" */
+  dkAwaySpreadOdds: varchar("dkAwaySpreadOdds", { length: 16 }),
+  /** DK NJ home spread value, e.g. -11.5 */
+  dkHomeSpread: decimal("dkHomeSpread", { precision: 5, scale: 1 }),
+  /** DK NJ home spread juice in American format, e.g. "-112" */
+  dkHomeSpreadOdds: varchar("dkHomeSpreadOdds", { length: 16 }),
+  /** DK NJ game total (over line), e.g. 233.5 */
+  dkTotal: decimal("dkTotal", { precision: 6, scale: 1 }),
+  /** DK NJ over juice in American format, e.g. "-105" */
+  dkOverOdds: varchar("dkOverOdds", { length: 16 }),
+  /** DK NJ under juice in American format, e.g. "-115" */
+  dkUnderOdds: varchar("dkUnderOdds", { length: 16 }),
+  /** DK NJ away team moneyline in American format, e.g. "+360" */
+  dkAwayML: varchar("dkAwayML", { length: 16 }),
+  /** DK NJ home team moneyline in American format, e.g. "-470" */
+  dkHomeML: varchar("dkHomeML", { length: 16 }),
+  // ─── Derived Result Columns (populated after game is complete) ───────────────
+  /** true = away team covered the spread; false = did not cover; null = not final or no line */
+  awaySpreadCovered: boolean("awaySpreadCovered"),
+  /** true = home team covered the spread; false = did not cover; null = not final or no line */
+  homeSpreadCovered: boolean("homeSpreadCovered"),
+  /** 'OVER' | 'UNDER' | 'PUSH' — based on final combined score vs dkTotal */
+  totalResult: varchar("totalResult", { length: 8 }),
+  /** true = away team won outright; false = home team won; null = not final */
+  awayWon: boolean("awayWon"),
+  /** UTC ms timestamp of the last data refresh for this row */
+  lastRefreshedAt: bigint("lastRefreshedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  idxAnGameId:   index("idx_nbash_an_game_id").on(t.anGameId),
+  idxGameDate:   index("idx_nbash_game_date").on(t.gameDate),
+  idxAwaySlug:   index("idx_nbash_away_slug").on(t.awaySlug),
+  idxHomeSlug:   index("idx_nbash_home_slug").on(t.homeSlug),
+  idxGameStatus: index("idx_nbash_game_status").on(t.gameStatus),
+}));
+export type NbaScheduleHistoryRow = typeof nbaScheduleHistory.$inferSelect;
+export type InsertNbaScheduleHistory = typeof nbaScheduleHistory.$inferInsert;
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// NHL SCHEDULE HISTORY
+// Stores every NHL game with DK NJ pre-game odds (puck line, total, moneyline)
+// and derived result columns for Recent Schedule and Situational Results panels.
+// Source: Action Network v2 API, book_id=68.
+// ═══════════════════════════════════════════════════════════════════════════════
+export const nhlScheduleHistory = mysqlTable("nhl_schedule_history", {
+  id: int("id").autoincrement().primaryKey(),
+  /** Action Network internal game ID — primary deduplication key */
+  anGameId: int("anGameId").notNull().unique(),
+  /** Game date in YYYY-MM-DD format (EST) */
+  gameDate: varchar("gameDate", { length: 10 }).notNull(),
+  /** Game start time as ISO 8601 UTC string from AN API */
+  startTimeUtc: varchar("startTimeUtc", { length: 32 }).notNull(),
+  /** Game status: 'scheduled' | 'inprogress' | 'complete' */
+  gameStatus: varchar("gameStatus", { length: 16 }).notNull().default("scheduled"),
+  // ─── Away Team ──────────────────────────────────────────────────────────────
+  /** Away team Action Network URL slug, e.g. "boston-bruins" */
+  awaySlug: varchar("awaySlug", { length: 128 }).notNull(),
+  /** Away team abbreviation from AN, e.g. "BOS" */
+  awayAbbr: varchar("awayAbbr", { length: 8 }).notNull(),
+  /** Away team full name from AN, e.g. "Boston Bruins" */
+  awayName: varchar("awayName", { length: 128 }).notNull(),
+  /** Away team Action Network numeric ID */
+  awayTeamId: int("awayTeamId").notNull(),
+  /** Away team final score (null = game not yet final) */
+  awayScore: int("awayScore"),
+  // ─── Home Team ──────────────────────────────────────────────────────────────
+  /** Home team Action Network URL slug, e.g. "toronto-maple-leafs" */
+  homeSlug: varchar("homeSlug", { length: 128 }).notNull(),
+  /** Home team abbreviation from AN, e.g. "TOR" */
+  homeAbbr: varchar("homeAbbr", { length: 8 }).notNull(),
+  /** Home team full name from AN, e.g. "Toronto Maple Leafs" */
+  homeName: varchar("homeName", { length: 128 }).notNull(),
+  /** Home team Action Network numeric ID */
+  homeTeamId: int("homeTeamId").notNull(),
+  /** Home team final score (null = game not yet final) */
+  homeScore: int("homeScore"),
+  // ─── DK NJ Pre-Game Odds (book_id=68, is_live=false) ────────────────────────
+  /** DK NJ away puck line value, e.g. 1.5 (positive = underdog) */
+  dkAwayPuckLine: decimal("dkAwayPuckLine", { precision: 4, scale: 1 }),
+  /** DK NJ away puck line juice in American format, e.g. "+150" */
+  dkAwayPuckLineOdds: varchar("dkAwayPuckLineOdds", { length: 16 }),
+  /** DK NJ home puck line value, e.g. -1.5 */
+  dkHomePuckLine: decimal("dkHomePuckLine", { precision: 4, scale: 1 }),
+  /** DK NJ home puck line juice in American format, e.g. "-180" */
+  dkHomePuckLineOdds: varchar("dkHomePuckLineOdds", { length: 16 }),
+  /** DK NJ game total (over line), e.g. 6.5 */
+  dkTotal: decimal("dkTotal", { precision: 5, scale: 1 }),
+  /** DK NJ over juice in American format, e.g. "-102" */
+  dkOverOdds: varchar("dkOverOdds", { length: 16 }),
+  /** DK NJ under juice in American format, e.g. "-118" */
+  dkUnderOdds: varchar("dkUnderOdds", { length: 16 }),
+  /** DK NJ away team moneyline in American format, e.g. "-135" */
+  dkAwayML: varchar("dkAwayML", { length: 16 }),
+  /** DK NJ home team moneyline in American format, e.g. "+115" */
+  dkHomeML: varchar("dkHomeML", { length: 16 }),
+  // ─── Derived Result Columns (populated after game is complete) ───────────────
+  /** true = away team covered the puck line; false = did not cover; null = not final or no line */
+  awayPuckLineCovered: boolean("awayPuckLineCovered"),
+  /** true = home team covered the puck line; false = did not cover; null = not final or no line */
+  homePuckLineCovered: boolean("homePuckLineCovered"),
+  /** 'OVER' | 'UNDER' | 'PUSH' — based on final combined score vs dkTotal */
+  totalResult: varchar("totalResult", { length: 8 }),
+  /** true = away team won outright; false = home team won; null = not final */
+  awayWon: boolean("awayWon"),
+  /** UTC ms timestamp of the last data refresh for this row */
+  lastRefreshedAt: bigint("lastRefreshedAt", { mode: "number" }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, (t) => ({
+  idxAnGameId:   index("idx_nhlsh_an_game_id").on(t.anGameId),
+  idxGameDate:   index("idx_nhlsh_game_date").on(t.gameDate),
+  idxAwaySlug:   index("idx_nhlsh_away_slug").on(t.awaySlug),
+  idxHomeSlug:   index("idx_nhlsh_home_slug").on(t.homeSlug),
+  idxGameStatus: index("idx_nhlsh_game_status").on(t.gameStatus),
+}));
+export type NhlScheduleHistoryRow = typeof nhlScheduleHistory.$inferSelect;
+export type InsertNhlScheduleHistory = typeof nhlScheduleHistory.$inferInsert;
+
+// ─── Tracked Bets (Bet Tracker — OWNER/ADMIN/HANDICAPPER only) ───────────────
+
+export const trackedBets = mysqlTable("tracked_bets", {
+  id: int("id").autoincrement().primaryKey(),
+  /** FK to app_users.id — the user who placed/tracked this bet */
+  userId: int("userId").notNull(),
+  /** FK to games.id — the game this bet is on (null for manual/future bets) */
+  gameId: int("gameId"),
+  /** Action Network game id — links to AN scoreboard for slate display */
+  anGameId: int("anGameId"),
+  /**
+   * Timeframe of the bet:
+   *   FULL_GAME    = Full game (default)
+   *   FIRST_5      = First 5 innings (MLB)
+   *   FIRST_INNING = First inning (MLB)
+   */
+  timeframe: mysqlEnum("timeframe", [
+    "FULL_GAME",
+    "FIRST_5",
+    "FIRST_INNING",
+    "NRFI",
+    "YRFI",
+    "REGULATION",
+    "FIRST_PERIOD",
+    "FIRST_HALF",
+    "FIRST_QUARTER",
+  ])
+    .notNull()
+    .default("FULL_GAME"),
+  /**
+   * Market of the bet:
+   *   ML    = Moneyline
+   *   RL    = Run Line / Puck Line / Spread
+   *   TOTAL = Total (Over/Under)
+   */
+  market: mysqlEnum("market", ["ML", "RL", "TOTAL"])
+    .notNull()
+    .default("ML"),
+  /**
+   * Pick side:
+   *   AWAY = Away team
+   *   HOME = Home team
+   *   OVER = Over (totals)
+   *   UNDER = Under (totals)
+   */
+  pickSide: mysqlEnum("pickSide", ["AWAY", "HOME", "OVER", "UNDER"]),
+  /** Sport: MLB | NBA | NHL | NCAAM | NFL | CUSTOM */
+  sport: varchar("sport", { length: 16 }).notNull().default("MLB"),
+  /** Game date in YYYY-MM-DD format */
+  gameDate: varchar("gameDate", { length: 20 }).notNull(),
+  /** Away team abbreviation/name, e.g. "TEX" */
+  awayTeam: varchar("awayTeam", { length: 128 }),
+  /** Home team abbreviation/name, e.g. "ATH" */
+  homeTeam: varchar("homeTeam", { length: 128 }),
+  /**
+   * Bet type:
+   *   ML = Moneyline
+   *   RL = Run Line (spread)
+   *   OVER = Total Over
+   *   UNDER = Total Under
+   *   PROP = Player/Game Prop
+   *   PARLAY = Parlay
+   *   TEASER = Teaser
+   *   FUTURE = Futures bet
+   *   CUSTOM = Custom/manual entry
+   */
+  betType: mysqlEnum("betType", ["ML", "RL", "OVER", "UNDER", "PROP", "PARLAY", "TEASER", "FUTURE", "CUSTOM"])
+    .notNull()
+    .default("ML"),
+  /** The pick description, e.g. "TEX -125", "OVER 8.5 -110", "NYY ML +145" */
+  pick: varchar("pick", { length: 255 }).notNull(),
+  /**
+   * The numeric line value for RL/Total bets (e.g. 1.5 for run line, 8.5 for total).
+   * NULL for ML bets (not needed for grading).
+   */
+  line: decimal("line", { precision: 6, scale: 1 }),
+  /** American odds, e.g. -125, +145, -110 */
+  odds: int("odds").notNull(),
+  /** Risk amount in dollars (decimal, 2 decimal places) */
+  risk: decimal("risk", { precision: 10, scale: 2 }).notNull(),
+  /** To-win amount in dollars (auto-calculated: risk * (100/|odds|) for fav, risk * (odds/100) for dog) */
+  toWin: decimal("toWin", { precision: 10, scale: 2 }).notNull(),
+  /**
+   * Risk amount expressed in units (e.g. 3.0 for a 3U play).
+   * Stored at creation time so analytics can bucket correctly regardless of the user's unit size setting.
+   */
+  riskUnits: decimal("riskUnits", { precision: 8, scale: 2 }),
+  /**
+   * To-win amount expressed in units (e.g. 5.0 for a 5U to-win play).
+   * Stored at creation time for accurate bySize analytics.
+   */
+  toWinUnits: decimal("toWinUnits", { precision: 8, scale: 2 }),
+  /** Sportsbook name, e.g. "DK NJ", "FanDuel NJ", "Caesars NJ" */
+  book: varchar("book", { length: 64 }),
+  /** Optional free-text notes */
+  notes: text("notes"),
+  /**
+   * Bet result:
+   *   PENDING = not yet graded
+   *   WIN = bet won
+   *   LOSS = bet lost
+   *   PUSH = push/tie
+   *   VOID = voided/cancelled
+   */
+  result: mysqlEnum("result", ["PENDING", "WIN", "LOSS", "PUSH", "VOID"])
+    .notNull()
+    .default("PENDING"),
+  /**
+   * Final score for the graded timeframe — populated by the auto-grade engine.
+   * Stored as varchar to handle decimal scores (e.g. NCAAM) and avoid int precision loss.
+   */
+  awayScore: varchar("awayScore", { length: 16 }),
+  homeScore: varchar("homeScore", { length: 16 }),
+  /**
+   * Wager type: PREGAME (placed before game starts) or LIVE (in-game live bet).
+   * Defaults to PREGAME.
+   */
+  wagerType: mysqlEnum("wagerType", ["PREGAME", "LIVE"]).notNull().default("PREGAME"),
+  /**
+   * Custom line value for RL/Total bets — overrides the default 1.5/7.5 hardcoded line.
+   * e.g. 8.0 for an Over 8 total, -1.5 for a standard run line.
+   * NULL means use the default line for the market.
+   */
+  customLine: decimal("customLine", { precision: 6, scale: 1 }),
+  /** UTC timestamp (ms) when this bet was created */
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  /** UTC timestamp (ms) when this bet was last updated */
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  idxUserId:        index("idx_tb_user_id").on(t.userId),
+  idxGameId:        index("idx_tb_game_id").on(t.gameId),
+  idxGameDate:      index("idx_tb_game_date").on(t.gameDate),
+  idxSport:         index("idx_tb_sport").on(t.sport),
+  idxResult:        index("idx_tb_result").on(t.result),
+  /** Composite covering index: userId + sport + gameDate
+   *  Eliminates full-table scans for list() and getStats() when filtering by sport + date range.
+   *  MySQL uses this for: WHERE userId=X AND sport=Y AND gameDate BETWEEN A AND B */
+  idxUserSportDate: index("idx_tb_user_sport_date").on(t.userId, t.sport, t.gameDate),
+  /** Composite for userId + gameDate range scans (ALL sports, date-filtered queries) */
+  idxUserDate:      index("idx_tb_user_date").on(t.userId, t.gameDate),
+  /** Composite for userId + result queries (filter by WIN/LOSS/PENDING etc.) */
+  idxUserResult:    index("idx_tb_user_result").on(t.userId, t.result),
+  /** Composite for userId + result + gameDate — optimal for pending-bet auto-grade queries */
+  idxUserResultDate: index("idx_tb_user_result_date").on(t.userId, t.result, t.gameDate),
+}));
+
+export type TrackedBet = typeof trackedBets.$inferSelect;
+export type InsertTrackedBet = typeof trackedBets.$inferInsert;
+
+// ─── Bet Edit Requests (porter/hank immutable bets — request changes via this table) ──
+/**
+ * When a handicapper (porter/hank) wants to edit or delete a tracked bet,
+ * they submit a request here instead of modifying the bet directly.
+ * Owner/Admin reviews and approves/denies the request.
+ */
+export const betEditRequests = mysqlTable("bet_edit_requests", {
+  id: int("id").autoincrement().primaryKey(),
+  /** FK to tracked_bets.id — the bet being requested to change */
+  betId: int("betId").notNull(),
+  /** FK to app_users.id — the handicapper making the request */
+  requestedBy: int("requestedBy").notNull(),
+  /**
+   * Request type:
+   *   EDIT   = modify fields on the bet
+   *   DELETE = remove the bet from the tracker
+   */
+  requestType: mysqlEnum("requestType", ["EDIT", "DELETE"]).notNull(),
+  /** JSON blob of the proposed changes (for EDIT requests) */
+  proposedChanges: text("proposedChanges"),
+  /** Free-text reason for the request */
+  reason: text("reason"),
+  /**
+   * Status of the request:
+   *   PENDING  = awaiting owner/admin review
+   *   APPROVED = approved and applied
+   *   DENIED   = denied by owner/admin
+   */
+  status: mysqlEnum("status", ["PENDING", "APPROVED", "DENIED"]).notNull().default("PENDING"),
+  /** FK to app_users.id — the owner/admin who reviewed the request */
+  reviewedBy: int("reviewedBy"),
+  /** UTC timestamp (ms) when the request was reviewed */
+  reviewedAt: timestamp("reviewedAt"),
+  /** Optional note from the reviewer */
+  reviewNote: text("reviewNote"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, (t) => ({
+  idxBetId:       index("idx_ber_bet_id").on(t.betId),
+  idxRequestedBy: index("idx_ber_requested_by").on(t.requestedBy),
+  idxStatus:      index("idx_ber_status").on(t.status),
+}));
+export type BetEditRequest = typeof betEditRequests.$inferSelect;
+export type InsertBetEditRequest = typeof betEditRequests.$inferInsert;

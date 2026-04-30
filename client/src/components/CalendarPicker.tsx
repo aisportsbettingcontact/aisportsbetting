@@ -309,16 +309,15 @@ export function CalendarPicker({ selectedDate, onSelect, availableDates, isAdmin
   return (
     <div ref={containerRef} className="relative flex-shrink-0">
       {/* Trigger button */}
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="flex items-center gap-1 sm:gap-1.5 px-1.5 sm:px-2.5 py-1 sm:py-1.5 rounded-full text-[10px] sm:text-[11px] font-bold tracking-wide transition-all flex-shrink-0"
+      <button type="button" onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1 sm:gap-1.5 md:gap-2 px-1.5 sm:px-2.5 md:px-3 py-1 sm:py-1.5 md:py-2 rounded-full text-[10px] sm:text-[11px] md:text-[13px] font-bold tracking-wide transition-all flex-shrink-0"
         style={{
           background: "hsl(var(--card))",
           color: "#ffffff",
           border: "1px solid rgba(255,255,255,0.35)",
         }}
       >
-        <CalendarDays className="w-3 h-3 flex-shrink-0" style={{ color: "rgba(255,255,255,0.6)" }} />
+        <CalendarDays className="w-3 h-3 md:w-4 md:h-4 flex-shrink-0" style={{ color: "rgba(255,255,255,0.6)" }} />
         <span>{buttonLabel}</span>
       </button>
 
@@ -330,8 +329,7 @@ export function CalendarPicker({ selectedDate, onSelect, availableDates, isAdmin
         >
           {/* Month navigation header */}
           <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
-            <button
-              onClick={prevMonth}
+            <button type="button" onClick={prevMonth}
               disabled={prevDisabled}
               className="w-6 h-6 flex items-center justify-center rounded-full transition-colors"
               style={{
@@ -344,8 +342,7 @@ export function CalendarPicker({ selectedDate, onSelect, availableDates, isAdmin
             <span className="text-xs font-bold text-white tracking-widest uppercase">
               {MONTHS[viewMonth]} {viewYear}
             </span>
-            <button
-              onClick={nextMonth}
+            <button type="button" onClick={nextMonth}
               className="w-6 h-6 flex items-center justify-center rounded-full hover:bg-white/10 transition-colors"
               style={{ color: "rgba(255,255,255,0.6)" }}
             >
@@ -386,8 +383,7 @@ export function CalendarPicker({ selectedDate, onSelect, availableDates, isAdmin
               })();
 
               return (
-                <button
-                  key={day}
+                <button type="button" key={day}
                   onClick={() => handleDayClick(day)}
                   disabled={isLocked}
                   className="relative flex flex-col items-center justify-center w-full aspect-square rounded-full text-[11px] font-bold transition-all"

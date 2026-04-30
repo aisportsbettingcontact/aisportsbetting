@@ -173,7 +173,7 @@ export const MLB_TEAMS: MlbTeam[] = [
     mlbId: 133, mlbCode: "ath", abbrev: "ATH", brAbbrev: "OAK",
     league: "AL", division: "West",
     city: "Sacramento", nickname: "Athletics", name: "Athletics",
-    vsinSlug: "athletics", dbSlug: "athletics",
+    vsinSlug: "athletics", dbSlug: "oakland-athletics", // AN API stores as oakland-athletics
     anSlug: "oakland-athletics", anLogoSlug: "oakd",
     logoUrl: "https://www.mlbstatic.com/team-logos/133.svg",
     primaryColor: "#003831", secondaryColor: "#EFB21E",
@@ -303,7 +303,7 @@ export const MLB_TEAMS: MlbTeam[] = [
     mlbId: 138, mlbCode: "sln", abbrev: "STL", brAbbrev: "STL",
     league: "NL", division: "Central",
     city: "St. Louis", nickname: "Cardinals", name: "St. Louis Cardinals",
-    vsinSlug: "cardinals", dbSlug: "cardinals",
+    vsinSlug: "cardinals", dbSlug: "st-louis-cardinals", // AN API stores as st-louis-cardinals
     anSlug: "st-louis-cardinals", anLogoSlug: "stl",
     logoUrl: "https://www.mlbstatic.com/team-logos/138.svg",
     primaryColor: "#C41E3A", secondaryColor: "#0C2340",

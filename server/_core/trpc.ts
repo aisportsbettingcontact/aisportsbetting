@@ -47,6 +47,7 @@ import superjson from "superjson";
 import { insertSecurityEvent } from "../db";
 import { ENV } from "./env";
 import { notifyOwner } from "./notification";
+import { postSecurityAlert } from "../discord/discordSecurityAlert";
 import type { TrpcContext } from "./context";
 
 // ─── CSRF-safe origin set ─────────────────────────────────────────────────────
@@ -235,16 +236,30 @@ async function fireCsrfBlockAlert(
     `If this is an attack, consider blocking IP ${ip} at the firewall/CDN level.`;
 
   // [STEP] Persist event to security_events table (async, non-blocking)
+  const eventOccurredAt = Date.now();
   insertSecurityEvent({
     eventType: "CSRF_BLOCK",
     ip,
     blockedOrigin: origin,
     trpcPath: path,
     httpMethod: method,
-    occurredAt: Date.now(),
+    occurredAt: eventOccurredAt,
   }).catch((err: unknown) => {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[CSRF] DB persist error (non-critical) | IP=${ip} | error="${msg}"`);
+  });
+
+  // [STEP] Post structured embed to 🗒️-𝗦𝗘𝗖𝗨𝗥𝗜𝗧𝗬-𝗘𝗩𝗘𝗡𝗧𝗦 Discord channel (async, non-blocking)
+  postSecurityAlert({
+    eventType: "CSRF_BLOCK",
+    ip,
+    blockedOrigin: origin,
+    path,
+    method,
+    occurredAt: eventOccurredAt,
+  }).catch((err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[CSRF] Discord alert error (non-critical) | IP=${ip} | error="${msg}"`);
   });
 
   console.log(

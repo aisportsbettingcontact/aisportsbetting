@@ -262,7 +262,8 @@ export async function runKPropsBacktest(dateStr: string): Promise<void> {
         eq(games.gameDate, dateStr),
         or(
           isNull(mlbStrikeoutProps.backtestResult),
-          eq(mlbStrikeoutProps.backtestResult, "PENDING")
+          eq(mlbStrikeoutProps.backtestResult, "PENDING"),
+          eq(mlbStrikeoutProps.backtestResult, "NAME_MATCH_FAILED")
         )
       )
     );
@@ -343,13 +344,38 @@ export async function runKPropsBacktest(dateStr: string): Promise<void> {
         continue;
       }
 
-      const matchedName = matchPitcherName(row.pitcherName, boxScoreNames);
+      let matchedName = matchPitcherName(row.pitcherName, boxScoreNames);
       if (!matchedName) {
-        console.warn(
-          `[KBacktest][${dateStr}] [WARN] Name match failed for "${row.pitcherName}" in gamePk ${gamePk}. Box score names: ${boxScoreNames.join(", ")}`
-        );
-        nameMatchFailed++;
-        continue;
+        // ── Retroactive fallback: use side (home/away) to pick the correct starter
+        //    when the projected pitcher was scratched and a different pitcher started.
+        //    pitcherKsMap is built away-first, home-second by iteration order.
+        const allStarters = Array.from(pitcherKsMap.keys());
+        if (allStarters.length === 2) {
+          const sideIndex = row.side === "home" ? 1 : 0;
+          const fallback = allStarters[sideIndex];
+          if (fallback) {
+            console.log(
+              `[KBacktest][${dateStr}] [STATE] Name match FALLBACK: side=${row.side} projected="${row.pitcherName}" → actual="${fallback}" (starter substitution)`
+            );
+            matchedName = fallback;
+          }
+        } else if (allStarters.length === 1) {
+          console.log(
+            `[KBacktest][${dateStr}] [STATE] Name match FALLBACK: only 1 starter in box score (${allStarters[0]}), using for "${row.pitcherName}"`
+          );
+          matchedName = allStarters[0];
+        }
+        if (!matchedName) {
+          console.warn(
+            `[KBacktest][${dateStr}] [WARN] Name match FAILED for "${row.pitcherName}" in gamePk ${gamePk}. Box score names: ${boxScoreNames.join(", ")} — marking NAME_MATCH_FAILED for retry`
+          );
+          nameMatchFailed++;
+          await db
+            .update(mlbStrikeoutProps)
+            .set({ backtestResult: "NAME_MATCH_FAILED", backtestRunAt: Date.now() })
+            .where(eq(mlbStrikeoutProps.id, row.id));
+          continue;
+        }
       }
 
       const pitcherData = pitcherKsMap.get(matchedName)!;

@@ -37,7 +37,12 @@ import { storagePut } from "./storage";
 import { parseFileBuffer, detectSportFromFilename, detectDateFromFilename } from "./fileParser";
 import { nanoid } from "nanoid";
 import { appUsersRouter, ownerProcedure, appUserProcedure } from "./routers/appUsers";
+import { betTrackerRouter } from "./routers/betTracker";
 import { securityRouter } from "./routers/security";
+import { metricsRouter } from "./routers/metrics";
+import { mlbScheduleRouter } from "./routers/mlbSchedule";
+import { nbaScheduleRouter } from "./routers/nbaSchedule";
+import { nhlScheduleRouter } from "./routers/nhlSchedule";
 import { updateBookOdds, listNbaTeams, getNbaTeamByDbSlug, getGameTeamColors, deleteGameById, getFavoriteGameIds, getFavoriteGamesWithDates, toggleFavoriteGame, updateAnOdds, listGamesByDate, listOddsHistory, getBracketGames, auditAndAdvanceAllBracketWinners, getMlbLineupsByGameIds, getStrikeoutPropsByGame, getStrikeoutPropsByGames, getMlbGameEnvSignals, getHrPropsByGame, getHrPropsByGames } from "./db";
 import { runStrikeoutModel, type StrikeoutRunnerInput } from "./strikeoutModelRunner";
 import { getLastRefreshResult, runVsinRefresh, runVsinRefreshManual, refreshAllScoresNow } from "./vsinAutoRefresh";
@@ -49,6 +54,7 @@ import { parseAnAllMarketsHtml, type AnSport } from "./anHtmlParser";
 import { NBA_VALID_DB_SLUGS, NBA_TEAMS } from "@shared/nbaTeams";
 import { NHL_VALID_DB_SLUGS, NHL_TEAMS } from "@shared/nhlTeams";
 import { MLB_BY_ABBREV, MLB_VALID_DB_SLUGS, MLB_VALID_ABBREVS } from "@shared/mlbTeams";
+import { createHash } from 'node:crypto';
 
 /** Returns true if both teams are in the appropriate registry for the given sport */
 function isValidGame(awayTeam: string, homeTeam: string, sport?: string | null): boolean {
@@ -72,7 +78,12 @@ function isValidGame(awayTeam: string, homeTeam: string, sport?: string | null):
 export const appRouter = router({
   system: systemRouter,
   appUsers: appUsersRouter,
+  betTracker: betTrackerRouter,
   security: securityRouter,
+  metrics: metricsRouter,
+  mlbSchedule: mlbScheduleRouter,
+  nbaSchedule: nbaScheduleRouter,
+  nhlSchedule: nhlScheduleRouter,
 
   // ─── Auth ──────────────────────────────────────────────────────────────────
   auth: router({
@@ -206,13 +217,29 @@ export const appRouter = router({
           })
           .optional()
       )
-      .query(async ({ input }) => {
+      .query(async ({ input, ctx }) => {
         const games = await listGames(input ?? {});
         // Filter by the appropriate registry based on sport
         let filtered = games.filter(g => isValidGame(g.awayTeam, g.homeTeam, g.sport));
         // Filter by game status if provided
         if (input?.gameStatus) {
           filtered = filtered.filter(g => g.gameStatus === input.gameStatus);
+        }
+        // Performance: Cache-Control + ETag for public feed (eliminates redundant DB queries)
+        try {
+          const etag = createHash('md5')
+            .update(JSON.stringify(filtered.map(g => ({ id: g.id, modelRunAt: g.modelRunAt, gameStatus: g.gameStatus }))))
+            .digest('hex')
+            .slice(0, 16);
+          ctx.res.setHeader('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+          ctx.res.setHeader('ETag', `"${etag}"`);
+          const ifNoneMatch = ctx.req.headers['if-none-match'];
+          if (ifNoneMatch === `"${etag}"`) {
+            ctx.res.status(304).end();
+            return [] as typeof filtered;
+          }
+        } catch {
+          // Non-fatal: header setting can fail in some edge cases
         }
         return filtered;
       }),
@@ -336,6 +363,41 @@ export const appRouter = router({
     lastRefresh: publicProcedure.query(() => {
       return getLastRefreshResult();
     }),
+
+    /**
+     * Owner-only: list all postponed and suspended games across all sports.
+     * Used by the admin postponed-game audit view.
+     */
+    listPostponed: ownerProcedure
+      .query(async () => {
+        const { listPostponedGames } = await import('./mlbPostponedTracker.js');
+        const rows = await listPostponedGames();
+        console.log(`[tRPC][games.listPostponed] Returned ${rows.length} postponed/suspended games`);
+        return rows;
+      }),
+
+    /**
+     * Owner-only: manually override a game's status.
+     * Useful for correcting postponed/suspended games that the API hasn't updated yet.
+     */
+    markGameStatus: ownerProcedure
+      .input(z.object({
+        id: z.number().int().positive(),
+        status: z.enum(["upcoming", "live", "final", "postponed", "suspended"]),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db.js');
+        const { games: gamesTable } = await import('../drizzle/schema.js');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('DB unavailable');
+        await db
+          .update(gamesTable)
+          .set({ gameStatus: input.status })
+          .where(eq(gamesTable.id, input.id));
+        console.log(`[tRPC][games.markGameStatus] id=${input.id} → status=${input.status}`);
+        return { success: true, id: input.id, status: input.status };
+      }),
 
     /**
      * Hard-delete a single game by ID. Owner-only. Irreversible.
@@ -881,6 +943,154 @@ export const appRouter = router({
       }),
   }),
 
+  // ─── Admin Model Status ─────────────────────────────────────────────────────────────────────────────────────────
+  adminModelStatus: router({
+    /**
+     * Owner-only: real-time MLB model pipeline status for today + tomorrow.
+     * Returns per-game modelRunAt, pitchers, model scores, lineup status, and odds.
+     * Use this to diagnose automation gaps without querying the DB manually.
+     */
+    mlb: ownerProcedure
+      .input(z.object({ date: zodGameDate.optional() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import('./db.js');
+        const { games: gamesTable, mlbLineups } = await import('../drizzle/schema.js');
+        const { and, eq, or } = await import('drizzle-orm');
+        const db = await getDb();
+        const etStr = new Date().toLocaleDateString('en-US', {
+          timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+        });
+        const [m, d, y] = etStr.split('/');
+        const todayStr = `${y}-${m}-${d}`;
+        const tomorrowDate = new Date(Number(y), Number(m) - 1, Number(d) + 1);
+        const tomorrowStr = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`;
+        const targetDate = input.date ?? todayStr;
+        const dates = targetDate === todayStr ? [todayStr, tomorrowStr] : [targetDate];
+        const allRows: unknown[] = [];
+        for (const gameDate of dates) {
+          const rows = await db
+            .select({
+              id: gamesTable.id,
+              gameDate: gamesTable.gameDate,
+              awayTeam: gamesTable.awayTeam,
+              homeTeam: gamesTable.homeTeam,
+              gameStatus: gamesTable.gameStatus,
+              awayStartingPitcher: gamesTable.awayStartingPitcher,
+              homeStartingPitcher: gamesTable.homeStartingPitcher,
+              awayML: gamesTable.awayML,
+              homeML: gamesTable.homeML,
+              bookTotal: gamesTable.bookTotal,
+              modelRunAt: gamesTable.modelRunAt,
+              modelAwayScore: gamesTable.modelAwayScore,
+              modelHomeScore: gamesTable.modelHomeScore,
+              modelAwayML: gamesTable.modelAwayML,
+              modelHomeML: gamesTable.modelHomeML,
+              modelTotal: gamesTable.modelTotal,
+              publishedModel: gamesTable.publishedModel,
+            })
+            .from(gamesTable)
+            .where(and(eq(gamesTable.gameDate, gameDate), eq(gamesTable.sport, 'MLB')))
+            .orderBy(gamesTable.awayTeam);
+          // Attach lineup status from mlb_lineups for each game
+          const gameIds = rows.map((r: { id: number }) => r.id);
+          const lineupMap = new Map<number, { awayPitcherName: string | null; homePitcherName: string | null; awayLineupConfirmed: boolean | null; homeLineupConfirmed: boolean | null; lineupModeledAt: Date | null }>();
+          if (gameIds.length > 0) {
+            const lineupRows = await db
+              .select({
+                gameId: mlbLineups.gameId,
+                awayPitcherName: mlbLineups.awayPitcherName,
+                homePitcherName: mlbLineups.homePitcherName,
+                awayLineupConfirmed: mlbLineups.awayLineupConfirmed,
+                homeLineupConfirmed: mlbLineups.homeLineupConfirmed,
+                lineupModeledAt: mlbLineups.lineupModeledAt,
+              })
+              .from(mlbLineups)
+              .where(or(...gameIds.map((id: number) => eq(mlbLineups.gameId, id))));
+            for (const lr of lineupRows) {
+              lineupMap.set(lr.gameId, lr);
+            }
+          }
+          const enriched = rows.map((r: typeof rows[0]) => ({
+            ...r,
+            lineup: lineupMap.get(r.id) ?? null,
+            modeled: r.modelRunAt !== null,
+            published: r.publishedModel,
+          }));
+          allRows.push(...enriched);
+        }
+        const total     = allRows.length;
+        const modeled   = (allRows as any[]).filter(r => r.modeled).length;
+        const unmodeled = total - modeled;
+        console.log(
+          `[tRPC][adminModelStatus.mlb] dates=${dates.join(',')} total=${total}` +
+          ` modeled=${modeled} unmodeled=${unmodeled}`
+        );
+        return { dates, total, modeled, unmodeled, games: allRows };
+      }),
+    /**
+     * Owner-only: real-time NHL model pipeline status for today + tomorrow.
+     * Returns per-game modelRunAt, goalies, model scores, and odds.
+     */
+    nhl: ownerProcedure
+      .input(z.object({ date: zodGameDate.optional() }))
+      .query(async ({ input }) => {
+        const { getDb } = await import('./db.js');
+        const { games: gamesTable } = await import('../drizzle/schema.js');
+        const { and, eq } = await import('drizzle-orm');
+        const db = await getDb();
+        const etStr = new Date().toLocaleDateString('en-US', {
+          timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+        });
+        const [m, d, y] = etStr.split('/');
+        const todayStr = `${y}-${m}-${d}`;
+        const tomorrowDate = new Date(Number(y), Number(m) - 1, Number(d) + 1);
+        const tomorrowStr = `${tomorrowDate.getFullYear()}-${String(tomorrowDate.getMonth() + 1).padStart(2, '0')}-${String(tomorrowDate.getDate()).padStart(2, '0')}`;
+        const targetDate = input.date ?? todayStr;
+        const dates = targetDate === todayStr ? [todayStr, tomorrowStr] : [targetDate];
+        const allRows: unknown[] = [];
+        for (const gameDate of dates) {
+          const rows = await db
+            .select({
+              id: gamesTable.id,
+              gameDate: gamesTable.gameDate,
+              awayTeam: gamesTable.awayTeam,
+              homeTeam: gamesTable.homeTeam,
+              gameStatus: gamesTable.gameStatus,
+              awayGoalie: gamesTable.awayGoalie,
+              homeGoalie: gamesTable.homeGoalie,
+              awayML: gamesTable.awayML,
+              homeML: gamesTable.homeML,
+              bookTotal: gamesTable.bookTotal,
+              modelRunAt: gamesTable.modelRunAt,
+              modelAwayScore: gamesTable.modelAwayScore,
+              modelHomeScore: gamesTable.modelHomeScore,
+              modelAwayML: gamesTable.modelAwayML,
+              modelHomeML: gamesTable.modelHomeML,
+              modelTotal: gamesTable.modelTotal,
+              publishedModel: gamesTable.publishedModel,
+            })
+            .from(gamesTable)
+            .where(and(eq(gamesTable.gameDate, gameDate), eq(gamesTable.sport, 'NHL')))
+            .orderBy(gamesTable.awayTeam);
+          const enriched = rows.map((r: typeof rows[0]) => ({
+            ...r,
+            modeled: r.modelRunAt !== null,
+            bothGoalies: !!r.awayGoalie && !!r.homeGoalie,
+            published: r.publishedModel,
+          }));
+          allRows.push(...enriched);
+        }
+        const total     = allRows.length;
+        const modeled   = (allRows as any[]).filter(r => r.modeled).length;
+        const unmodeled = total - modeled;
+        console.log(
+          `[tRPC][adminModelStatus.nhl] dates=${dates.join(',')} total=${total}` +
+          ` modeled=${modeled} unmodeled=${unmodeled}`
+        );
+        return { dates, total, modeled, unmodeled, games: allRows };
+      }),
+  }),
+
   // ─── MLB HR Props ─────────────────────────────────────────────────────────────────────────────────────────────────
   hrProps: router({
     /**
@@ -964,6 +1174,15 @@ export const appRouter = router({
           .orderBy(desc(mlbModelLearningLog.runAt))
           .limit(200);
         return rows;
+      }),
+    /**
+     * Owner-only: backfill mlbamId for all K-Props rows where it is null.
+     * Calls MLB Stats API to resolve pitcher IDs for headshot display.
+     */
+    backfillKPropsMlbamIds: ownerProcedure
+      .mutation(async () => {
+        const { backfillAllKPropsMlbamIds } = await import('./mlbKPropsModelService');
+        return backfillAllKPropsMlbamIds();
       }),
   }),
 

@@ -7,8 +7,9 @@
  *   - 24h rolling window summary cards (CSRF_BLOCK, RATE_LIMIT, AUTH_FAIL, Total)
  *   - Filterable, sortable event log table (newest first)
  *   - Prune control to delete events older than N days
+ *   - Discord Test Controls: fire test embeds + manual digest trigger
  *
- * Access: owner role only — redirects to /admin/users if not owner.
+ * Access: owner role only — redirects to home if not owner.
  */
 
 import { useState, useMemo } from "react";
@@ -48,7 +49,9 @@ import {
   Activity,
   Trash2,
   AlertTriangle,
-  CheckCircle2,
+  FlaskConical,
+  Send,
+  BookOpen,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -116,7 +119,6 @@ const EVENT_TYPE_CONFIG: Record<
 function SummaryCard({
   label,
   count,
-  color,
   icon,
 }: {
   label: string;
@@ -134,6 +136,139 @@ function SummaryCard({
         {count}
       </div>
       <div className="text-zinc-500 text-xs">last 24 hours</div>
+    </div>
+  );
+}
+
+// ─── Discord Test Controls Panel ──────────────────────────────────────────────
+
+function DiscordTestPanel() {
+  const [testEventType, setTestEventType] = useState<"CSRF_BLOCK" | "RATE_LIMIT" | "AUTH_FAIL" | "ALL">("ALL");
+
+  const fireEventMutation = trpc.security.test.fireEvent.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message, { duration: 6000 });
+    },
+    onError: (err) => {
+      toast.error(`Test failed: ${err.message}`);
+    },
+  });
+
+  const fireDigestMutation = trpc.security.test.fireDigest.useMutation({
+    onSuccess: (data) => {
+      toast.success(data.message, { duration: 6000 });
+    },
+    onError: (err) => {
+      toast.error(`Digest trigger failed: ${err.message}`);
+    },
+  });
+
+  const isTestPending = fireEventMutation.isPending;
+  const isDigestPending = fireDigestMutation.isPending;
+
+  return (
+    <div className="rounded-lg border border-zinc-700/60 bg-zinc-900/40 p-4 space-y-4">
+      {/* Panel header */}
+      <div className="flex items-center gap-2">
+        <FlaskConical className="w-4 h-4 text-violet-400" />
+        <span className="text-sm font-semibold text-zinc-200">Discord Security Channel — Live Test Controls</span>
+        <Badge className="bg-violet-500/15 text-violet-400 border-violet-500/30 text-xs px-1.5 py-0 ml-1">
+          Owner Only
+        </Badge>
+      </div>
+
+      <p className="text-zinc-400 text-xs leading-relaxed">
+        Use these controls to confirm that the Discord{" "}
+        <span className="text-zinc-200 font-mono">🗒️-𝗦𝗘𝗖𝗨𝗥𝗜𝗧𝗬-𝗘𝗩𝗘𝗡𝗧𝗦</span> channel is
+        receiving alerts correctly. Test embeds use a synthetic IP and are clearly
+        labeled as tests — they will not affect event counts in the database.
+      </p>
+
+      {/* Row 1: Fire test event embed */}
+      <div className="flex flex-wrap items-center gap-3 p-3 rounded-md bg-zinc-950/60 border border-zinc-800">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <Send className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+          <div>
+            <div className="text-xs font-medium text-zinc-200">Fire Test Event Embed</div>
+            <div className="text-xs text-zinc-500 mt-0.5">
+              Posts a synthetic embed to the Discord security channel to confirm delivery.
+              Choose a specific event type or fire all three at once.
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Select
+            value={testEventType}
+            onValueChange={(v) => setTestEventType(v as typeof testEventType)}
+            disabled={isTestPending}
+          >
+            <SelectTrigger className="h-8 w-36 bg-zinc-900 border-zinc-700 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-zinc-900 border-zinc-700">
+              <SelectItem value="ALL" className="text-xs">All 3 Types</SelectItem>
+              <SelectItem value="CSRF_BLOCK" className="text-xs">🚫 CSRF Block</SelectItem>
+              <SelectItem value="RATE_LIMIT" className="text-xs">⚡ Rate Limit</SelectItem>
+              <SelectItem value="AUTH_FAIL" className="text-xs">🔐 Auth Fail</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            size="sm"
+            className="bg-violet-600 hover:bg-violet-700 text-white gap-1.5 h-8 text-xs"
+            disabled={isTestPending}
+            onClick={() => fireEventMutation.mutate({ eventType: testEventType })}
+          >
+            {isTestPending ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : (
+              <Send className="w-3 h-3" />
+            )}
+            {isTestPending ? "Sending..." : "Send Test"}
+          </Button>
+        </div>
+      </div>
+
+      {/* Row 2: Fire daily digest */}
+      <div className="flex flex-wrap items-center gap-3 p-3 rounded-md bg-zinc-950/60 border border-zinc-800">
+        <div className="flex items-center gap-2 flex-1 min-w-0">
+          <BookOpen className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+          <div>
+            <div className="text-xs font-medium text-zinc-200">Trigger Daily Digest Now</div>
+            <div className="text-xs text-zinc-500 mt-0.5">
+              Manually runs the daily security summary that normally posts at 08:00 EST.
+              Uses the last 24 hours of real event data — threat level, counts, and top IPs.
+            </div>
+          </div>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-zinc-600 text-zinc-300 hover:bg-zinc-800 gap-1.5 h-8 text-xs shrink-0"
+          disabled={isDigestPending}
+          onClick={() => fireDigestMutation.mutate()}
+        >
+          {isDigestPending ? (
+            <RefreshCw className="w-3 h-3 animate-spin" />
+          ) : (
+            <BookOpen className="w-3 h-3" />
+          )}
+          {isDigestPending ? "Posting..." : "Post Digest"}
+        </Button>
+      </div>
+
+      {/* Status indicators */}
+      {(fireEventMutation.isSuccess || fireDigestMutation.isSuccess) && (
+        <div className="text-xs text-emerald-400 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+          Last action completed — check the Discord channel to confirm delivery.
+        </div>
+      )}
+      {(fireEventMutation.isError || fireDigestMutation.isError) && (
+        <div className="text-xs text-red-400 flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block" />
+          Action failed — check server logs for details.
+        </div>
+      )}
     </div>
   );
 }
@@ -198,7 +333,6 @@ export default function SecurityEvents() {
   }
 
   if (!user || !isOwner) {
-    // [SECURITY] Non-owner attempted to access /admin/security — redirect to home silently
     console.warn(`[SECURITY] Unauthorized access attempt to /admin/security | user=${user?.username ?? "unauthenticated"} | isOwner=${isOwner}`);
     navigate("/");
     return null;
@@ -298,6 +432,9 @@ export default function SecurityEvents() {
           />
         </div>
 
+        {/* ── Discord Test Controls ── */}
+        <DiscordTestPanel />
+
         {/* ── Filters ── */}
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex items-center gap-2">
@@ -358,17 +495,19 @@ export default function SecurityEvents() {
               {isLoading ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center text-zinc-500 text-sm py-12">
-                    <RefreshCw className="w-4 h-4 animate-spin inline mr-2" />
+                    <RefreshCw className="w-4 h-4 animate-spin mx-auto mb-2" />
                     Loading events...
                   </TableCell>
                 </TableRow>
               ) : events.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-12">
-                    <div className="flex flex-col items-center gap-2">
-                      <CheckCircle2 className="w-8 h-8 text-green-500/60" />
-                      <span className="text-zinc-400 text-sm">No security events in this window</span>
-                      <span className="text-zinc-600 text-xs">System is clean</span>
+                    <div className="flex flex-col items-center gap-2 text-zinc-500">
+                      <ShieldAlert className="w-8 h-8 text-zinc-700" />
+                      <span className="text-sm">No security events in this window</span>
+                      <span className="text-xs text-zinc-600">
+                        Events appear here when CSRF blocks, rate limits, or auth failures occur
+                      </span>
                     </div>
                   </TableCell>
                 </TableRow>

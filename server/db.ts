@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
 import { games, modelFiles, users, nbaTeams, ncaamTeams, nhlTeams, mlbTeams, appUsers as appUsersTable, oddsHistory, mlbLineups, mlbStrikeoutProps, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers, mlbHrProps, securityEvents, type Game, type AppUser, type InsertGame, type InsertModelFile, type InsertUser, type InsertNbaTeam, type InsertNhlTeam, type OddsHistoryRow, type MlbLineupRow, type InsertMlbLineup, type MlbStrikeoutPropRow, type InsertMlbStrikeoutProp, type MlbParkFactorRow, type MlbBullpenStatsRow, type MlbUmpireModifierRow, type MlbHrPropRow, type InsertSecurityEvent, type SecurityEventRow } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { withCircuitBreaker } from './dbCircuitBreaker';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _db: any = null;
@@ -17,8 +18,8 @@ export async function getDb() {
         uri: process.env.DATABASE_URL,
         connectionLimit: 10,
         waitForConnections: true,
-        queueLimit: 0,
-        connectTimeout: 10000,
+        queueLimit: 50,
+        connectTimeout: 5000,   // reduced from 10s → 5s for faster failure detection
         idleTimeout: 10000,
         enableKeepAlive: true,
         keepAliveInitialDelay: 0,
@@ -235,6 +236,12 @@ export async function listGames(opts?: { sport?: string; gameDate?: string }): P
     console.log(`[DB][listGames] MLB 7-day window: ${todayUtc} → ${plusSeven} (utcHour=${nowUtc.getUTCHours()}, beforeCutoff=${isBeforeCutoff})`);
   }
 
+  // ALWAYS exclude postponed/suspended/cancelled games from the feed — they were never played
+  // This covers MLB postponements (e.g. HOU@BAL, SF@PHI on 2026-04-29) that the MLB Stats API
+  // returns as valid schedule entries but with detailedState='Postponed'.
+  conditions.push(ne(games.gameStatus, 'postponed'));
+  console.log('[DB][listGames] Excluding postponed games from feed');
+
   // Public feed: show all games that have live VSiN odds (regardless of publishedToFeed)
   // MLB games are seeded from the schedule and may not have odds yet — show them regardless
   if (opts?.sport !== 'MLB') {
@@ -308,22 +315,40 @@ export async function listAppUsers(): Promise<AppUser[]> {
 export async function getAppUserById(id: number) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(appUsers).where(eq(appUsers.id, id)).limit(1);
-  return rows[0] ?? null;
+  try {
+    return await withCircuitBreaker(async () => {
+      const rows = await db.select().from(appUsers).where(eq(appUsers.id, id)).limit(1);
+      return rows[0] ?? null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function getAppUserByEmail(email: string) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
-  return rows[0] ?? null;
+  try {
+    return await withCircuitBreaker(async () => {
+      const rows = await db.select().from(appUsers).where(eq(appUsers.email, email)).limit(1);
+      return rows[0] ?? null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function getAppUserByUsername(username: string) {
   const db = await getDb();
   if (!db) return null;
-  const rows = await db.select().from(appUsers).where(eq(appUsers.username, username)).limit(1);
-  return rows[0] ?? null;
+  try {
+    return await withCircuitBreaker(async () => {
+      const rows = await db.select().from(appUsers).where(eq(appUsers.username, username)).limit(1);
+      return rows[0] ?? null;
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function updateAppUser(id: number, data: Partial<InsertAppUser>) {
@@ -499,7 +524,13 @@ export async function updateBookOdds(
   const updateData: Record<string, unknown> = {};
   if (data.awayBookSpread !== undefined) updateData.awayBookSpread = data.awayBookSpread !== null ? String(data.awayBookSpread) : null;
   if (data.homeBookSpread !== undefined) updateData.homeBookSpread = data.homeBookSpread !== null ? String(data.homeBookSpread) : null;
-  if (data.bookTotal !== undefined) updateData.bookTotal = data.bookTotal !== null ? String(data.bookTotal) : null;
+  if (data.bookTotal !== undefined) {
+    updateData.bookTotal = data.bookTotal !== null ? String(data.bookTotal) : null;
+    // CRITICAL: modelTotal must always mirror bookTotal (same line, model odds only).
+    // Whenever bookTotal changes (line move from AN API refresh), modelTotal must stay in sync.
+    // This prevents the feed from showing mismatched book/model lines after odds refresh.
+    if (data.bookTotal !== null) updateData.modelTotal = String(data.bookTotal);
+  }
   if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
   if (data.startTimeEst !== undefined) updateData.startTimeEst = data.startTimeEst;
   // Splits — only write non-undefined values (null = explicitly clear, undefined = skip)
@@ -611,7 +642,7 @@ export async function updateNcaaStartTime(
   data: {
     startTimeEst: string;
     ncaaContestId: string;
-    gameStatus?: 'upcoming' | 'live' | 'final';
+    gameStatus?: 'upcoming' | 'live' | 'final' | 'postponed';
     awayScore?: number | null;
     homeScore?: number | null;
     gameClock?: string | null;
@@ -938,6 +969,19 @@ export async function updateAnOdds(
     underOdds?: string | null;
     awayML?: string | null;
     homeML?: string | null;
+    // MLB run line dual-write — same values as awayBookSpread/homeBookSpread
+    // For MLB, AN spread market IS the run line. Write to both column sets.
+    awayRunLine?: string | null;
+    homeRunLine?: string | null;
+    awayRunLineOdds?: string | null;
+    homeRunLineOdds?: string | null;
+    /**
+     * Computed odds source label for the primary book columns.
+     * 'dk'   = all 3 DK NJ markets complete (spread+odds, total+odds, ML)
+     * 'open' = using AN Opening line (DK not yet fully posted)
+     * Never null, never partial.
+     */
+    oddsSource?: 'open' | 'dk' | null;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -970,6 +1014,12 @@ export async function updateAnOdds(
   if (data.underOdds !== undefined) updateData.underOdds = data.underOdds;
   if (data.awayML !== undefined) updateData.awayML = data.awayML;
   if (data.homeML !== undefined) updateData.homeML = data.homeML;
+  // MLB run line dual-write
+  if (data.awayRunLine !== undefined) updateData.awayRunLine = data.awayRunLine;
+  if (data.homeRunLine !== undefined) updateData.homeRunLine = data.homeRunLine;
+  if (data.awayRunLineOdds !== undefined) updateData.awayRunLineOdds = data.awayRunLineOdds;
+  if (data.homeRunLineOdds !== undefined) updateData.homeRunLineOdds = data.homeRunLineOdds;
+  if (data.oddsSource !== undefined) updateData.oddsSource = data.oddsSource;
   if (Object.keys(updateData).length === 0) return;
   await db.update(games).set(updateData).where(eq(games.id, id));
 }
@@ -983,14 +1033,14 @@ export async function updateAnOdds(
  * @param gameId  - games.id FK
  * @param sport   - 'NBA' | 'NHL' | 'MLB'
  * @param source  - 'auto' (hourly cron) | 'manual' (Refresh Now button)
- * @param snap    - the current DK NJ lines to snapshot
+ * @param snap    - the current lines to snapshot (DK NJ, Opening, or mixed)
  */
 export async function insertOddsHistory(
   gameId: number,
   sport: string,
   source: "auto" | "manual",
   snap: {
-    // DK NJ odds
+    // Lines (may be DK NJ, Opening line, or a mix)
     awaySpread?: string | null;
     awaySpreadOdds?: string | null;
     homeSpread?: string | null;
@@ -1007,6 +1057,13 @@ export async function insertOddsHistory(
     totalOverMoneyPct?: number | null;
     mlAwayBetsPct?: number | null;
     mlAwayMoneyPct?: number | null;
+    /**
+     * Odds line source label for this snapshot.
+     * 'dk'   = all lines are from DK NJ current market (all 3 markets complete)
+     * 'open' = all lines are from AN Opening line (DK not yet fully posted)
+     * Never null, never partial.
+     */
+    lineSource?: 'open' | 'dk' | null;
   }
 ): Promise<void> {
   const db = await getDb();
@@ -1025,7 +1082,7 @@ export async function insertOddsHistory(
   const mlPending     = (snap.mlAwayBetsPct == null || snap.mlAwayBetsPct === 0) &&
                         (snap.mlAwayMoneyPct == null || snap.mlAwayMoneyPct === 0);
   console.log(
-    `[OddsHistory][INSERT][INPUT] gameId=${gameId} sport=${sport} source=${source} scrapedAt=${estStr} EST | ` +
+    `[OddsHistory][INSERT][INPUT] gameId=${gameId} sport=${sport} source=${source} lineSource=${snap.lineSource ?? 'null'} scrapedAt=${estStr} EST | ` +
     `spread=${snap.awaySpread ?? 'null'}(${snap.awaySpreadOdds ?? 'null'}) ` +
     `total=${snap.total ?? 'null'} over=${snap.overOdds ?? 'null'} under=${snap.underOdds ?? 'null'} ` +
     `ml=${snap.awayML ?? 'null'}/${snap.homeML ?? 'null'} | ` +
@@ -1056,10 +1113,11 @@ export async function insertOddsHistory(
       totalOverMoneyPct: snap.totalOverMoneyPct ?? null,
       mlAwayBetsPct: snap.mlAwayBetsPct ?? null,
       mlAwayMoneyPct: snap.mlAwayMoneyPct ?? null,
+      lineSource: snap.lineSource ?? null,
     });
     // [OUTPUT] Confirm successful write with full context
     console.log(
-      `[OddsHistory][INSERT][OUTPUT] OK gameId=${gameId} sport=${sport} source=${source} at ${estStr} EST`
+      `[OddsHistory][INSERT][OUTPUT] OK gameId=${gameId} sport=${sport} source=${source} lineSource=${snap.lineSource ?? 'null'} at ${estStr} EST`
     );
   } catch (err) {
     // [VERIFY] FAIL - log full error with context for immediate diagnosis
@@ -1104,6 +1162,86 @@ export async function listOddsHistory(gameId: number): Promise<OddsHistoryRow[]>
     // [VERIFY] FAIL - log full error with context
     console.error(`[OddsHistory][LIST][VERIFY] FAIL gameId=${gameId}:`, err);
     return [];
+  }
+}
+
+/**
+ * Backfill lineSource for historical oddsHistory rows that have lineSource = NULL.
+ * Uses the game's oddsSource field as the ground truth.
+ * Runs once at server startup; no-ops if all rows already have lineSource populated.
+ */
+export async function backfillOddsHistoryLineSource(): Promise<void> {
+  const db = await getDb();
+  if (!db) {
+    console.warn('[OddsHistory][BACKFILL] SKIP — DB not available');
+    return;
+  }
+  try {
+    // [STEP] Count rows needing backfill
+    const nullRows = await db
+      .select({ id: oddsHistory.id, gameId: oddsHistory.gameId })
+      .from(oddsHistory)
+      .where(isNull(oddsHistory.lineSource))
+      .limit(5000);
+
+    if (nullRows.length === 0) {
+      console.log('[OddsHistory][BACKFILL] SKIP — all rows already have lineSource populated');
+      return;
+    }
+
+    console.log(`[OddsHistory][BACKFILL][INPUT] Found ${nullRows.length} rows with null lineSource — resolving via game.oddsSource`);
+
+    // [STEP] Get unique gameIds from null rows
+    const gameIds = Array.from(new Set(nullRows.map((r: { id: number; gameId: number }) => r.gameId)));
+
+    // [STEP] Fetch oddsSource for all affected games in one query
+    const gameOddsSources = await db
+      .select({ id: games.id, oddsSource: games.oddsSource })
+      .from(games)
+      .where(sql`${games.id} IN (${sql.join(gameIds.map(id => sql`${id}`), sql`, `)})`);
+
+    const sourceMap = new Map<number, 'open' | 'dk' | null>();
+    for (const g of gameOddsSources) {
+      sourceMap.set(g.id, g.oddsSource as 'open' | 'dk' | null);
+    }
+
+    // [STEP] Batch update: group rows by resolved lineSource
+    let updated = 0;
+    let skipped = 0;
+    const dkIds: number[] = [];
+    const openIds: number[] = [];
+
+    for (const row of nullRows) {
+      const src = sourceMap.get(row.gameId);
+      if (src === 'dk') dkIds.push(row.id);
+      else if (src === 'open') openIds.push(row.id);
+      else skipped++;
+    }
+
+    // Batch update DK rows
+    if (dkIds.length > 0) {
+      await db
+        .update(oddsHistory)
+        .set({ lineSource: 'dk' })
+        .where(sql`${oddsHistory.id} IN (${sql.join(dkIds.map(id => sql`${id}`), sql`, `)})`);
+      updated += dkIds.length;
+    }
+
+    // Batch update OPEN rows
+    if (openIds.length > 0) {
+      await db
+        .update(oddsHistory)
+        .set({ lineSource: 'open' })
+        .where(sql`${oddsHistory.id} IN (${sql.join(openIds.map(id => sql`${id}`), sql`, `)})`);
+      updated += openIds.length;
+    }
+
+    console.log(
+      `[OddsHistory][BACKFILL][OUTPUT] COMPLETE — updated=${updated} skipped=${skipped} ` +
+      `(dk=${dkIds.length} open=${openIds.length}) total_null_rows=${nullRows.length}`
+    );
+  } catch (err) {
+    console.error('[OddsHistory][BACKFILL][VERIFY] FAIL:', err);
   }
 }
 
@@ -1890,5 +2028,233 @@ export async function pruneSecurityEvents(retentionDays = 90): Promise<number> {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`${tag} Prune failed | error="${msg}"`);
     return 0;
+  }
+}
+
+// ─── User Session Tracking (DAU / MAU / WAU / avg session duration) ──────────
+import { userSessions, type UserSession, type InsertUserSession } from "../drizzle/schema";
+
+// Idle threshold: sessions with no heartbeat for > 30 min are considered closed
+const SESSION_IDLE_MS = 30 * 60 * 1000;
+
+/**
+ * Create a new session row on login.
+ *
+ * [INPUT]  userId    — app_users.id of the logging-in user
+ * [OUTPUT] sessionId — id of the newly created row
+ */
+export async function createUserSession(userId: number): Promise<number | null> {
+  const tag = "[DB][createUserSession]";
+  const db = await getDb();
+  if (!db) { console.warn(`${tag} DB not available — session not created`); return null; }
+  const now = Date.now();
+  try {
+    const result = await db.insert(userSessions).values({
+      userId,
+      startedAt: now,
+      lastHeartbeat: now,
+    } satisfies InsertUserSession);
+    const [header] = result as unknown as [{ insertId?: number }];
+    const sessionId = header?.insertId ?? null;
+    console.log(`${tag} [OUTPUT] Created session | userId=${userId} sessionId=${sessionId} startedAt=${new Date(now).toISOString()}`);
+    return sessionId;
+  } catch (err: unknown) {
+    console.error(`${tag} Failed | userId=${userId} error=${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+}
+
+/**
+ * Update lastHeartbeat on the most recent open session for a user.
+ * Called every 5 minutes by the frontend heartbeat ping.
+ *
+ * [INPUT]  userId — app_users.id
+ * [OUTPUT] void
+ */
+export async function heartbeatUserSession(userId: number): Promise<void> {
+  const tag = "[DB][heartbeatUserSession]";
+  const db = await getDb();
+  if (!db) { console.warn(`${tag} DB not available — heartbeat skipped`); return; }
+  const now = Date.now();
+  try {
+    await db
+      .update(userSessions)
+      .set({ lastHeartbeat: now })
+      .where(and(eq(userSessions.userId, userId), isNull(userSessions.endedAt)));
+    console.log(`${tag} [OUTPUT] Heartbeat updated | userId=${userId} at=${new Date(now).toISOString()}`);
+  } catch (err: unknown) {
+    console.error(`${tag} Failed | userId=${userId} error=${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Close all open sessions for a user on logout.
+ * Sets endedAt = now, durationMs = endedAt - startedAt.
+ *
+ * [INPUT]  userId — app_users.id
+ * [OUTPUT] void
+ */
+export async function closeUserSessions(userId: number): Promise<void> {
+  const tag = "[DB][closeUserSessions]";
+  const db = await getDb();
+  if (!db) { console.warn(`${tag} DB not available — sessions not closed`); return; }
+  const now = Date.now();
+  try {
+    // Fetch open sessions to compute durationMs per row
+    const open = await db
+      .select({ id: userSessions.id, startedAt: userSessions.startedAt })
+      .from(userSessions)
+      .where(and(eq(userSessions.userId, userId), isNull(userSessions.endedAt)));
+    for (const s of open) {
+      const dur = now - s.startedAt;
+      await db
+        .update(userSessions)
+        .set({ endedAt: now, durationMs: dur })
+        .where(eq(userSessions.id, s.id));
+      console.log(`${tag} [OUTPUT] Closed session | sessionId=${s.id} userId=${userId} durationMs=${dur} (${Math.round(dur/60000)} min)`);
+    }
+    if (open.length === 0) {
+      console.log(`${tag} [STATE] No open sessions found for userId=${userId}`);
+    }
+  } catch (err: unknown) {
+    console.error(`${tag} Failed | userId=${userId} error=${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/**
+ * Close idle sessions that have not received a heartbeat for > SESSION_IDLE_MS.
+ * Called by a scheduled job every 30 minutes.
+ *
+ * [OUTPUT] number — rows closed
+ */
+export async function closeIdleSessions(): Promise<number> {
+  const tag = "[DB][closeIdleSessions]";
+  const db = await getDb();
+  if (!db) { console.warn(`${tag} DB not available — idle cleanup skipped`); return 0; }
+  const idleCutoff = Date.now() - SESSION_IDLE_MS;
+  try {
+    const idle = await db
+      .select({ id: userSessions.id, startedAt: userSessions.startedAt })
+      .from(userSessions)
+      .where(and(isNull(userSessions.endedAt), sql`${userSessions.lastHeartbeat} < ${idleCutoff}`));
+    const now = Date.now();
+    for (const s of idle) {
+      const dur = now - s.startedAt;
+      await db.update(userSessions).set({ endedAt: now, durationMs: dur }).where(eq(userSessions.id, s.id));
+    }
+    console.log(`${tag} [OUTPUT] Closed ${idle.length} idle sessions (idleCutoff=${new Date(idleCutoff).toISOString()})`);
+    return idle.length;
+  } catch (err: unknown) {
+    console.error(`${tag} Failed | error=${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
+}
+
+/**
+ * Compute DAU / MAU / WAU and average session duration.
+ *
+ * DAU = distinct users with a session that started in the last 24 hours
+ * WAU = distinct users with a session that started in the last 7 days
+ * MAU = distinct users with a session that started in the last 30 days
+ * avgSessionDurationMs = mean of all closed session durationMs values in the last 30 days
+ *
+ * [OUTPUT] { dau, wau, mau, avgSessionDurationMs }
+ */
+export async function getSessionMetrics(): Promise<{
+  dau: number; wau: number; mau: number; avgSessionDurationMs: number;
+}> {
+  const tag = "[DB][getSessionMetrics]";
+  const db = await getDb();
+  const fallback = { dau: 0, wau: 0, mau: 0, avgSessionDurationMs: 0 };
+  if (!db) { console.warn(`${tag} DB not available`); return fallback; }
+  const now = Date.now();
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  const since24h = now - DAY_MS;
+  const since7d  = now - 7  * DAY_MS;
+  const since30d = now - 30 * DAY_MS;
+  try {
+    // DAU
+    const [dauRow] = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${userSessions.userId})` })
+      .from(userSessions)
+      .where(gte(userSessions.startedAt, since24h));
+    // WAU
+    const [wauRow] = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${userSessions.userId})` })
+      .from(userSessions)
+      .where(gte(userSessions.startedAt, since7d));
+    // MAU
+    const [mauRow] = await db
+      .select({ count: sql<number>`COUNT(DISTINCT ${userSessions.userId})` })
+      .from(userSessions)
+      .where(gte(userSessions.startedAt, since30d));
+    // Avg session duration (closed sessions in last 30 days only)
+    const [avgRow] = await db
+      .select({ avg: sql<number>`AVG(${userSessions.durationMs})` })
+      .from(userSessions)
+      .where(and(isNotNull(userSessions.durationMs), gte(userSessions.startedAt, since30d)));
+    const result = {
+      dau: Number(dauRow?.count ?? 0),
+      wau: Number(wauRow?.count ?? 0),
+      mau: Number(mauRow?.count ?? 0),
+      avgSessionDurationMs: Number(avgRow?.avg ?? 0),
+    };
+    console.log(`${tag} [OUTPUT] dau=${result.dau} wau=${result.wau} mau=${result.mau} avgDurMs=${Math.round(result.avgSessionDurationMs)}`);
+    return result;
+  } catch (err: unknown) {
+    console.error(`${tag} Failed | error=${err instanceof Error ? err.message : String(err)}`);
+    return fallback;
+  }
+}
+
+/**
+ * Compute member tier counts and Discord connection count.
+ *
+ * TOTAL_PAYING     = users with hasAccess=true AND (expiryDate IS NULL OR expiryDate > now)
+ * LIFETIME_MEMBERS = users with hasAccess=true AND expiryDate IS NULL
+ * NON_PAYING       = users with hasAccess=false OR (expiryDate IS NOT NULL AND expiryDate <= now)
+ * DISCORD_CONNECTED = users with discordId IS NOT NULL
+ *
+ * [OUTPUT] { totalPaying, lifetimeMembers, nonPaying, discordConnected, totalUsers }
+ */
+export async function getMemberMetrics(): Promise<{
+  totalPaying: number; lifetimeMembers: number; nonPaying: number;
+  discordConnected: number; totalUsers: number;
+}> {
+  const tag = "[DB][getMemberMetrics]";
+  const db = await getDb();
+  const fallback = { totalPaying: 0, lifetimeMembers: 0, nonPaying: 0, discordConnected: 0, totalUsers: 0 };
+  if (!db) { console.warn(`${tag} DB not available`); return fallback; }
+  const now = Date.now();
+  try {
+    const [totalRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(appUsersTable);
+    const [payingRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(appUsersTable)
+      .where(and(
+        eq(appUsersTable.hasAccess, true),
+        or(isNull(appUsersTable.expiryDate), sql`${appUsersTable.expiryDate} > ${now}`)
+      ));
+    const [lifetimeRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(appUsersTable)
+      .where(and(eq(appUsersTable.hasAccess, true), isNull(appUsersTable.expiryDate)));
+    const [discordRow] = await db
+      .select({ count: sql<number>`COUNT(*)` })
+      .from(appUsersTable)
+      .where(isNotNull(appUsersTable.discordId));
+    const total = Number(totalRow?.count ?? 0);
+    const paying = Number(payingRow?.count ?? 0);
+    const lifetime = Number(lifetimeRow?.count ?? 0);
+    const discord = Number(discordRow?.count ?? 0);
+    const nonPaying = total - paying;
+    const result = { totalPaying: paying, lifetimeMembers: lifetime, nonPaying, discordConnected: discord, totalUsers: total };
+    console.log(`${tag} [OUTPUT] total=${total} paying=${paying} lifetime=${lifetime} nonPaying=${nonPaying} discord=${discord}`);
+    return result;
+  } catch (err: unknown) {
+    console.error(`${tag} Failed | error=${err instanceof Error ? err.message : String(err)}`);
+    return fallback;
   }
 }

@@ -1,5 +1,13 @@
 # AI Sports Betting Models - TODO
 
+## Session: 2026-04-16 - NHL PL Sign Fix (All Rendering Paths)
+
+- [x] Audit ALL GameCard rendering paths that display NHL book puck line label
+- [x] Move odds-authoritative correction to top of GameCard component (awayBookSpread/homeBookSpread reassigned globally)
+- [x] Remove redundant _correctedAwaySpread block from DesktopMergedPanel path
+- [x] TypeScript: 0 errors
+- [x] Tests: 487/487 passing
+
 - [x] Initialize project scaffold
 - [x] Upgrade to full-stack (web-db-user)
 - [x] Add model_files and games tables to schema
@@ -2255,3 +2263,723 @@
 - [x] 8 optional GitHub secrets set (HTTP 201 each, total_count=15 verified): DISCORD_BOT_TOKEN, DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, KENPOM_EMAIL, KENPOM_PASSWORD, VSIN_EMAIL, VSIN_PASSWORD, METABET_API_KEY
 - [x] securityDigest.ts: daily 08:00 EST cron (13:00 UTC), queries 24h event counts, top-5 IPs, threat level (CLEAN/LOW/MODERATE/HIGH/CRITICAL), fires notifyOwner(), prunes events older than 90 days
 - [x] startSecurityDigestScheduler() wired into server startup in index.ts
+
+## Discord Security Channel Integration (April 10, 2026)
+- [x] Create server/discord/discordSecurityAlert.ts — structured Discord embeds for CSRF_BLOCK (red), RATE_LIMIT (yellow), AUTH_FAIL (orange) posted to channel 1492280227567501403
+- [x] Wire CSRF_BLOCK → postSecurityAlert() in server/_core/trpc.ts (inside fireCsrfBlockAlert, after DB insert)
+- [x] Wire RATE_LIMIT → postSecurityAlert() in server/_core/index.ts (inside fireRateLimitEvent, after DB insert)
+- [x] Wire AUTH_FAIL → postSecurityAlert() in server/routers/appUsers.ts (inside fireAuthFailEvent, after DB insert)
+- [x] All 3 wires are fire-and-forget (non-blocking), 30s per-IP dedup guard, full structured logging
+- [x] TypeScript: 0 errors | Vitest: 458/458 passing | Build: clean
+
+## Discord Security Channel — Full Integration (Apr 10 2026)
+- [x] postSecurityAlert() helper with CSRF_BLOCK, RATE_LIMIT, AUTH_FAIL embeds
+- [x] Brute-force IP escalation detector (3+ AUTH_FAIL in 10 min → @here alert)
+- [x] Daily digest Discord embed in securityDigest.ts (plain-English, layman-friendly)
+- [x] triggerSecurityDigestNow() manual export for owner-initiated digest
+- [x] security.test.fireEvent tRPC procedure (fire test embeds per type or ALL)
+- [x] security.test.fireDigest tRPC procedure (manual digest trigger)
+- [x] SecurityEvents.tsx Discord Test Controls panel (Send Test + Post Digest buttons)
+- [x] TypeScript: 0 errors | Vitest: 458/458 pass
+
+## Discord Security Enhancements — Round 2 (Apr 10 2026)
+- [ ] Add targeted username/email to AUTH_FAIL SecurityAlertPayload and embed
+- [ ] Wire targetIdentifier into all AUTH_FAIL call sites in appUsers.ts
+- [ ] Implement weekly threat trend digest (Sunday 08:00 EST) with 7-day bar breakdown
+- [ ] Add Cloudflare IP block tRPC procedure (security.blockIp) with CF API secrets
+- [ ] Add Block IP button to SecurityEvents.tsx table rows
+
+## Cloudflare Removal (2026-04-10)
+- [x] Delete server/cloudflareBlock.ts
+- [x] Delete server/cloudflareBlock.test.ts
+- [x] Remove cloudflare router block from server/routers/security.ts
+- [x] Remove CF import from security.ts
+- [x] Confirm zero CF references remain in codebase
+- [x] TypeScript: 0 errors | Vitest: 458/458
+
+## Cloudflare Removal (2026-04-10)
+- [x] Delete server/cloudflareBlock.ts
+- [x] Delete server/cloudflareBlock.test.ts
+- [x] Remove cloudflare router block from server/routers/security.ts
+- [x] Remove CF import from security.ts
+- [x] Confirm zero CF references remain in codebase
+- [x] TypeScript: 0 errors | Vitest: 458/458
+
+## New Features (2026-04-10)
+- [ ] Fix ?code= OAuth redirect loop on published domain
+- [ ] Fix Last Sign In format: MM/DD/YYYY HH:MM AM/PM EST in User Management
+- [ ] Add session_activity table to DB (userId, date, sessionStart, sessionEnd, durationMs)
+- [ ] Add session tracking middleware (record login, heartbeat, logout)
+- [ ] Add tRPC procedures: metrics.activityStats (DAU/MAU/WAU, avgSessionTime)
+- [ ] Add member tier tracking: payingMembers, lifetimeMembers, nonPayingMembers
+- [ ] Add discordConnected field to app_users + tRPC metrics.memberStats
+- [ ] Build metrics panel UI with 8 KPI cards (DAU/MAU/WAU, avgSession, paying/lifetime/nonPaying/discord)
+
+## MLB Last 5 Games + Team Schedule (2026-04-11)
+- [ ] Add mlb_schedule_history DB table (migration 0056) for AN DK NJ schedule/odds history
+- [ ] Build mlbScheduleHistoryService.ts — AN DK NJ fetcher for MLB team schedule + odds + results
+- [ ] Build tRPC procedures: mlbSchedule.getTeamSchedule, mlbSchedule.getLast5ForMatchup
+- [ ] Build MlbTeamSchedule.tsx — full team schedule page with run line/total/ML/covered/won/O-U
+- [ ] Add Last 5 Games panel to each MLB matchup card in GameCard.tsx
+- [ ] Wire team logo click → /mlb/team/:slug route
+- [ ] Wire daily refresh scheduler for mlb_schedule_history (runs nightly, backfills last 30 days)
+- [ ] TypeScript 0 errors + Vitest 458/458 after all changes
+
+## Recent Schedule + Situational Results Panels — MLB/NBA/NHL (2026-04-11)
+- [x] Add nba_schedule_history DB table (migration 0057) for AN DK NJ schedule/odds history
+- [x] Add nhl_schedule_history DB table (migration 0057) for AN DK NJ schedule/odds history
+- [x] Build nbaScheduleHistoryService.ts — AN DK NJ fetcher for NBA team schedule + odds + results
+- [x] Build nhlScheduleHistoryService.ts — AN DK NJ fetcher for NHL team schedule + odds + results
+- [x] Add getSituationalStats to mlbScheduleHistoryService.ts (ML/Spread/Total records)
+- [x] Build nbaSchedule tRPC router (getTeamSchedule, getLast5ForMatchup, getSituationalStats, refreshSchedule)
+- [x] Build nhlSchedule tRPC router (getTeamSchedule, getLast5ForMatchup, getSituationalStats, refreshSchedule)
+- [x] Build RecentSchedulePanel.tsx — unified MLB/NBA/NHL Last 5 games panel (team tab selector, W/L + ATS + O/U chips)
+- [x] Build SituationalResultsPanel.tsx — ML/Spread/Total tabs with side-by-side record bars for both teams
+- [x] Wire RecentSchedulePanel + SituationalResultsPanel into GameCard for MLB, NBA, NHL
+- [x] Build NbaTeamSchedule.tsx — full team schedule page (/nba/team/:slug)
+- [x] Build NhlTeamSchedule.tsx — full team schedule page (/nhl/team/:slug)
+- [x] Register /nba/team/:slug and /nhl/team/:slug routes in App.tsx
+- [x] Build nbaScheduleHistoryScheduler.ts — startup 7-day backfill + every 4h refresh
+- [x] Build nhlScheduleHistoryScheduler.ts — startup 7-day backfill + every 4h refresh
+- [x] Wire NBA + NHL schedulers into server/_core/index.ts
+- [x] TypeScript: 0 errors | Vitest: 458/458 passing
+
+## MLB Closing Line Scraper + UI Fixes (2026-04-11)
+- [ ] Build MLB closing-line cron scraper — AN API fires at game start time, stores closing DK NJ lines to mlb_schedule_history
+- [ ] Fix Situational Results "undefined-undefined" bug in W-L record display
+- [ ] Wire Head-to-Head section from mlb_schedule_history DB (now fully populated)
+- [ ] Spell out full team city names in Recent Schedule tabs (e.g., "Pittsburgh" not "PITT")
+- [ ] Remove "DK NJ · RUN LINE · Total · ML" label from Recent Schedule section header
+
+## MLB UI Fixes + Closing Line Scraper (Apr 11 2026)
+- [x] Fix Situational Results "undefined-undefined" — server was returning {w,l} but frontend expected {wins,losses}
+- [ ] Wire Head-to-Head tab in RecentSchedulePanel using mlb_schedule_history DB data
+- [ ] Spell out full city names in RecentSchedulePanel team tabs (e.g. "Pittsburgh" not "PITT")
+- [ ] Remove "DK NJ · RUN LINE · Total · ML" label from Recent Schedule header
+- [ ] Build MLB closing-line cron scraper — AN API fires at game start time, stores closing DK NJ lines
+
+## Neutral Site + Doubleheader Hardening (2026-04-11) [URGENT]
+- [ ] [URGENT] Add neutral_site boolean column to mlb_schedule_history schema (migration) — populate from AN API response field
+- [ ] [URGENT] Wire neutral_site → LOCATION column in MlbTeamSchedule.tsx to show "Neutral" for London/Mexico City/neutral games
+- [ ] Harden doubleheader storage: ensure anGameId uniqueness prevents duplicate rows; verify both DH games stored with correct gameDate and distinct anGameId
+- [ ] Verify doubleheader display: two rows with same date render correctly in MlbTeamSchedule (no deduplication, no merging)
+
+## RL Cover Stat Fix (2026-04-11)
+- [x] Remove push tracking from RL COVER chip — MLB 1.5 run line never pushes; notCovered = completed - wins (binary W/N only)
+
+## MLB TRENDS Automation (2026-04-11)
+- [x] Automated nightly MLB TRENDS refresh: cron job fires at 2:59 AM EST (11:59 PM PST) nightly, re-ingests yesterday+today, per-row validation, 30-team cross-validation, owner notification, manual trigger via tRPC triggerNightlyTrendsRefresh
+- [x] Manual on-demand backfill tRPC procedure for owner-triggered date re-ingestion
+- [x] Full 30-team cross-validation audit after nightly refresh confirms accuracy
+
+## Open-Line Seeding + Odds Source Labeling (MLB + NHL)
+- [x] Backend: seed every MLB/NHL game with AN Opening line on day-prior (spread, total, ML + juice)
+- [x] Backend: per-field DK NJ replacement — only overwrite Opening field when DK NJ has a non-null value for that field
+- [x] Backend: add oddsSource field to games table: enum('open','dk') — tracks current state of primary book columns
+- [x] Backend: add oddsSource column to odds_history table: enum('open','dk') — per-snapshot label
+- [x] Backend: updateAnOdds writes oddsSource='open' when using Opening line, 'dk' when all DK fields present
+- [x] Backend: insertOddsHistory includes lineSource in every snapshot
+- [x] Backend: post-cycle completeness validation gate — after every AN odds cycle, query DB and log every game with any null field
+- [x] Backend: atomic DK-vs-Open switch (not per-field) — all 3 markets use same source
+- [x] Frontend: odds+splits history table shows source label per snapshot (DK logo / OPEN text)
+- [x] Frontend: SOURCE column in OddsHistoryPanel (DK logo / OPEN text)
+- [x] Run full Apr 12 verification — NHL 6/6 complete, MLB 11/15 complete (4 pending DK odds)
+
+## Open-Line Seeding + DK Logo Source Column (Apr 11 v2)
+- [x] Backend: atomic Open-vs-DK switch — use OPEN for ALL 3 markets until DK NJ has ALL 3 (RL/PL + ML + O/U)
+- [x] Backend: dual-write spread to awayRunLine+awayBookSpread (MLB) / awayPuckLine+awayBookSpread (NHL)
+- [x] Backend: AN API fetch retry with exponential backoff (3 attempts: 2s/4s/8s)
+- [x] Backend: completeness gate uses correct field set (runLine/puckLine + total + ML)
+- [x] Frontend: OddsHistoryPanel SOURCE — DK logo image for dk, OPEN text for open, NO PARTIAL badge
+- [x] Frontend: SOURCE column only for MLB/NHL; F5/NRFI/K-Props/HR Props have no source column
+
+## Missing Opening Line Write Fix (Apr 11 v3)
+- [ ] Audit: trace AN API response for PIT@CHC, HOU@SEA, MIN@TOR, CWS@KC — confirm Open fields returned
+- [ ] Fix: ensure Open odds are written even when DK fields are all null (not just when DK is present)
+- [ ] Fix: atomic switch must write Open line to ALL DB columns when DK is absent
+- [ ] Force re-seed all 4 missing MLB games and verify completeness
+
+## Cross-Device Audit UI/UX Improvements (Apr 13 2026)
+- [ ] Add xs (375px), md (768px), 2xl (1600px) Tailwind breakpoints to index.css @theme
+- [ ] Decompose GameCard.tsx: extract useEdgeCalculation.ts hook
+- [ ] Decompose GameCard.tsx: extract OddsCell as standalone component
+- [ ] Add md: tablet breakpoint 2-col Score|OddsTable layout in GameCard (Fix #1)
+- [ ] Virtualize game feed with react-window VariableSizeList + AutoSizer (Fix #2)
+- [ ] Cap desktop feed at max-w-[1600px] mx-auto with CSS Grid column alignment (Fix #3)
+- [ ] Lazy-load BettingSplitsPanel, OddsHistoryPanel, RecentSchedulePanel, SituationalResultsPanel (Fix #4)
+- [ ] Eliminate trpc.teamColors.getForGame calls — use client-side registry lookup (Fix #5)
+- [ ] Replace useAutoFontSize Canvas measureText with CSS container queries cqw (Fix #6)
+- [ ] Fix mobile frozen panel from 160px to clamp(140px, 38%, 180px) (Fix #7)
+- [ ] Increase all touch targets to minimum 44x44px (Fix #8)
+- [ ] Add overflow-x:auto + scroll-snap to MLB 6-tab sub-tab row (Fix #9)
+- [ ] Add font preload + font-display:optional for Barlow Condensed 700 woff2 (Perf #1)
+- [ ] Add Vite manualChunks for MLB panels and admin pages (Perf #2)
+- [ ] Debounce useViewportScale ResizeObserver at 100ms (Perf #3)
+- [ ] Add Cache-Control + ETag headers to games.list tRPC response (Perf #4)
+- [ ] Move selectedSport/feedMobileTab/selectedDate/selectedStatuses to URL query params (Arch #1)
+- [ ] Add IntersectionObserver-gated data fetching for below-fold secondary panels (Arch #2)
+
+## Cross-Device Audit UI/UX Improvements (Apr 13, 2026)
+
+### Fix Prescriptions
+- [x] Fix #1: Add md: tablet breakpoint at 768px (xs/md/2xl added to @theme in index.css)
+- [x] Fix #2: Virtualize game feed with react-window VariableSizeList + AutoSizer
+- [x] Fix #3: Cap desktop feed at max-w-[1600px] mx-auto with CSS Grid
+- [x] Fix #4: Lazy-load BettingSplitsPanel, OddsHistoryPanel, RecentSchedulePanel, SituationalResultsPanel
+- [x] Fix #5: Eliminate trpc.teamColors.getForGame calls — replaced with client-side getGameTeamColorsClient
+- [x] Fix #6: Replace useAutoFontSize Canvas measureText with CSS container queries (cqw units)
+- [x] Fix #7: Fix mobile frozen panel from hardcoded 160px to clamp(140px, 38%, 180px)
+- [x] Fix #8: Increase all touch targets (star, sport pills, tab buttons, calendar) to 44x44px minimum
+- [x] Fix #9: Add overflow-x:auto + scroll-snap to MLB 6-tab sub-tab row
+
+### Performance
+- [x] Add font preload for Barlow Condensed 700-weight woff2 + font-display:optional in index.html
+- [x] Add manualChunks to vite.config.ts splitting MLB panels and admin pages
+- [x] Debounce useViewportScale ResizeObserver at 100ms (already implemented via rAF throttle)
+- [x] Add Cache-Control + ETag headers to games.list tRPC response
+
+### Architecture
+- [x] Add xs, md, 2xl Tailwind breakpoints (375px, 768px, 1600px) to @theme in index.css
+- [x] Extract useEdgeCalculation.ts hook from GameCard.tsx
+- [x] Move selectedSport, feedMobileTab, selectedDate, selectedStatuses to URL query params via useSearch()
+- [x] Add IntersectionObserver-gated data fetching for below-fold secondary panels (useVisibility hook)
+
+## Tablet Layout + URL Param Fixes (Apr 13, 2026)
+
+- [x] Switch GameCard desktop layout from lg: (1024px) to md: (768px) breakpoint
+- [x] Update ScorePanel clamp from clamp(200px,16vw,260px) to clamp(170px,22vw,260px) for better tablet proportions
+- [x] Fix URL param persistence: setSelectedSport/setSelectedDate use replace:false (push to history)
+- [x] Auto-sport-switch uses isAutoSwitch=true (replace:true) to not pollute history
+- [x] Update GameCard header comment to reflect 3-tier layout (mobile/tablet/desktop)
+
+## Tablet Layout + Sport Pills Session (Apr 13 2026)
+- [x] Verified md: breakpoint CSS generates md:hidden and md:flex at 768px in built CSS
+- [x] EdgeVerdict clamp floor reduced: 150px → 120px (clamp(120px,11.5vw,190px)) — +10px per SectionCol at 768px
+- [x] Sport pills md: breakpoint: px-3, py-2, gap-1.5, logo 14px, font 13px at 768px+
+- [x] Favorites button md: breakpoint: px-3, py-2, gap-2, text-[13px] at 768px+
+- [x] Sport pills container: md:px-4 md:gap-3 for better tablet spacing
+- [x] Pixel-perfect width audit: 768px SectionCol=158px, 820px SectionCol=172px (both above 104px min)
+
+## Tablet Scaling Session (Apr 13, 2026)
+- [x] md: tab bar scaling — CSS @media (min-width: 768px) override for .feed-tab: padding 10px 18px, font-size 12px, letter-spacing 0.07em
+- [x] md: CalendarPicker scaling — md:gap-2 md:px-3 md:py-2 md:text-[13px] md:w-4 md:h-4 on trigger button
+- [x] ScorePanel team name audit — verified all 80+ MLB/NHL/NBA names fit at 13px within 110px available width at 768px (max "San Francisco" = 79.3px). No overflow. No font size change needed.
+- [x] Dead code removal — removed 102 lines of dead useAutoFontSize/computeAutoFontSize/measureTextWidth/_autoFontCanvas code from GameCard.tsx (was defined but never called)
+- [x] GameCard.tsx reduced from 3,802 → 3,712 lines (-90 lines net after all changes)
+
+## Tablet Header/Tab Scaling (Apr 13, 2026 — Session 2)
+- [x] Search bar md: scaling — md:text-[13px] on input, md:py-2 md:px-3 on container, md:w-4 md:h-4 on Search/X icons
+- [x] Sticky header height md: scaling — Row 1 md:pt-3 md:pb-2, Row 3 md:pt-2 md:pb-1 (auto-height header expands naturally)
+- [x] Tab bar fade-right gradient scroll indicator — tabsScrollRef + tabsShowFade state + ResizeObserver; fade auto-hides when content fits or user scrolls to end
+
+## Tablet Header + Tab UX + Apr 12 Seeding (Apr 13, 2026 — Session 3)
+- [x] Date header Row 4 md: scaling — md:py-2 on container + clamp(8px,2.1vw,14px) league label + favorites header md:py-2 + clamp(11px,2vw,15px)
+- [x] Active tab scroll-into-view on sport switch — useEffect on selectedSport + rAF + data-active attr + querySelector + scrollIntoView inline:nearest
+- [x] Seed Apr 12 MLB games: CWS@KC, PIT@CHC, HOU@SEA — AN API book_id=30 opening lines, patch_apr12_missing.ts, 3/3 patched+verified
+
+## Tab Font Scaling + Smooth Scroll + Apr 12 Model Cycle (Apr 14, 2026 — Session 4)
+- [x] Feed tab bar label md: font scaling — index.css @media 768px font-size: 15px + padding: 10px 20px (math: 6 tabs=640px ≤ 768px)
+- [x] Active tab scroll-into-view smooth behavior — behavior: 'smooth' added to scrollIntoView call
+- [x] Apr 12 MLB model cycle — CORRECTED: games were NOT purged (false alarm from Drizzle ORM bug); model ran successfully, 15/15 MODEL_OK
+
+## MLB Purge Bug — Full Audit + Fix (Apr 14, 2026 — Session 5)
+- [x] Audit all game delete/purge code paths — cron jobs, tRPC, direct DB calls (RESULT: no purge occurred; dailyPurge.ts is a no-op since 2026-03-25; only 3 delete paths exist: deleteModelFile, deleteGamesByFileId, deleteGameById — all owner-triggered, none automatic)
+- [x] Trace exact purge execution — ROOT CAUSE: check_apr12_model.ts had 2 bugs: (1) gte/lte on string gameDate column returns 0 rows due to Drizzle ORM type coercion; (2) sport='mlb' (lowercase) doesn’t match DB value 'MLB' (uppercase). All 15 Apr 12 games are intact in DB (2,430 total MLB rows: 2026-03-25 → 2026-09-27)
+- [x] Fix: corrected check_apr12_model.ts to use eq() + uppercase 'MLB'; ran MLB model for Apr 12 → 15/15 MODEL_OK (PIT@CHC + HOU@SEA now have full projections); 0 TypeScript errors; 458/458 tests pass
+
+## lg: Tab Bar + Script Guards + Apr 13 Audit + Logos/Abbrevs (Apr 14, 2026 — Session 6)
+- [x] Add lg: breakpoint to .feed-tab CSS — index.css @media 1024px: font-size: 17px + padding: 11px 22px (math: 6 MLB tabs=712px ≤ 1024px with 312px spare)
+- [x] DB query guard for all diagnostic scripts — fixed 4 lowercase 'mlb' occurrences in 3 scripts; added check_team_keys.ts audit script (MLB_BY_ABBREV/NHL_BY_DB_SLUG/getNbaTeamByDbSlug all 30/30 hits)
+- [x] Verify Apr 13 MLB model cycle — 10/10 MODEL_OK; MLBCycle FAILED(6) is for Apr 14 future games without pitchers (normal, not a bug)
+- [x] Audit team logo visibility/readability — all 3 sports 100% hit rate: MLB_BY_ABBREV(30/30), NHL_BY_DB_SLUG(30/30), getNbaTeamByDbSlug(30/30); logos render via official CDN URLs
+- [x] Audit and fix team abbreviations — nbaTeams.ts: added abbrev field to NbaTeam interface + all 30 official NBA abbreviations (BOS/BKN/NYK/PHI/TOR/CHI/CLE/DET/IND/MIL/ATL/CHA/MIA/ORL/WAS/DEN/MIN/OKC/POR/UTA/GSW/LAC/LAL/PHX/SAC/DAL/HOU/MEM/NOP/SAS); GameCard.tsx: makeCityAbbr now uses NHL→NBA→MLB official abbrev (30/30 MLB fixed: NYY/NYM/LAA/LAD/CWS/CHC/STL/KC/TB/SF/SD etc.)
+
+## 5-Issue Fix: Truncation + A's Logo + Tab Scroll + xl: + Abbrev (Apr 14, 2026 — Session 7)
+- [x] Fix MIN truncation — CompactScorePanel now uses awayAbbr/homeAbbr (official 2-3 char: MIN/ATH/NYY/NYM/LAA/LAD/CWS/CHC); removed truncate class + whiteSpace:nowrap + letterSpacing:0.05em
+- [x] Fix A's logo visibility — brightness(1.25) + drop-shadow(0 0 2px rgba(255,255,255,0.10)) on all TeamLogo imgs; lifts dark-primary-color logos (A's #003831, Pirates/CWS #000000) off dark card bg
+- [x] Fix tab bar vertical scroll bleed — overflowY:hidden + overscrollBehaviorX:contain + touchAction:pan-x on feed-tabs-scroll; prevents iOS/Android vertical scroll chain on horizontal swipe
+- [x] Add xl: tab bar breakpoint — index.css @media 1280px: font-size:18px + padding:12px 24px + letter-spacing:0.09em (math: 6 MLB tabs=721px ≤ 1280px with 559px spare); 4-tier scale complete: 13→15→17→18px
+- [x] Abbrev in mobile ScorePanel — CompactScorePanel (frozen panel) now shows official abbreviations; ScorePanel (desktop) correctly shows city+nickname in 2 lines; no separate label needed
+
+## HANDICAPPER Role + BET TRACKER Page (Apr 14, 2026 — Session 8)
+- [ ] Add "handicapper" to appUsers.role enum in drizzle/schema.ts
+- [ ] Add tracked_bets table to schema (userId, gameId, sport, betType, team, odds, risk, toWin, book, note, result, createdAt)
+- [ ] Run pnpm db:push to migrate schema
+- [ ] Add handicapperProcedure to server/routers/appUsers.ts (gates on owner|admin|handicapper)
+- [ ] Update createUser/updateUser zod enums to include "handicapper"
+- [ ] Add betTracker router with list/create/update/delete procedures
+- [ ] Update UserManagement.tsx: ROLE_ICONS, ROLE_COLORS, ROLE_ORDER, form select, stats counter for HANDICAPPER
+- [ ] Build client/src/pages/BetTracker.tsx: sport tabs, game slate, bet entry form, saved bets list
+- [ ] Add /bet-tracker route to App.tsx
+- [ ] Add "Bet Tracker" to profile dropdown for owner|admin|handicapper roles
+- [ ] Wire role-based access guard on BetTracker page
+
+## Session: HANDICAPPER Role + Bet Tracker (Apr 13-14, 2026)
+
+- [x] Add 'handicapper' to appUsers.role enum in drizzle/schema.ts
+- [x] Create tracked_bets table (17 columns, 5 indexes) in drizzle/schema.ts
+- [x] Run pnpm db:push — migration applied successfully (drizzle/0061_petite_unus.sql)
+- [x] Add handicapperProcedure to server/routers/appUsers.ts (owner | admin | handicapper)
+- [x] Update createUser/updateUser Zod enums to include 'handicapper'
+- [x] Create server/routers/betTracker.ts — list, create, update, delete, getSlate, getStats procedures
+- [x] Register betTrackerRouter in server/routers.ts
+- [x] Update UserManagement.tsx — AppUserRow type, ROLE_ICONS (BarChart2), ROLE_COLORS (emerald), ROLE_ORDER, FormState, stats counter (5 cols), role select
+- [x] Create client/src/pages/BetTracker.tsx — sport tabs, game slate selector, bet entry form, stats bar, bets list with quick result buttons, edit/delete
+- [x] Add /bet-tracker route to App.tsx
+- [x] Add "Bet Tracker" link to profile dropdown in ModelProjections.tsx (owner | admin | handicapper)
+- [x] 0 TypeScript errors, 458/458 tests passing
+
+## Session: Bet Tracker v2 — Action Network Slate + $/Units Toggle
+
+- [x] Research Action Network v2 scoreboard API endpoint (confirmed: /web/v2/scoreboard/{sport}?bookIds=...&date=YYYYMMDD&periods=event)
+- [x] Build server/actionNetwork.ts — fetchAnSlate() with full structured logging
+- [x] Update betTracker.getSlate to call fetchAnSlate() instead of internal DB games table
+- [x] Return awayFull, homeFull, status fields from getSlate for richer UI
+- [x] Add $/Units stake toggle to BetTracker.tsx (persisted in localStorage)
+- [x] Remove Sportsbook field from Add Bet form and BetCard display
+- [x] Update game slate dropdown to show AN games with time + status
+- [x] Update stats bar to respect stakeMode ($ vs units formatting)
+- [x] All 458 tests passing, 0 TypeScript errors
+
+## Session: Bet Tracker v3 — Slate Speed + Structured Dropdowns
+
+- [ ] Add server-side in-memory cache to actionNetwork.ts (5-min TTL per sport+date key)
+- [ ] Pre-warm slate cache on server startup for today's date across all 4 sports
+- [ ] Add timeframe enum to tracked_bets schema (FULL_GAME, FIRST_5, FIRST_INNING)
+- [ ] Add market enum to tracked_bets schema (ML, RL, TOTAL)
+- [ ] Run pnpm db:push to apply schema changes
+- [ ] Update betTracker create/update/list router to include timeframe + market
+- [ ] Replace free-text PICK field with auto-derived string from GAME + TIMEFRAME + MARKET + PICK_TEAM/SIDE
+- [ ] Add TIMEFRAME dropdown (Full Game / First 5 Innings / First Inning)
+- [ ] Add MARKET dropdown (Moneyline / Run Line / Total)
+- [ ] Add PICK dropdown (Away team / Home team / Over / Under — context-aware per market)
+- [ ] Remove manual AWAY/HOME text inputs (game always selected from AN slate)
+- [ ] TypeScript check, 458/458 tests passing, checkpoint
+
+## Session: Bet Tracker v3 — AN Slate + Structured Dropdowns
+- [x] Server-side AN slate cache (5-min TTL, pre-warm on startup, deduplication guard)
+- [x] DB schema: anGameId, timeframe (FULL_GAME/FIRST_5/FIRST_INNING), market (ML/RL/TOTAL), pickSide (AWAY/HOME/OVER/UNDER) columns added + migrated (migration 0062)
+- [x] betTracker router: create/update/list/getSlate updated for structured fields, pick auto-derived server-side
+- [x] BetTracker.tsx: DATE + GAME (AN slate) + TIMEFRAME + MARKET + PICK dropdowns, no free-text
+- [x] $/Units toggle with configurable unit size, persisted in localStorage
+- [x] Sportsbook field fully removed from form and bet cards
+- [x] 0 TypeScript errors, 458/458 tests passing
+
+## Session: Bet Tracker v6 — Auto-Grade Scheduler + Score Display + Social Card Export
+- [ ] Server-side auto-grade scheduler: nightly 11:30 PM EST cron + 15-min polling during game hours (10 AM–2 AM EST)
+- [ ] Persist awayScore/homeScore on settled bets in DB
+- [ ] Score + team logos display on WIN/LOSS/PUSH bet cards
+- [ ] Social media card export: units-sorted (highest to lowest), shareable PNG
+- [ ] TypeScript check, tests, checkpoint
+
+- [ ] BUG FIX: O/U model line and odds must always be anchored to book total line (not model-computed line) — ARI/BAL showing o8.5 model vs o9 book
+- [ ] BUG FIX: Run/puck/point line model spread must always match book side — KC/DET showing inverted RL (book KC -1.5 but model showing KC +1.5)
+- [ ] Apply both fixes across MLB, NHL, NBA with deep per-game validation logging
+
+## CHEAT SHEETS Tab (April 14, 2026)
+- [x] Rename F5/NRFI tab to CHEAT SHEETS
+- [ ] Extend DB schema: add innDist (JSON), f5ModelML, f5ModelRL, f5ModelTotal, f5ModelAwayScore, f5ModelHomeScore, nrfiModelOdds, yrfiModelOdds columns to games table
+- [ ] Extend MLBAIModel.py: compute and return I1-I5 per-team run distributions, F5 model ML/RL/Total, NRFI/YRFI model odds from simulation
+- [ ] Update mlbModelRunner.ts: write new F5/NRFI model line fields to DB
+- [ ] Build Action Network F5/NRFI odds scraper (F5 ML, RL, Total; NRFI/YRFI odds)
+- [ ] Build tRPC endpoint for CHEAT SHEETS data
+- [ ] Build CHEAT SHEETS UI: F5 section with I1-I5 distribution bars + AN odds + model lines
+- [ ] Build CHEAT SHEETS UI: NRFI section with I1 distribution + YRFI%/NRFI% + AN odds + model odds
+- [ ] Full validation audit: all games populated, odds correct, model lines accurate
+
+## Outcome Ingestion + F5 Win Pct Backfill (April 15, 2026)
+- [x] Trigger outcome ingestion for 2026-04-14 — confirmed already ingested at 07:30 UTC (15/15 games, 0 errors)
+- [x] Add modelF5HomeWinPct + modelF5AwayWinPct to CheatSheet F5 card CENTER section (Away Win% | Push% | Home Win% row, neon green on leader)
+- [x] Build and launch backfillF5WinPct.mts — re-runs Python engine for all 256 modeled games (2026-03-26 → 2026-04-14) with per-game VERIFY logging
+- [x] Wire checkDrift post-backfill — call checkF5ShareDrift() after all 256 games populated, log rolling 50-game window result
+- [x] Add F5 ML edge display to CheatSheet F5 card — no-vig implied prob from book F5 ML vs modelF5HomeWinPct/modelF5AwayWinPct, show edge delta
+- [x] Build rolling Brier score trend chart on Admin page — 20-game rolling window, 3 markets (FG ML, F5 ML, NRFI)
+- [ ] Monitor and complete F5 win pct historical backfill (256 games, 20 dates, 2026-03-26 to 2026-04-14) [IN PROGRESS: 7/20 dates, 75/256 games, 0 errors]
+- [x] Trigger checkDrift after backfill completes — 50-game rolling window, full drift report with calibration recommendations
+- [x] Add FG Total and F5 Total Brier lines to Brier Trend chart (dashed purple/teal)
+- [x] Wire notifyOwner at end of ingestMlbOutcomes with per-market Brier scores for morning calibration push notification
+- [x] Re-ingest 2026-04-14 with force=true after backfill completes — recompute correct brierF5Ml for 15 games
+- [x] Add Re-ingest button to Admin Brier Trend per-game table (force=true per date row)
+- [x] Build 5-market Brier heatmap by date (date x market grid: FG ML / F5 ML / NRFI / FG Total / F5 Total)
+
+## 7-Task Sprint (April 15, 2026)
+- [ ] Verify April 15 nightly pipeline end-to-end — model runner, outcome ingestor, Brier scoring, notifyOwner push notification
+- [ ] Fix 3 NULL brierF5Ml games (CHC@PHI id=2250235, CLE@STL id=2250241, NYM@LAD id=2250245) — audit f5AwayML/f5HomeML NULL root cause and backfill odds
+- [ ] Backfill F5 ML odds for all historical games with NULL f5AwayML (games with modelF5AwayWinPct populated but no book F5 ML odds)
+- [ ] Add daily F5 ML odds scraper coverage audit — count games where modelF5AwayWinPct IS NOT NULL AND f5AwayML IS NULL, surface in morning notifyOwner
+- [ ] Wire drift detector minimum threshold — set configurable minimum (default 20 games), tune 0.02 delta threshold against actual variance
+- [ ] Build F5 ML edge leaderboard — tRPC procedure + UI page ranking all historical games by F5 ML edge (model win% vs no-vig book implied%)
+- [ ] Build Brier heatmap date × market drill-down — click-through from heatmap cell to per-game list for that date × market combination
+- [ ] Deep-dive AN API for historical F5 ML odds — recover 9 missing games (2026-03-31: 8 games, 2026-04-03: 1 game) and backfill into DB
+
+## 8-Task Sprint (April 15, 2026 — Evening)
+- [ ] Task 1: Verify April 15 nightly ingest fires correctly (12:30 AM PST cron, notifyOwner, Brier scores)
+- [ ] Task 2: Wire drift detector to Admin UI — banner on BRIER TREND page showing latest drift result
+- [ ] Task 3: Build F5 ML edge leaderboard — tRPC procedure + UI page (model win% vs no-vig book implied%, ranked by edge)
+- [ ] Task 4: Add daily F5 ML coverage audit to notifyOwner — count modelF5AwayWinPct IS NOT NULL AND f5AwayML IS NULL
+- [ ] Task 5: Wire checkF5ShareDrift() to nightly ingest — call after ingestMlbOutcomes, include result in notifyOwner
+- [ ] Task 6: Build Brier heatmap drill-down — click cell to see individual game list for that date x market
+- [ ] Task 7: Build F5 edge vs outcome scatter plot — model edge (x) vs actual outcome (y) for all 256 historical games
+- [ ] Task 8: Add FG Total and F5 Total edge display to CheatSheet card (no-vig implied vs model projected total)
+
+## Unified THE MODEL RESULTS Page (Session: Apr 15, 2026)
+- [ ] Merge "THE MODEL" + "F5 EDGE BOARD" into single "THE MODEL RESULTS" page at /admin/model-results
+- [ ] 5 market tabs: FULL GAME, FIRST 5 INNINGS, 1ST INNING, K-PROPS, HR PROPS
+- [ ] FULL GAME tab: Brier trend (FG ML + FG Total), heatmap, FG ML edge leaderboard + scatter, drift banner, rolling accuracy from mlbBacktest
+- [ ] FIRST 5 INNINGS tab: Brier trend (F5 ML + F5 Total), F5 ML edge leaderboard + scatter, rolling accuracy
+- [ ] 1ST INNING tab: NRFI Brier trend, NRFI daily results (date nav), rolling accuracy
+- [ ] K-PROPS tab: daily backtest (date nav), last 7 days aggregate, calibration metrics
+- [ ] HR PROPS tab: daily HR props results (date nav), rolling accuracy, backtest results
+- [ ] Single sidebar entry "THE MODEL RESULTS" with FlaskConical icon (replace both old entries)
+- [ ] Remove /admin/f5-edge route (redirect to /admin/model-results)
+- [ ] TypeScript 0 errors, 487/487 tests passing
+
+## MLB Headshot Backfill + Responsive UI (Session: Apr 15, 2026 — Continuation)
+- [x] Fix React Error #310 (hooks violation) — moved hrPropsList, fgRows, f5Rows useMemo above early returns
+- [x] Fix OAuth redirect on scatter button click — added enabled:!!appUser guard to RollingAccuracyPanel, /admin/* path guard in main.tsx, 14 OPTIONAL_AUTH_PATHS
+- [x] Add type="button" to all 140 buttons across 20 files (including shadcn Button default + SidebarRail)
+- [x] StatGrid responsive grid component (repeat(auto-fill, minmax(110px, 1fr)))
+- [x] StatCard label wrapping (removed nowrap/ellipsis), value font 22px
+- [x] MiniStatCard label wrapping + overflow hidden for responsive fit
+- [x] KPropPitcherRow stats flexWrap for mobile layout
+- [x] HrPropRow stats section flexWrap + minWidth:0 for mobile layout
+- [x] MiniStatCard grids in FG/F5 edge summary sections wrapped in StatGrid (minColWidth=120)
+- [x] Add fetchMlbamIdMap() to mlbKPropsModelService.ts (mirrors mlbHrPropsModelService pattern)
+- [x] Add backfillAllKPropsMlbamIds() export to mlbKPropsModelService.ts
+- [x] Fix TypeScript implicit any on filter callback (KPropsRow type cast)
+- [x] Add backfillKPropsMlbamIds ownerProcedure to server/routers.ts (mlbBacktest router)
+- [x] Add MLB HEADSHOT BACKFILL button to K-PROPS tab in TheModelResults admin UI
+- [x] TypeScript 0 errors, 487/487 tests passing
+
+## Auto-Populate MLBAM IDs — Full Pipeline Automation (Session: Apr 15, 2026)
+- [x] Auto-resolve MLBAM IDs immediately after K-Props rows are written (upsertStrikeoutProps pipeline)
+- [x] Wire MLBAM backfill into nightly K-Props cron (after model run, before DB write completes)
+- [x] Wire MLBAM backfill into server startup (alongside existing 60-day schedule backfill)
+- [x] Add structured logging: [MLBAM_BACKFILL] resolved/alreadyHad/unresolved/errors at every trigger point
+- [x] TypeScript 0 errors, all tests passing
+
+## MLB Betting Splits — 5-Issue Fix (Session: Apr 15, 2026)
+- [x] Fix MLB team logos not loading in betting splits (root cause audit)
+- [x] Fix Trends table — not updating in real time, always current
+- [x] Fix Last 5 Games table — not updating in real time, always current
+- [x] Remove "169 consecutive duplicates hidden" from frontend UI (backend-only logging)
+- [x] Add OPEN line display to betting splits
+
+## Betting Splits — 3 Persistent Issues (2026-04-15)
+
+- [ ] Fix splits bars — use team hex colors from DB (primary color per team)
+- [ ] Fix Last 5 Games — stale data, must auto-update daily with current completed games
+- [ ] Fix OPEN line — pull from AN API 'Open' category, store as lineSource='open', display in OddsHistoryPanel
+
+## Session: 2026-04-16 - Critical Bug Fixes
+
+- [x] Fix upsertMlbScheduleHistory silent failure: onDuplicateKeyUpdate used snake_case column names (game_status, away_score) but actual MySQL columns are camelCase (gameStatus, awayScore) — MySQL error 42S22 "Unknown column 'game_status' in field list". Fixed by using sql`VALUES(${sql.raw('columnName')})` pattern.
+- [x] Backfill 14 days of MLB schedule history (4/3-4/16): 191 games upserted, 0 errors. All games from 4/11-4/15 now show correct scores and 'complete' status.
+- [x] Verify team colors fix: MLB_ABBREV_ALIASES fully populated in teamColors.ts, merged into ALL_COLORS map. getTeamColors('NYM') now correctly returns Mets blue.
+- [x] Implement OPEN line pinning in OddsHistoryPanel: separates OPEN rows from DK rows, pins first non-null OPEN row at top with amber "OPENING LINE" separator, filters null-value rows from dedup display, adds "LIVE MARKET MOVEMENT" separator between OPEN and DK sections.
+
+## Session: 2026-04-16 - MLB 10-Game Fix
+
+- [x] Fix RL sign inversion: awayModelSpread anchored to book awayRunLine (dbGameById lookup)
+- [x] Fix RL odds swap: awayRlOdds/homeRlOdds sign-corrected variables when Python inverts
+- [x] Add dbGameById map to model runner for book RL label anchoring
+- [x] Re-run model for 2026-04-16: all 10 games modeled, validation PASSED, 0 errors
+- [x] Update mlbRunLineOdds.test.ts assertions to match new book-anchored RL pattern
+- [x] 487/487 tests passing
+
+## Session: 2026-04-16 - RL Inversion + Total Mismatch Bugs
+
+- [x] Fix TOR@MIL RL inversion: model column shows inverted labels vs book column
+- [x] Fix LAA@NYY total mismatch: model shows 9.5 instead of matching book total 10
+- [x] Permanently fix total anchoring in model runner (always use book ou_line, never r.total_line)
+- [x] Re-run model for April 16 after fixes, verify all 10 games correct
+- [x] 487/487 tests passing
+
+## Session: 2026-04-16 - Full MLB+NHL Model Line Mirror Audit
+
+- [ ] Hardcode scipy installation into model startup (never missing again)
+- [ ] Fix NHL puck line inversion: STL@UTA shows +1.5/-221 model when book is +1.5/+200
+- [ ] Full audit: all NHL games modelSpread sign matches awayPuckLine sign
+- [ ] Full audit: all NHL games modelTotal equals bookTotal
+- [ ] Full audit: all MLB games modelSpread sign matches awayRunLine sign
+- [ ] Full audit: all MLB games modelTotal equals bookTotal
+- [ ] 487/487 tests passing
+
+## Session: 2026-04-16 - Full MLB/NHL Line Mirror Audit
+
+- [x] Hardcode scipy auto-install into MLBAIModel.py (never missing again)
+- [x] MLB audit: verify 10/10 games correct RL signs and totals (ALL OK)
+- [x] NHL audit: trace STL@UTA puck line inversion root cause (awayBookSpread wrong sign from AN API)
+- [x] Fix NHL puck line sign: odds-authoritative correction (awaySpreadOdds > 0 = dog = +1.5)
+- [x] Fix NHL validator: use awaySpreadOdds (not stale awayBookSpread) for sign check
+- [x] Add [VERIFY] log after every NHL DB write confirming PL sign and total match
+- [x] Re-run NHL model for April 16: 6/6 games PASS (STL, ANA, SJS, LAK, VAN, SEA all corrected)
+- [x] 487/487 tests passing, 0 TypeScript errors
+
+## Session: 2026-04-16 - NHL PL Book Sign Fix (GameCard)
+
+- [x] Root cause: awayBookSpread in DB has wrong sign from AN API (5 of 6 April 16 games affected)
+- [x] Fix: GameCard odds-authoritative correction for NHL book spread display (_correctedAwaySpread/_correctedHomeSpread)
+- [x] DB audit: modelAwayPuckLine signs are 100% correct for all 6 April 16 NHL games
+- [x] 487/487 tests passing, 0 TypeScript errors
+
+## Session: 2026-04-17 - Rotowire Watcher Pipeline Rebuild
+
+- [ ] Audit: find all Rotowire log files across server and DB
+- [ ] Diagnose why April 18 NHL games are not modeled
+- [ ] Audit MLB/NHL live score APIs for in-progress detection
+- [ ] Remove ALL time gates from vsinAutoRefresh (MLBCycle, VSiN splits, AN API odds)
+- [ ] Remove ALL time gates from nhlGoalieWatcher (today + tomorrow seeder)
+- [ ] Remove ALL time gates from mlbLineupsWatcher
+- [ ] Set all watcher intervals to 5 minutes
+- [ ] Model on EXPECTED lineups (not just confirmed) — run model as soon as any lineup is populated
+- [ ] Re-model on any lineup/pitcher/goalie change (late scratches)
+- [ ] Add modelRunAt IS NULL guard to prevent re-running already-modeled confirmed games
+- [ ] Watch both today AND tomorrow pages for MLB and NHL every 5 min
+- [ ] Stop watching/modeling once game is live or final (use API game status)
+- [ ] Integrate MLB Stats API for live game status detection
+- [ ] Integrate NHL API for live game status detection
+- [ ] Add structured per-cycle log file for Rotowire watcher (rotowire-watcher.log)
+- [ ] Validate April 17 today + April 18 tomorrow pipeline end-to-end
+- [ ] Save checkpoin## MLB Model P0 Automation Fixes (2026-04-19)
+- [x] Fix CASE C guard in mlbLineupsWatcher.ts — add modelRunAt IS NULL check before skipping unchanged lineups
+- [x] Fix CASE D guard in mlbLineupsWatcher.ts — add modelRunAt IS NULL check before skipping confirmed lineups
+- [x] Fix pitcher source in runMlbModelForDate — COALESCE mlb_lineups.awayPitcherName with games.awayStartingPitcher
+- [x] Step 6 tomorrow fallback — already present, confirmed live
+- [x] Create startMlbModelSyncScheduler — standalone 5-min scheduler for today+tomorrow, registered in index.tstMlbModelSyncScheduler — standalone 5-min scheduler for today+tomorrow, register in index.ts
+
+## Session: 2026-04-20 - TiDB Outage Resilience + MLB Backtest Fixes
+
+- [x] Add DB health check endpoint (/api/health) that returns DB status without crashing
+- [x] Make OAuth callback DB-resilient: set session cookie even if upsertUser fails (DB down)
+- [x] Make authenticateRequest DB-resilient: serve JWT-only session when DB is unavailable
+- [x] Add in-memory user cache to avoid DB round-trips for recently authenticated users
+- [x] Add DB circuit breaker: after N consecutive failures, return cached/degraded responses instead of hanging
+- [x] Add connection timeout reduction (5s max) to prevent 30s hangs on every request
+- [x] Add /api/db-status endpoint to show real-time TiDB connectivity
+- [ ] Fix FG ML home confidence: edge-based (done, TSC clean)
+- [ ] Fix F5 ML home confidence: edge-based (done, TSC clean)
+- [ ] Launch auto-retry rerun watcher (done, PID 26141 running)
+- [ ] Run full re-backtest once TiDB recovers
+- [ ] Run diagnostic SQL queries and grade all markets
+- [ ] Deliver Market-by-Market A-grade diagnostic report
+
+## Session: 2026-04-23 - Model Line Mirroring + SD@COL Fix
+
+- [ ] Fix model total line to always mirror book total line exactly (same number, model odds only)
+- [ ] Fix model F5 total line to always mirror book F5 total line exactly
+- [ ] Fix SD@COL (and any game) skip condition — diagnose why SD@COL was not modeled
+- [ ] Re-run production model for April 23 2026 after fixes
+- [ ] Verify all games on feed show matching book/model lines with correct odds
+
+## Bet Tracker — 2026 MLB Import + Multi-Handicapper Upgrade (2026-04-28)
+
+- [x] Clear 8 stale test bets (ids 1-8) before import
+- [x] Import 85 Prez 2026 MLB bets into tracked_bets (userId=1, sport=MLB, unit-based)
+- [x] Set 6 pending bets (04/21) to result=PENDING for auto-grading
+- [x] Extend getStats: add byType, bySize, byMonth, bySport, equityCurve, bestWin, worstLoss
+- [x] Add targetUserId param to list/getStats for owner/admin cross-handicapper view
+- [x] Enforce visibility: owner/admin see all handicappers; porter/hanksthebank see only own bets
+- [x] Add listHandicappers procedure (owner/admin only) for handicapper selector UI
+- [x] Build EquityChart React component (Canvas 2D, cumulative P/L over time)
+- [x] Build BreakdownGrid component (By Type / By Size / By Month / By Sport)
+- [x] Add Best Win + Worst Loss stat cards to header row
+- [x] Add day-separator rows with daily W-L summary to bet log table
+- [x] Add handicapper selector dropdown (owner/admin only) to BetTracker page
+- [ ] Wire auto-grading for 04/21 pending bets via MLB API scoreGrader
+- [x] Run vitest for betTracker router after all changes (487/487 passing)
+- [x] Save checkpoint and deploy (5b2f90ec)
+
+## Session: 2026-04-29 - BetTracker Major Feature Update
+
+- [ ] Default handicapper dropdown to logged-in user on page load
+- [ ] All-Time toggle: on by default, active/highlighted
+- [ ] Role-based access: prez/sippi/owner see prez bets; porter/hank see own only; admin sees all
+- [ ] Immutable bets for porter/hank: no delete after creation; edit-request flow instead
+- [ ] Schema: add wagerType enum (PREGAME/LIVE) to trackedBets
+- [ ] Schema: add customLine (decimal) field to trackedBets for RL/Total custom line values
+- [ ] Schema: add betEditRequests table for porter/hank edit/delete requests
+- [ ] DB push migrations
+- [ ] Server: LOGS procedure (prez/sippi/admin only) — all creates, edits, edit requests
+- [ ] Server: enforce immutability for porter/hank bets (block delete/edit, allow edit-request)
+- [ ] Frontend: pregame/live wager toggle in ADD BET form
+- [ ] Frontend: customizable line field for RL and Total markets (replaces hardcoded 7.5)
+- [ ] Frontend: editable TO WIN (U) field (currently read-only, calculated)
+- [ ] Frontend: unit size analytics fix — 1U/2U/3U/4U/5U/10U buckets; plus-money uses risk, minus-money uses toWin
+- [ ] Frontend: LOGS tab (prez/sippi/admin only) with full audit trail
+- [ ] Slate load speed: in-memory cache with 60s TTL for AN slate per sport/date
+
+## Session: 2026-04-29 - BetTracker v4 (Role Access, Immutability, LOGS, Analytics Fix)
+
+- [x] Schema: add wagerType (PREGAME/LIVE) and customLine to tracked_bets
+- [x] Schema: create bet_edit_requests table (betId, requestedBy, requestType, proposedChanges, reason, status, reviewedBy, reviewedAt, reviewNote)
+- [x] Run db:push to apply schema changes
+- [x] Server: fix bySize analytics — plus-money uses risk as unit count, minus-money uses toWin as unit count
+- [x] Server: bySize buckets ordered 10U → 5U → 4U → 3U → 2U → 1U
+- [x] Server: listHandicappers returns all owner/admin/handicapper accounts
+- [x] Server: list procedure — OWNER/ADMIN can view any user via targetUserId; HANDICAPPER sees own bets only
+- [x] Server: create procedure — accepts wagerType and customLine fields
+- [x] Server: update procedure — HANDICAPPER forbidden; ADMIN cannot touch owner bets; OWNER can only edit own bets
+- [x] Server: delete procedure — HANDICAPPER forbidden (must submitEditRequest); ADMIN cannot delete owner bets
+- [x] Server: submitEditRequest — handicapper submits EDIT or DELETE request for own bet
+- [x] Server: reviewEditRequest — OWNER/ADMIN approves or denies pending edit request
+- [x] Server: getLogs — OWNER/ADMIN: full audit log of all bets + all edit requests with user info
+- [x] Client: default logged-in user selected in handicapper dropdown on BetTracker page
+- [x] Client: All-Time toggled ON by default
+- [x] Client: wagerType (PREGAME/LIVE) toggle in bet creation form
+- [x] Client: customLine field for RL/TOTAL bets (editable text input)
+- [x] Client: TO WIN field is now editable/typable (not just auto-calculated)
+- [x] Client: LOGS tab visible to owner/admin — shows all bets created + all edit requests
+- [x] Client: porter/hank edit/delete triggers submit-request modal (immutable bets)
+- [x] Client: review modal in LOGS tab for owner/admin to approve/deny requests
+- [x] TypeScript: 0 errors
+
+## Session: BetTracker v13 — Stats, Chart, Layout
+
+- [x] Fix TS2802 error: replace for...of on MapIterator with dayPLMap.forEach()
+- [x] Add biggestDay (date + units) computation to getStats in betTracker.ts
+- [x] Add longestWinStreak computation to getStats in betTracker.ts
+- [x] Add biggestDayDate, biggestDayUnits, longestWinStreak to stats return object
+- [x] Update StatsData type in BetTrackerAnalytics.tsx with new optional fields
+- [x] EquityChart: dynamic PAD.left from ctx.measureText() on widest y-label
+- [x] EquityChart: PAD.bottom = 40, minLabelPx = 44 for x-axis date spacing
+- [x] Chart title: large centered +/- UNITS (text-xl font-bold, TrendingUp size=22)
+- [x] StatCard: min-h-[72px] h-auto overflow-visible (fixes ROI sub-label clipping)
+- [x] Stat pills: hide Pushes when pushes === 0
+- [x] Stat pills: hide Pending when pending === 0
+- [x] Stat pills: replace Best Win with Biggest Day (+units, date sub-label)
+- [x] Stat pills: replace Worst L with Win Streak (longestWinStreak W)
+- [x] Layout: 2-col grid [2fr 1fr] replacing 3-col [360px 300px 1fr]
+- [x] Layout: left column wraps Add Bet form + Breakdowns (stacked below form)
+- [x] TypeScript: 0 errors
+
+## Session: BetTracker v14 — Apr 30 2026
+
+- [x] Add ALL sport tab to the left of MLB (SportOrAll type, formSport fallback to MLB)
+- [x] Add date range filter pills: All-Time | Today | L7 Days | L14 Days | 1M
+- [x] Server: dateFrom/dateTo params added to list and getStats procedures (gte/lte drizzle-orm)
+- [x] Stat pills: uniform min-h-[72px] height, centered flex-wrap layout on desktop/tablet
+- [x] Mobile stat pills: 3x2 grid (Total Bets / +Units / Wins / Losses / WP% / ROI%)
+- [x] Pushes and Pending pills hidden when value is 0
+- [x] Chart title = actual +/- units value (dynamic color: green/red)
+- [x] Remove Net P/L stat card (replaced by +/- Units in chart title)
+- [x] Remove MLB 9-inning linescore from BetCard
+- [x] todayPt() helper (UTC-8 Pacific Time) and subtractDays() utility added
+
+## Session: Postponed Game Follow-up Features
+
+- [ ] Feature 1: Postponed/rescheduled game detection — auto-detect when a postponed game gets rescheduled on a future date, log with structured output, notify owner
+- [ ] Feature 2: Admin postponed-game view — filter toggle in owner dashboard to audit all postponed games across the season
+- [ ] Feature 3: Suspended game handling — 'suspended' as distinct status, resume detection, feed exclusion
+
+## Session: Postponed Game Follow-up Features (v15)
+
+- [x] Feature 1: Rescheduled game detection — mlbPostponedTracker.ts detectRescheduledGames() scans MLB Stats API schedule 14 days forward, detects when a postponed game has a new gamePk/date, logs it and sends owner notification
+- [x] Feature 2: Admin postponed-game view — /admin/postponed-games page with full audit table, status badges, filter/sort, manual status override dialog, 60s auto-refresh; wired into admin nav dropdown
+- [x] Feature 3: Suspended game handling — 'suspended' added to gameStatus enum (migration 0079), detectResumedSuspendedGames() checks MLB API for final status, auto-updates DB and notifies owner
+- [x] Step 0 in runMlbCycle — detectRescheduledGames + detectResumedSuspendedGames run every 10 min before score refresh, non-fatal
+- [x] games.listPostponed tRPC procedure — owner-only, returns all postponed/suspended games
+- [x] games.markGameStatus tRPC procedure — owner-only manual status override
+- [x] listGames feed filter extended — excludes both 'postponed' AND 'suspended' from public feed
+
+## Session: BetTracker v16 — Responsive Layout Fixes
+- [x] Sport tabs: horizontal scroll on mobile (no wrapping, all tabs always visible)
+- [x] Date range pills: single scrollable row on mobile, flex-wrap on sm+
+- [x] Stat pills mobile: strict 3x2 grid (Total Bets / +Units / Wins | Losses / WP% / ROI%)
+- [x] Stat pills desktop/tablet: centered flex-wrap, each pill min-w-[100px], equal spacing both sides
+- [x] StatCard: removed truncate, whitespace-nowrap value, overflow-visible, min-h-[76px]
+- [x] Chart title: text-3xl sm:text-4xl, TrendingUp size=28
+- [x] EquityChart height: responsive ratio (0.70 mobile / 0.40 tablet / 0.30 desktop), clamped [200, 380]
+- [x] EquityChart Y-axis: bold font, yLabelFontSize=max(10,min(11,W/60)), PAD.left = maxLabelW+18
+- [x] EquityChart X-axis: xLabelFontSize=max(10,min(11,W/65)), lastLabelX dedup, PAD.bottom=46
+- [x] Mouse handler: dynamic PAD_LEFT computed from same formula as draw (no hardcoded 58)
+- [x] Header: flex-shrink-0 right side, narrower unit input on mobile (w-12 sm:w-16)
+
+## Session: BetTracker v17 — Season Filter + Stats Bar Layout
+- [x] Filters moved inline with user dropdown (single scrollable row, no separate row)
+- [x] L7 Days → L7, L14 Days → L14 (shortened labels)
+- [x] Season filter added after 1M
+- [x] SEASON_START map: MLB=2026-03-25, NHL=2025-10-04, NBA=2025-10-22, NCAAM=2025-11-04
+- [x] Season chart title: sport emoji + "2026 MLB SEASON" (sport-specific) + PREZ BETS sub + +/- units
+- [x] Other modes: existing trend icon + units + subtitle (L7/L14 labels shortened)
+- [x] TypeScript: 0 errors
+
+## Session: BetTracker v18 — Collapsible Sections
+- [x] Add Bet form: collapsible on mobile with chevron toggle (collapsed by default, always open on lg+)
+- [x] Bet log: each date section collapses to a strip showing DATE W-L +/-UNITS
+- [x] All dates default to collapsed (empty expandedDates Set)
+- [x] Per-date expand/collapse is independent (Set-based toggle, no mutual exclusion)
+- [x] netProfit per day computed from riskUnits/toWinUnits + result (WIN=+toWin, LOSS=-risk, PUSH/VOID/PENDING=0)
+- [x] TypeScript: 0 errors
+
+## Session: 2026-04-30 — BetTracker 100x Performance Optimization
+
+- [x] Add gzip/brotli response compression middleware (threshold=512, 70-85% payload reduction)
+- [x] Add `listWithStats` combined tRPC procedure — eliminates double round-trip (2 queries → 1)
+- [x] Single-pass aggregation in `listWithStats` — all 7 breakdown dimensions computed in one loop
+- [x] Migrate BetTracker.tsx to use `listWithStats` — single network request replaces list+getStats
+- [x] Update `invalidate` callback to target `listWithStats` (single cache entry)
+- [x] Wrap `handleResult` in `useCallback` — stable ref prevents BetCard memo invalidation
+- [x] Extract `handleDeleteOpen`/`handleEditOpen` as stable `useCallback` refs — eliminates inline lambda re-renders
+- [x] Replace inline `onDelete`/`onEdit` lambdas in BetCard call site with stable refs
+- [x] Add `idx_tb_user_result` composite index (userId + result)
+- [x] Add `idx_tb_user_result_date` composite index (userId + result + gameDate) — optimal for auto-grade pending queries
+- [x] Run `pnpm db:push` — 2 new indexes applied (migration 0081)
+- [x] TypeScript: 0 errors
+
+## Session: 2026-04-30 — BetTracker 250x Performance Optimization
+
+- [x] Server: add `listWithStatsPaginated` cursor-based infinite-scroll procedure (limit=50, cursor by gameDate+id)
+- [x] Server: add `isHistorical` flag — skip slate enrichment for fully historical result sets
+- [x] Server: parallel page+stats queries in `listWithStatsPaginated` (Promise.all)
+- [x] Server: import lt, or, sql from drizzle-orm for cursor pagination support
+- [x] Frontend: replace `listWithStats.useQuery` with `listWithStatsPaginated.useInfiniteQuery`
+- [x] Frontend: `isHistoricalRange` derived flag — staleTime:Infinity for graded historical data
+- [x] Frontend: staleTime:Infinity + gcTime:30m for historical ranges (ALL_TIME, L7, L14, 1M when dateTo < today)
+- [x] Frontend: `paginatedQueryInput` stabilized with useMemo — no unstable object references
+- [x] Frontend: `allPageBets` flattened from all pages via useMemo
+- [x] Frontend: skeleton BetCard loading states (6 placeholders with animate-pulse)
+- [x] Frontend: “LOAD MORE BETS” button with isFetchingNextPage spinner
+- [x] Frontend: `betsWithSeparators` single-pass aggregation — replaces 4x .filter() + 1x .reduce() per date group
+- [x] Frontend: linescore query — staleTime:Infinity for historical MLB dates, refetchInterval:false when no live dates
+- [x] Frontend: `hasLiveMlbDates` derived flag — only polls live MLB games
+- [x] Frontend: `invalidate` updated to target both `listWithStats` and `listWithStatsPaginated`
+- [x] TypeScript: 0 errors
+
+## Session: 2026-04-30 — BetTracker 500x Performance Optimization
+
+- [x] Frontend: IntersectionObserver auto-load on scroll (loadMoreRef sentinel, no click required)
+- [x] Frontend: filter-change prefetch on mouseenter of sport tabs + date range buttons
+- [x] Frontend: optimistic bet creation — onMutate inserts bet into page 0 cache, onSettled reconciles
+- [x] Frontend: optimistic delete — onMutate removes bet from all pages immediately
+- [x] Frontend: optimistic result update — onMutate patches result in all pages immediately
+- [x] Server: in-memory stats cache (Map<string, StatsCacheEntry> keyed by userId+filters, TTL=30s live / 5m historical)
+- [x] Server: buildStatsCacheKey — deterministic JSON key from userId + all filter dimensions
+- [x] Server: invalidateStatsCacheForUser — called on every create/update/delete mutation
+- [x] Server: cache-aware IIFE aggregation — full-table scan skipped on cache hit
+- [x] TypeScript: 0 errors
+
+## Session: 2026-04-30 — MLB April 30 Slate Modeling
+
+- [ ] Scrape tomorrow's 11 MLB games (matchups, starters, book lines)
+- [ ] Pull pitcher stats (ERA, FIP, xFIP, K/9, BB/9, HR/9, WHIP, recent form)
+- [ ] Pull team offense/defense metrics (wRC+, wOBA, ISO, K%, BB%, OPS vs LHP/RHP)
+- [ ] Pull park factors and weather for all 11 venues
+- [ ] Run run-total model projections for all 11 games
+- [ ] Convert run totals to moneyline probabilities and no-vig prices
+- [ ] Generate spread (run line) projections
+- [ ] Upsert all 11 games into DB with model lines
+- [ ] Publish all 11 games to feed
+- [ ] Verify all 11 games visible on public feed
+
+## Session: 2026-04-30 — Auth Wall Removal (Public Access Mode) — COMPLETED
+
+- [x] Frontend: removed auth redirect useEffect from ModelProjections.tsx (MLB/NBA/NHL Projections, Lineups, K Props, Cheat Sheets, HR Props)
+- [x] Frontend: removed auth redirect useEffect from BettingSplits.tsx (MLB/NBA/NHL Splits)
+- [x] Frontend: deactivated landing page — "/" redirects to "/feed", landing preserved at "/home"
+- [x] Frontend: "/login" redirect updated to "/feed" (public mode)
+- [x] Frontend: heartbeat mutation gated behind appUser — no UNAUTHORIZED noise for public viewers
+- [x] Server: all public-facing procedures already publicProcedure (games.list, mlbLineups, strikeoutProps, hrProps, activeSports, lastRefresh)
+- [x] Server: admin/owner procedures (ownerProcedure, appUserProcedure) preserved unchanged
+- [x] Server: OWNER/ADMIN/HANDICAPPER/USER role gates untouched — zero changes to existing accounts or permissions
+- [x] TypeScript: 0 errors

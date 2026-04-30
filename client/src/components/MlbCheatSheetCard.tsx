@@ -1,0 +1,1840 @@
+/**
+ * MlbCheatSheetCard — CHEAT SHEETS tab
+ *
+ * Layout per game:
+ *
+ *  ┌─────────────────────────────────────────────────────────────┐
+ *  │  MATCHUP HEADER: away logo + name @ home logo + name + time │
+ *  ├─────────────────────────────────────────────────────────────┤
+ *  │  F5 · ACTION NETWORK                                        │
+ *  │    [I1][I2][I3][I4][I5]  ← square score boxes per inning   │
+ *  │    ML:  AN away | model % + model odds | AN home            │
+ *  │    RL:  AN away ±0.5 | model % + model odds | AN home       │
+ *  │    TOT: AN O line | model scores + model odds | AN U line   │
+ *  ├─────────────────────────────────────────────────────────────┤
+ *  │  NRFI / YRFI · ACTION NETWORK                               │
+ *  │    [I1 box: away EXP + P(≥1)] [P(NRFI)] [I1 box: home]     │
+ *  │    NRFI: AN odds | model NRFI% + model odds | edge/EV       │
+ *  │    YRFI: AN odds | model YRFI% + model odds | edge/EV       │
+ *  └─────────────────────────────────────────────────────────────┘
+ *
+ * Data sources:
+ *   F5 book odds / NRFI book odds → Action Network (FanDuel NJ)
+ *   Model projections             → MLBAIModel.py 400K Monte Carlo + 3yr Bayesian priors
+ *   Inning distributions          → MLBAIModel.py inning_home_exp / inning_away_exp (I1–I9)
+ *
+ * CRITICAL BUG FIX (2026-04-14):
+ *   modelPNrfi is stored as raw decimal (0.48 = 48%) in DB.
+ *   Must multiply by 100 before display: modelPNrfi * 100 → 48.0%
+ *   Previous code passed 0.48 directly → displayed as "0.5%" (WRONG)
+ */
+
+import { useMemo } from "react";
+import { MLB_BY_ABBREV } from "@shared/mlbTeams";
+
+// ─── Types ─────────────────────────────────────────────────────────────────────
+
+export interface CheatSheetGame {
+  id: number;
+  awayTeam: string;
+  homeTeam: string;
+  startTimeEst: string | null;
+  sport: string;
+  // F5 book odds (Action Network / FanDuel NJ)
+  f5AwayML: string | null;
+  f5HomeML: string | null;
+  f5AwayRunLine: string | null;
+  f5HomeRunLine: string | null;
+  f5AwayRunLineOdds: string | null;
+  f5HomeRunLineOdds: string | null;
+  f5Total: string | null;
+  f5OverOdds: string | null;
+  f5UnderOdds: string | null;
+  // F5 model projections (from MLBAIModel.py)
+  modelF5AwayScore: string | null;
+  modelF5HomeScore: string | null;
+  modelF5Total: string | null;
+  modelF5OverRate: string | null;
+  modelF5UnderRate: string | null;
+  modelF5AwayWinPct: string | null;
+  modelF5HomeWinPct: string | null;
+  modelF5AwayRLCoverPct: string | null;
+  modelF5HomeRLCoverPct: string | null;
+  modelF5AwayML: string | null;
+  modelF5HomeML: string | null;
+  modelF5AwayRlOdds: string | null;
+  modelF5HomeRlOdds: string | null;
+  modelF5OverOdds: string | null;
+  modelF5UnderOdds: string | null;
+  modelF5PushPct: string | null;     // THREE-WAY: Bayesian-blended P(F5 push/tie) 0-1
+  modelF5PushRaw: string | null;     // raw simulation push rate (diagnostic)
+  // NRFI/YRFI book odds (Action Network / FanDuel NJ)
+  nrfiOverOdds: string | null;
+  yrfiUnderOdds: string | null;
+  // NRFI/YRFI model (from MLBAIModel.py) — stored as raw decimal 0–1
+  modelPNrfi: string | null;
+  modelNrfiOdds: string | null;
+  modelYrfiOdds: string | null;
+  // Inning distributions (JSON arrays from MLBAIModel.py, I1..I9)
+  modelInningHomeExp: string | null;
+  modelInningAwayExp: string | null;
+  modelInningPNeitherScores: string | null;
+  modelInningPHomeScores: string | null;
+  modelInningPAwayScores: string | null;
+  // NRFI filter signals
+  nrfiCombinedSignal: number | null;
+  nrfiFilterPass: number | null;
+  // Full-game (FG) book odds — for FG Total and FG ML edge display
+  total: string | null;           // book O/U total line (e.g. "8.5")
+  overOdds: string | null;        // book over odds (e.g. "-110")
+  underOdds: string | null;       // book under odds (e.g. "-110")
+  awayML: string | null;          // book full-game away ML
+  homeML: string | null;          // book full-game home ML
+  // Full-game model projections
+  modelTotal: string | null;      // model projected total
+  modelOverRate: string | null;   // model over% (0-100 scale)
+  modelUnderRate: string | null;  // model under% (0-100 scale)
+  modelAwayWinPct: string | null; // model away win% (0-100 scale)
+  modelHomeWinPct: string | null; // model home win% (0-100 scale)
+  modelOverOdds: string | null;   // model over odds
+  modelUnderOdds: string | null;  // model under odds
+  modelAwayML: string | null;     // model full-game away ML
+  modelHomeML: string | null;     // model full-game home ML
+}
+
+interface MlbCheatSheetCardProps {
+  game: CheatSheetGame;
+}
+
+// ─── Parse helpers ─────────────────────────────────────────────────────────────
+
+function parseJsonArr(val: string | null | undefined): number[] | null {
+  if (!val) return null;
+  try {
+    const arr = JSON.parse(val);
+    if (Array.isArray(arr) && arr.length >= 5) return arr.map(Number);
+    return null;
+  } catch { return null; }
+}
+
+function parseNum(val: string | number | null | undefined): number | null {
+  if (val == null) return null;
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  return isNaN(n) ? null : n;
+}
+
+// ─── Display helpers ───────────────────────────────────────────────────────────
+
+function fmtOdds(val: string | number | null | undefined): string {
+  if (val == null || val === '') return "—";
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  if (isNaN(n)) return String(val);
+  return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
+}
+
+/** val is already on 0–100 scale */
+function fmtPct(val: number | null | undefined, decimals = 1): string {
+  if (val == null) return "—";
+  return `${val.toFixed(decimals)}%`;
+}
+
+function fmtLine(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  return n > 0 ? `+${n}` : `${n}`;
+}
+
+function formatTime(t: string | null | undefined): string {
+  if (!t) return "";
+  const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!m) return t;
+  let h = parseInt(m[1]!, 10);
+  const min = m[2]!;
+  const suffix = m[3] ?? (h >= 12 ? 'PM' : 'AM');
+  if (!m[3]) {
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+  }
+  return `${h}:${min} ${suffix.toUpperCase()} ET`;
+}
+
+// ─── Edge/EV computation ───────────────────────────────────────────────────────
+// modelPct is on 0–100 scale (e.g., 48.0 for 48%)
+
+function americanToDecimal(odds: number): number {
+  return odds > 0 ? 1 + odds / 100 : 1 - 100 / odds;
+}
+
+function computeEdgeEV(
+  modelPct: number | null,   // 0–100 scale
+  bookOddsStr: string | null | undefined
+): { edge: number; ev: number; isEdge: boolean } | null {
+  if (modelPct == null || !bookOddsStr) return null;
+  const bookOdds = parseFloat(bookOddsStr);
+  if (isNaN(bookOdds)) return null;
+  const impliedProb = bookOdds > 0 ? 100 / (bookOdds + 100) : -bookOdds / (-bookOdds + 100);
+  const modelProb = modelPct / 100;  // convert back to 0–1 for math
+  const edge = modelProb - impliedProb;
+  const decimalOdds = americanToDecimal(bookOdds);
+  const ev = modelProb * (decimalOdds - 1) - (1 - modelProb);
+  return { edge, ev, isEdge: Math.abs(edge) >= 0.03 };
+}
+
+function edgeColor(edge: number): string {
+  return edge >= 0.03 ? "#39FF14" : "#FF4444";
+}
+
+function fmtEdge(edge: number): string {
+  return `${edge >= 0 ? '+' : ''}${(edge * 100).toFixed(1)}%`;
+}
+
+function fmtEV(ev: number): string {
+  const dollars = ev * 100;
+  return `${dollars >= 0 ? '+' : ''}$${Math.abs(dollars).toFixed(1)}`;
+}
+
+// ─── Square Inning Box Grid (F5: I1–I5) ────────────────────────────────────────
+
+interface InningBoxGridProps {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  awayExp: number[];
+  homeExp: number[];
+  count: 5 | 9;
+  awayColor: string;
+  homeColor: string;
+}
+
+function InningBoxGrid({
+  awayAbbrev, homeAbbrev,
+  awayExp, homeExp,
+  count,
+  awayColor, homeColor,
+}: InningBoxGridProps) {
+  const innings = Array.from({ length: count }, (_, i) => i);
+
+  return (
+    <div style={{ padding: "8px 10px 6px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+      {/* Team legend */}
+      <div style={{ display: "flex", gap: 14, marginBottom: 6, alignItems: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 2, background: awayColor }} />
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: "0.07em" }}>
+            {awayAbbrev}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <div style={{ width: 8, height: 8, borderRadius: 2, background: homeColor }} />
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", fontWeight: 700, letterSpacing: "0.07em" }}>
+            {homeAbbrev}
+          </span>
+        </div>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", marginLeft: "auto", letterSpacing: "0.05em" }}>
+          EXP RUNS / INNING
+        </span>
+      </div>
+
+      {/* Square boxes */}
+      <div style={{ display: "flex", gap: 4 }}>
+        {innings.map((i) => {
+          const aVal = awayExp[i] ?? 0;
+          const hVal = homeExp[i] ?? 0;
+          return (
+            <div key={i} style={{
+              flex: 1,
+              background: "rgba(255,255,255,0.04)",
+              border: "1px solid rgba(255,255,255,0.08)",
+              borderRadius: 5,
+              padding: "5px 2px 4px",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 2,
+              minWidth: 0,
+            }}>
+              {/* Inning label */}
+              <span style={{
+                fontSize: 8, fontWeight: 800, letterSpacing: "0.08em",
+                color: "rgba(255,255,255,0.3)", textTransform: "uppercase",
+              }}>
+                I{i + 1}
+              </span>
+              {/* Away expected runs */}
+              <span style={{
+                fontSize: 12, fontWeight: 800,
+                color: awayColor,
+                fontFamily: "'Barlow Condensed', sans-serif",
+                lineHeight: 1,
+              }}>
+                {aVal.toFixed(2)}
+              </span>
+              {/* Divider */}
+              <div style={{ width: "60%", height: 1, background: "rgba(255,255,255,0.08)" }} />
+              {/* Home expected runs */}
+              <span style={{
+                fontSize: 12, fontWeight: 800,
+                color: homeColor,
+                fontFamily: "'Barlow Condensed', sans-serif",
+                lineHeight: 1,
+              }}>
+                {hVal.toFixed(2)}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Market Row (3-column: AWAY | MODEL | HOME) ────────────────────────────────
+
+interface MarketRowProps {
+  label: string;
+  awayTop: string;
+  awayBot?: string;
+  modelTop: string;
+  modelBot?: string;
+  homeTop: string;
+  homeBot?: string;
+  awayEdge?: { edge: number; ev: number; isEdge: boolean } | null;
+  homeEdge?: { edge: number; ev: number; isEdge: boolean } | null;
+}
+
+function MarketRow({
+  label, awayTop, awayBot, modelTop, modelBot, homeTop, homeBot,
+  awayEdge, homeEdge,
+}: MarketRowProps) {
+  const awayHasEdge = awayEdge?.isEdge ?? false;
+  const homeHasEdge = homeEdge?.isEdge ?? false;
+
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "36px 1fr 96px 1fr",
+      alignItems: "center",
+      padding: "7px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.05)",
+      gap: 4,
+    }}>
+      {/* Label */}
+      <span style={{
+        fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+        color: "rgba(255,255,255,0.35)", textTransform: "uppercase",
+      }}>
+        {label}
+      </span>
+
+      {/* Away */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{
+          fontSize: 14, fontWeight: 700,
+          color: awayHasEdge ? edgeColor(awayEdge!.edge) : "rgba(255,255,255,0.85)",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+        }}>
+          {awayTop}
+        </span>
+        {awayBot && (
+          <span style={{ fontSize: 10, color: awayHasEdge ? edgeColor(awayEdge!.edge) : "rgba(255,255,255,0.4)", display: "block", marginTop: 1 }}>
+            {awayBot}
+          </span>
+        )}
+        {awayHasEdge && awayEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(awayEdge.edge), display: "block", marginTop: 1 }}>
+            {fmtEdge(awayEdge.edge)} · {fmtEV(awayEdge.ev)}
+          </span>
+        )}
+      </div>
+
+      {/* Model center */}
+      <div style={{
+        textAlign: "center",
+        background: "rgba(255,255,255,0.05)",
+        borderRadius: 5,
+        padding: "5px 4px",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <span style={{
+          fontSize: 13, fontWeight: 800,
+          color: "#39FF14",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+          lineHeight: 1.1,
+        }}>
+          {modelTop}
+        </span>
+        {modelBot && (
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", display: "block", marginTop: 2 }}>
+            {modelBot}
+          </span>
+        )}
+      </div>
+
+      {/* Home */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{
+          fontSize: 14, fontWeight: 700,
+          color: homeHasEdge ? edgeColor(homeEdge!.edge) : "rgba(255,255,255,0.85)",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+        }}>
+          {homeTop}
+        </span>
+        {homeBot && (
+          <span style={{ fontSize: 10, color: homeHasEdge ? edgeColor(homeEdge!.edge) : "rgba(255,255,255,0.4)", display: "block", marginTop: 1 }}>
+            {homeBot}
+          </span>
+        )}
+        {homeHasEdge && homeEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(homeEdge.edge), display: "block", marginTop: 1 }}>
+            {fmtEdge(homeEdge.edge)} · {fmtEV(homeEdge.ev)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Total Row ─────────────────────────────────────────────────────────────────
+
+interface TotalRowProps {
+  bookLine: string | null;
+  bookOverOdds: string | null;
+  bookUnderOdds: string | null;
+  modelExpAway: number | null;
+  modelExpHome: number | null;
+  modelExpTotal: number | null;
+  modelOverOdds: string | null;
+  modelUnderOdds: string | null;
+  modelOverRate: number | null;   // 0–100 scale
+  modelUnderRate: number | null;  // 0–100 scale
+}
+
+function TotalRow({
+  bookLine, bookOverOdds, bookUnderOdds,
+  modelExpAway, modelExpHome, modelExpTotal,
+  modelOverOdds, modelUnderOdds,
+  modelOverRate, modelUnderRate,
+}: TotalRowProps) {
+  const overEdge = computeEdgeEV(modelOverRate, bookOverOdds);
+  const underEdge = computeEdgeEV(modelUnderRate, bookUnderOdds);
+  const overHasEdge = overEdge?.isEdge ?? false;
+  const underHasEdge = underEdge?.isEdge ?? false;
+
+  const modelScoreStr = (modelExpAway != null && modelExpHome != null)
+    ? `${modelExpAway.toFixed(2)} – ${modelExpHome.toFixed(2)}`
+    : "—";
+  const modelTotStr = modelExpTotal != null ? `TOT ${modelExpTotal.toFixed(1)}` : "—";
+
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "36px 1fr 96px 1fr",
+      alignItems: "center",
+      padding: "7px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.05)",
+      gap: 4,
+    }}>
+      {/* Label */}
+      <span style={{
+        fontSize: 10, fontWeight: 800, letterSpacing: "0.06em",
+        color: "rgba(255,255,255,0.35)", textTransform: "uppercase",
+      }}>
+        TOT
+      </span>
+
+      {/* Over (away side) */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 1 }}>
+          O {bookLine ?? "—"}
+        </span>
+        <span style={{
+          fontSize: 14, fontWeight: 700,
+          color: overHasEdge ? edgeColor(overEdge!.edge) : "rgba(255,255,255,0.85)",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+        }}>
+          {fmtOdds(bookOverOdds)}
+        </span>
+        {overHasEdge && overEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(overEdge.edge), display: "block", marginTop: 1 }}>
+            {fmtEdge(overEdge.edge)} · {fmtEV(overEdge.ev)}
+          </span>
+        )}
+      </div>
+
+      {/* Model center */}
+      <div style={{
+        textAlign: "center",
+        background: "rgba(255,255,255,0.05)",
+        borderRadius: 5,
+        padding: "5px 4px",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <span style={{
+          fontSize: 10, fontWeight: 700,
+          color: "#39FF14",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+          lineHeight: 1.2,
+        }}>
+          {modelScoreStr}
+        </span>
+        <span style={{
+          fontSize: 12, fontWeight: 800,
+          color: "#39FF14",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+          lineHeight: 1.2,
+        }}>
+          {modelTotStr}
+        </span>
+        {(modelOverOdds || modelUnderOdds) && (
+          <span style={{ fontSize: 9, color: "rgba(255,255,255,0.4)", display: "block", marginTop: 2 }}>
+            O {fmtOdds(modelOverOdds)} / U {fmtOdds(modelUnderOdds)}
+          </span>
+        )}
+      </div>
+
+      {/* Under (home side) */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 1 }}>
+          U {bookLine ?? "—"}
+        </span>
+        <span style={{
+          fontSize: 14, fontWeight: 700,
+          color: underHasEdge ? edgeColor(underEdge!.edge) : "rgba(255,255,255,0.85)",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+        }}>
+          {fmtOdds(bookUnderOdds)}
+        </span>
+        {underHasEdge && underEdge && (
+          <span style={{ fontSize: 9, color: edgeColor(underEdge.edge), display: "block", marginTop: 1 }}>
+            {fmtEdge(underEdge.edge)} · {fmtEV(underEdge.ev)}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── I1 Distribution Boxes (NRFI section) ─────────────────────────────────────
+
+interface I1BoxRowProps {
+  awayAbbrev: string;
+  homeAbbrev: string;
+  awayI1Exp: number | null;
+  homeI1Exp: number | null;
+  awayI1PScores: number | null;   // raw 0–1 probability
+  homeI1PScores: number | null;   // raw 0–1 probability
+  pNeitherI1: number | null;      // raw 0–1 probability
+  awayColor: string;
+  homeColor: string;
+}
+
+function I1BoxRow({
+  awayAbbrev, homeAbbrev,
+  awayI1Exp, homeI1Exp,
+  awayI1PScores, homeI1PScores,
+  pNeitherI1,
+  awayColor, homeColor,
+}: I1BoxRowProps) {
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "1fr 80px 1fr",
+      gap: 6,
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      alignItems: "stretch",
+    }}>
+      {/* Away I1 box */}
+      <div style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 5,
+        padding: "6px 6px",
+        textAlign: "center",
+      }}>
+        <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: awayColor, display: "block", marginBottom: 4 }}>
+          {awayAbbrev} · I1
+        </span>
+        <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>EXP</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: awayColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {awayI1Exp != null ? awayI1Exp.toFixed(3) : "—"}
+            </span>
+          </div>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>P(≥1)</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: awayColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {awayI1PScores != null ? fmtPct(awayI1PScores * 100) : "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Center: P(NRFI) */}
+      <div style={{
+        background: "rgba(57,255,20,0.07)",
+        border: "1px solid rgba(57,255,20,0.2)",
+        borderRadius: 5,
+        padding: "6px 4px",
+        textAlign: "center",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "center",
+        alignItems: "center",
+      }}>
+        <span style={{ fontSize: 8, color: "rgba(255,255,255,0.35)", display: "block", marginBottom: 2 }}>P(NRFI)</span>
+        <span style={{ fontSize: 16, fontWeight: 900, color: "#39FF14", fontFamily: "'Barlow Condensed', sans-serif" }}>
+          {pNeitherI1 != null ? fmtPct(pNeitherI1 * 100) : "—"}
+        </span>
+      </div>
+
+      {/* Home I1 box */}
+      <div style={{
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.08)",
+        borderRadius: 5,
+        padding: "6px 6px",
+        textAlign: "center",
+      }}>
+        <span style={{ fontSize: 8, fontWeight: 800, letterSpacing: "0.08em", color: homeColor, display: "block", marginBottom: 4 }}>
+          {homeAbbrev} · I1
+        </span>
+        <div style={{ display: "flex", justifyContent: "center", gap: 10 }}>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>EXP</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: homeColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {homeI1Exp != null ? homeI1Exp.toFixed(3) : "—"}
+            </span>
+          </div>
+          <div>
+            <span style={{ fontSize: 8, color: "rgba(255,255,255,0.3)", display: "block" }}>P(≥1)</span>
+            <span style={{ fontSize: 14, fontWeight: 800, color: homeColor, fontFamily: "'Barlow Condensed', sans-serif" }}>
+              {homeI1PScores != null ? fmtPct(homeI1PScores * 100) : "—"}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── NRFI / YRFI Row ───────────────────────────────────────────────────────────
+
+interface NrfiYrfiRowProps {
+  label: "NRFI" | "YRFI";
+  bookOdds: string | null;
+  modelPct: number | null;   // 0–100 scale (e.g., 48.0 for 48%)
+  modelOdds: string | null;
+}
+
+function NrfiYrfiRow({ label, bookOdds, modelPct, modelOdds }: NrfiYrfiRowProps) {
+  // computeEdgeEV expects 0–100 scale — correct
+  const edgeEV = computeEdgeEV(modelPct, bookOdds);
+  const hasEdge = edgeEV?.isEdge ?? false;
+  const isNrfi = label === "NRFI";
+
+  return (
+    <div style={{
+      display: "grid",
+      gridTemplateColumns: "36px 1fr 1fr 1fr",
+      alignItems: "center",
+      padding: "8px 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.05)",
+      gap: 4,
+    }}>
+      {/* Label */}
+      <span style={{
+        fontSize: 10, fontWeight: 900, letterSpacing: "0.06em",
+        color: isNrfi ? "#39FF14" : "#FF6B35",
+        textTransform: "uppercase",
+      }}>
+        {label}
+      </span>
+
+      {/* AN Odds */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", display: "block", marginBottom: 2 }}>AN ODDS</span>
+        <span style={{
+          fontSize: 14, fontWeight: 700,
+          color: "rgba(255,255,255,0.85)",
+          fontFamily: "'Barlow Condensed', sans-serif",
+        }}>
+          {fmtOdds(bookOdds)}
+        </span>
+      </div>
+
+      {/* Model % + Model Odds */}
+      <div style={{
+        textAlign: "center",
+        background: "rgba(255,255,255,0.05)",
+        borderRadius: 5,
+        padding: "5px 4px",
+        border: "1px solid rgba(255,255,255,0.08)",
+      }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", display: "block", marginBottom: 1 }}>MODEL %</span>
+        <span style={{
+          fontSize: 15, fontWeight: 900,
+          color: isNrfi ? "#39FF14" : "#FF6B35",
+          fontFamily: "'Barlow Condensed', sans-serif",
+          display: "block",
+          lineHeight: 1.1,
+        }}>
+          {/* modelPct is on 0–100 scale — display directly */}
+          {modelPct != null ? fmtPct(modelPct) : "—"}
+        </span>
+        {modelOdds && (
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", display: "block", marginTop: 2 }}>
+            {fmtOdds(modelOdds)}
+          </span>
+        )}
+      </div>
+
+      {/* Edge / EV */}
+      <div style={{ textAlign: "center" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.3)", display: "block", marginBottom: 2 }}>EDGE · EV</span>
+        {edgeEV ? (
+          <>
+            <span style={{
+              fontSize: 13, fontWeight: 700,
+              color: hasEdge ? edgeColor(edgeEV.edge) : "rgba(255,255,255,0.45)",
+              fontFamily: "'Barlow Condensed', sans-serif",
+              display: "block",
+            }}>
+              {fmtEdge(edgeEV.edge)}
+            </span>
+            <span style={{
+              fontSize: 10,
+              color: hasEdge ? edgeColor(edgeEV.edge) : "rgba(255,255,255,0.3)",
+              display: "block", marginTop: 1,
+            }}>
+              {fmtEV(edgeEV.ev)}
+            </span>
+          </>
+        ) : (
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.2)" }}>—</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ─────────────────────────────────────────────────────────────
+
+export default function MlbCheatSheetCard({ game }: MlbCheatSheetCardProps) {
+  const awayInfo = MLB_BY_ABBREV.get(game.awayTeam);
+  const homeInfo = MLB_BY_ABBREV.get(game.homeTeam);
+  const awayName = awayInfo?.city ?? game.awayTeam;
+  const homeName = homeInfo?.city ?? game.homeTeam;
+  const awayLogo = awayInfo?.logoUrl ?? null;
+  const homeLogo = homeInfo?.logoUrl ?? null;
+  const awayColor = awayInfo?.primaryColor ?? '#4A90D9';
+  const homeColor = homeInfo?.primaryColor ?? '#E8A838';
+
+  // Parse inning distributions
+  const awayInnExp = useMemo(() => parseJsonArr(game.modelInningAwayExp), [game.modelInningAwayExp]);
+  const homeInnExp = useMemo(() => parseJsonArr(game.modelInningHomeExp), [game.modelInningHomeExp]);
+  const pNeitherArr = useMemo(() => parseJsonArr(game.modelInningPNeitherScores), [game.modelInningPNeitherScores]);
+  const pHomeScoresArr = useMemo(() => parseJsonArr(game.modelInningPHomeScores), [game.modelInningPHomeScores]);
+  const pAwayScoresArr = useMemo(() => parseJsonArr(game.modelInningPAwayScores), [game.modelInningPAwayScores]);
+
+  // Parse model values — F5 win/RL pcts are stored as 0–100 scale already
+  const modelF5AwayScore = parseNum(game.modelF5AwayScore);
+  const modelF5HomeScore = parseNum(game.modelF5HomeScore);
+  const modelF5Total = parseNum(game.modelF5Total);
+  const modelF5OverRate = parseNum(game.modelF5OverRate);     // 0–100 scale
+  const modelF5UnderRate = parseNum(game.modelF5UnderRate);   // 0–100 scale
+  const modelF5AwayWinPct = parseNum(game.modelF5AwayWinPct); // 0–100 scale
+  const modelF5HomeWinPct = parseNum(game.modelF5HomeWinPct); // 0–100 scale
+  const modelF5AwayRLCoverPct = parseNum(game.modelF5AwayRLCoverPct); // 0–100 scale
+  const modelF5HomeRLCoverPct = parseNum(game.modelF5HomeRLCoverPct); // 0–100 scale
+  // F5 push: stored as raw decimal 0-1 (e.g. 0.1507 = 15.07%)
+  const modelF5PushPct = parseNum(game.modelF5PushPct);  // raw 0-1
+  const modelF5PushRaw = parseNum(game.modelF5PushRaw);  // raw 0-1 (diagnostic)
+
+  // CRITICAL: modelPNrfi is stored as raw decimal (0.48 = 48%) — multiply by 100
+  const modelPNrfiRaw = parseNum(game.modelPNrfi);
+  const modelPNrfi = modelPNrfiRaw != null ? modelPNrfiRaw * 100 : null;  // now 0–100 scale
+  const modelPYrfi = modelPNrfi != null ? 100 - modelPNrfi : null;
+
+  // I1 values from inning arrays
+  const awayI1Exp = awayInnExp ? awayInnExp[0] ?? null : null;
+  const homeI1Exp = homeInnExp ? homeInnExp[0] ?? null : null;
+  const pNeitherI1 = pNeitherArr ? pNeitherArr[0] ?? null : null;
+  const awayI1PScores = pAwayScoresArr ? pAwayScoresArr[0] ?? null : null;
+  const homeI1PScores = pHomeScoresArr ? pHomeScoresArr[0] ?? null : null;
+
+  // Edge/EV for F5 ML and RL
+  const awayF5MlEdge = computeEdgeEV(modelF5AwayWinPct, game.f5AwayML);
+  const homeF5MlEdge = computeEdgeEV(modelF5HomeWinPct, game.f5HomeML);
+  const awayF5RlEdge = computeEdgeEV(modelF5AwayRLCoverPct, game.f5AwayRunLineOdds);
+  const homeF5RlEdge = computeEdgeEV(modelF5HomeRLCoverPct, game.f5HomeRunLineOdds);
+
+  // Data availability gates
+  const hasF5Data = !!(game.f5AwayML || game.f5Total || game.f5OverOdds);
+  const hasNrfiData = !!(game.nrfiOverOdds || game.yrfiUnderOdds || game.modelPNrfi);
+  const hasInnDist = !!(awayInnExp && homeInnExp && awayInnExp.length >= 5 && homeInnExp.length >= 5);
+
+  // NRFI filter signal badge
+  const nrfiPass = game.nrfiFilterPass === 1;
+  const nrfiSignal = game.nrfiCombinedSignal;
+
+  // Gradient bar
+  const gradientStyle = {
+    background: `linear-gradient(90deg, ${awayColor}66 0%, transparent 45%, transparent 55%, ${homeColor}66 100%)`,
+    height: 3,
+    width: "100%",
+  };
+
+  return (
+    <div style={{
+      background: "#0f0f0f",
+      border: "1px solid rgba(255,255,255,0.08)",
+      borderRadius: 10,
+      marginBottom: 10,
+      overflow: "hidden",
+      fontFamily: "'Barlow', 'Barlow Condensed', sans-serif",
+    }}>
+      {/* Gradient bar */}
+      <div style={gradientStyle} />
+
+      {/* ── HEADER ── */}
+      <div style={{
+        display: "flex", justifyContent: "space-between", alignItems: "center",
+        padding: "8px 10px 7px",
+        borderBottom: "1px solid rgba(255,255,255,0.07)",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {awayLogo && <img src={awayLogo} alt={game.awayTeam} style={{ width: 24, height: 24, objectFit: "contain" }} />}
+          <span style={{ fontSize: 15, fontWeight: 800, color: "rgba(255,255,255,0.92)", letterSpacing: "0.03em" }}>
+            {awayName}
+          </span>
+          <span style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", margin: "0 2px" }}>@</span>
+          {homeLogo && <img src={homeLogo} alt={game.homeTeam} style={{ width: 24, height: 24, objectFit: "contain" }} />}
+          <span style={{ fontSize: 15, fontWeight: 800, color: "rgba(255,255,255,0.92)", letterSpacing: "0.03em" }}>
+            {homeName}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {nrfiPass && (
+            <span style={{
+              fontSize: 8, fontWeight: 900, letterSpacing: "0.08em",
+              background: "rgba(57,255,20,0.12)", color: "#39FF14",
+              border: "1px solid rgba(57,255,20,0.3)",
+              borderRadius: 3, padding: "2px 5px",
+            }}>
+              NRFI {nrfiSignal != null ? `${(nrfiSignal * 100).toFixed(1)}%` : "✓"}
+            </span>
+          )}
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 600 }}>
+            {formatTime(game.startTimeEst)}
+          </span>
+        </div>
+      </div>
+
+      {/* ── F5 SECTION HEADER ── */}
+      <div style={{
+        padding: "5px 10px 4px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(57,255,20,0.03)",
+      }}>
+        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: "#39FF14", textTransform: "uppercase" }}>
+          F5 · ACTION NETWORK
+        </span>
+      </div>
+
+      {/* F5 Inning Distribution: square boxes I1–I5 */}
+      {hasInnDist ? (
+        <InningBoxGrid
+          awayAbbrev={game.awayTeam}
+          homeAbbrev={game.homeTeam}
+          awayExp={awayInnExp!.slice(0, 5)}
+          homeExp={homeInnExp!.slice(0, 5)}
+          count={5}
+          awayColor={awayColor}
+          homeColor={homeColor}
+        />
+      ) : (
+        <div style={{ padding: "8px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.22)", fontStyle: "italic" }}>
+            Inning distribution pending model run
+          </span>
+        </div>
+      )}
+
+      {/* F5 ML / RL / Total */}
+      {hasF5Data ? (
+        <>
+          {/* Column headers */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "36px 1fr 96px 1fr",
+            padding: "3px 10px 2px",
+            gap: 4,
+          }}>
+            <span />
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              {game.awayTeam}
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              MODEL
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              {game.homeTeam}
+            </span>
+          </div>
+
+          <MarketRow
+            label="ML"
+            awayTop={fmtOdds(game.f5AwayML)}
+            modelTop={modelF5AwayWinPct != null ? fmtPct(modelF5AwayWinPct) : "—"}
+            modelBot={game.modelF5AwayML ? fmtOdds(game.modelF5AwayML) : undefined}
+            homeTop={fmtOdds(game.f5HomeML)}
+            awayEdge={awayF5MlEdge}
+            homeEdge={homeF5MlEdge}
+          />
+
+          {/* F5 Push — three-way pricing (v2.1) */}
+          {modelF5PushPct != null && (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "4px 10px",
+              borderBottom: "1px solid rgba(255,255,255,0.04)",
+              background: "rgba(255,165,0,0.04)",
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,165,0,0.75)", letterSpacing: "0.08em", minWidth: 36 }}>PUSH</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flex: 1, justifyContent: "center" }}>
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.40)", letterSpacing: "0.04em" }}>P(TIE)</span>
+                <span style={{
+                  fontSize: 13,
+                  fontWeight: 800,
+                  color: "rgba(255,165,0,0.92)",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  {(modelF5PushPct * 100).toFixed(1)}%
+                </span>
+                {modelF5PushRaw != null && (
+                  <span style={{ fontSize: 9, color: "rgba(255,255,255,0.22)", marginLeft: 2 }}>
+                    (sim: {(modelF5PushRaw * 100).toFixed(1)}%)
+                  </span>
+                )}
+              </div>
+              <span style={{ fontSize: 9, color: "rgba(255,165,0,0.40)", letterSpacing: "0.06em" }}>3-WAY</span>
+            </div>
+          )}
+
+          <MarketRow
+            label="RL"
+            awayTop={fmtLine(game.f5AwayRunLine)}
+            awayBot={fmtOdds(game.f5AwayRunLineOdds)}
+            modelTop={modelF5AwayRLCoverPct != null ? fmtPct(modelF5AwayRLCoverPct) : "—"}
+            modelBot={game.modelF5AwayRlOdds ? fmtOdds(game.modelF5AwayRlOdds) : undefined}
+            homeTop={fmtLine(game.f5HomeRunLine)}
+            homeBot={fmtOdds(game.f5HomeRunLineOdds)}
+            awayEdge={awayF5RlEdge}
+            homeEdge={homeF5RlEdge}
+          />
+
+          <TotalRow
+            bookLine={game.f5Total}
+            bookOverOdds={game.f5OverOdds}
+            bookUnderOdds={game.f5UnderOdds}
+            modelExpAway={modelF5AwayScore}
+            modelExpHome={modelF5HomeScore}
+            modelExpTotal={modelF5Total}
+            modelOverOdds={game.modelF5OverOdds}
+            modelUnderOdds={game.modelF5UnderOdds}
+            modelOverRate={modelF5OverRate}
+            modelUnderRate={modelF5UnderRate}
+          />
+        </>
+      ) : (
+        <div style={{ padding: "10px", textAlign: "center", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>F5 odds not yet posted</span>
+        </div>
+      )}
+
+      {/* ── NRFI / YRFI SECTION HEADER ── */}
+      <div style={{
+        padding: "5px 10px 4px",
+        borderBottom: "1px solid rgba(255,255,255,0.06)",
+        borderTop: "1px solid rgba(255,255,255,0.06)",
+        background: "rgba(255,107,53,0.03)",
+      }}>
+        <span style={{ fontSize: 9, fontWeight: 900, letterSpacing: "0.14em", color: "#FF6B35", textTransform: "uppercase" }}>
+          NRFI / YRFI · ACTION NETWORK
+        </span>
+      </div>
+
+      {/* I1 Distribution boxes */}
+      {(awayI1Exp != null || homeI1Exp != null) && (
+        <I1BoxRow
+          awayAbbrev={game.awayTeam}
+          homeAbbrev={game.homeTeam}
+          awayI1Exp={awayI1Exp}
+          homeI1Exp={homeI1Exp}
+          awayI1PScores={awayI1PScores}
+          homeI1PScores={homeI1PScores}
+          pNeitherI1={pNeitherI1}
+          awayColor={awayColor}
+          homeColor={homeColor}
+        />
+      )}
+
+      {/* NRFI/YRFI rows */}
+      {hasNrfiData ? (
+        <>
+          {/* Column headers */}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "36px 1fr 1fr 1fr",
+            padding: "3px 10px 2px",
+            gap: 4,
+          }}>
+            <span />
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              AN ODDS
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              MODEL
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(255,255,255,0.28)", textAlign: "center", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              EDGE · EV
+            </span>
+          </div>
+
+          <NrfiYrfiRow
+            label="NRFI"
+            bookOdds={game.nrfiOverOdds}
+            modelPct={modelPNrfi}
+            modelOdds={game.modelNrfiOdds}
+          />
+          <NrfiYrfiRow
+            label="YRFI"
+            bookOdds={game.yrfiUnderOdds}
+            modelPct={modelPYrfi}
+            modelOdds={game.modelYrfiOdds}
+          />
+        </>
+      ) : (
+        <div style={{ padding: "10px", textAlign: "center" }}>
+          <span style={{ fontSize: 11, color: "rgba(255,255,255,0.22)" }}>NRFI/YRFI odds not yet posted</span>
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ padding: "4px 10px", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.16)", letterSpacing: "0.04em" }}>
+          F5 + NRFI/YRFI: Action Network · Model: 400K Monte Carlo + 3yr Bayesian priors · Edge ≥±3%
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CheatSheetView — v3.0 HTML SPEC MIRROR
+// Two-view layout: NRFI/YRFI table + First 5 card view with internal tab switcher
+// Renders all games for a single date group in one block.
+// ═══════════════════════════════════════════════════════════════════════════════
+import { useState } from "react";
+
+// ─── Lineup type for pitcher data ─────────────────────────────────────────────
+export interface CheatSheetLineup {
+  awayPitcherName?: string | null;
+  awayPitcherEra?: string | null;
+  awayPitcherConfirmed?: boolean | null;
+  homePitcherName?: string | null;
+  homePitcherEra?: string | null;
+  homePitcherConfirmed?: boolean | null;
+}
+
+// ─── Edge computation (v3) ────────────────────────────────────────────────────
+function americanToImplied(odds: number): number {
+  return odds > 0 ? 100 / (odds + 100) : -odds / (-odds + 100);
+}
+function americanToDecimalV3(odds: number): number {
+  return odds > 0 ? 1 + odds / 100 : 1 - 100 / odds;
+}
+interface EdgeV3 {
+  edge: number;
+  ev: number;
+  roiPct: number;
+  barWidth: number;
+  isPositive: boolean;
+  hasEdge: boolean;
+}
+function computeEdgeV3(modelPct: number | null, bookOddsStr: string | null | undefined): EdgeV3 | null {
+  if (modelPct == null || !bookOddsStr) return null;
+  const bookOdds = parseFloat(bookOddsStr);
+  if (isNaN(bookOdds)) return null;
+  const impliedProb = americanToImplied(bookOdds);
+  const modelProb = modelPct / 100;
+  const edge = modelProb - impliedProb;
+  const decOdds = americanToDecimalV3(bookOdds);
+  const ev = modelProb * (decOdds - 1) - (1 - modelProb);
+  const roiPct = edge * 100;
+  const barWidth = Math.min(Math.abs(edge) * 1000, 100);
+  return { edge, ev, roiPct, barWidth, isPositive: edge >= 0, hasEdge: Math.abs(edge) >= 0.03 };
+}
+function edgeColorV3(e: EdgeV3 | null): string {
+  if (!e || !e.hasEdge) return '#3a3f3c';
+  return e.isPositive ? '#39FF14' : '#ff5555';
+}
+
+// ─── Color helpers (v3) ───────────────────────────────────────────────────────
+function projColorV3(exp: number): string {
+  if (exp <= 0.35) return '#39FF14';
+  if (exp <= 0.45) return '#aee87a';
+  return '#ff5555';
+}
+function scoreColorV3(score: number): string {
+  if (score <= 2.5) return '#39FF14';
+  if (score <= 4.5) return '#aee87a';
+  return '#ff5555';
+}
+function inningBoxStyleV3(exp: number): { bg: string; border: string; color: string } {
+  const r = Math.round(exp);
+  if (r === 0) return { bg: '#161918', border: '#1e2320', color: '#2a2e2c' };
+  if (r === 1) return { bg: 'rgba(57,255,20,.12)', border: 'rgba(57,255,20,.25)', color: '#39FF14' };
+  return { bg: 'rgba(255,85,85,.12)', border: 'rgba(255,85,85,.25)', color: '#ff5555' };
+}
+function totalBadgeStyleV3(total: number): { bg: string; border: string; color: string } {
+  if (total <= 2) return { bg: 'rgba(57,255,20,.08)', border: 'rgba(57,255,20,.18)', color: '#39FF14' };
+  if (total <= 4) return { bg: '#161918', border: '#1e2320', color: '#aee87a' };
+  return { bg: 'rgba(255,85,85,.08)', border: 'rgba(255,85,85,.18)', color: '#ff5555' };
+}
+
+// ─── NRFI badge ───────────────────────────────────────────────────────────────
+type NrfiBadgeV3 = 'NRFI' | 'YRFI' | 'Skip';
+function getNrfiBadgeV3(modelPNrfiRaw: string | null): NrfiBadgeV3 {
+  const raw = parseFloat(modelPNrfiRaw ?? '');
+  if (isNaN(raw)) return 'Skip';
+  const pct = raw * 100;
+  if (pct >= 52) return 'NRFI';
+  if (pct <= 46) return 'YRFI';
+  return 'Skip';
+}
+
+// ─── Format helpers (v3) ──────────────────────────────────────────────────────
+function fmtOddsV3(val: string | number | null | undefined): string {
+  if (val == null || val === '') return "—";
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  if (isNaN(n)) return String(val);
+  return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
+}
+function fmtLineV3(val: string | null | undefined): string {
+  if (!val) return "—";
+  const n = parseFloat(val);
+  if (isNaN(n)) return val;
+  return n > 0 ? `+${n}` : `${n}`;
+}
+function formatTimeV3(t: string | null | undefined): string {
+  if (!t) return "";
+  const m = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+  if (!m) return t;
+  let h = parseInt(m[1]!, 10);
+  const min = m[2]!;
+  const suffix = m[3] ?? (h >= 12 ? 'PM' : 'AM');
+  if (!m[3]) {
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+  }
+  return `${h}:${min} ${suffix.toUpperCase()} ET`;
+}
+function parseNumV3(val: string | number | null | undefined): number | null {
+  if (val == null) return null;
+  const n = typeof val === 'number' ? val : parseFloat(String(val));
+  return isNaN(n) ? null : n;
+}
+function parseJsonArrV3(val: string | null | undefined): number[] | null {
+  if (!val) return null;
+  try {
+    const arr = JSON.parse(val);
+    if (Array.isArray(arr) && arr.length >= 5) return arr.map(Number);
+    return null;
+  } catch { return null; }
+}
+
+// ─── NRFI Table Row ───────────────────────────────────────────────────────────
+function NrfiTableRowV3({ game, lineup }: { game: CheatSheetGame; lineup?: CheatSheetLineup | null }) {
+  const awayPitcherName = lineup?.awayPitcherName || (game as CheatSheetGame & { awayStartingPitcher?: string | null }).awayStartingPitcher || "TBD";
+  const homePitcherName = lineup?.homePitcherName || (game as CheatSheetGame & { homeStartingPitcher?: string | null }).homeStartingPitcher || "TBD";
+  const awayPitcherEra = lineup?.awayPitcherEra ?? null;
+  const homePitcherEra = lineup?.homePitcherEra ?? null;
+
+  const awayInnExp = parseJsonArrV3(game.modelInningAwayExp);
+  const homeInnExp = parseJsonArrV3(game.modelInningHomeExp);
+  const awayI1 = awayInnExp?.[0] ?? null;
+  const homeI1 = homeInnExp?.[0] ?? null;
+
+  const modelPNrfiRaw = parseNumV3(game.modelPNrfi);
+  const modelPNrfiPct = modelPNrfiRaw != null ? modelPNrfiRaw * 100 : null;
+  const badge = getNrfiBadgeV3(game.modelPNrfi);
+
+  const nrfiEdge = badge === 'NRFI'
+    ? computeEdgeV3(modelPNrfiPct, game.nrfiOverOdds)
+    : badge === 'YRFI'
+    ? computeEdgeV3(modelPNrfiPct != null ? 100 - modelPNrfiPct : null, game.yrfiUnderOdds)
+    : null;
+
+  const bookOdds = badge === 'NRFI' ? game.nrfiOverOdds : badge === 'YRFI' ? game.yrfiUnderOdds : (game.nrfiOverOdds ?? game.yrfiUnderOdds);
+  const modelOdds = badge === 'NRFI' ? game.modelNrfiOdds : badge === 'YRFI' ? game.modelYrfiOdds : (game.modelNrfiOdds ?? game.modelYrfiOdds);
+
+  const td: React.CSSProperties = {
+    padding: '10px 10px',
+    borderBottom: '0.5px solid #161918',
+    verticalAlign: 'middle',
+    color: '#e8ede9',
+  };
+
+  return (
+    <tr
+      onMouseEnter={e => { (e.currentTarget as HTMLTableRowElement).style.background = '#111412'; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLTableRowElement).style.background = 'transparent'; }}
+    >
+      {/* Matchup */}
+      <td style={td}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: '#e8ede9', whiteSpace: 'nowrap' }}>
+          {game.awayTeam} @ {game.homeTeam}
+        </div>
+        <div style={{ fontSize: 10, color: '#3a3f3c', marginTop: 2 }}>
+          {formatTimeV3(game.startTimeEst)}
+          {(game as CheatSheetGame & { venue?: string | null }).venue ? ` · ${(game as CheatSheetGame & { venue?: string | null }).venue}` : ''}
+        </div>
+      </td>
+      {/* Away Starter */}
+      <td style={td}>
+        <div style={{ fontSize: 12, color: '#c4cac5', whiteSpace: 'nowrap' }}>{awayPitcherName}</div>
+        <div style={{ fontSize: 10, color: '#3a3f3c', marginTop: 1 }}>{awayPitcherEra ? `ERA ${awayPitcherEra}` : '—'}</div>
+      </td>
+      {/* Home Starter */}
+      <td style={td}>
+        <div style={{ fontSize: 12, color: '#c4cac5', whiteSpace: 'nowrap' }}>{homePitcherName}</div>
+        <div style={{ fontSize: 10, color: '#3a3f3c', marginTop: 1 }}>{homePitcherEra ? `ERA ${homePitcherEra}` : '—'}</div>
+      </td>
+      {/* Away I1 Proj */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {awayI1 != null
+          ? <span style={{ fontSize: 15, fontWeight: 500, color: projColorV3(awayI1) }}>{awayI1.toFixed(2)}</span>
+          : <span style={{ color: '#3a3f3c' }}>—</span>}
+      </td>
+      {/* Home I1 Proj */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {homeI1 != null
+          ? <span style={{ fontSize: 15, fontWeight: 500, color: projColorV3(homeI1) }}>{homeI1.toFixed(2)}</span>
+          : <span style={{ color: '#3a3f3c' }}>—</span>}
+      </td>
+      {/* Badge */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {badge === 'NRFI' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, padding: '4px 9px', borderRadius: 4, whiteSpace: 'nowrap', background: 'rgba(57,255,20,.09)', color: '#39FF14', border: '1px solid rgba(57,255,20,.22)' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#39FF14', flexShrink: 0, display: 'inline-block' }} />NRFI
+          </span>
+        )}
+        {badge === 'YRFI' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, padding: '4px 9px', borderRadius: 4, whiteSpace: 'nowrap', background: 'rgba(255,85,85,.09)', color: '#ff5555', border: '1px solid rgba(255,85,85,.22)' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ff5555', flexShrink: 0, display: 'inline-block' }} />YRFI
+          </span>
+        )}
+        {badge === 'Skip' && (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, fontWeight: 500, padding: '4px 9px', borderRadius: 4, whiteSpace: 'nowrap', background: '#111412', color: '#3a3f3c', border: '1px solid #1e2320' }}>Skip</span>
+        )}
+      </td>
+      {/* Book / Model */}
+      <td style={td}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, minWidth: 160 }}>
+          <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '7px 10px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#7a8078', marginBottom: 2 }}>Book</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: '#c4cac5' }}>{fmtOddsV3(bookOdds)}</div>
+          </div>
+          <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '7px 10px', textAlign: 'center' }}>
+            <div style={{ fontSize: 10, color: '#7a8078', marginBottom: 2 }}>Model</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: nrfiEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>{fmtOddsV3(modelOdds)}</div>
+          </div>
+        </div>
+      </td>
+      {/* Edge */}
+      <td style={{ ...td, textAlign: 'center' }}>
+        {nrfiEdge?.hasEdge ? (
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: nrfiEdge.isPositive ? '#39FF14' : '#ff5555' }}>
+              {nrfiEdge.isPositive ? '+' : ''}{nrfiEdge.roiPct.toFixed(1)}%
+            </div>
+            <div style={{ height: 2, background: '#1e2320', borderRadius: 1, marginTop: 4 }}>
+              <div style={{ height: 2, borderRadius: 1, width: `${nrfiEdge.barWidth}%`, background: nrfiEdge.isPositive ? '#39FF14' : '#ff5555' }} />
+            </div>
+          </div>
+        ) : <div style={{ fontSize: 14, fontWeight: 500, color: '#3a3f3c' }}>—</div>}
+      </td>
+    </tr>
+  );
+}
+
+// ─── F5 Game Card ─────────────────────────────────────────────────────────────
+function F5GameCardV3({ game, lineup }: { game: CheatSheetGame; lineup?: CheatSheetLineup | null }) {
+  const awayInfo = MLB_BY_ABBREV.get(game.awayTeam);
+  const homeInfo = MLB_BY_ABBREV.get(game.homeTeam);
+
+  const awayPitcherName = lineup?.awayPitcherName || (game as CheatSheetGame & { awayStartingPitcher?: string | null }).awayStartingPitcher || null;
+  const homePitcherName = lineup?.homePitcherName || (game as CheatSheetGame & { homeStartingPitcher?: string | null }).homeStartingPitcher || null;
+
+  const awayInnExp = parseJsonArrV3(game.modelInningAwayExp);
+  const homeInnExp = parseJsonArrV3(game.modelInningHomeExp);
+  const modelF5Away = parseNumV3(game.modelF5AwayScore);
+  const modelF5Home = parseNumV3(game.modelF5HomeScore);
+  const modelF5Total = parseNumV3(game.modelF5Total);
+  const modelF5OverRate = parseNumV3(game.modelF5OverRate);
+  const modelF5UnderRate = parseNumV3(game.modelF5UnderRate);
+  const bookTotalNum = parseNumV3(game.f5Total);
+
+  const awayF5Total = awayInnExp ? awayInnExp.slice(0, 5).reduce((a, b) => a + b, 0) : null;
+  const homeF5Total = homeInnExp ? homeInnExp.slice(0, 5).reduce((a, b) => a + b, 0) : null;
+
+  const rlEdge = computeEdgeV3(parseNumV3(game.modelF5AwayRLCoverPct), game.f5AwayRunLineOdds);
+  const mlEdge = computeEdgeV3(parseNumV3(game.modelF5AwayWinPct), game.f5AwayML);
+
+  // ── F5 Win Probability (three-way: Away Win | Push | Home Win) ──────────────
+  // DB stores on 0–100 scale (e.g. "43.51" = 43.51%)
+  const f5AwayWinPct = parseNumV3(game.modelF5AwayWinPct);  // 0–100
+  const f5HomeWinPct = parseNumV3(game.modelF5HomeWinPct);  // 0–100
+  // Push% derived: 100 - away - home (three-way market; clamp to 0 for float safety)
+  const f5PushPctV3 = (f5AwayWinPct != null && f5HomeWinPct != null)
+    ? Math.max(0, 100 - f5AwayWinPct - f5HomeWinPct)
+    : null;
+
+  // ── F5 ML No-Vig Edge Display ─────────────────────────────────────────────
+  // Remove vig from both sides: noVig = rawSide / (rawAway + rawHome)
+  // This gives the fair (vig-free) book probability to compare against the model.
+  const _f5AwayMLNum = game.f5AwayML ? parseFloat(game.f5AwayML) : null;
+  const _f5HomeMLNum = game.f5HomeML ? parseFloat(game.f5HomeML) : null;
+  let noVigAwayImplied: number | null = null; // 0-100
+  let noVigHomeImplied: number | null = null; // 0-100
+  if (_f5AwayMLNum != null && !isNaN(_f5AwayMLNum) && _f5HomeMLNum != null && !isNaN(_f5HomeMLNum)) {
+    const rawAway = americanToImplied(_f5AwayMLNum); // vig-inclusive 0-1
+    const rawHome = americanToImplied(_f5HomeMLNum); // vig-inclusive 0-1
+    const vigTotal = rawAway + rawHome;
+    if (vigTotal > 0) {
+      noVigAwayImplied = (rawAway / vigTotal) * 100;
+      noVigHomeImplied = (rawHome / vigTotal) * 100;
+    }
+  }
+  // Edge delta: model% - no-vig book% (positive = model favors this side vs book)
+  const f5AwayMlEdgeDelta = (f5AwayWinPct != null && noVigAwayImplied != null)
+    ? parseFloat((f5AwayWinPct - noVigAwayImplied).toFixed(2))
+    : null;
+  const f5HomeMlEdgeDelta = (f5HomeWinPct != null && noVigHomeImplied != null)
+    ? parseFloat((f5HomeWinPct - noVigHomeImplied).toFixed(2))
+    : null;
+  const f5AwayHasEdge = f5AwayMlEdgeDelta != null && Math.abs(f5AwayMlEdgeDelta) >= 3.0;
+  const f5HomeHasEdge = f5HomeMlEdgeDelta != null && Math.abs(f5HomeMlEdgeDelta) >= 3.0;
+  const hasF5MlEdgeData = noVigAwayImplied != null && (f5AwayWinPct != null || f5HomeWinPct != null);
+
+  let ouEdge: EdgeV3 | null = null;
+  let ouLabel = '';
+  if (modelF5Total != null && bookTotalNum != null) {
+    if (modelF5Total > bookTotalNum) {
+      ouEdge = computeEdgeV3(modelF5OverRate, game.f5OverOdds);
+      ouLabel = 'O';
+    } else {
+      ouEdge = computeEdgeV3(modelF5UnderRate, game.f5UnderOdds);
+      ouLabel = 'U';
+    }
+  }
+
+  // ── FG Total Edge Display ─────────────────────────────────────────────────
+  const fgModelTotal = parseNumV3(game.modelTotal);
+  const fgBookTotal = parseNumV3(game.total);
+  const fgModelOverRate = parseNumV3(game.modelOverRate);   // 0-100
+  const fgModelUnderRate = parseNumV3(game.modelUnderRate); // 0-100
+  let fgOuEdge: EdgeV3 | null = null;
+  let fgOuLabel = '';
+  let fgOuModelPct: number | null = null;
+  let fgOuBookOdds: string | null = null;
+  if (fgModelTotal != null && fgBookTotal != null) {
+    if (fgModelTotal > fgBookTotal) {
+      fgOuEdge = computeEdgeV3(fgModelOverRate, game.overOdds);
+      fgOuLabel = 'O';
+      fgOuModelPct = fgModelOverRate;
+      fgOuBookOdds = game.overOdds;
+    } else {
+      fgOuEdge = computeEdgeV3(fgModelUnderRate, game.underOdds);
+      fgOuLabel = 'U';
+      fgOuModelPct = fgModelUnderRate;
+      fgOuBookOdds = game.underOdds;
+    }
+  }
+  const hasFgTotalData = fgModelTotal != null && fgBookTotal != null;
+  // ── FG ML Edge Display ───────────────────────────────────────────────────────
+  const fgAwayWinPct = parseNumV3(game.modelAwayWinPct);  // 0-100
+  const fgHomeWinPct = parseNumV3(game.modelHomeWinPct);  // 0-100
+  const _fgAwayMLNum = game.awayML ? parseFloat(game.awayML) : null;
+  const _fgHomeMLNum = game.homeML ? parseFloat(game.homeML) : null;
+  let fgNoVigAwayImplied: number | null = null; // 0-100
+  let fgNoVigHomeImplied: number | null = null; // 0-100
+  if (_fgAwayMLNum != null && !isNaN(_fgAwayMLNum) && _fgHomeMLNum != null && !isNaN(_fgHomeMLNum)) {
+    const rawAway = americanToImplied(_fgAwayMLNum);
+    const rawHome = americanToImplied(_fgHomeMLNum);
+    const vigTotal = rawAway + rawHome;
+    if (vigTotal > 0) {
+      fgNoVigAwayImplied = (rawAway / vigTotal) * 100;
+      fgNoVigHomeImplied = (rawHome / vigTotal) * 100;
+    }
+  }
+  const fgAwayMlEdgeDelta = (fgAwayWinPct != null && fgNoVigAwayImplied != null)
+    ? parseFloat((fgAwayWinPct - fgNoVigAwayImplied).toFixed(2))
+    : null;
+  const fgHomeMlEdgeDelta = (fgHomeWinPct != null && fgNoVigHomeImplied != null)
+    ? parseFloat((fgHomeWinPct - fgNoVigHomeImplied).toFixed(2))
+    : null;
+  const fgAwayHasEdge = fgAwayMlEdgeDelta != null && Math.abs(fgAwayMlEdgeDelta) >= 3.0;
+  const fgHomeHasEdge = fgHomeMlEdgeDelta != null && Math.abs(fgHomeMlEdgeDelta) >= 3.0;
+  const hasFgMlEdgeData = fgNoVigAwayImplied != null && (fgAwayWinPct != null || fgHomeWinPct != null);
+
+  const pitcherLine = [awayPitcherName, homePitcherName].filter(Boolean).join(' vs ');
+
+  return (
+    <div style={{ background: '#111412', border: '1px solid #1a1d1b', borderRadius: 8, marginBottom: 8, overflow: 'hidden' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', padding: '9px 14px', borderBottom: '1px solid #1a1d1b', gap: 10, flexWrap: 'wrap' as const }}>
+        <span style={{ fontSize: 13, fontWeight: 500, color: '#e8ede9' }}>{game.awayTeam} @ {game.homeTeam}</span>
+        <span style={{ fontSize: 10, color: '#3a3f3c' }}>
+          {formatTimeV3(game.startTimeEst)}
+          {(game as CheatSheetGame & { venue?: string | null }).venue ? ` · ${(game as CheatSheetGame & { venue?: string | null }).venue}` : ''}
+          {pitcherLine ? ` · ${pitcherLine}` : ''}
+        </span>
+      </div>
+
+      {/* 3-column body */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr' }}>
+
+        {/* LEFT: Proj runs I1–I5 */}
+        <div style={{ padding: '10px 14px 12px', borderRight: '1px solid #1a1d1b' }}>
+          <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 8 }}>
+            Proj runs — innings 1–5
+          </div>
+          {/* Away */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 7 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: '#7a8078', width: 38, flexShrink: 0 }}>{game.awayTeam}</span>
+            <div style={{ display: 'flex', gap: 3 }}>
+              {(awayInnExp ?? Array(5).fill(null)).slice(0, 5).map((exp: number | null, i: number) => {
+                const s = exp != null ? inningBoxStyleV3(exp) : { bg: '#161918', border: '#1e2320', color: '#2a2e2c' };
+                return (
+                  <div key={i} style={{ width: 22, height: 22, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, flexShrink: 0, background: s.bg, border: `1px solid ${s.border}`, color: s.color }}>
+                    {exp != null ? Math.round(exp) : '—'}
+                  </div>
+                );
+              })}
+            </div>
+            {awayF5Total != null && (() => {
+              const t = Math.round(awayF5Total);
+              const s = totalBadgeStyleV3(t);
+              return <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 7px', borderRadius: 3, marginLeft: 2, whiteSpace: 'nowrap' as const, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{t}</span>;
+            })()}
+          </div>
+          {/* Home */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 11, fontWeight: 500, color: '#7a8078', width: 38, flexShrink: 0 }}>{game.homeTeam}</span>
+            <div style={{ display: 'flex', gap: 3 }}>
+              {(homeInnExp ?? Array(5).fill(null)).slice(0, 5).map((exp: number | null, i: number) => {
+                const s = exp != null ? inningBoxStyleV3(exp) : { bg: '#161918', border: '#1e2320', color: '#2a2e2c' };
+                return (
+                  <div key={i} style={{ width: 22, height: 22, borderRadius: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 500, flexShrink: 0, background: s.bg, border: `1px solid ${s.border}`, color: s.color }}>
+                    {exp != null ? Math.round(exp) : '—'}
+                  </div>
+                );
+              })}
+            </div>
+            {homeF5Total != null && (() => {
+              const t = Math.round(homeF5Total);
+              const s = totalBadgeStyleV3(t);
+              return <span style={{ fontSize: 11, fontWeight: 500, padding: '2px 7px', borderRadius: 3, marginLeft: 2, whiteSpace: 'nowrap' as const, background: s.bg, color: s.color, border: `1px solid ${s.border}` }}>{t}</span>;
+            })()}
+          </div>
+        </div>
+
+        {/* CENTER: F5 projection + Win Probability row */}
+        <div style={{ padding: '10px 18px', display: 'flex', flexDirection: 'column' as const, alignItems: 'center', justifyContent: 'center', gap: 6, borderRight: '1px solid #1a1d1b', minWidth: 160 }}>
+          <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#3a3f3c' }}>F5 projection</div>
+
+          {/* Score display row */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: awayInfo?.primaryColor ? `${awayInfo.primaryColor}22` : '#1a1d1b', border: `1px solid ${awayInfo?.primaryColor ?? '#222523'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 500, color: awayInfo?.primaryColor ?? '#7a8078', flexShrink: 0 }}>
+              {game.awayTeam}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 26, fontWeight: 500, lineHeight: 1, color: modelF5Away != null ? scoreColorV3(modelF5Away) : '#7a8078' }}>
+                {modelF5Away != null ? modelF5Away.toFixed(1) : '—'}
+              </span>
+              <span style={{ fontSize: 14, color: '#2e3330' }}>–</span>
+              <span style={{ fontSize: 26, fontWeight: 500, lineHeight: 1, color: modelF5Home != null ? scoreColorV3(modelF5Home) : '#7a8078' }}>
+                {modelF5Home != null ? modelF5Home.toFixed(1) : '—'}
+              </span>
+            </div>
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: homeInfo?.primaryColor ? `${homeInfo.primaryColor}22` : '#1a1d1b', border: `1px solid ${homeInfo?.primaryColor ?? '#222523'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 500, color: homeInfo?.primaryColor ?? '#7a8078', flexShrink: 0 }}>
+              {game.homeTeam}
+            </div>
+          </div>
+
+          {/* F5 Win Probability row: Away Win% | Push% | Home Win% */}
+          {/* Only rendered when at least one win pct is populated */}
+          {(f5AwayWinPct != null || f5HomeWinPct != null) && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+              background: '#0e1110',
+              border: '1px solid #1a1d1b',
+              borderRadius: 6,
+              padding: '5px 8px',
+              width: '100%',
+              justifyContent: 'center',
+            }}>
+              {/* Away win% */}
+              <div style={{ textAlign: 'center', minWidth: 46 }}>
+                <div style={{ fontSize: 8, color: '#3a3f3c', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 2 }}>{game.awayTeam}</div>
+                <div style={{
+                  fontSize: 13, fontWeight: 600, lineHeight: 1,
+                  color: f5AwayWinPct != null && f5HomeWinPct != null && f5AwayWinPct > f5HomeWinPct
+                    ? '#39FF14'
+                    : '#c4cac5',
+                }}>
+                  {f5AwayWinPct != null ? `${f5AwayWinPct.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+
+              {/* Divider */}
+              <div style={{ width: 1, height: 24, background: '#1e2320', flexShrink: 0 }} />
+
+              {/* Push% (three-way derived) */}
+              {f5PushPctV3 != null && (
+                <>
+                  <div style={{ textAlign: 'center', minWidth: 36 }}>
+                    <div style={{ fontSize: 8, color: '#3a3f3c', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 2 }}>Push</div>
+                    <div style={{ fontSize: 11, fontWeight: 400, lineHeight: 1, color: '#4a5048' }}>
+                      {f5PushPctV3.toFixed(1)}%
+                    </div>
+                  </div>
+                  <div style={{ width: 1, height: 24, background: '#1e2320', flexShrink: 0 }} />
+                </>
+              )}
+
+              {/* Home win% */}
+              <div style={{ textAlign: 'center', minWidth: 46 }}>
+                <div style={{ fontSize: 8, color: '#3a3f3c', letterSpacing: '.06em', textTransform: 'uppercase' as const, marginBottom: 2 }}>{game.homeTeam}</div>
+                <div style={{
+                  fontSize: 13, fontWeight: 600, lineHeight: 1,
+                  color: f5HomeWinPct != null && f5AwayWinPct != null && f5HomeWinPct > f5AwayWinPct
+                    ? '#39FF14'
+                    : '#c4cac5',
+                }}>
+                  {f5HomeWinPct != null ? `${f5HomeWinPct.toFixed(1)}%` : '—'}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* F5 ML Edge Row: Model% vs No-Vig Book% → delta */}
+          {/* Shown when both F5 ML odds and at least one model win pct are available */}
+          {hasF5MlEdgeData && (
+            <div style={{
+              width: '100%',
+              background: '#0a0d0b',
+              border: '1px solid #1a1d1b',
+              borderRadius: 6,
+              padding: '6px 8px',
+              display: 'flex',
+              flexDirection: 'column' as const,
+              gap: 4,
+            }}>
+              <div style={{ fontSize: 7, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#2e3330', textAlign: 'center', marginBottom: 2 }}>F5 ML Edge</div>
+              {/* Away row */}
+              {f5AwayWinPct != null && noVigAwayImplied != null && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 500, color: '#7a8078', minWidth: 28 }}>{game.awayTeam}</span>
+                  <span style={{ fontSize: 9, color: '#4a5048' }}>
+                    Model {f5AwayWinPct.toFixed(1)}% vs Book {noVigAwayImplied.toFixed(1)}%
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, lineHeight: 1,
+                    color: f5AwayHasEdge
+                      ? (f5AwayMlEdgeDelta! > 0 ? '#39FF14' : '#ff5555')
+                      : '#2e3330',
+                    minWidth: 36, textAlign: 'right',
+                  }}>
+                    {f5AwayMlEdgeDelta != null
+                      ? `${f5AwayMlEdgeDelta > 0 ? '+' : ''}${f5AwayMlEdgeDelta.toFixed(1)}%`
+                      : '—'}
+                  </span>
+                </div>
+              )}
+              {/* Home row */}
+              {f5HomeWinPct != null && noVigHomeImplied != null && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 500, color: '#7a8078', minWidth: 28 }}>{game.homeTeam}</span>
+                  <span style={{ fontSize: 9, color: '#4a5048' }}>
+                    Model {f5HomeWinPct.toFixed(1)}% vs Book {noVigHomeImplied.toFixed(1)}%
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, lineHeight: 1,
+                    color: f5HomeHasEdge
+                      ? (f5HomeMlEdgeDelta! > 0 ? '#39FF14' : '#ff5555')
+                      : '#2e3330',
+                    minWidth: 36, textAlign: 'right',
+                  }}>
+                    {f5HomeMlEdgeDelta != null
+                      ? `${f5HomeMlEdgeDelta > 0 ? '+' : ''}${f5HomeMlEdgeDelta.toFixed(1)}%`
+                      : '—'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* FG Total Edge Row: Model total vs Book total → O/U edge */}
+          {hasFgTotalData && (
+            <div style={{
+              marginTop: 6,
+              padding: '6px 8px',
+              background: '#0d100e',
+              border: '1px solid #1a1d1b',
+              borderRadius: 5,
+            }}>
+              <div style={{ fontSize: 7, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#2e3330', textAlign: 'center', marginBottom: 4 }}>FG Total Edge</div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                <span style={{ fontSize: 9, fontWeight: 500, color: '#7a8078' }}>
+                  Model {fgModelTotal!.toFixed(1)} vs Book {fgBookTotal!.toFixed(1)}
+                </span>
+                <span style={{
+                  fontSize: 10, fontWeight: 700,
+                  color: fgOuEdge?.hasEdge ? '#39FF14' : '#2e3330',
+                }}>
+                  {fgOuLabel && fgOuEdge ? `${fgOuLabel} ${fgOuEdge.isPositive ? '+' : ''}${fgOuEdge.roiPct.toFixed(1)}%` : '—'}
+                </span>
+              </div>
+              {fgOuModelPct != null && fgOuBookOdds && (
+                <div style={{ fontSize: 8, color: '#3a3f3c', marginTop: 2, textAlign: 'right' }}>
+                  {fgOuModelPct.toFixed(1)}% model · {fmtOddsV3(fgOuBookOdds)} book
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* FG ML Edge Row: Model win% vs No-Vig Book% → delta */}
+          {hasFgMlEdgeData && (
+            <div style={{
+              marginTop: 6,
+              padding: '6px 8px',
+              background: '#0d100e',
+              border: '1px solid #1a1d1b',
+              borderRadius: 5,
+            }}>
+              <div style={{ fontSize: 7, fontWeight: 600, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#2e3330', textAlign: 'center', marginBottom: 4 }}>FG ML Edge</div>
+              {fgAwayWinPct != null && fgNoVigAwayImplied != null && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4 }}>
+                  <span style={{ fontSize: 9, fontWeight: 500, color: '#7a8078', minWidth: 28 }}>{game.awayTeam}</span>
+                  <span style={{ fontSize: 9, color: '#4a5048' }}>
+                    Model {fgAwayWinPct.toFixed(1)}% vs Book {fgNoVigAwayImplied.toFixed(1)}%
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, lineHeight: 1,
+                    color: fgAwayHasEdge
+                      ? (fgAwayMlEdgeDelta! > 0 ? '#39FF14' : '#ff5555')
+                      : '#2e3330',
+                    minWidth: 36, textAlign: 'right',
+                  }}>
+                    {fgAwayMlEdgeDelta != null
+                      ? `${fgAwayMlEdgeDelta > 0 ? '+' : ''}${fgAwayMlEdgeDelta.toFixed(1)}%`
+                      : '—'}
+                  </span>
+                </div>
+              )}
+              {fgHomeWinPct != null && fgNoVigHomeImplied != null && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4, marginTop: 2 }}>
+                  <span style={{ fontSize: 9, fontWeight: 500, color: '#7a8078', minWidth: 28 }}>{game.homeTeam}</span>
+                  <span style={{ fontSize: 9, color: '#4a5048' }}>
+                    Model {fgHomeWinPct.toFixed(1)}% vs Book {fgNoVigHomeImplied.toFixed(1)}%
+                  </span>
+                  <span style={{
+                    fontSize: 10, fontWeight: 700, lineHeight: 1,
+                    color: fgHomeHasEdge
+                      ? (fgHomeMlEdgeDelta! > 0 ? '#39FF14' : '#ff5555')
+                      : '#2e3330',
+                    minWidth: 36, textAlign: 'right',
+                  }}>
+                    {fgHomeMlEdgeDelta != null
+                      ? `${fgHomeMlEdgeDelta > 0 ? '+' : ''}${fgHomeMlEdgeDelta.toFixed(1)}%`
+                      : '—'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* RIGHT: Book vs model — RL / ML / O/U */}
+        <div style={{ padding: '10px 14px 12px' }}>
+          <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.12em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 8 }}>Book vs model</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+            {/* RL */}
+            <div>
+              <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 4, textAlign: 'center' }}>RL</div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>{fmtLineV3(game.f5AwayRunLine)} Book</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#c4cac5' }}>{fmtOddsV3(game.f5AwayRunLineOdds)}</div>
+                </div>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>{fmtLineV3(game.f5AwayRunLine)} Model</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: rlEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>{fmtOddsV3(game.modelF5AwayRlOdds)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 4, textAlign: 'center', color: edgeColorV3(rlEdge) }}>
+                {rlEdge?.hasEdge ? `${rlEdge.isPositive ? '+' : ''}${rlEdge.roiPct.toFixed(1)}%` : '—'}
+              </div>
+            </div>
+            {/* ML */}
+            <div>
+              <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 4, textAlign: 'center' }}>ML</div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Book</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#c4cac5' }}>{fmtOddsV3(game.f5AwayML)}</div>
+                </div>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Model</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: mlEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>{fmtOddsV3(game.modelF5AwayML)}</div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 4, textAlign: 'center', color: edgeColorV3(mlEdge) }}>
+                {mlEdge?.hasEdge ? `${mlEdge.isPositive ? '+' : ''}${mlEdge.roiPct.toFixed(1)}%` : '—'}
+              </div>
+            </div>
+            {/* O/U */}
+            <div>
+              <div style={{ fontSize: 8, fontWeight: 500, letterSpacing: '.1em', textTransform: 'uppercase' as const, color: '#3a3f3c', marginBottom: 4, textAlign: 'center' }}>O/U</div>
+              <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4 }}>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Book</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: '#c4cac5' }}>{game.f5Total ?? '—'}</div>
+                </div>
+                <div style={{ background: '#161918', border: '1px solid #1e2320', borderRadius: 6, padding: '6px 8px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 9, color: '#7a8078', marginBottom: 2 }}>Model</div>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: ouEdge?.hasEdge ? '#39FF14' : '#7a8078' }}>
+                    {modelF5Total != null ? modelF5Total.toFixed(1) : '—'}
+                  </div>
+                </div>
+              </div>
+              <div style={{ fontSize: 10, fontWeight: 500, marginTop: 4, textAlign: 'center', color: edgeColorV3(ouEdge) }}>
+                {ouEdge?.hasEdge && ouLabel ? `${ouLabel} ${ouEdge.isPositive ? '+' : ''}${ouEdge.roiPct.toFixed(1)}%` : '—'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+}
+
+// ─── CheatSheetView — main export ─────────────────────────────────────────────
+export interface CheatSheetViewProps {
+  games: CheatSheetGame[];
+  lineupsMap?: Map<number, CheatSheetLineup>;
+  dateLabel?: string;
+}
+
+export function CheatSheetView({ games, lineupsMap, dateLabel }: CheatSheetViewProps) {
+  const [activeTab, setActiveTab] = useState<'nrfi' | 'f5'>('nrfi');
+
+  const modeledGames = games.filter(g => g.modelPNrfi != null || g.modelF5AwayScore != null);
+  if (modeledGames.length === 0) return null;
+
+  return (
+    <div style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", marginBottom: 24 }}>
+      {/* ── Header ── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, flexWrap: 'wrap' as const, gap: 10 }}>
+        {dateLabel && (
+          <span style={{ fontSize: 10, fontWeight: 500, letterSpacing: '.14em', textTransform: 'uppercase' as const, color: '#4a4f4b' }}>
+            {dateLabel}
+          </span>
+        )}
+        {/* Tab switcher */}
+        <div style={{ display: 'flex', background: '#111412', border: '1px solid #1a1d1b', borderRadius: 6, padding: 3, gap: 2 }}>
+          {(['nrfi', 'f5'] as const).map(tab => (
+            <button type="button" key={tab}
+              onClick={() => setActiveTab(tab)}
+              style={{
+                fontSize: 11, fontWeight: 500, letterSpacing: '.07em', textTransform: 'uppercase' as const,
+                padding: '5px 16px', borderRadius: 4, cursor: 'pointer', transition: 'all .15s',
+                border: activeTab === tab ? '1px solid rgba(57,255,20,.2)' : '1px solid transparent',
+                background: activeTab === tab ? 'rgba(57,255,20,.1)' : 'transparent',
+                color: activeTab === tab ? '#39FF14' : '#4a4f4b',
+              }}
+            >
+              {tab === 'nrfi' ? 'NRFI / YRFI' : 'First 5'}
+            </button>
+          ))}
+        </div>
+        {/* Legend */}
+        {activeTab === 'nrfi' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {[{ color: '#39FF14', label: 'NRFI' }, { color: '#ff5555', label: 'YRFI' }, { color: '#333', label: 'Skip' }].map(({ color, label }) => (
+              <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 500, letterSpacing: '.06em', textTransform: 'uppercase' as const, color: '#4a4f4b' }}>
+                <span style={{ width: 7, height: 7, borderRadius: '50%', background: color, flexShrink: 0, display: 'inline-block' }} />{label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {[{ color: 'rgba(57,255,20,.5)', label: 'Run' }, { color: 'rgba(255,85,85,.5)', label: 'Multi-run' }, { color: '#1a1d1b', label: 'Zero' }].map(({ color, label }) => (
+              <span key={label} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 500, letterSpacing: '.06em', textTransform: 'uppercase' as const, color: '#4a4f4b' }}>
+                <span style={{ width: 7, height: 7, borderRadius: 2, background: color, flexShrink: 0, display: 'inline-block' }} />{label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── NRFI TABLE ── */}
+      {activeTab === 'nrfi' && (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ borderBottom: '1px solid #1e2320' }}>
+                {['Matchup', 'Away starter', 'Home starter', 'Away proj', 'Home proj', 'NRFI / YRFI', 'Book / Model', 'Edge (ROI%)'].map((h, i) => (
+                  <th key={h} style={{ fontSize: '8.5px', fontWeight: 500, letterSpacing: '.11em', textTransform: 'uppercase' as const, color: '#3a3f3c', padding: '6px 10px', textAlign: i >= 3 ? 'center' : 'left', whiteSpace: 'nowrap' as const }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {modeledGames.map(game => (
+                <NrfiTableRowV3 key={game.id} game={game} lineup={lineupsMap?.get(game.id)} />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── F5 CARDS ── */}
+      {activeTab === 'f5' && (
+        <div>
+          {modeledGames.map(game => (
+            <F5GameCardV3 key={game.id} game={game} lineup={lineupsMap?.get(game.id)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -46,7 +46,8 @@ export interface NhlLineupGame {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const ROTOWIRE_LINEUPS_URL = "https://www.rotowire.com/hockey/nhl-lineups.php";
+const ROTOWIRE_LINEUPS_URL_TODAY    = "https://www.rotowire.com/hockey/nhl-lineups.php";
+const ROTOWIRE_LINEUPS_URL_TOMORROW = "https://www.rotowire.com/hockey/nhl-lineups.php?date=tomorrow";
 
 const FETCH_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
@@ -58,21 +59,38 @@ const FETCH_HEADERS = {
 // ─── Scraper ─────────────────────────────────────────────────────────────────
 
 /**
- * Scrape RotoWire NHL lineups page for today's starting goalies.
+ * Scrape RotoWire NHL lineups page for starting goalies.
+ * @param date - 'today' (default) or 'tomorrow'
  * Returns a list of games with away/home starting goalies.
  */
-export async function scrapeNhlStartingGoalies(): Promise<NhlLineupGame[]> {
-  console.log("[RotoWireScraper] ► Fetching NHL lineups from RotoWire...");
-  console.log(`[RotoWireScraper]   URL: ${ROTOWIRE_LINEUPS_URL}`);
+export async function scrapeNhlStartingGoalies(date: 'today' | 'tomorrow' = 'today'): Promise<NhlLineupGame[]> {
+  const url = date === 'tomorrow' ? ROTOWIRE_LINEUPS_URL_TOMORROW : ROTOWIRE_LINEUPS_URL_TODAY;
+  console.log(`[RotoWireScraper] ► Fetching NHL lineups from RotoWire (${date.toUpperCase()})...`);
+  console.log(`[RotoWireScraper]   URL: ${url}`);
 
-  const resp = await fetch(ROTOWIRE_LINEUPS_URL, { headers: FETCH_HEADERS });
+  const resp = await fetch(url, { headers: FETCH_HEADERS });
   if (!resp.ok) {
     throw new Error(`[RotoWireScraper] Fetch failed: HTTP ${resp.status} ${resp.statusText}`);
   }
   const html = await resp.text();
   console.log(`[RotoWireScraper]   Received ${html.length} bytes`);
 
-  return parseRotoWireLineups(html);
+  const games = parseRotoWireLineups(html);
+  console.log(`[RotoWireScraper] ✅ Scraped ${games.length} ${date.toUpperCase()} games`);
+  return games;
+}
+
+/**
+ * Scrape both today's and tomorrow's NHL lineups in parallel.
+ */
+export async function scrapeNhlStartingGoaliesBoth(): Promise<{ today: NhlLineupGame[]; tomorrow: NhlLineupGame[] }> {
+  console.log('[RotoWireScraper] ► Fetching NHL lineups for TODAY + TOMORROW in parallel...');
+  const [today, tomorrow] = await Promise.all([
+    scrapeNhlStartingGoalies('today'),
+    scrapeNhlStartingGoalies('tomorrow'),
+  ]);
+  console.log(`[RotoWireScraper] ✅ TODAY: ${today.length} games | TOMORROW: ${tomorrow.length} games`);
+  return { today, tomorrow };
 }
 
 /**

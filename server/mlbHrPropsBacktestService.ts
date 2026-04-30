@@ -198,13 +198,27 @@ export async function fetchAndStoreActualHrResults(gameDate: string): Promise<Hr
 
         if (verdict === "OVER") {
           backtestResult = hitHr ? "WIN" : "LOSS";
+          // modelCorrect: 1 = model was right (predicted OVER, player hit HR)
+          //               0 = model was wrong (predicted OVER, player did NOT hit HR)
+          // CRITICAL FIX: was previously NULL for LOSS entries due to missing assignment.
+          // Now explicitly set for both WIN and LOSS to enable Brier score computation.
           modelCorrect = hitHr ? 1 : 0;
         } else if (verdict === "PASS") {
           backtestResult = "NO_ACTION";
           // Model predicted PASS (low confidence) — correct if player didn't hit HR
+          // modelCorrect: 1 = model was right to pass (player didn't hit HR)
+          //               0 = model was wrong to pass (player hit HR)
           modelCorrect = hitHr ? 0 : 1;
         } else {
           backtestResult = "NO_ACTION";
+          // Unknown verdict — set modelCorrect based on whether player hit HR
+          // (conservative: treat as PASS logic)
+          modelCorrect = hitHr ? 0 : 1;
+        }
+        // Validation: modelCorrect must always be 0 or 1 for graded entries
+        if (backtestResult !== "NO_ACTION" && modelCorrect === null) {
+          console.error(`${TAG} [VERIFY FAIL] id=${prop.id} ${prop.playerName}: modelCorrect is null for graded entry verdict=${verdict} backtestResult=${backtestResult}`);
+          modelCorrect = 0; // Safe fallback — treat as incorrect rather than corrupt
         }
 
         // Update DB

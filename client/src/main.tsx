@@ -33,10 +33,19 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
   if (!isUnauthorized) return;
 
+  const pathname = window.location.pathname;
+
   // Don't redirect on the home/landing page — unauthenticated users should
   // see the landing page and choose to sign in themselves.
-  const onLandingPage = window.location.pathname === "/" || window.location.pathname === "";
+  const onLandingPage = pathname === "/" || pathname === "";
   if (onLandingPage) return;
+
+  // Don't redirect from /admin/* pages — they manage their own auth guards
+  // via useEffect + setLocation("/feed"). Redirecting from admin pages causes
+  // a race condition where button clicks trigger query re-fires that return
+  // UNAUTHORIZED before auth state has fully settled, sending the user to OAuth.
+  const onAdminPage = pathname.startsWith("/admin");
+  if (onAdminPage) return;
 
   window.location.href = getLoginUrl();
 };
@@ -47,6 +56,29 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 const OPTIONAL_AUTH_PATHS = new Set([
   "favorites,getMyFavorites",
   "favorites,getMyFavoritesWithDates",
+  // Admin/owner-only procedures on TheModelResults page — guarded by enabled:!!appUser&&isOwner
+  // but may fire once before auth resolves. Never redirect to OAuth for these.
+  "mlbSchedule,getBrierTrend",
+  "mlbSchedule,getBrierHeatmap",
+  "mlbSchedule,getBrierDrilldown",
+  "mlbSchedule,checkDrift",
+  "mlbSchedule,getFgEdgeLeaderboard",
+  "mlbSchedule,getF5EdgeLeaderboard",
+  "mlbSchedule,triggerOutcomeIngestion",
+  "strikeoutProps,getRichDailyBacktest",
+  "strikeoutProps,getLast7DaysBacktest",
+  "strikeoutProps,getCalibrationMetrics",
+  "hrProps,getByGames",
+  "mlbBacktest,getRollingAccuracy",
+  "games,list",
+  // Other owner/admin procedures across the app
+  "appUsers,list",
+  "appUsers,updateRole",
+  "appUsers,delete",
+  "betTracker,list",
+  "betTracker,create",
+  "betTracker,update",
+  "betTracker,delete",
 ]);
 
 function isOptionalAuthQuery(queryKey: readonly unknown[]): boolean {

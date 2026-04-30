@@ -4,6 +4,13 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* ── Custom breakpoints (Tailwind 4 --breakpoint-* syntax) ──────────────── */
+  --breakpoint-xs: 375px;   /* iPhone 14/15 Pro baseline */
+  --breakpoint-sm: 640px;   /* large phone / small tablet */
+  --breakpoint-md: 768px;   /* iPad Mini / small tablet — NEW tier */
+  --breakpoint-lg: 1024px;  /* iPad landscape / small desktop */
+  --breakpoint-xl: 1280px;  /* laptop */
+  --breakpoint-2xl: 1600px; /* Wide desktop — NEW tier */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -215,3 +222,64 @@
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: oklch(0.28 0.01 250); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: oklch(0.38 0.01 250); }
+
+/* ── Fix #9: MLB sub-tab scroll-snap ─────────────────────────────────────── */
+.feed-tabs-scroll::-webkit-scrollbar { display: none; }
+.feed-tabs-scroll { -ms-overflow-style: none; scrollbar-width: none; }
+.feed-tab { scroll-snap-align: start; flex-shrink: 0; }
+
+/* ── md: (768px+) tab bar scaling ─────────────────────────────────────────────────────────────────────────────────
+ * Scale up tab buttons at tablet width to match the larger sport pill aesthetic.
+ * Overrides the inline style padding/font-size with !important to win specificity.
+ * padding: 10px 20px (vs 7px 12px mobile — wider horizontal padding for 15px text)
+ * font-size: 15px (vs 13px mobile — bumped for full header row typographic consistency)
+ *   Math: 6 MLB tabs @ 15px + 20px padding = 640px total ≤ 768px viewport (128px spare)
+ *   Scroll mechanism handles any overflow if tab count grows beyond 6.
+ * letter-spacing: 0.07em (vs 0.06em mobile — slightly wider for readability)
+ * ───────────────────────────────────────────────────────────────────────────────── */
+@media (min-width: 768px) {
+  .feed-tab {
+    padding: 10px 20px !important;
+    font-size: 15px !important;
+    letter-spacing: 0.07em !important;
+  }
+}
+
+/* ── lg: (1024px+) tab bar scaling ────────────────────────────────────────────────────────────────────────────────
+ * Complete the mobile→tablet→desktop typographic progression for the feed tab bar.
+ * padding: 11px 22px (vs 10px 20px at 768px — wider for 17px text)
+ * font-size: 17px (vs 15px at 768px — full desktop scale)
+ *   Math: 6 MLB tabs @ 17px Barlow Condensed + 22px h-padding = 718px ≤ 1024px viewport (306px spare)
+ *   Scroll mechanism handles any overflow if tab count grows beyond 6.
+ * letter-spacing: 0.08em (vs 0.07em at 768px — slightly wider for 17px readability)
+ * ───────────────────────────────────────────────────────────────────────────────── */
+@media (min-width: 1024px) {
+  .feed-tab {
+    padding: 11px 22px !important;
+    font-size: 17px !important;
+    letter-spacing: 0.08em !important;
+  }
+}
+/* ── xl: (1280px+) tab bar scaling ────────────────────────────────────────────────────────────────────────────────
+ * Complete the 4-tier typographic progression: mobile 13 → tablet 15 → desktop 17 → wide 18.
+ * padding: 12px 24px (vs 11px 22px at 1024px — slightly wider for 18px text)
+ * font-size: 18px (vs 17px at 1024px — final step in the scale)
+ *   Math: 6 MLB tabs @ 18px Barlow Condensed + 24px h-padding = 721px ≤ 1280px viewport (559px spare)
+ *   Scroll mechanism handles any overflow if tab count grows beyond 6.
+ * letter-spacing: 0.09em (vs 0.08em at 1024px — slightly wider for 18px readability)
+ * ───────────────────────────────────────────────────────────────────────────────── */
+@media (min-width: 1280px) {
+  .feed-tab {
+    padding: 12px 24px !important;
+    font-size: 18px !important;
+    letter-spacing: 0.09em !important;
+  }
+}
+/* Hide scrollbar but keep scrollability */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;     /* Firefox */
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;             /* Chrome, Safari, Opera */
+}

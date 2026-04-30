@@ -41,13 +41,31 @@ import {
 } from "../drizzle/schema";
 import { runKPropsBacktest } from "./kPropsBacktestService";
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────────
 // CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────────
 const TAG = "[MLB-BACKTEST]";
-const CONFIDENCE_THRESHOLD = 0.65;   // minimum model probability to act
+const CONFIDENCE_THRESHOLD = 0.65;   // minimum model probability to act (totals/NRFI only)
+const MIN_EDGE_THRESHOLD    = 0.05;   // minimum edge vs book no-vig prob to act (ML/RL markets)
+// NOTE: ML/RL markets use edge-based confidence (modelProb - bookNoVigProb >= MIN_EDGE_THRESHOLD)
+// because away ML base rate is ~44.75% — raw prob threshold of 0.65 would never fire for away bets.
+// Totals/NRFI use raw probability threshold since they are symmetric markets.
 const DRIFT_SIGMA_THRESHOLD = 2.0;   // standard deviations to trigger recalibration
 const MIN_SAMPLE_FOR_DRIFT  = 20;    // minimum samples before drift detection fires
+
+// ─── Backtest-calibrated NRFI/F5 constants (3-YR ROLLING: 2024+2025+2026, n=5103 games) ──────
+// NRFI: 51.50% 3-yr rate (n=5103 graded). 2024=53.25% | 2025=49.71% | 2026=51.85%
+// Filter: combined pitcher NRFI signal >= 0.56 (grid search optimal, 69.38% win rate)
+// 3-YR Backtest-calibrated INNING1_RUN_SHARE: 0.1166 (was 0.1093, updated 2026-04-14)
+// 3-YR Backtest-calibrated F5_RUN_SHARE: 0.5618 (was 0.5311, updated 2026-04-14)
+// 3-YR Backtest-calibrated I9_WEIGHT: 0.0792 (was 0.1170, CORRECTED walk-off inflation)
+// These constants are applied in MLBAIModel.py; this file consumes the output.
+const NRFI_CONFIDENCE_THRESHOLD = 0.55;  // lower than FG — NRFI is a binary 50/50 market
+// F5 threshold raised from 0.55 → 0.60 (empirical: prob=0.55 bucket has 38.5% win rate,
+// prob=0.60 bucket has 59.2% win rate — breakeven at ~52.4% for -110 odds)
+const F5_CONFIDENCE_THRESHOLD   = 0.60;  // F5 home win rate: 45.11% season-wide (3yr empirical)
+// Calibration version tag — bump when MLBAIModel.py constants change
+const CALIBRATION_VERSION = "2026-04-14-3yr-v2"; // INNING1=0.1166 F5=0.5618 I9=0.0792 (3yr: 2024+2025+2026, n=5103)
 
 // Market identifiers — canonical names used in mlb_game_backtest.market column
 export const MARKETS = {
@@ -196,12 +214,15 @@ function evaluateFgMl(game: GameRow): BacktestResult[] {
     ? noVigProb(bookHomeMl, bookAwayMl) : null;
   const nvAway = nvHome !== null ? parseFloat((1 - nvHome).toFixed(4)) : null;
 
-  // Home ML
+  // Home ML — edge-based confidence (same as away ML)
+  // Rationale: raw prob threshold (0.65) is too restrictive for home favorites which the book
+  // already prices at 60-65%. Edge-based (model_prob - book_no_vig >= 0.05) is symmetric
+  // and captures genuine model disagreement with the market on both sides.
   if (pHomeRaw !== null) {
     const pHome = pHomeRaw / 100;
     const edge  = calcEdge(pHome, nvHome);
     const ev    = calcEV(pHome, bookHomeMl);
-    const conf  = pHome >= CONFIDENCE_THRESHOLD;
+    const conf  = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : actualWinner === "tie" ? "PUSH"
       : actualWinner === "home" ? "WIN" : "LOSS";
@@ -212,7 +233,7 @@ function evaluateFgMl(game: GameRow): BacktestResult[] {
       bookNoVigProb: nvHome, edge, ev, confidencePassed: conf,
       result, correct: result === "WIN" ? true : result === "LOSS" ? false : null,
       actualValue: actualWinner,
-      notes: `P(home)=${pHome.toFixed(4)} nvHome=${nvHome?.toFixed(4)} edge=${edge?.toFixed(4)} book=${bookHomeMl}`,
+      notes: `P(home)=${pHome.toFixed(4)} nvHome=${nvHome?.toFixed(4)} edge=${edge?.toFixed(4)} book=${bookHomeMl} [edge-based]`,
     });
   }
 
@@ -221,7 +242,7 @@ function evaluateFgMl(game: GameRow): BacktestResult[] {
     const pAway = pAwayRaw / 100;
     const edge  = calcEdge(pAway, nvAway);
     const ev    = calcEV(pAway, bookAwayMl);
-    const conf  = pAway >= CONFIDENCE_THRESHOLD;
+    const conf  = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : actualWinner === "tie" ? "PUSH"
       : actualWinner === "away" ? "WIN" : "LOSS";
@@ -279,7 +300,7 @@ function evaluateFgRl(game: GameRow): BacktestResult[] {
     const pHomeRl = pHomeRlRaw / 100;
     const edge = calcEdge(pHomeRl, nvHomeRl);
     const ev   = calcEV(pHomeRl, bookHomeRlOdds);
-    const conf = pHomeRl >= CONFIDENCE_THRESHOLD;
+    const conf = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : isPush ? "PUSH"
       : homeCovers ? "WIN" : "LOSS";
@@ -298,7 +319,7 @@ function evaluateFgRl(game: GameRow): BacktestResult[] {
     const pAwayRl = pAwayRlRaw / 100;
     const edge = calcEdge(pAwayRl, nvAwayRl);
     const ev   = calcEV(pAwayRl, bookAwayRlOdds);
-    const conf = pAwayRl >= CONFIDENCE_THRESHOLD;
+    const conf = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : isPush ? "PUSH"
       : awayCovers ? "WIN" : "LOSS";
@@ -366,7 +387,7 @@ function evaluateFgTotal(game: GameRow): BacktestResult[] {
     results.push({
       gameId: game.id, market: MARKETS.FG_OVER, modelSide: "over",
       modelProb: parseFloat(pOver.toFixed(4)),
-      bookLine: String(bookTotal), bookOdds: bookOverOdds !== null ? String(bookOverOdds) : null,
+      bookLine: bookTotal != null ? String(bookTotal) : null, bookOdds: bookOverOdds !== null ? String(bookOverOdds) : null,
       bookNoVigProb: nvOver, edge, ev, confidencePassed: conf,
       result, correct: result === "WIN" ? true : result === "LOSS" ? false : null,
       actualValue: actualStr,
@@ -384,7 +405,7 @@ function evaluateFgTotal(game: GameRow): BacktestResult[] {
     results.push({
       gameId: game.id, market: MARKETS.FG_UNDER, modelSide: "under",
       modelProb: parseFloat(pUnder.toFixed(4)),
-      bookLine: String(bookTotal), bookOdds: bookUnderOdds !== null ? String(bookUnderOdds) : null,
+      bookLine: bookTotal != null ? String(bookTotal) : null, bookOdds: bookUnderOdds !== null ? String(bookUnderOdds) : null,
       bookNoVigProb: nvUnder, edge, ev, confidencePassed: conf,
       result, correct: result === "WIN" ? true : result === "LOSS" ? false : null,
       actualValue: actualStr,
@@ -437,7 +458,10 @@ function evaluateF5Markets(game: GameRow): BacktestResult[] {
     const pF5Home = pF5HomeRaw / 100;
     const edge = calcEdge(pF5Home, nvF5Home);
     const ev   = calcEV(pF5Home, bookF5HomeOdds);
-    const conf = pF5Home >= CONFIDENCE_THRESHOLD;
+    // F5 ML home: edge-based confidence (consistent with away ML and FG ML home)
+    // F5 home win rate is ~54.8% — raw prob threshold is too restrictive for home favorites
+    // already priced at 55-60% by the book. Edge-based captures genuine model disagreement.
+    const conf = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : f5Winner === "tie" ? "PUSH"
       : f5Winner === "home" ? "WIN" : "LOSS";
@@ -456,7 +480,7 @@ function evaluateF5Markets(game: GameRow): BacktestResult[] {
     const pF5Away = pF5AwayRaw / 100;
     const edge = calcEdge(pF5Away, nvF5Away);
     const ev   = calcEV(pF5Away, bookF5AwayOdds);
-    const conf = pF5Away >= CONFIDENCE_THRESHOLD;
+    const conf = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : f5Winner === "tie" ? "PUSH"
       : f5Winner === "away" ? "WIN" : "LOSS";
@@ -489,7 +513,7 @@ function evaluateF5Markets(game: GameRow): BacktestResult[] {
     const pF5HomeRl = pF5HomeRlRaw / 100;
     const edge = calcEdge(pF5HomeRl, nvF5HomeRl);
     const ev   = calcEV(pF5HomeRl, bookF5HomeRlOdds);
-    const conf = pF5HomeRl >= CONFIDENCE_THRESHOLD;
+    const conf = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : f5RlPush ? "PUSH"
       : f5HomeCoversRl ? "WIN" : "LOSS";
@@ -508,7 +532,7 @@ function evaluateF5Markets(game: GameRow): BacktestResult[] {
     const pF5AwayRl = pF5AwayRlRaw / 100;
     const edge = calcEdge(pF5AwayRl, nvF5AwayRl);
     const ev   = calcEV(pF5AwayRl, bookF5AwayRlOdds);
-    const conf = pF5AwayRl >= CONFIDENCE_THRESHOLD;
+    const conf = edge !== null && edge >= MIN_EDGE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : f5RlPush ? "PUSH"
       : f5AwayCoversRl ? "WIN" : "LOSS";
@@ -541,14 +565,14 @@ function evaluateF5Markets(game: GameRow): BacktestResult[] {
     const f5Push = f5Total === f5TotalLine;
     const edge = calcEdge(pF5Over, nvF5Over);
     const ev   = calcEV(pF5Over, bookF5OverOdds);
-    const conf = pF5Over >= CONFIDENCE_THRESHOLD;
+    const conf = pF5Over >= F5_CONFIDENCE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : f5Push ? "PUSH"
       : wentF5Over ? "WIN" : "LOSS";
     results.push({
       gameId: game.id, market: MARKETS.F5_OVER, modelSide: "over",
       modelProb: parseFloat(pF5Over.toFixed(4)),
-      bookLine: String(f5TotalLine), bookOdds: bookF5OverOdds !== null ? String(bookF5OverOdds) : null,
+      bookLine: f5TotalLine != null ? String(f5TotalLine) : null, bookOdds: bookF5OverOdds !== null ? String(bookF5OverOdds) : null,
       bookNoVigProb: nvF5Over, edge, ev, confidencePassed: conf,
       result, correct: result === "WIN" ? true : result === "LOSS" ? false : null,
       actualValue: `F5 total=${f5Total} line=${f5TotalLine}`,
@@ -562,14 +586,14 @@ function evaluateF5Markets(game: GameRow): BacktestResult[] {
     const f5Push = f5Total === f5TotalLine;
     const edge = calcEdge(pF5Under, nvF5Under);
     const ev   = calcEV(pF5Under, bookF5UnderOdds);
-    const conf = pF5Under >= CONFIDENCE_THRESHOLD;
+    const conf = pF5Under >= F5_CONFIDENCE_THRESHOLD;
     const result = !conf ? "NO_ACTION"
       : f5Push ? "PUSH"
       : wentF5Under ? "WIN" : "LOSS";
     results.push({
       gameId: game.id, market: MARKETS.F5_UNDER, modelSide: "under",
       modelProb: parseFloat(pF5Under.toFixed(4)),
-      bookLine: String(f5TotalLine), bookOdds: bookF5UnderOdds !== null ? String(bookF5UnderOdds) : null,
+      bookLine: f5TotalLine != null ? String(f5TotalLine) : null, bookOdds: bookF5UnderOdds !== null ? String(bookF5UnderOdds) : null,
       bookNoVigProb: nvF5Under, edge, ev, confidencePassed: conf,
       result, correct: result === "WIN" ? true : result === "LOSS" ? false : null,
       actualValue: `F5 total=${f5Total} line=${f5TotalLine}`,
@@ -608,7 +632,9 @@ function evaluateNrfi(game: GameRow): BacktestResult[] {
   if (pNrfi !== null) {
     const edge = calcEdge(pNrfi, nvNrfi);
     const ev   = calcEV(pNrfi, bookNrfiOdds);
-    const conf = pNrfi >= CONFIDENCE_THRESHOLD;
+    // Use backtest-calibrated NRFI threshold (0.55) — NRFI is a binary 50/50 market;
+    // standard 0.65 threshold is too restrictive given 51.7% season-wide NRFI rate.
+    const conf = pNrfi >= NRFI_CONFIDENCE_THRESHOLD;
     const result = nrfiActual === null ? "MISSING_DATA"
       : !conf ? "NO_ACTION"
       : nrfiActual === "NRFI" ? "WIN" : "LOSS";
@@ -619,14 +645,14 @@ function evaluateNrfi(game: GameRow): BacktestResult[] {
       bookNoVigProb: nvNrfi, edge, ev, confidencePassed: conf,
       result, correct: result === "WIN" ? true : result === "LOSS" ? false : null,
       actualValue: nrfiActual ?? "unknown",
-      notes: `P(NRFI)=${pNrfi.toFixed(4)} book=${bookNrfiOdds} actual=${nrfiActual ?? "unknown"}`,
+      notes: `P(NRFI)=${pNrfi.toFixed(4)} book=${bookNrfiOdds} actual=${nrfiActual ?? "unknown"} calibVer=${CALIBRATION_VERSION}`,
     });
   }
 
   if (pYrfi !== null) {
     const edge = calcEdge(pYrfi, nvYrfi);
     const ev   = calcEV(pYrfi, bookYrfiOdds);
-    const conf = pYrfi >= CONFIDENCE_THRESHOLD;
+    const conf = pYrfi >= NRFI_CONFIDENCE_THRESHOLD;
     const result = nrfiActual === null ? "MISSING_DATA"
       : !conf ? "NO_ACTION"
       : nrfiActual === "YRFI" ? "WIN" : "LOSS";
@@ -637,7 +663,7 @@ function evaluateNrfi(game: GameRow): BacktestResult[] {
       bookNoVigProb: nvYrfi, edge, ev, confidencePassed: conf,
       result, correct: result === "WIN" ? true : result === "LOSS" ? false : null,
       actualValue: nrfiActual ?? "unknown",
-      notes: `P(YRFI)=${pYrfi.toFixed(4)} book=${bookYrfiOdds} actual=${nrfiActual ?? "unknown"}`,
+      notes: `P(YRFI)=${pYrfi.toFixed(4)} book=${bookYrfiOdds} actual=${nrfiActual ?? "unknown"} calibVer=${CALIBRATION_VERSION}`,
     });
   }
 
@@ -811,6 +837,13 @@ async function writeBacktestResults(results: BacktestResult[], gameDate: string,
   let errors  = 0;
 
   for (const r of results) {
+    // Null-guard all nullable fields for both INSERT and UPDATE paths
+    const iCorrect  = r.correct !== null && r.correct !== undefined ? (r.correct ? 1 : 0) : null;
+    const iNvProb   = r.bookNoVigProb !== null && r.bookNoVigProb !== undefined ? parseFloat(r.bookNoVigProb.toFixed(4)) : null;
+    const iEdge     = r.edge !== null && r.edge !== undefined ? parseFloat(r.edge.toFixed(4)) : null;
+    const iEv       = r.ev !== null && r.ev !== undefined ? parseFloat(r.ev.toFixed(2)) : null;
+    const iBookLine = r.bookLine || null;
+    const iBookOdds = r.bookOdds || null;
     try {
       // Try insert first
       await db.insert(mlbGameBacktest).values({
@@ -819,16 +852,16 @@ async function writeBacktestResults(results: BacktestResult[], gameDate: string,
         market:          r.market,
         modelSide:       r.modelSide.slice(0, 8),
         modelProb:       parseFloat(r.modelProb.toFixed(4)),
-        bookLine:        r.bookLine,
-        bookOdds:        r.bookOdds,
-        bookNoVigProb:   r.bookNoVigProb !== null ? parseFloat(r.bookNoVigProb.toFixed(4)) : null,
-        edge:            r.edge !== null ? parseFloat(r.edge.toFixed(4)) : null,
-        ev:              r.ev !== null ? parseFloat(r.ev.toFixed(2)) : null,
+        bookLine:        iBookLine,
+        bookOdds:        iBookOdds,
+        bookNoVigProb:   iNvProb,
+        edge:            iEdge,
+        ev:              iEv,
         confidencePassed: r.confidencePassed ? 1 : 0,
         result:          r.result,
-        correct:         r.correct !== null ? (r.correct ? 1 : 0) : null,
-        actualAwayScore: actualAway,
-        actualHomeScore: actualHome,
+        correct:         iCorrect,
+        actualAwayScore: actualAway ?? null,
+        actualHomeScore: actualHome ?? null,
         awayPitcher:     awayPitcher,
         homePitcher:     homePitcher,
         backtestRunAt:   now,
@@ -837,20 +870,25 @@ async function writeBacktestResults(results: BacktestResult[], gameDate: string,
     } catch (_insertErr) {
       // On duplicate, update
       try {
+        // Use explicit sql`NULL` for nullable fields to avoid Drizzle empty-string serialization bug
+        const safeCorrect = r.correct !== null && r.correct !== undefined ? (r.correct ? 1 : 0) : null;
+        const safeNvProb  = r.bookNoVigProb !== null && r.bookNoVigProb !== undefined ? parseFloat(r.bookNoVigProb.toFixed(4)) : null;
+        const safeEdge    = r.edge !== null && r.edge !== undefined ? parseFloat(r.edge.toFixed(4)) : null;
+        const safeEv      = r.ev !== null && r.ev !== undefined ? parseFloat(r.ev.toFixed(2)) : null;
         await db.update(mlbGameBacktest)
           .set({
-            modelProb:       parseFloat(r.modelProb.toFixed(4)),
-            bookLine:        r.bookLine,
-            bookOdds:        r.bookOdds,
-            bookNoVigProb:   r.bookNoVigProb !== null ? parseFloat(r.bookNoVigProb.toFixed(4)) : null,
-            edge:            r.edge !== null ? parseFloat(r.edge.toFixed(4)) : null,
-            ev:              r.ev !== null ? parseFloat(r.ev.toFixed(2)) : null,
+            modelProb:        parseFloat(r.modelProb.toFixed(4)),
+            bookLine:         r.bookLine ?? null,
+            bookOdds:         r.bookOdds ?? null,
+            bookNoVigProb:    safeNvProb,
+            edge:             safeEdge,
+            ev:               safeEv,
             confidencePassed: r.confidencePassed ? 1 : 0,
-            result:          r.result,
-            correct:         r.correct !== null ? (r.correct ? 1 : 0) : null,
-            actualAwayScore: actualAway,
-            actualHomeScore: actualHome,
-            backtestRunAt:   now,
+            result:           r.result,
+            correct:          safeCorrect,
+            actualAwayScore:  actualAway ?? null,
+            actualHomeScore:  actualHome ?? null,
+            backtestRunAt:    now,
           })
           .where(
             and(

@@ -56,6 +56,8 @@ export interface F5NrfiGame {
   modelF5HomeRLCoverPct: string | null;
   modelF5OverOdds: string | null;
   modelF5UnderOdds: string | null;
+  modelF5PushPct: string | null;     // THREE-WAY: Bayesian-blended P(F5 push/tie) 0-1
+  modelF5PushRaw: string | null;     // raw simulation push rate (diagnostic)
   // NRFI/YRFI book odds (FanDuel NJ)
   nrfiOverOdds: string | null;
   yrfiUnderOdds: string | null;
@@ -508,6 +510,37 @@ export default function MlbF5NrfiCard({ game }: MlbF5NrfiCardProps) {
             awayEdgeEV={awayF5MlEdgeEV}
             homeEdgeEV={homeF5MlEdgeEV}
           />
+
+          {/* F5 Push (three-way pricing — v2.1) */}
+          {game.modelF5PushPct != null && (
+            <div style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              padding: "4px 10px",
+              borderBottom: "1px solid rgba(255,255,255,0.04)",
+              background: "rgba(255,165,0,0.04)",
+            }}>
+              <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,165,0,0.75)", letterSpacing: "0.08em", minWidth: 32 }}>PUSH</span>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)", letterSpacing: "0.04em" }}>P(TIE)</span>
+                <span style={{
+                  fontSize: 12,
+                  fontWeight: 800,
+                  color: "rgba(255,165,0,0.90)",
+                  fontVariantNumeric: "tabular-nums",
+                }}>
+                  {(parseFloat(game.modelF5PushPct) * 100).toFixed(1)}%
+                </span>
+                {game.modelF5PushRaw != null && (
+                  <span style={{ fontSize: 9, color: "rgba(255,255,255,0.25)", marginLeft: 2 }}>
+                    (sim: {(parseFloat(game.modelF5PushRaw) * 100).toFixed(1)}%)
+                  </span>
+                )}
+              </div>
+              <span style={{ fontSize: 9, color: "rgba(255,165,0,0.45)", letterSpacing: "0.06em" }}>3-WAY</span>
+            </div>
+          )}
 
           {/* F5 RL */}
           <MarketRow

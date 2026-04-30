@@ -9,7 +9,11 @@
  * Access: owner role only — non-owners are immediately redirected to /feed.
  * Backend: all procedures use ownerProcedure (server-side owner check enforced).
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
+  ResponsiveContainer, ReferenceLine,
+} from "recharts";
 import { useLocation } from "wouter";
 import { trpc } from "@/lib/trpc";
 import { useAppAuth } from "@/_core/hooks/useAppAuth";
@@ -426,8 +430,13 @@ export default function ModelResults() {
   const { appUser, isOwner, loading: authLoading } = useAppAuth();
   const [gameDate, setGameDate] = useState(() => todayPst());
   const [isRunningBacktest, setIsRunningBacktest] = useState(false);
-  // 'daily' | 'last7'
-  const [viewMode, setViewMode] = useState<'daily' | 'last7'>('daily');
+  // 'daily' | 'last7' | 'brier'
+  const [viewMode, setViewMode] = useState<'daily' | 'last7' | 'brier'>('daily');
+  const [brierWindow, setBrierWindow] = useState<number>(20);
+  // 'trend' | 'heatmap' — sub-tab within the BRIER view
+  const [brierSubTab, setBrierSubTab] = useState<'trend' | 'heatmap'>('trend');
+  // Heatmap drill-down: selected cell {date, market}
+  const [selectedCell, setSelectedCell] = useState<{ date: string; market: 'fgMl' | 'f5Ml' | 'nrfi' | 'fgTotal' | 'f5Total' } | null>(null);
 
   // ── Strict owner-only guard ─────────────────────────────────────────────────
   useEffect(() => {
@@ -456,7 +465,7 @@ export default function ModelResults() {
     { enabled: !!appUser && isOwner && viewMode === 'daily', refetchOnWindowFocus: false }
   );
 
-  // ── Last 7 Days aggregate ────────────────────────────────────────────────────
+  // ── Last 7 Days aggregate ────────────────────────────────────────────
   const {
     data: last7Data,
     isLoading: last7Loading,
@@ -465,14 +474,88 @@ export default function ModelResults() {
     { days: 7 },
     { enabled: !!appUser && isOwner && viewMode === 'last7', refetchOnWindowFocus: false }
   );
+  // ── Brier Score Trend ──────────────────────────────────────────────────────
+  const {
+    data: brierData,
+    isLoading: brierLoading,
+    refetch: refetchBrier,
+  } = trpc.mlbSchedule.getBrierTrend.useQuery(
+    { windowSize: brierWindow, sport: 'MLB' },
+    { enabled: !!appUser && isOwner && viewMode === 'brier', refetchOnWindowFocus: false }
+  );
+
+  // ── Brier Heatmap ──────────────────────────────────────────────────────
+  const {
+    data: heatmapData,
+    isLoading: heatmapLoading,
+    refetch: refetchHeatmap,
+  } = trpc.mlbSchedule.getBrierHeatmap.useQuery(
+    { sport: 'MLB' },
+    { enabled: !!appUser && isOwner && viewMode === 'brier' && brierSubTab === 'heatmap', refetchOnWindowFocus: false }
+  );
+
+  // ── Drift detector status query ──────────────────────────────────────────────────
+  const {
+    data: driftData,
+    isLoading: driftLoading,
+    refetch: refetchDrift,
+  } = trpc.mlbSchedule.checkDrift.useQuery(
+    { triggerRecal: false },
+    { enabled: !!appUser && isOwner && viewMode === 'brier', refetchOnWindowFocus: false, staleTime: 5 * 60 * 1000 }
+  );
+
+  // ── Brier Heatmap Drill-Down ─────────────────────────────────────────────────
+  const {
+    data: drilldownData,
+    isLoading: drilldownLoading,
+  } = trpc.mlbSchedule.getBrierDrilldown.useQuery(
+    selectedCell ?? { date: '2026-01-01', market: 'fgMl' },
+    { enabled: !!appUser && isOwner && selectedCell != null, refetchOnWindowFocus: false }
+  );
+
+  // ── Re-ingest mutation (force=true per date) ───────────────────────────────────
+  const [reingestingDate, setReingestingDate] = useState<string | null>(null);
+  const reingestMutation = trpc.mlbSchedule.triggerOutcomeIngestion.useMutation({
+    onSuccess: (data, vars) => {
+      toast.success(`Re-ingested ${vars.dateStr}: ${data.written} written, ${data.errors} errors`);
+      setReingestingDate(null);
+      refetchBrier();
+    },
+    onError: (err, vars) => {
+      toast.error(`Re-ingest failed for ${vars.dateStr}: ${err.message}`);
+      setReingestingDate(null);
+    },
+  });
+
+  const handleReingest = (dateStr: string) => {
+    if (reingestingDate) return; // prevent concurrent re-ingests
+    setReingestingDate(dateStr);
+    reingestMutation.mutate({ dateStr, force: true });
+  };
+
+  // Merge per-game and rolling arrays for recharts (keyed by gameIndex)
+  const brierChartData = useMemo(() => {
+    if (!brierData) return [];
+    const rollingMap = new Map(brierData.rolling.map(r => [r.gameIndex, r]));
+    return brierData.games.map(g => ({
+      ...g,
+      ...(rollingMap.get(g.gameIndex) ?? {}),
+    }));
+  }, [brierData]);
 
   const handleRefresh = async () => {
     setIsRunningBacktest(true);
     try {
       if (viewMode === 'daily') {
         await Promise.all([refetchDaily(), refetchCalibration()]);
-      } else {
+      } else if (viewMode === 'last7') {
         await refetchLast7();
+      } else {
+        await Promise.all([
+          refetchBrier(),
+          refetchDrift(),
+          brierSubTab === 'heatmap' ? refetchHeatmap() : Promise.resolve(),
+        ]);
       }
       toast.success("Results refreshed");
     } catch (err) {
@@ -504,8 +587,7 @@ export default function ModelResults() {
       <header className="sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
         {/* Top row */}
         <div className="relative flex items-center px-4 py-2 max-w-5xl mx-auto">
-          <button
-            onClick={() => setLocation("/admin/publish")}
+          <button type="button" onClick={() => setLocation("/admin/publish")}
             className="p-1.5 rounded-lg transition-colors hover:bg-white/10 mr-2 flex-shrink-0"
           >
             <ChevronLeft size={18} style={{ color: "hsl(var(--muted-foreground))" }} />
@@ -539,8 +621,7 @@ export default function ModelResults() {
 
         {/* View mode toggle + date nav */}
         <div className="px-4 pb-1.5 max-w-5xl mx-auto flex items-center gap-2">
-          <button
-            onClick={() => setViewMode('daily')}
+          <button type="button" onClick={() => setViewMode('daily')}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
             style={{
               background: viewMode === 'daily' ? 'rgba(57,255,20,0.12)' : 'rgba(255,255,255,0.04)',
@@ -553,8 +634,7 @@ export default function ModelResults() {
             <Calendar size={11} />
             DAILY
           </button>
-          <button
-            onClick={() => setViewMode('last7')}
+          <button type="button" onClick={() => setViewMode('last7')}
             className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
             style={{
               background: viewMode === 'last7' ? 'rgba(0,191,255,0.12)' : 'rgba(255,255,255,0.04)',
@@ -567,12 +647,43 @@ export default function ModelResults() {
             <CalendarDays size={11} />
             LAST 7 DAYS
           </button>
+          <button type="button" onClick={() => setViewMode('brier')}
+            className="flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-colors"
+            style={{
+              background: viewMode === 'brier' ? 'rgba(255,165,0,0.12)' : 'rgba(255,255,255,0.04)',
+              color: viewMode === 'brier' ? '#FFA500' : 'rgba(255,255,255,0.45)',
+              border: `1px solid ${viewMode === 'brier' ? 'rgba(255,165,0,0.35)' : 'rgba(255,255,255,0.10)'}`,
+              fontFamily: '"Barlow Condensed", sans-serif',
+              letterSpacing: '0.08em',
+            }}
+          >
+            <TrendingUp size={11} />
+            BRIER TREND
+          </button>
+          {/* Brier window selector — only visible in brier mode */}
+          {viewMode === 'brier' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto' }}>
+              <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '.08em', textTransform: 'uppercase' }}>Window</span>
+              {[10, 20, 30, 50].map(w => (
+                <button type="button" key={w}
+                  onClick={() => setBrierWindow(w)}
+                  style={{
+                    fontSize: 10, fontWeight: 700, padding: '2px 8px', borderRadius: 6,
+                    background: brierWindow === w ? 'rgba(255,165,0,0.15)' : 'rgba(255,255,255,0.04)',
+                    color: brierWindow === w ? '#FFA500' : 'rgba(255,255,255,0.35)',
+                    border: `1px solid ${brierWindow === w ? 'rgba(255,165,0,0.4)' : 'rgba(255,255,255,0.08)'}`,
+                    cursor: 'pointer', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '.06em',
+                  }}
+                >{w}G</button>
+              ))}
+            </div>
+          )}
+
           {/* Date nav — only visible in daily mode */}
           {viewMode === 'daily' && (
             <>
               <div style={{ flex: 1 }} />
-              <button
-                onClick={() => setGameDate(d => addDays(d, -1))}
+              <button type="button" onClick={() => setGameDate(d => addDays(d, -1))}
                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0"
               >
                 <ChevronLeft size={14} style={{ color: 'hsl(var(--muted-foreground))' }} />
@@ -585,8 +696,7 @@ export default function ModelResults() {
                   TODAY
                 </span>
               )}
-              <button
-                onClick={() => setGameDate(d => addDays(d, 1))}
+              <button type="button" onClick={() => setGameDate(d => addDays(d, 1))}
                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0"
               >
                 <ChevronRight size={14} style={{ color: 'hsl(var(--muted-foreground))' }} />
@@ -596,10 +706,433 @@ export default function ModelResults() {
         </div>
       </header>
 
-      {/* ── Main content ──────────────────────────────────────────────────── */}
+      {/* ── Main content ───────────────────────────────────────────────────── */}
       <main className="max-w-5xl mx-auto px-4 py-4 pb-16">
 
-        {/* ── LAST 7 DAYS VIEW ──────────────────────────────────────────────── */}
+        {/* ── BRIER TREND VIEW ────────────────────────────────────────────────── */}
+        {viewMode === 'brier' && (
+          brierLoading ? (
+            <div className="flex items-center justify-center py-12 gap-3">
+              <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#FFA500' }} />
+              <span className="text-sm text-muted-foreground">Loading Brier score trend…</span>
+            </div>
+          ) : !brierData || brierData.summary.totalGames === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+              <TrendingUp className="w-10 h-10 text-muted-foreground/30" />
+              <div>
+                <p className="text-sm font-semibold text-foreground mb-1">No Brier score data yet</p>
+                <p className="text-xs text-muted-foreground">Outcome ingestion must run first to populate Brier scores.</p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* ── Drift Detector Banner ────────────────────────────────────────────────────────────────────────────── */}
+              {driftLoading ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', borderRadius: 6, background: 'rgba(255,255,255,0.04)', marginBottom: 12 }}>
+                  <Loader2 style={{ width: 12, height: 12, color: '#FFA500' }} className="animate-spin" />
+                  <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '1px' }}>CHECKING DRIFT...</span>
+                </div>
+              ) : driftData ? (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', borderRadius: 6, marginBottom: 12,
+                  background: driftData.driftDetected ? 'rgba(255,80,80,0.12)' : driftData.rollingF5Share !== null ? 'rgba(0,229,100,0.08)' : 'rgba(255,255,255,0.04)',
+                  border: `1px solid ${driftData.driftDetected ? 'rgba(255,80,80,0.3)' : driftData.rollingF5Share !== null ? 'rgba(0,229,100,0.2)' : 'rgba(255,255,255,0.08)'}`,
+                }}>
+                  <span style={{ fontSize: 13 }}>{driftData.driftDetected ? '⚠️' : driftData.rollingF5Share !== null ? '✅' : '⏳'}</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase', color: driftData.driftDetected ? '#FF5050' : driftData.rollingF5Share !== null ? '#00E564' : 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif', marginBottom: 2 }}>
+                      {driftData.driftDetected ? 'DRIFT DETECTED — RECALIBRATION RECOMMENDED' : driftData.rollingF5Share !== null ? 'DRIFT DETECTOR — NOMINAL' : 'DRIFT DETECTOR — INSUFFICIENT DATA'}
+                    </div>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.45)', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '0.5px' }}>
+                      {driftData.rollingF5Share !== null
+                        ? `Rolling F5 Share: ${(driftData.rollingF5Share * 100).toFixed(2)}% | Baseline: ${(driftData.baselineF5Share * 100).toFixed(2)}% | Delta: ${((driftData.delta ?? 0) * 100).toFixed(2)}pp | Window: ${driftData.windowSize} games${driftData.recalibrationTriggered ? ' | ✅ Recalibrated' : ''}`
+                        : driftData.message
+                      }
+                    </div>
+                  </div>
+                  {driftData.driftDetected && !driftData.recalibrationTriggered && (
+                    <span style={{ fontSize: 9, color: '#FF5050', fontFamily: '"Barlow Condensed", sans-serif', letterSpacing: '1px', fontWeight: 700 }}>NEEDS RECAL</span>
+                  )}
+                </div>
+              ) : null}
+
+              {/* ── Sub-tab toggle: TREND / HEATMAP ──────────────────────────────────────── */}
+              <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
+                {(['trend', 'heatmap'] as const).map(tab => (
+                  <button type="button" key={tab}
+                    onClick={() => setBrierSubTab(tab)}
+                    style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
+                      padding: '4px 12px', borderRadius: 4, border: 'none', cursor: 'pointer',
+                      fontFamily: '"Barlow Condensed", sans-serif',
+                      background: brierSubTab === tab ? (tab === 'trend' ? 'rgba(255,165,0,0.2)' : 'rgba(0,229,204,0.15)') : 'rgba(255,255,255,0.05)',
+                      color: brierSubTab === tab ? (tab === 'trend' ? '#FFA500' : '#00E5CC') : 'rgba(255,255,255,0.3)',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {tab === 'trend' ? '📈 TREND' : '🟥 HEATMAP'}
+                  </button>
+                ))}
+              </div>
+
+              {/* ── TREND sub-tab content ────────────────────────────────────────────────── */}
+              {brierSubTab === 'trend' && <>
+              {/* ── Summary stat cards ────────────────────────────────────────────────────── */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif',
+                  marginBottom: 10,
+                }}>
+                  BRIER SCORE CALIBRATION — {brierData.summary.totalGames} INGESTED GAMES
+                  <span style={{ marginLeft: 8, color: 'rgba(255,165,0,0.6)', fontSize: 8 }}>
+                    (lower = better | perfect = 0.000 | random = 0.250)
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {([
+                    { label: 'FG ML', value: brierData.summary.avgFgMl, color: '#39FF14' },
+                    { label: 'F5 ML', value: brierData.summary.avgF5Ml, color: '#FFA500' },
+                    { label: 'NRFI', value: brierData.summary.avgNrfi, color: '#00BFFF' },
+                    { label: 'FG TOT', value: (brierData.summary as Record<string, number | null>).avgFgTotal ?? null, color: '#BF5FFF' },
+                    { label: 'F5 TOT', value: (brierData.summary as Record<string, number | null>).avgF5Total ?? null, color: '#00E5CC' },
+                  ] as Array<{ label: string; value: number | null; color: string }>).map(({ label, value, color }) => (
+                    <StatCard
+                      key={label}
+                      label={`AVG BRIER — ${label}`}
+                      value={value != null ? value.toFixed(4) : 'N/A'}
+                      sub={`${brierWindow}-game rolling window`}
+                      color={
+                        value == null ? '#4a5048'
+                          : value <= 0.15 ? '#39FF14'
+                          : value <= 0.22 ? '#FFD700'
+                          : '#FF2244'
+                      }
+                    />
+                  ))}
+                  <StatCard
+                    label="WINDOW SIZE"
+                    value={`${brierWindow}G`}
+                    sub={`${brierData.summary.totalGames} total ingested`}
+                    color="#FFA500"
+                  />
+                </div>
+              </div>
+
+              {/* ── Rolling Brier chart ────────────────────────────────────────────── */}
+              <div style={{
+                background: '#0a0d0b',
+                border: '1px solid #1a1d1b',
+                borderRadius: 10,
+                padding: '16px 12px 12px',
+                marginBottom: 20,
+              }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif',
+                  marginBottom: 16,
+                }}>
+                  ROLLING {brierWindow}-GAME BRIER SCORE — FG ML / F5 ML / NRFI / FG TOT / F5 TOT
+                </div>
+                <ResponsiveContainer width="100%" height={280}>
+                  <LineChart data={brierChartData} margin={{ top: 4, right: 16, left: -20, bottom: 4 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1a1d1b" />
+                    <XAxis
+                      dataKey="gameIndex"
+                      tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.25)', fontFamily: '"Barlow Condensed", sans-serif' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#1a1d1b' }}
+                      label={{ value: 'Game #', position: 'insideBottomRight', offset: -4, fontSize: 9, fill: 'rgba(255,255,255,0.2)' }}
+                    />
+                    <YAxis
+                      domain={[0, 0.35]}
+                      tickCount={8}
+                      tick={{ fontSize: 9, fill: 'rgba(255,255,255,0.25)', fontFamily: '"Barlow Condensed", sans-serif' }}
+                      tickLine={false}
+                      axisLine={{ stroke: '#1a1d1b' }}
+                      tickFormatter={(v: number) => v.toFixed(2)}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        background: '#0e1110', border: '1px solid #1e2320',
+                        borderRadius: 8, fontSize: 11, fontFamily: '"Barlow Condensed", sans-serif',
+                      }}
+                      labelStyle={{ color: 'rgba(255,255,255,0.5)', marginBottom: 4 }}
+                      formatter={(value: number, name: string) => [
+                        value != null ? value.toFixed(4) : 'N/A',
+                        name,
+                      ]}
+                      labelFormatter={(label: number) => {
+                        const g = brierChartData.find(d => d.gameIndex === label);
+                        return g ? `Game ${label}: ${g.matchup} (${g.gameDate})` : `Game ${label}`;
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: 10, fontFamily: '"Barlow Condensed", sans-serif', paddingTop: 8 }}
+                    />
+                    {/* Reference line at 0.25 (random baseline) */}
+                    <ReferenceLine y={0.25} stroke="rgba(255,255,255,0.12)" strokeDasharray="4 4"
+                      label={{ value: 'Random (0.25)', position: 'right', fontSize: 8, fill: 'rgba(255,255,255,0.2)' }}
+                    />
+                    {/* Reference line at 0.20 (good calibration target) */}
+                    <ReferenceLine y={0.20} stroke="rgba(57,255,20,0.15)" strokeDasharray="4 4"
+                      label={{ value: 'Target (0.20)', position: 'right', fontSize: 8, fill: 'rgba(57,255,20,0.3)' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="rollFgMl" name="FG ML"
+                      stroke="#39FF14" strokeWidth={2} dot={false}
+                      connectNulls activeDot={{ r: 4, fill: '#39FF14' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="rollF5Ml" name="F5 ML"
+                      stroke="#FFA500" strokeWidth={2} dot={false}
+                      connectNulls activeDot={{ r: 4, fill: '#FFA500' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="rollNrfi" name="NRFI"
+                      stroke="#00BFFF" strokeWidth={2} dot={false}
+                      connectNulls activeDot={{ r: 4, fill: '#00BFFF' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="rollFgTotal" name="FG TOT"
+                      stroke="#BF5FFF" strokeWidth={1.5} strokeDasharray="5 3" dot={false}
+                      connectNulls activeDot={{ r: 4, fill: '#BF5FFF' }}
+                    />
+                    <Line
+                      type="monotone" dataKey="rollF5Total" name="F5 TOT"
+                      stroke="#00E5CC" strokeWidth={1.5} strokeDasharray="5 3" dot={false}
+                      connectNulls activeDot={{ r: 4, fill: '#00E5CC' }}
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* ── Per-game Brier table ────────────────────────────────────────────── */}
+              <div style={{ marginBottom: 20 }}>
+                <div style={{
+                  fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
+                  color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif',
+                  marginBottom: 10,
+                }}>
+                  PER-GAME BRIER SCORES ({brierData.games.length} games, newest first)
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11, fontFamily: '"Barlow Condensed", sans-serif' }}>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid #1a1d1b' }}>
+                        {['#', 'DATE', 'MATCHUP', 'FG ML', 'F5 ML', 'NRFI', 'FG TOT', 'F5 TOT', ''].map(h => (
+                          <th key={h} style={{ padding: '4px 8px', textAlign: h === '#' || h === 'DATE' || h === 'MATCHUP' || h === '' ? 'left' : 'right', color: 'rgba(255,255,255,0.3)', fontWeight: 700, letterSpacing: '.08em', fontSize: 9 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[...brierData.games].reverse().map(g => {
+                        const brierColor = (v: number | null) =>
+                          v == null ? 'rgba(255,255,255,0.15)'
+                            : v <= 0.15 ? '#39FF14'
+                            : v <= 0.22 ? '#FFD700'
+                            : '#FF2244';
+                        const isReingestingThis = reingestingDate === g.gameDate;
+                        const isAnyReingestActive = reingestingDate !== null;
+                        return (
+                          <tr key={g.gameIndex} style={{ borderBottom: '1px solid #0e1110' }}>
+                            <td style={{ padding: '4px 8px', color: 'rgba(255,255,255,0.25)', fontSize: 9 }}>{g.gameIndex}</td>
+                            <td style={{ padding: '4px 8px', color: 'rgba(255,255,255,0.4)', fontSize: 9 }}>{g.gameDate}</td>
+                            <td style={{ padding: '4px 8px', color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>{g.matchup}</td>
+                            {(['brierFgMl', 'brierF5Ml', 'brierNrfi', 'brierFgTotal', 'brierF5Total'] as const).map(field => (
+                              <td key={field} style={{ padding: '4px 8px', textAlign: 'right', color: brierColor(g[field]), fontWeight: 600 }}>
+                                {g[field] != null ? (g[field] as number).toFixed(4) : <span style={{ color: 'rgba(255,255,255,0.12)' }}>—</span>}
+                              </td>
+                            ))}
+                            <td style={{ padding: '4px 8px' }}>
+                              <button type="button" onClick={() => handleReingest(g.gameDate)}
+                                disabled={isAnyReingestActive}
+                                title={`Force re-ingest ${g.gameDate} (force=true, rewrites all Brier scores)`}
+                                style={{
+                                  fontSize: 8, fontWeight: 700, letterSpacing: '.08em',
+                                  padding: '2px 6px', borderRadius: 3, border: 'none', cursor: isAnyReingestActive ? 'not-allowed' : 'pointer',
+                                  background: isReingestingThis ? 'rgba(255,180,0,0.15)' : 'rgba(255,255,255,0.06)',
+                                  color: isReingestingThis ? '#FFB400' : 'rgba(255,255,255,0.35)',
+                                  transition: 'all 0.15s',
+                                  display: 'flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {isReingestingThis ? (
+                                  <>⏳ INGESTING…</>
+                                ) : (
+                                  <>↺ RE-INGEST</>  
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              </> /* end brierSubTab === 'trend' */}
+
+              {/* ── HEATMAP sub-tab content ────────────────────────────────────────────── */}
+              {brierSubTab === 'heatmap' && (
+                heatmapLoading ? (
+                  <div className="flex items-center justify-center py-12 gap-3">
+                    <Loader2 className="w-6 h-6 animate-spin" style={{ color: '#00E5CC' }} />
+                    <span className="text-sm text-muted-foreground">Loading Brier heatmap…</span>
+                  </div>
+                ) : !heatmapData || heatmapData.heatmap.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+                    <BarChart3 className="w-10 h-10 text-muted-foreground/30" />
+                    <div>
+                      <p className="text-sm font-semibold text-foreground mb-1">No heatmap data yet</p>
+                      <p className="text-xs text-muted-foreground">Outcome ingestion must run first.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ overflowX: 'auto' }}>
+                    <div style={{
+                      fontSize: 9, fontWeight: 700, letterSpacing: '2px', textTransform: 'uppercase',
+                      color: 'rgba(255,255,255,0.35)', fontFamily: '"Barlow Condensed", sans-serif',
+                      marginBottom: 12,
+                    }}>
+                      BRIER HEATMAP — {heatmapData.heatmap.length} DATES × 5 MARKETS
+                      <span style={{ marginLeft: 8, color: 'rgba(0,229,204,0.6)', fontSize: 8 }}>
+                        (avg per date | 🟢 ≤0.15 | 🟡 ≤0.22 | 🔴 &gt;0.22 | — = no data)
+                      </span>
+                    </div>
+                    <table style={{ borderCollapse: 'collapse', fontSize: 11, fontFamily: '"Barlow Condensed", sans-serif', minWidth: 520 }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid #1a1d1b' }}>
+                          {['DATE', 'GAMES', 'FG ML', 'F5 ML', 'NRFI', 'FG TOT', 'F5 TOT'].map(h => (
+                            <th key={h} style={{
+                              padding: '4px 10px',
+                              textAlign: h === 'DATE' ? 'left' : 'right',
+                              color: 'rgba(255,255,255,0.3)', fontWeight: 700, letterSpacing: '.08em', fontSize: 9,
+                            }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...heatmapData.heatmap].reverse().map(row => {
+                          const cellBg = (v: number | null) =>
+                            v == null ? 'transparent'
+                              : v <= 0.15 ? 'rgba(57,255,20,0.12)'
+                              : v <= 0.22 ? 'rgba(255,215,0,0.12)'
+                              : 'rgba(255,34,68,0.12)';
+                          const cellColor = (v: number | null) =>
+                            v == null ? 'rgba(255,255,255,0.12)'
+                              : v <= 0.15 ? '#39FF14'
+                              : v <= 0.22 ? '#FFD700'
+                              : '#FF4466';
+                          return (
+                            <tr key={row.date} style={{ borderBottom: '1px solid #0e1110' }}>
+                              <td style={{ padding: '5px 10px', color: 'rgba(255,255,255,0.55)', fontWeight: 600, whiteSpace: 'nowrap' }}>{row.date}</td>
+                              <td style={{ padding: '5px 10px', textAlign: 'right', color: 'rgba(255,255,255,0.3)', fontSize: 9 }}>{row.games}</td>
+                              {(['avgFgMl', 'avgF5Ml', 'avgNrfi', 'avgFgTotal', 'avgF5Total'] as const).map(field => {
+                                const v = row[field];
+                                const nullCount = row[field.replace('avg', 'null') as keyof typeof row] as number;
+                                // Map avg field to market key
+                                const marketKey = (
+                                  field === 'avgFgMl' ? 'fgMl' :
+                                  field === 'avgF5Ml' ? 'f5Ml' :
+                                  field === 'avgNrfi' ? 'nrfi' :
+                                  field === 'avgFgTotal' ? 'fgTotal' : 'f5Total'
+                                ) as 'fgMl' | 'f5Ml' | 'nrfi' | 'fgTotal' | 'f5Total';
+                                const isSelected = selectedCell?.date === row.date && selectedCell?.market === marketKey;
+                                return (
+                                  <td key={field} onClick={() => setSelectedCell(isSelected ? null : { date: row.date, market: marketKey })} style={{
+                                    padding: '5px 10px', textAlign: 'right',
+                                    background: isSelected ? 'rgba(0,191,255,0.25)' : cellBg(v),
+                                    color: isSelected ? '#00BFFF' : cellColor(v),
+                                    fontWeight: 700,
+                                    position: 'relative',
+                                    cursor: 'pointer',
+                                    outline: isSelected ? '1px solid rgba(0,191,255,0.5)' : 'none',
+                                  }}>
+                                    {v != null ? v.toFixed(4) : <span style={{ color: 'rgba(255,255,255,0.1)' }}>—</span>}
+                                    {nullCount > 0 && (
+                                      <span style={{ fontSize: 7, color: 'rgba(255,180,0,0.5)', marginLeft: 3 }}>
+                                        ({nullCount}ø)
+                                      </span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              )}
+
+              {/* ── HEATMAP DRILL-DOWN PANEL ─────────────────────────────────────────────────────────────────────────── */}
+              {selectedCell && (
+                <div style={{
+                  marginTop: 20, padding: '16px 20px',
+                  background: 'rgba(0,191,255,0.06)',
+                  border: '1px solid rgba(0,191,255,0.2)',
+                  borderRadius: 8,
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#00BFFF', fontFamily: '"Barlow Condensed", sans-serif' }}>
+                      DRILL-DOWN — {selectedCell.date} / {selectedCell.market.toUpperCase()}
+                    </div>
+                    <button type="button" onClick={() => setSelectedCell(null)} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 14 }}>×</button>
+                  </div>
+                  {drilldownLoading ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 0' }}>
+                      <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>Loading games…</span>
+                    </div>
+                  ) : !drilldownData || drilldownData.games.length === 0 ? (
+                    <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', padding: '8px 0' }}>No games found for this date.</div>
+                  ) : (
+                    <table style={{ borderCollapse: 'collapse', fontSize: 10, fontFamily: '"Barlow Condensed", sans-serif', width: '100%' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(0,191,255,0.15)' }}>
+                          {['MATCHUP', 'BRIER', 'MODEL AWAY%', 'MODEL HOME%', 'BOOK ML', 'SCORE', 'RESULT'].map(h => (
+                            <th key={h} style={{ padding: '4px 8px', textAlign: h === 'MATCHUP' ? 'left' : 'right', color: 'rgba(255,255,255,0.3)', fontWeight: 700, letterSpacing: '.08em', fontSize: 9 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {drilldownData.games.map((g: typeof drilldownData.games[number]) => {
+                          const brier = g.focusBrier;
+                          const brierColor = brier == null ? 'rgba(255,255,255,0.15)' : brier <= 0.15 ? '#39FF14' : brier <= 0.22 ? '#FFD700' : '#FF4466';
+                          const mktKey = selectedCell.market;
+                          const modelAway = (mktKey === 'f5Ml' || mktKey === 'f5Total') ? g.modelF5AwayWinPct : g.modelAwayWinPct;
+                          const modelHome = (mktKey === 'f5Ml' || mktKey === 'f5Total') ? g.modelF5HomeWinPct : g.modelHomeWinPct;
+                          const bookAway = (mktKey === 'f5Ml' || mktKey === 'f5Total') ? g.f5AwayML : g.awayML;
+                          const bookHome = (mktKey === 'f5Ml' || mktKey === 'f5Total') ? g.f5HomeML : g.homeML;
+                          const result = mktKey === 'f5Ml' ? g.f5MlResult : mktKey === 'fgMl' ? g.fgMlResult : null;
+                          const correct = mktKey === 'f5Ml' ? g.f5MlCorrect : mktKey === 'fgMl' ? g.fgMlCorrect : mktKey === 'nrfi' ? g.nrfiCorrect : null;
+                          const scoreAway = mktKey.startsWith('f5') ? g.actualF5AwayScore : g.actualAwayScore;
+                          const scoreHome = mktKey.startsWith('f5') ? g.actualF5HomeScore : g.actualHomeScore;
+                          return (
+                            <tr key={g.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                              <td style={{ padding: '5px 8px', color: 'rgba(255,255,255,0.7)', fontWeight: 600, whiteSpace: 'nowrap' }}>{g.awayTeam} @ {g.homeTeam}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', color: brierColor, fontWeight: 700 }}>{brier != null ? brier.toFixed(4) : <span style={{ color: 'rgba(255,255,255,0.1)' }}>—</span>}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', color: 'rgba(255,255,255,0.5)' }}>{modelAway != null ? modelAway.toFixed(1) + '%' : '—'}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', color: 'rgba(255,255,255,0.5)' }}>{modelHome != null ? modelHome.toFixed(1) + '%' : '—'}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', color: 'rgba(255,255,255,0.35)', fontSize: 9 }}>{bookAway ?? '—'} / {bookHome ?? '—'}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', color: 'rgba(255,255,255,0.4)' }}>{scoreAway != null && scoreHome != null ? `${scoreAway}–${scoreHome}` : '—'}</td>
+                              <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 700, color: correct === 1 ? '#39FF14' : correct === 0 ? '#FF4466' : 'rgba(255,255,255,0.2)' }}>
+                                {correct === 1 ? '✓' : correct === 0 ? '✗' : result ?? '—'}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </>
+          )
+        )}
+
+        {/* ── LAST 7 DAYS VIEW ────────────────────────────────────────────────────── */}
         {viewMode === 'last7' && (
           last7Loading ? (
             <div className="flex items-center justify-center py-12 gap-3">

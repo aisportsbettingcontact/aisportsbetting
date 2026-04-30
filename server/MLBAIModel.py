@@ -27,6 +27,29 @@ import sys
 import math
 import time
 import warnings
+import subprocess
+import importlib
+
+# ── DEPENDENCY GUARD: scipy must always be present ────────────────────────────
+def _ensure_scipy() -> None:
+    """Auto-install scipy if missing. Prevents ModuleNotFoundError at runtime."""
+    try:
+        importlib.import_module('scipy')
+    except ModuleNotFoundError:
+        print('[STARTUP] scipy not found — auto-installing...', flush=True)
+        result = subprocess.run(
+            [sys.executable, '-m', 'pip', 'install', 'scipy', '-q'],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            print(f'[STARTUP] FATAL: scipy install failed: {result.stderr}', flush=True)
+            sys.exit(1)
+        print('[STARTUP] scipy installed successfully', flush=True)
+        importlib.invalidate_caches()
+
+_ensure_scipy()
+# ─────────────────────────────────────────────────────────────────────────────
+
 import numpy as np
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -56,6 +79,17 @@ KEY_PRICE_BUCKETS         = [-105, -108, -110, -112, -115, -118, -120]
 ROUNDING_RULES            = "HALF_RUN_ONLY"
 NO_VIG_OUTPUT             = True
 INVERSE_SYMMETRY          = True
+
+# ─── NRFI / BAYESIAN SHRINKAGE CONSTANTS ─────────────────────────────────────
+# Promoted to module-level for auditability and override without touching simulation logic.
+# Source: 3yr backtest (n=5,103 games, 2024-2026). Updated 2026-04-14 (v2 calibration).
+INNING1_RUN_SHARE         = 0.1166   # 3yr empirical first-inning run share (was 0.1093)
+                                      # Used as: mu_1st_physics = game_mu * INNING1_RUN_SHARE
+LEAGUE_NRFI_PRIOR         = 0.8899   # exp(-INNING1_RUN_SHARE) = exp(-0.1166) = 0.8899
+                                      # Bayesian prior: league-average P(NRFI) implied by I1 share
+NRFI_SHRINKAGE_K          = 10       # Bayesian shrinkage confidence constant
+                                      # w = starts / (starts + K): at 3 starts w=0.23, at 10 starts w=0.50
+NRFI_MIN_STARTS_FULL      = 20       # starts needed for full weight (w >= 0.67 at K=10)
 
 # ─── 2025 MLB LEAGUE AVERAGES (source: MLB Stats API, season=2025 team aggregates)
 # PA=182,926 | R/team/G=4.447 | RPG(both)=8.895
@@ -133,6 +167,86 @@ PARK_FACTORS = {
     'KCA': {'r':  96, 'hr':  94, 'h':  96}, 'WAS': {'r':  96, 'hr':  95, 'h':  96},
     'MIA': {'r':  95, 'hr':  92, 'h':  95}, 'OAK': {'r':  95, 'hr':  93, 'h':  95},
     'TOR': {'r': 100, 'hr': 100, 'h': 100}, 'ANA': {'r':  99, 'hr':  98, 'h':  99},
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 3-YEAR BACKTEST CONSTANTS (2024+2025+2026, n=5,109 games, generated 2026-04-14)
+# Source: mlb_3yr_backtest scripts 04_deep_analysis, 06_nrfi_threshold_grid,
+#         07_market_accuracy. These are empirical ground-truth values used as
+#         Bayesian priors and validation gates — not overrides.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Team NRFI rates (3yr empirical, n=5,103 games, min 20 games) ─────────────
+# Updated 2026-04-14 from mlbBacktestV2.py. Exact values from mlb_calibration_constants.json.
+# Keyed by DB team abbreviation (same as away_abbrev / home_abbrev in project_game)
+TEAM_NRFI_RATES: Dict[str, float] = {
+    'PIT': 0.5765, 'NYM': 0.5664, 'KC':  0.5647, 'STL': 0.5543, 'CHC': 0.5503,
+    'CLE': 0.5471, 'CIN': 0.5452, 'BAL': 0.5367, 'WSH': 0.5353, 'HOU': 0.5339,
+    'MIL': 0.5310, 'DET': 0.5294, 'TOR': 0.5235, 'SEA': 0.5235, 'ATL': 0.5206,
+    'TEX': 0.5161, 'SD':  0.5118, 'SF':  0.5059, 'TB':  0.5044, 'CWS': 0.5044,
+    'ATH': 0.5000, 'MIN': 0.4956, 'BOS': 0.4883, 'PHI': 0.4882, 'LAA': 0.4868,
+    'LAD': 0.4734, 'MIA': 0.4663, 'ARI': 0.4591, 'NYY': 0.4559, 'COL': 0.4559,
+}
+TEAM_NRFI_LEAGUE_MEAN = 0.5150   # 3yr empirical NRFI rate (n=5,103 games, was 0.5154)
+
+# ── Team F5 runs scored means (3yr, n=5,103 games, used for F5 mu calibration) ─
+# Updated 2026-04-14 from mlbBacktestV2.py. Exact values from mlb_calibration_constants.json.
+# Source: team_scoring.avg_f5 field (3yr empirical, min 20 games)
+TEAM_F5_RS: Dict[str, float] = {
+    'PIT': 2.1912, 'NYM': 2.6844, 'KC':  2.3029, 'STL': 2.2757, 'CHC': 2.7130,
+    'CLE': 2.3206, 'CIN': 2.5569, 'BAL': 2.5367, 'WSH': 2.3118, 'HOU': 2.4926,
+    'MIL': 2.8348, 'DET': 2.5412, 'TOR': 2.4706, 'SEA': 2.4588, 'ATL': 2.4176,
+    'TEX': 2.3900, 'SD':  2.5706, 'SF':  2.3412, 'TB':  2.3127, 'CWS': 2.0411,
+    'ATH': 2.3794, 'MIN': 2.4663, 'BOS': 2.6228, 'PHI': 2.6206, 'LAA': 2.3548,
+    'LAD': 2.9172, 'MIA': 2.3167, 'ARI': 2.9591, 'NYY': 2.9588, 'COL': 2.1500,
+}
+F5_RS_LEAGUE_MEAN = 2.484   # 3yr empirical mean F5 runs scored per team (avg of 30 teams)
+F5_RS_WEIGHT      = 0.10    # max 10% adjustment from team F5 RS tendency
+
+# ── NRFI Bayesian prior weights ───────────────────────────────────────────────
+# Pitcher empirical NRFI rate blended into first-inning mu as a Bayesian prior.
+# Physics (simulation) gets 50%, pitcher rate gets 35%, team tendency gets 15%.
+# Source: 06_nrfi_threshold_grid.py — optimal filter: combined rate >= 0.56
+NRFI_PITCHER_WEIGHT = 0.35   # pitcher 3yr empirical NRFI rate weight
+NRFI_TEAM_WEIGHT    = 0.15   # team 3yr empirical NRFI rate weight
+NRFI_PHYSICS_WEIGHT = 0.50   # simulation physics weight (sum = 1.0)
+# NRFI filter thresholds (from grid search, n=5,109 games)
+NRFI_COMBINED_THRESHOLD = 0.56   # combined (avg) pitcher rate >= 0.56 → filter pass
+NRFI_BOTH_THRESHOLD     = 0.56   # both individual pitchers >= 0.56 → stronger signal
+
+# ── Empirical market priors (3yr, n=5,103 games) ─────────────────────────────
+# Updated 2026-04-14 from mlbBacktestV2.py (2024+2025+2026 full season backtest)
+# Source: mlb_calibration_constants.json
+# Used as validation gates — model should arrive at these through simulation.
+EMPIRICAL_PRIORS = {
+    # Full Game ML
+    'fg_home_win_rate':   0.5525,   # FG ML home win rate (2026 live: 0.5525, 3yr: 0.5338)
+    'fg_away_win_rate':   0.4475,   # FG ML away win rate (2026 live: 0.4475, 3yr: 0.4662)
+    # F5 ML (push=15.07% when tied after 5)
+    'f5_home_win_rate':   0.4511,   # F5 ML home win rate (3yr empirical, was 0.5319)
+    'f5_away_win_rate':   0.3982,   # F5 ML away win rate (3yr empirical, was 0.4681)
+    'f5_push_rate':       0.1507,   # F5 push rate — tied after 5 innings (3yr empirical)
+    # Full Game Run Line (±1.5)
+    'fg_rl_away_cover':   0.6430,   # FG RL away +1.5 cover rate (3yr empirical, was 0.3189)
+    'fg_rl_home_cover':   0.3570,   # FG RL home -1.5 cover rate (3yr empirical, was 0.5128)
+    # F5 Run Line (±0.5)
+    'f5_rl_away_cover':   0.5489,   # F5 RL away +0.5 cover rate (3yr empirical)
+    'f5_rl_home_cover':   0.4511,   # F5 RL home -0.5 cover rate (3yr empirical)
+    # NRFI
+    'nrfi_rate':          0.5093,   # NRFI rate (2026 live: 0.5093, 3yr: 0.5150)
+    # Run shares
+    'f5_share':           0.5491,   # F5 runs / FG runs (2026 live: 0.5491, 3yr: 0.5618)
+    'i1_share':           0.1166,   # I1 runs / FG runs (3yr empirical, was 0.1093)
+    # Totals
+    'fg_mean':            8.892,    # mean FG total (2026 live: 8.892, 3yr: 8.842)
+    'f5_mean':            4.881,    # mean F5 total (2026 live: 8.892 * 0.5491 = 4.881)
+    # Season-by-season drift (for temporal weighting)
+    'f5_share_2024':      0.5622,   # 2024 F5 share (n=2,428)
+    'f5_share_2025':      0.5624,   # 2025 F5 share (n=2,432)
+    'f5_share_2026':      0.5491,   # 2026 F5 share (n=324, updated 2026-04-20)
+    'i1_share_2024':      0.1133,   # 2024 I1 share
+    'i1_share_2025':      0.1198,   # 2025 I1 share
+    'i1_share_2026':      0.1181,   # 2026 I1 share
 }
 
 RE_MATRIX = {
@@ -527,7 +641,16 @@ class MonteCarloEngine:
     def simulate(self, home_state: dict, away_state: dict,
                  env: dict, ou_line: Optional[float] = None,
                  rl_spread: float = -1.5,
-                 logger: Optional['EngineLogger'] = None) -> dict:
+                 logger: Optional['EngineLogger'] = None,                 # ── 3yr backtest NRFI priors ─────────────────────────────────────────────────────────────────────────────
+                 away_pitcher_nrfi: Optional[float] = None,        # away SP 3yr NRFI rate (0-1)
+                 home_pitcher_nrfi: Optional[float] = None,        # home SP 3yr NRFI rate (0-1)
+                 away_pitcher_nrfi_starts: Optional[int] = None,   # away SP NRFI sample size (for Bayesian shrinkage)
+                 home_pitcher_nrfi_starts: Optional[int] = None,   # home SP NRFI sample size (for Bayesian shrinkage)
+                 away_team_nrfi: Optional[float] = None,           # away team 3yr NRFI rate (0-1)
+                 home_team_nrfi: Optional[float] = None,           # home team 3yr NRFI rate (0-1)
+                 away_f5_rs: Optional[float] = None,               # away team 3yr F5 RS mean
+                 home_f5_rs: Optional[float] = None,               # home team 3yr F5 RS mean
+                 ) -> dict:
 
         hfa     = env.get('hfa_weight', HFA_BASE_WEIGHT)
         home_mu = home_state['mu'] * (1.0 + hfa * 0.15)
@@ -569,14 +692,178 @@ class MonteCarloEngine:
         home_runs = home_9 + home_xi
         away_runs = away_9 + away_xi
 
-        # ── SPEC: P_NRFI — simulate first inning runs independently ─────────────
-        # First inning: starter at full strength (TTO=0), no bullpen
-        # mu_1st = full-game mu / 9 * inning_1_weight (starter is sharpest in inning 1)
-        # Empirically, inning 1 accounts for ~10.5% of total runs (slightly below 1/9 = 11.1%)
-        # due to lineup cycling and starter freshness effects
-        INNING1_RUN_SHARE = 0.105  # empirical: first inning run share
-        home_mu_1st = home_state['mu'] * INNING1_RUN_SHARE
-        away_mu_1st = away_state['mu'] * INNING1_RUN_SHARE
+        # ── SPEC: P_NRFI — simulate first inning runs with Bayesian NRFI priors ──────
+        # ── INTEGRATION 2026-04-14: 3-YEAR BACKTEST REINFORCEMENT ──────────────────────
+        # Architecture: physics (50%) + pitcher NRFI prior (35%) + team NRFI prior (15%)
+        # Physics: mu_1st_physics = full_game_mu * INNING1_RUN_SHARE (calibrated 0.1093)
+        # Pitcher prior: mu_1st_pitcher = -ln(nrfi_rate) converts P(NRFI) → expected runs
+        #   Derivation: if P(X=0|Poisson(λ)) = R, then λ = -ln(R)
+        #   This is the expected runs per inning implied by the pitcher's empirical NRFI rate
+        # Team prior: same Poisson inverse applied to team 3yr NRFI rate
+        # Blending: mu_1st_final = physics*0.50 + pitcher*0.35 + team*0.15
+        # Fallback: if pitcher missing → team*0.50 + physics*0.50
+        #           if both missing  → physics*1.00 (no change)
+        # Source: 06_nrfi_threshold_grid.py (n=5,109 games, optimal threshold=0.56)
+        # ──────────────────────────────────────────────────────────────────────────────────
+        # Module-level constants used here (auditable, overridable without touching simulation):
+        #   INNING1_RUN_SHARE=0.1166, LEAGUE_NRFI_PRIOR=0.8899, NRFI_SHRINKAGE_K=10, NRFI_MIN_STARTS_FULL=20
+        home_mu_1st_physics = home_state['mu'] * INNING1_RUN_SHARE
+        away_mu_1st_physics = away_state['mu'] * INNING1_RUN_SHARE
+
+        # ── Bayesian shrinkage for low-sample pitchers ──────────────────────────────────
+        # SPEC: For pitchers with < NRFI_MIN_STARTS_FULL starts, shrink their raw NRFI rate
+        #       toward LEAGUE_NRFI_PRIOR (0.8899 = exp(-INNING1_RUN_SHARE))
+        #       Shrinkage formula: rate_adj = w * raw_rate + (1-w) * LEAGUE_NRFI_PRIOR
+        #       where w = starts / (starts + NRFI_SHRINKAGE_K)
+        #       K=10: at 3 starts w=0.23 (77% prior), at 5 starts w=0.33, at 10 starts w=0.50
+        # This prevents extreme rates (0.000, 1.000 from 3 starts) from dominating the signal.
+        # All four constants are module-level — see lines 60-69 of this file.
+
+        def _apply_nrfi_shrinkage(raw_rate: Optional[float], starts: Optional[int]) -> Optional[float]:
+            """Apply Bayesian shrinkage to pitcher NRFI rate based on sample size.
+            Returns shrunk rate if starts < NRFI_MIN_STARTS_FULL, else raw_rate unchanged.
+            Returns None if raw_rate is None.
+            """
+            if raw_rate is None:
+                return None
+            if starts is None or starts >= NRFI_MIN_STARTS_FULL:
+                return raw_rate  # sufficient sample — no shrinkage needed
+            w = starts / (starts + NRFI_SHRINKAGE_K)
+            shrunk = w * raw_rate + (1.0 - w) * LEAGUE_NRFI_PRIOR
+            return shrunk
+
+        # Apply shrinkage to pitcher NRFI rates
+        # home_pitcher_nrfi = AWAY SP's rate (pitches to home lineup)
+        # away_pitcher_nrfi = HOME SP's rate (pitches to away lineup)
+        home_pitcher_nrfi_adj = _apply_nrfi_shrinkage(home_pitcher_nrfi, home_pitcher_nrfi_starts)
+        away_pitcher_nrfi_adj = _apply_nrfi_shrinkage(away_pitcher_nrfi, away_pitcher_nrfi_starts)
+
+        if logger:
+            logger.step("NRFI Bayesian Prior Blending (3yr backtest integration + shrinkage)")
+            logger.state(
+                f"[NRFI-PRIOR] Physics mu_1st: home={home_mu_1st_physics:.4f} "
+                f"away={away_mu_1st_physics:.4f} | "
+                f"pitcher_nrfi: home_SP={home_pitcher_nrfi} (starts={home_pitcher_nrfi_starts}) "
+                f"adj={f'{home_pitcher_nrfi_adj:.4f}' if home_pitcher_nrfi_adj is not None else 'N/A'} | "
+                f"away_SP={away_pitcher_nrfi} (starts={away_pitcher_nrfi_starts}) "
+                f"adj={f'{away_pitcher_nrfi_adj:.4f}' if away_pitcher_nrfi_adj is not None else 'N/A'} | "
+                f"team_nrfi: home={home_team_nrfi} away={away_team_nrfi} | "
+                f"league_prior={LEAGUE_NRFI_PRIOR:.4f} shrinkage_K={NRFI_SHRINKAGE_K}"
+            )
+
+        def _nrfi_to_mu(nrfi_rate: float) -> float:
+            """Convert empirical NRFI rate to expected runs per inning via Poisson inverse.
+            P(X=0 | Poisson(λ)) = exp(-λ) → λ = -ln(P(X=0)) = -ln(nrfi_rate)
+            Clamp: nrfi_rate in [0.01, 0.99] to avoid log(0) and negative mu.
+            """
+            return -math.log(max(min(nrfi_rate, 0.99), 0.01))
+
+        # ── Home team: home lineup faces away SP (home_pitcher_nrfi_adj = shrinkage-adjusted away SP rate)
+        # Note: home_pitcher_nrfi_adj is the AWAY starter's shrinkage-adjusted NRFI rate
+        #       home_team_nrfi is the HOME team's tendency as a batting unit
+        if home_pitcher_nrfi_adj is not None and home_team_nrfi is not None:
+            # Full blend: physics 50% + pitcher 35% + team 15%
+            mu_1st_pitcher_home = _nrfi_to_mu(home_pitcher_nrfi_adj)
+            mu_1st_team_home    = _nrfi_to_mu(home_team_nrfi)
+            home_mu_1st = (
+                home_mu_1st_physics * NRFI_PHYSICS_WEIGHT +
+                mu_1st_pitcher_home * NRFI_PITCHER_WEIGHT +
+                mu_1st_team_home    * NRFI_TEAM_WEIGHT
+            )
+            _shrunk_home = home_pitcher_nrfi_adj != home_pitcher_nrfi
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Home I1 mu: physics={home_mu_1st_physics:.4f} "
+                    f"pitcher_prior={mu_1st_pitcher_home:.4f} (nrfi_raw={home_pitcher_nrfi:.4f} "
+                    f"adj={home_pitcher_nrfi_adj:.4f} starts={home_pitcher_nrfi_starts} "
+                    f"{'SHRUNK' if _shrunk_home else 'full_sample'}) "
+                    f"team_prior={mu_1st_team_home:.4f} (nrfi={home_team_nrfi:.4f}) "
+                    f"blended={home_mu_1st:.4f} "
+                    f"[w: physics={NRFI_PHYSICS_WEIGHT} pitcher={NRFI_PITCHER_WEIGHT} team={NRFI_TEAM_WEIGHT}]"
+                )
+        elif home_pitcher_nrfi_adj is not None:
+            # Pitcher only: physics 65% + pitcher 35%
+            mu_1st_pitcher_home = _nrfi_to_mu(home_pitcher_nrfi_adj)
+            home_mu_1st = home_mu_1st_physics * 0.65 + mu_1st_pitcher_home * 0.35
+            _shrunk_home = home_pitcher_nrfi_adj != home_pitcher_nrfi
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Home I1 mu: physics={home_mu_1st_physics:.4f} "
+                    f"pitcher_prior={mu_1st_pitcher_home:.4f} (nrfi_raw={home_pitcher_nrfi:.4f} "
+                    f"adj={home_pitcher_nrfi_adj:.4f} starts={home_pitcher_nrfi_starts} "
+                    f"{'SHRUNK' if _shrunk_home else 'full_sample'}) "
+                    f"team=MISSING blended={home_mu_1st:.4f} [w: physics=0.65 pitcher=0.35]"
+                )
+        elif home_team_nrfi is not None:
+            # Team only: physics 50% + team 50%
+            mu_1st_team_home = _nrfi_to_mu(home_team_nrfi)
+            home_mu_1st = home_mu_1st_physics * 0.50 + mu_1st_team_home * 0.50
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Home I1 mu: physics={home_mu_1st_physics:.4f} "
+                    f"pitcher=MISSING team_prior={mu_1st_team_home:.4f} (nrfi={home_team_nrfi:.4f}) "
+                    f"blended={home_mu_1st:.4f} [w: physics=0.50 team=0.50]"
+                )
+        else:
+            # No priors: physics only
+            home_mu_1st = home_mu_1st_physics
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Home I1 mu: physics={home_mu_1st_physics:.4f} "
+                    f"pitcher=MISSING team=MISSING blended={home_mu_1st:.4f} [physics only]"
+                )
+
+        # ── Away team: away lineup faces home SP (away_pitcher_nrfi_adj = shrinkage-adjusted home SP rate)
+        # Note: away_pitcher_nrfi_adj is the HOME starter's shrinkage-adjusted NRFI rate
+        #       away_team_nrfi is the AWAY team's tendency as a batting unit
+        if away_pitcher_nrfi_adj is not None and away_team_nrfi is not None:
+            mu_1st_pitcher_away = _nrfi_to_mu(away_pitcher_nrfi_adj)
+            mu_1st_team_away    = _nrfi_to_mu(away_team_nrfi)
+            away_mu_1st = (
+                away_mu_1st_physics * NRFI_PHYSICS_WEIGHT +
+                mu_1st_pitcher_away * NRFI_PITCHER_WEIGHT +
+                mu_1st_team_away    * NRFI_TEAM_WEIGHT
+            )
+            _shrunk_away = away_pitcher_nrfi_adj != away_pitcher_nrfi
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Away I1 mu: physics={away_mu_1st_physics:.4f} "
+                    f"pitcher_prior={mu_1st_pitcher_away:.4f} (nrfi_raw={away_pitcher_nrfi:.4f} "
+                    f"adj={away_pitcher_nrfi_adj:.4f} starts={away_pitcher_nrfi_starts} "
+                    f"{'SHRUNK' if _shrunk_away else 'full_sample'}) "
+                    f"team_prior={mu_1st_team_away:.4f} (nrfi={away_team_nrfi:.4f}) "
+                    f"blended={away_mu_1st:.4f} "
+                    f"[w: physics={NRFI_PHYSICS_WEIGHT} pitcher={NRFI_PITCHER_WEIGHT} team={NRFI_TEAM_WEIGHT}]"
+                )
+        elif away_pitcher_nrfi_adj is not None:
+            mu_1st_pitcher_away = _nrfi_to_mu(away_pitcher_nrfi_adj)
+            away_mu_1st = away_mu_1st_physics * 0.65 + mu_1st_pitcher_away * 0.35
+            _shrunk_away = away_pitcher_nrfi_adj != away_pitcher_nrfi
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Away I1 mu: physics={away_mu_1st_physics:.4f} "
+                    f"pitcher_prior={mu_1st_pitcher_away:.4f} (nrfi_raw={away_pitcher_nrfi:.4f} "
+                    f"adj={away_pitcher_nrfi_adj:.4f} starts={away_pitcher_nrfi_starts} "
+                    f"{'SHRUNK' if _shrunk_away else 'full_sample'}) "
+                    f"team=MISSING blended={away_mu_1st:.4f} [w: physics=0.65 pitcher=0.35]"
+                )
+        elif away_team_nrfi is not None:
+            mu_1st_team_away = _nrfi_to_mu(away_team_nrfi)
+            away_mu_1st = away_mu_1st_physics * 0.50 + mu_1st_team_away * 0.50
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Away I1 mu: physics={away_mu_1st_physics:.4f} "
+                    f"pitcher=MISSING team_prior={mu_1st_team_away:.4f} (nrfi={away_team_nrfi:.4f}) "
+                    f"blended={away_mu_1st:.4f} [w: physics=0.50 team=0.50]"
+                )
+        else:
+            away_mu_1st = away_mu_1st_physics
+            if logger:
+                logger.state(
+                    f"[NRFI-PRIOR] Away I1 mu: physics={away_mu_1st_physics:.4f} "
+                    f"pitcher=MISSING team=MISSING blended={away_mu_1st:.4f} [physics only]"
+                )
+
         home_var_1st = max(home_state['variance'] * INNING1_RUN_SHARE, home_mu_1st + 0.01)
         away_var_1st = max(away_state['variance'] * INNING1_RUN_SHARE, away_mu_1st + 0.01)
         home_1st = self.dist.sample(home_mu_1st, home_var_1st, self.n_sims, self.rng)
@@ -588,10 +875,28 @@ class MonteCarloEngine:
         # First-inning total distribution
         first_inn_totals = home_1st + away_1st
         exp_first_inn_total = float(first_inn_totals.mean())
+        # ── NRFI filter signals (both-pitcher gate = stronger signal)
+        nrfi_combined_signal = None
+        nrfi_combined_pass   = False
+        nrfi_both_pass       = False
+        if away_pitcher_nrfi is not None and home_pitcher_nrfi is not None:
+            nrfi_combined_signal = (away_pitcher_nrfi + home_pitcher_nrfi) / 2.0
+            nrfi_combined_pass   = nrfi_combined_signal >= NRFI_COMBINED_THRESHOLD
+            nrfi_both_pass       = (away_pitcher_nrfi >= NRFI_BOTH_THRESHOLD and
+                                    home_pitcher_nrfi >= NRFI_BOTH_THRESHOLD)
         if logger:
-            logger.state(f"NRFI: p_nrfi={p_nrfi:.4f} p_yrfi={p_yrfi:.4f} | "
-                         f"1st-inn total: mean={exp_first_inn_total:.3f} "
-                         f"home_mu_1st={home_mu_1st:.4f} away_mu_1st={away_mu_1st:.4f}")
+            logger.state(
+                f"[NRFI-RESULT] p_nrfi={p_nrfi:.4f} p_yrfi={p_yrfi:.4f} | "
+                f"1st-inn total: mean={exp_first_inn_total:.3f} "
+                f"home_mu_1st={home_mu_1st:.4f} away_mu_1st={away_mu_1st:.4f} | "
+                f"combined_signal={nrfi_combined_signal} "
+                f"combined_pass={nrfi_combined_pass} both_pass={nrfi_both_pass}"
+            )
+            logger.verify(
+                abs(p_nrfi - EMPIRICAL_PRIORS['nrfi_rate']) < 0.12,
+                f"[NRFI-GATE] p_nrfi={p_nrfi:.4f} vs empirical={EMPIRICAL_PRIORS['nrfi_rate']:.4f} "
+                f"delta={p_nrfi - EMPIRICAL_PRIORS['nrfi_rate']:+.4f} (threshold=±0.12)"
+            )
 
         # ── SPEC: HR Props — P(HR >= 1) per team from batter HR rates ───────────
         # hr_rate_per_pa = batter's HR/PA rate (from hr_pct in batter features)
@@ -617,13 +922,51 @@ class MonteCarloEngine:
                          f"P(both HR)={p_both_hr:.4f} | "
                          f"exp_home_hr={exp_home_hr:.3f} exp_away_hr={exp_away_hr:.3f}")
 
-        # ── SPEC: F5 Simulation — First Five Innings ────────────────────────────
-        # F5 run share: innings 1-5 account for ~55% of total runs
-        # Starter ERA is dominant in F5; bullpen effect minimal
-        # F5 mu = full-game mu * F5_RUN_SHARE (scaled by inning count)
-        F5_RUN_SHARE = 0.555  # empirical: F5 run share of full game
-        home_mu_f5 = home_state['mu'] * F5_RUN_SHARE
-        away_mu_f5 = away_state['mu'] * F5_RUN_SHARE
+        # ── SPEC: F5 Simulation — First Five Innings with Team F5 RS Calibration ────────
+        # ── INTEGRATION 2026-04-14: 3-YEAR BACKTEST REINFORCEMENT ──────────────────────
+        # Base: F5_RUN_SHARE = 0.5311 (3yr calibrated, n=5,109 games)
+        # Enhancement: Team F5 RS tendency applied as a secondary mu adjustment
+        # Formula: if team F5 RS > league mean (2.466) → slight upward adjustment
+        #          if team F5 RS < league mean → slight downward adjustment
+        # Scale: max ±10% adjustment (F5_RS_WEIGHT = 0.10)
+        # Adjustment: f5_rs_adj = (team_f5_rs - F5_RS_LEAGUE_MEAN) / F5_RS_LEAGUE_MEAN * F5_RS_WEIGHT
+        # Source: 04_deep_analysis.py → TEAM NRFI RANKINGS table (F5 RS column)
+        F5_RUN_SHARE = 0.5618  # 3yr-backtest-calibrated: F5 run share of full game (was 0.5311, updated 2026-04-14)
+        home_mu_f5_base = home_state['mu'] * F5_RUN_SHARE
+        away_mu_f5_base = away_state['mu'] * F5_RUN_SHARE
+        # Apply team F5 RS adjustment if available
+        if home_f5_rs is not None:
+            home_f5_rs_adj = float(np.clip(
+                (home_f5_rs - F5_RS_LEAGUE_MEAN) / F5_RS_LEAGUE_MEAN * F5_RS_WEIGHT,
+                -F5_RS_WEIGHT, F5_RS_WEIGHT
+            ))
+            home_mu_f5 = home_mu_f5_base * (1.0 + home_f5_rs_adj)
+            if logger:
+                logger.state(
+                    f"[F5-RS] Home F5 mu: base={home_mu_f5_base:.4f} "
+                    f"team_f5_rs={home_f5_rs:.3f} league_mean={F5_RS_LEAGUE_MEAN:.3f} "
+                    f"adj={home_f5_rs_adj:+.4f} final={home_mu_f5:.4f}"
+                )
+        else:
+            home_mu_f5 = home_mu_f5_base
+            if logger:
+                logger.state(f"[F5-RS] Home F5 mu: base={home_mu_f5_base:.4f} team_f5_rs=MISSING (no adj)")
+        if away_f5_rs is not None:
+            away_f5_rs_adj = float(np.clip(
+                (away_f5_rs - F5_RS_LEAGUE_MEAN) / F5_RS_LEAGUE_MEAN * F5_RS_WEIGHT,
+                -F5_RS_WEIGHT, F5_RS_WEIGHT
+            ))
+            away_mu_f5 = away_mu_f5_base * (1.0 + away_f5_rs_adj)
+            if logger:
+                logger.state(
+                    f"[F5-RS] Away F5 mu: base={away_mu_f5_base:.4f} "
+                    f"team_f5_rs={away_f5_rs:.3f} league_mean={F5_RS_LEAGUE_MEAN:.3f} "
+                    f"adj={away_f5_rs_adj:+.4f} final={away_mu_f5:.4f}"
+                )
+        else:
+            away_mu_f5 = away_mu_f5_base
+            if logger:
+                logger.state(f"[F5-RS] Away F5 mu: base={away_mu_f5_base:.4f} team_f5_rs=MISSING (no adj)")
         home_var_f5 = max(home_state['variance'] * F5_RUN_SHARE, home_mu_f5 + 0.05)
         away_var_f5 = max(away_state['variance'] * F5_RUN_SHARE, away_mu_f5 + 0.05)
         home_f5 = self.dist.sample(home_mu_f5, home_var_f5, self.n_sims, self.rng)
@@ -633,12 +976,34 @@ class MonteCarloEngine:
         exp_f5_home   = float(home_f5.mean())
         exp_f5_away   = float(away_f5.mean())
         exp_f5_total  = float(f5_totals.mean())
-        # F5 ML probabilities (ties count as push, split 50/50)
+        # F5 ML probabilities — THREE-WAY pricing (home win / away win / push)
+        # SPEC: F5 push rate = 0.1507 (3yr empirical: 15.07% of F5 games tied after 5)
+        # Old two-way: split push 50/50 → inflates both sides equally, misprices the market
+        # New three-way: price home/away as conditional on non-push outcome,
+        #   then apply no-vig to the two-way conditional market.
+        #   P(home win) and P(away win) are the raw simulation rates (excl. push).
+        #   The push probability is Bayesian-blended with the 3yr empirical rate.
         f5_home_win   = home_f5 > away_f5
         f5_away_win   = away_f5 > home_f5
         f5_tie        = home_f5 == away_f5
-        p_f5_home_win = float(f5_home_win.mean()) + float(f5_tie.mean()) * 0.5
-        p_f5_away_win = float(f5_away_win.mean()) + float(f5_tie.mean()) * 0.5
+        # Raw simulation probabilities (sum to 1.0)
+        p_f5_home_raw = float(f5_home_win.mean())   # P(home wins F5)
+        p_f5_away_raw = float(f5_away_win.mean())   # P(away wins F5)
+        p_f5_push_raw = float(f5_tie.mean())         # P(F5 tied / push)
+        # Bayesian shrinkage: blend simulation push rate toward 3yr empirical (0.1507)
+        # Weight: 0.6 sim + 0.4 prior (sim has high variance on push due to integer scoring)
+        EMPIRICAL_F5_PUSH = EMPIRICAL_PRIORS['f5_push_rate']  # 0.1507
+        p_f5_push_adj = 0.6 * p_f5_push_raw + 0.4 * EMPIRICAL_F5_PUSH
+        # Redistribute remaining probability proportionally to home/away
+        remaining_f5 = 1.0 - p_f5_push_adj
+        if (p_f5_home_raw + p_f5_away_raw) > 0:
+            f5_scale = remaining_f5 / (p_f5_home_raw + p_f5_away_raw)
+        else:
+            f5_scale = 1.0
+        p_f5_home_win = p_f5_home_raw * f5_scale   # P(home wins F5) — push-adjusted
+        p_f5_away_win = p_f5_away_raw * f5_scale   # P(away wins F5) — push-adjusted
+        # Verify three-way sum
+        _f5_3way_sum = p_f5_home_win + p_f5_away_win + p_f5_push_adj
         # F5 run line cover (default -0.5 for favorite)
         # Positive rl_spread = home is dog, negative = home is fav
         # For F5, standard RL is -0.5 / +0.5
@@ -649,8 +1014,102 @@ class MonteCarloEngine:
             logger.state(
                 f"F5: home_mu={home_mu_f5:.4f} away_mu={away_mu_f5:.4f} | "
                 f"exp_home={exp_f5_home:.3f} exp_away={exp_f5_away:.3f} exp_total={exp_f5_total:.3f} | "
-                f"P(home win)={p_f5_home_win:.4f} P(away win)={p_f5_away_win:.4f} | "
+                f"P(home win)={p_f5_home_win:.4f} P(away win)={p_f5_away_win:.4f} P(push)={p_f5_push_adj:.4f} | "
+                f"[sim_push={p_f5_push_raw:.4f} empirical={EMPIRICAL_F5_PUSH:.4f} 3way_sum={_f5_3way_sum:.6f}] | "
                 f"P(home RL -0.5)={p_f5_home_rl:.4f} P(away RL -0.5)={p_f5_away_rl:.4f}"
+            )
+            logger.verify(
+                abs(_f5_3way_sum - 1.0) < 0.001,
+                f"F5 three-way sum={_f5_3way_sum:.6f} (must be 1.000±0.001)"
+            )
+
+        # ── SPEC: Inning-by-Inning Simulation (I1-I9) ─────────────────────────
+        # 3-YR Backtest-calibrated per-inning run share weights (2026-04-14, n=5103 games):
+        #   I1:    0.116647  (empirical F1/FG — starter peak, TTO=0, zero-inflated)
+        #   I2:    0.102130  (post-leadoff, lowest inning — starter settling in)
+        #   I3:    0.114120  (TTO-1 begins, lineup cycles through)
+        #   I4:    0.113854  (mid-starter, consistent scoring)
+        #   I5:    0.115029  (TTO-2, late starter, F5 window closes)
+        #   I6:    0.114764  (bullpen entry, high-leverage)
+        #   I7:    0.108511  (setup era, lower scoring)
+        #   I8:    0.109019  (setup/closer setup)
+        #   I9:    0.079211  (walk-off scoring — CORRECTED from 0.1170, empirical is lower)
+        # Weights normalized to sum exactly to 1.0.
+        # Consistency check: sum(I1-I5) = 0.5618 (empirical F5 share = 0.5618) ✓
+        # Updated 2026-04-14: exact values from mlb_calibration_constants.json inning_weights
+        _INN_WEIGHTS_RAW = [
+            0.116647,  # I1 — 3yr empirical exact (was 0.1151)
+            0.102130,  # I2 — 3yr empirical exact (was 0.1009)
+            0.114120,  # I3 — 3yr empirical exact (was 0.1127)
+            0.113854,  # I4 — 3yr empirical exact (was 0.1124)
+            0.115029,  # I5 — 3yr empirical exact (was 0.1136)
+            0.114764,  # I6 — 3yr empirical exact (was 0.1133)
+            0.108511,  # I7 — 3yr empirical exact (was 0.1072)
+            0.109019,  # I8 — 3yr empirical exact (was 0.1079)
+            0.079211,  # I9 — 3yr empirical exact (was 0.1170 — CORRECTED, walk-off overcorrected)
+        ]
+        _w_sum = sum(_INN_WEIGHTS_RAW)
+        INNING_WEIGHTS = [w / _w_sum for w in _INN_WEIGHTS_RAW]  # exact normalization
+
+        inning_home_exp = []
+        inning_away_exp = []
+        inning_total_exp = []
+        inning_home_std = []
+        inning_away_std = []
+        inning_p_home_scores = []
+        inning_p_away_scores = []
+        inning_p_both_score = []
+        inning_p_neither_score = []
+
+        if logger:
+            logger.step("Inning-by-Inning Simulation (I1-I9)")
+
+        for inn_idx, w in enumerate(INNING_WEIGHTS):
+            inn_num = inn_idx + 1
+            mu_h = home_state['mu'] * w
+            mu_a = away_state['mu'] * w
+            var_h = max(home_state['variance'] * w, mu_h + 0.005)
+            var_a = max(away_state['variance'] * w, mu_a + 0.005)
+            inn_h = self.dist.sample(mu_h, var_h, self.n_sims, self.rng)
+            inn_a = self.dist.sample(mu_a, var_a, self.n_sims, self.rng)
+            _h_exp = round(float(inn_h.mean()), 4)
+            _a_exp = round(float(inn_a.mean()), 4)
+            _t_exp = round(float((inn_h + inn_a).mean()), 4)
+            _h_std = round(float(inn_h.std()), 4)
+            _a_std = round(float(inn_a.std()), 4)
+            _p_h = round(float((inn_h >= 1).mean()), 4)
+            _p_a = round(float((inn_a >= 1).mean()), 4)
+            _p_both = round(float(((inn_h >= 1) & (inn_a >= 1)).mean()), 4)
+            _p_nei = round(float(((inn_h == 0) & (inn_a == 0)).mean()), 4)
+            inning_home_exp.append(_h_exp)
+            inning_away_exp.append(_a_exp)
+            inning_total_exp.append(_t_exp)
+            inning_home_std.append(_h_std)
+            inning_away_std.append(_a_std)
+            inning_p_home_scores.append(_p_h)
+            inning_p_away_scores.append(_p_a)
+            inning_p_both_score.append(_p_both)
+            inning_p_neither_score.append(_p_nei)
+            if logger:
+                logger.state(
+                    f"I{inn_num}: home={_h_exp:.4f} away={_a_exp:.4f} total={_t_exp:.4f} "
+                    f"P(H scores)={_p_h:.4f} P(A scores)={_p_a:.4f} "
+                    f"P(both)={_p_both:.4f} P(neither/NRFI-inn)={_p_nei:.4f}"
+                )
+
+        # Consistency validation: inning-derived F1 and F5 vs direct simulation
+        _inn_f1_total = inning_home_exp[0] + inning_away_exp[0]
+        _inn_f5_total = sum(inning_home_exp[:5]) + sum(inning_away_exp[:5])
+        if logger:
+            logger.verify(
+                abs(_inn_f1_total - exp_first_inn_total) < 0.15,
+                f"I-by-I F1 consistency: inn={_inn_f1_total:.4f} direct={exp_first_inn_total:.4f} "
+                f"delta={_inn_f1_total - exp_first_inn_total:+.4f} (threshold=0.15)"
+            )
+            logger.verify(
+                abs(_inn_f5_total - exp_f5_total) < 0.50,
+                f"I-by-I F5 consistency: inn={_inn_f5_total:.4f} direct={exp_f5_total:.3f} "
+                f"delta={_inn_f5_total - exp_f5_total:+.4f} (threshold=0.50)"
             )
 
         # Final win determination
@@ -735,10 +1194,14 @@ class MonteCarloEngine:
             'avg_extra_inn':    round(float(n_extra.mean()), 3),
             'tail_stable':      tail_stable,
             'sparse_buckets':   sparse_buckets,
-            # SPEC: NRFI market
+            # SPEC: NRFI market (with 3yr backtest signals)
             'p_nrfi':               round(p_nrfi, 6),
             'p_yrfi':               round(p_yrfi, 6),
             'exp_first_inn_total':  round(exp_first_inn_total, 3),
+            # 3yr backtest NRFI filter signals
+            'nrfi_combined_signal': round(nrfi_combined_signal, 4) if nrfi_combined_signal is not None else None,
+            'nrfi_combined_pass':   nrfi_combined_pass,
+            'nrfi_both_pass':       nrfi_both_pass,
             # SPEC: HR Props per team
             'p_home_hr_any':        round(p_home_hr_any, 6),
             'p_away_hr_any':        round(p_away_hr_any, 6),
@@ -750,11 +1213,23 @@ class MonteCarloEngine:
             # SPEC: F5 (First Five Innings) simulation output
             'p_f5_home_win':        round(p_f5_home_win, 6),
             'p_f5_away_win':        round(p_f5_away_win, 6),
+            'p_f5_push':            round(p_f5_push_adj, 6),   # THREE-WAY: P(F5 push/tie) Bayesian-blended
+            'p_f5_push_raw':        round(p_f5_push_raw, 6),   # raw simulation push rate (diagnostic)
             'exp_f5_home_runs':     round(exp_f5_home, 3),
             'exp_f5_away_runs':     round(exp_f5_away, 3),
             'exp_f5_total':         round(exp_f5_total, 3),
             'p_f5_home_rl':         round(p_f5_home_rl, 6),  # P(home covers -0.5 F5 RL)
             'p_f5_away_rl':         round(p_f5_away_rl, 6),  # P(away covers -0.5 F5 RL)
+            # SPEC: Inning-by-Inning projections (I1-I9, backtest-calibrated 2026-04-13)
+            'inning_home_exp':         inning_home_exp,         # [I1..I9] expected home runs per inning
+            'inning_away_exp':         inning_away_exp,         # [I1..I9] expected away runs per inning
+            'inning_total_exp':        inning_total_exp,        # [I1..I9] expected combined runs per inning
+            'inning_home_std':         inning_home_std,         # [I1..I9] std of home runs per inning
+            'inning_away_std':         inning_away_std,         # [I1..I9] std of away runs per inning
+            'inning_p_home_scores':    inning_p_home_scores,    # [I1..I9] P(home scores >= 1)
+            'inning_p_away_scores':    inning_p_away_scores,    # [I1..I9] P(away scores >= 1)
+            'inning_p_both_score':     inning_p_both_score,     # [I1..I9] P(both teams score)
+            'inning_p_neither_score':  inning_p_neither_score,  # [I1..I9] P(neither scores) = NRFI per inning
             # Raw arrays for downstream steps (not serialized)
             '_totals':          totals,
             '_margins':         margins,
@@ -957,21 +1432,44 @@ class MarketDerivation:
         combined_std = math.sqrt(sim['home_std'] ** 2 + sim['away_std'] ** 2)
         model_spread = round(-norm.ppf(p_home) * combined_std, 2)
 
-        # ── F5 Market Pricing (no-vig) ────────────────────────────────────────
-        p_f5h = sim['p_f5_home_win']
-        p_f5a = sim['p_f5_away_win']
-        p_f5h_nv, p_f5a_nv = remove_vig(p_f5h, p_f5a)
+        # ── F5 Market Pricing (no-vig, THREE-WAY) ──────────────────────────────
+        # p_f5_home_win and p_f5_away_win are already push-adjusted (sum < 1.0)
+        # p_f5_push is the Bayesian-blended push probability
+        # For no-vig ML: apply remove_vig to the two-way conditional market
+        # (home win vs away win, conditional on no push — this is how DK prices F5 ML)
+        p_f5h = sim['p_f5_home_win']   # push-adjusted P(home wins F5)
+        p_f5a = sim['p_f5_away_win']   # push-adjusted P(away wins F5)
+        p_f5_push_ml = sim['p_f5_push']  # P(F5 push/tie)
+        # Normalize to two-way conditional (home vs away, excl. push) for no-vig
+        p_f5_non_push = p_f5h + p_f5a
+        if p_f5_non_push > 0:
+            p_f5h_cond = p_f5h / p_f5_non_push   # P(home wins | no push)
+            p_f5a_cond = p_f5a / p_f5_non_push   # P(away wins | no push)
+        else:
+            p_f5h_cond = p_f5a_cond = 0.5
+        # Apply no-vig to the conditional two-way market
+        p_f5h_nv_cond, p_f5a_nv_cond = remove_vig(p_f5h_cond, p_f5a_cond)
+        # Convert back to absolute probabilities (multiply by non-push mass)
+        p_f5h_nv = p_f5h_nv_cond * (1.0 - p_f5_push_ml)
+        p_f5a_nv = p_f5a_nv_cond * (1.0 - p_f5_push_ml)
         f5_ml_home = prob_to_ml(p_f5h_nv)
         f5_ml_away = prob_to_ml(p_f5a_nv)
+        if logger:
+            logger.state(
+                f"F5 ML three-way: P(home)={p_f5h:.4f} P(away)={p_f5a:.4f} P(push)={p_f5_push_ml:.4f} | "
+                f"cond: P(home|no-push)={p_f5h_cond:.4f} P(away|no-push)={p_f5a_cond:.4f} | "
+                f"no-vig abs: P(home)={p_f5h_nv:.4f} P(away)={p_f5a_nv:.4f} | "
+                f"ML: Home={f5_ml_home} Away={f5_ml_away}"
+            )
         # F5 Total pricing
         f5_totals = sim['_f5_totals']
         f5_ou_line = ou_line * 0.555 if ou_line else sim['exp_f5_total']
         f5_ou_snapped = _nearest_half(f5_ou_line)
         p_f5_over  = float((f5_totals > f5_ou_snapped).mean())
         p_f5_under = float((f5_totals < f5_ou_snapped).mean())
-        p_f5_push  = float((f5_totals == f5_ou_snapped).mean())
-        p_f5_over_adj  = p_f5_over  + p_f5_push * 0.5
-        p_f5_under_adj = p_f5_under + p_f5_push * 0.5
+        p_f5_total_push = float((f5_totals == f5_ou_snapped).mean())
+        p_f5_over_adj  = p_f5_over  + p_f5_total_push * 0.5
+        p_f5_under_adj = p_f5_under + p_f5_total_push * 0.5
         p_f5_over_nv, p_f5_under_nv = remove_vig(p_f5_over_adj, p_f5_under_adj)
         f5_over_odds  = prob_to_ml(p_f5_over_nv)
         f5_under_odds = prob_to_ml(p_f5_under_nv)
@@ -983,7 +1481,7 @@ class MarketDerivation:
         f5_rl_away_odds = prob_to_ml(p_f5_arl_nv)
         if logger:
             logger.output(
-                f"F5 Markets: ML Home={f5_ml_home} ({p_f5h_nv:.4f}) Away={f5_ml_away} ({p_f5a_nv:.4f}) | "
+                f"F5 Markets: ML Home={f5_ml_home} ({p_f5h_nv:.4f}) Away={f5_ml_away} ({p_f5a_nv:.4f}) Push={p_f5_push_ml:.4f} | "
                 f"Total={f5_ou_snapped} Over={f5_over_odds} ({p_f5_over_nv:.4f}) Under={f5_under_odds} ({p_f5_under_nv:.4f}) | "
                 f"RL Home-0.5={f5_rl_home_odds} ({p_f5_hrl_nv:.4f}) Away+0.5={f5_rl_away_odds} ({p_f5_arl_nv:.4f})"
             )
@@ -1026,9 +1524,11 @@ class MarketDerivation:
             'exp_away_runs':     sim['exp_away_runs'],
             'exp_total':         sim['exp_total'],
             'model_spread':      model_spread,
-            # F5 (First Five Innings) Markets
-            'p_f5_home_win':     round(p_f5h_nv, 4),
-            'p_f5_away_win':     round(p_f5a_nv, 4),
+            # F5 (First Five Innings) Markets — THREE-WAY pricing
+            'p_f5_home_win':     round(p_f5h_nv, 4),    # P(home wins F5) — push-adjusted, no-vig
+            'p_f5_away_win':     round(p_f5a_nv, 4),    # P(away wins F5) — push-adjusted, no-vig
+            'p_f5_push':         round(p_f5_push_ml, 4), # P(F5 push/tie) — Bayesian-blended
+            'p_f5_push_raw':     round(sim['p_f5_push_raw'], 4),  # raw sim push rate (diagnostic)
             'f5_ml_home':        f5_ml_home,
             'f5_ml_away':        f5_ml_away,
             'p_f5_home_rl':      round(p_f5_hrl_nv, 4),
@@ -1208,9 +1708,9 @@ def get_environment_features(home_team_db: str, game_month: int,
 # ─────────────────────────────────────────────────────────────────────────────
 def team_stats_to_pitcher_features(stats: dict) -> dict:
     era  = float(stats.get('era', 4.50))
-    k9   = float(stats.get('k9', 8.5))
-    bb9  = float(stats.get('bb9', 3.2))
-    whip = float(stats.get('whip', 1.30))
+    k9   = float(stats.get('k9') if stats.get('k9') is not None else 8.5)
+    bb9  = float(stats.get('bb9') if stats.get('bb9') is not None else 3.2)
+    whip = float(stats.get('whip') if stats.get('whip') is not None else 1.30)
     ip_per_game = float(stats.get('ip_per_game', STARTER_IP_MEAN))
     pa_per_9 = 38.0
     k_pct    = k9  / pa_per_9
@@ -1305,12 +1805,12 @@ def pitcher_stats_to_features(stats: dict, team_era: float = 4.50) -> dict:
       - FIP-minus / ERA-minus used for park-neutral quality adjustment
     """
     # Core rate stats (already blended 70/30 season/rolling-5 in TS layer)
-    era  = float(stats.get('era', team_era))
+    era  = float(stats.get('era') if stats.get('era') is not None else team_era)
     k9   = float(stats.get('k9', 8.5))
     bb9  = float(stats.get('bb9', 3.2))
     whip = float(stats.get('whip', 1.30))
-    ip   = float(stats.get('ip', 150.0))
-    gp   = max(1, int(stats.get('gp', 28)))
+    ip   = float(stats.get('ip') if stats.get('ip') is not None else 150.0)
+    gp   = max(1, int(stats.get('gp') if stats.get('gp') is not None else 28))
     ip_per_game = max(1.0, ip / gp)
 
     # Real xFIP from DB (park-neutral, HR-independent quality signal)
@@ -1360,8 +1860,8 @@ def pitcher_stats_to_features(stats: dict, team_era: float = 4.50) -> dict:
     whiff_pct = float(np.clip(k_pct * 0.9 * xfip_quality, 0.12, 0.45))
 
     # Rolling-5 diagnostic fields (already blended into era/k9/bb9/whip above)
-    rolling_starts = int(stats.get('rolling_starts', 0))
-    rolling_era    = float(stats.get('rolling_era', era))
+    rolling_starts = int(stats.get('rolling_starts') or 0)
+    rolling_era    = float(stats.get('rolling_era') if stats.get('rolling_era') is not None else era)
 
     return {
         'k_pct':         float(np.clip(k_pct, 0.10, 0.45)),
@@ -1421,6 +1921,17 @@ def project_game(
     umpire_bb_mod: float = 1.0,        # HP umpire BB-rate modifier
     umpire_name: str = 'UNKNOWN',      # HP umpire name for logging
     mlb_game_pk: Optional[int] = None, # MLB Stats API gamePk for traceability
+    # ── 3yr backtest NRFI/F5 priors (passed from mlbModelRunner via DB lookup) ──────────────────────
+    # Pitcher NRFI rates: away SP's rate used for home lineup; home SP's rate for away lineup
+    # If None: auto-looked up from TEAM_NRFI_RATES / TEAM_F5_RS constants
+    away_pitcher_nrfi: Optional[float] = None,        # away SP 3yr NRFI rate (pitching to home lineup)
+    home_pitcher_nrfi: Optional[float] = None,        # home SP 3yr NRFI rate (pitching to away lineup)
+    away_pitcher_nrfi_starts: Optional[int] = None,   # away SP NRFI sample size (for Bayesian shrinkage)
+    home_pitcher_nrfi_starts: Optional[int] = None,   # home SP NRFI sample size (for Bayesian shrinkage)
+    away_team_nrfi: Optional[float] = None,           # away team 3yr NRFI rate (as batting unit)
+    home_team_nrfi: Optional[float] = None,           # home team 3yr NRFI rate (as batting unit)
+    away_f5_rs: Optional[float] = None,               # away team 3yr F5 RS mean
+    home_f5_rs: Optional[float] = None,               # home team 3yr F5 RS mean
 ) -> dict:
     t0 = time.time()
     game_label = f"{away_abbrev}@{home_abbrev}"
@@ -1430,6 +1941,24 @@ def project_game(
     logger.input(f"Away stats: rpg={away_team_stats.get('rpg'):.2f} era={away_team_stats.get('era'):.2f}")
     logger.input(f"Home stats: rpg={home_team_stats.get('rpg'):.2f} era={home_team_stats.get('era'):.2f}")
     logger.input(f"Book lines: {book_lines}")
+
+    # ── 3yr Backtest NRFI/F5 Prior Auto-Lookup ─────────────────────────────────────────────────────────────────────────────
+    # Team NRFI rates and F5 RS means are auto-resolved from 3yr backtest constants.
+    # Pitcher NRFI rates must be passed explicitly from mlbModelRunner (DB lookup).
+    # If team rates are not passed, fall back to TEAM_NRFI_RATES / TEAM_F5_RS constants.
+    if away_team_nrfi is None:
+        away_team_nrfi = TEAM_NRFI_RATES.get(away_abbrev, TEAM_NRFI_LEAGUE_MEAN)
+    if home_team_nrfi is None:
+        home_team_nrfi = TEAM_NRFI_RATES.get(home_abbrev, TEAM_NRFI_LEAGUE_MEAN)
+    if away_f5_rs is None:
+        away_f5_rs = TEAM_F5_RS.get(away_abbrev, F5_RS_LEAGUE_MEAN)
+    if home_f5_rs is None:
+        home_f5_rs = TEAM_F5_RS.get(home_abbrev, F5_RS_LEAGUE_MEAN)
+    logger.input(
+        f"[NRFI-PRIORS] away_team_nrfi={away_team_nrfi:.4f} home_team_nrfi={home_team_nrfi:.4f} | "
+        f"away_pitcher_nrfi={away_pitcher_nrfi} home_pitcher_nrfi={home_pitcher_nrfi} | "
+        f"away_f5_rs={away_f5_rs:.3f} home_f5_rs={home_f5_rs:.3f}"
+    )
 
     # Step 1: Build environment features
     logger.step("Step 1: Input Engine — Environment Features")
@@ -1597,7 +2126,27 @@ def project_game(
     logger.step(f"Step 2: Monte Carlo ({SIMULATIONS:,} sims, NB-Gamma Mixture, extra innings)")
     mc = MonteCarloEngine(n_sims=SIMULATIONS, seed=seed)
     sim = mc.simulate(home_state, away_state, env,
-                      ou_line=ou_line, rl_spread=rl_spread, logger=logger)
+                      ou_line=ou_line, rl_spread=rl_spread, logger=logger,
+                      # ── 3yr backtest NRFI/F5 priors ────────────────────────────────────────────────────────────────────────────────────────
+                      # NOTE: pitcher NRFI roles are CROSSED:
+                      #   home_pitcher_nrfi = home SP's rate → faces AWAY lineup
+                      #   away_pitcher_nrfi = away SP's rate → faces HOME lineup
+                      # simulate() uses home_pitcher_nrfi to adjust HOME team's I1 mu
+                      # (the pitcher they face is the away SP, but the NRFI rate is the SP's)
+                      # The naming convention in simulate() is:
+                      #   home_pitcher_nrfi = the pitcher facing the home lineup (= away SP)
+                      #   away_pitcher_nrfi = the pitcher facing the away lineup (= home SP)
+                      # Starts are also CROSSED to match the rate crossing:
+                      #   home_pitcher_nrfi_starts = away SP's starts (for shrinkage of home lineup I1)
+                      #   away_pitcher_nrfi_starts = home SP's starts (for shrinkage of away lineup I1)
+                      away_pitcher_nrfi=home_pitcher_nrfi,              # home SP faces away lineup
+                      home_pitcher_nrfi=away_pitcher_nrfi,              # away SP faces home lineup
+                      away_pitcher_nrfi_starts=home_pitcher_nrfi_starts, # home SP's starts (for away lineup shrinkage)
+                      home_pitcher_nrfi_starts=away_pitcher_nrfi_starts, # away SP's starts (for home lineup shrinkage)
+                      away_team_nrfi=away_team_nrfi,
+                      home_team_nrfi=home_team_nrfi,
+                      away_f5_rs=away_f5_rs,
+                      home_f5_rs=home_f5_rs)
 
     logger.state(f"Sim results: p_home={sim['p_home_win']:.4f} exp_total={sim['exp_total']:.2f} "
                  f"ties_9inn={sim['n_ties_9inn']} avg_extra={sim['avg_extra_inn']:.3f}")
@@ -1684,6 +2233,8 @@ def project_game(
         # SPEC: F5 (First Five Innings) Markets — pulled from market dict (derive_markets output)
         'p_f5_home_win':   market['p_f5_home_win'],
         'p_f5_away_win':   market['p_f5_away_win'],
+        'p_f5_push':       market.get('p_f5_push'),       # THREE-WAY: Bayesian-blended P(F5 push/tie)
+        'p_f5_push_raw':   market.get('p_f5_push_raw'),   # raw simulation push rate (diagnostic)
         'f5_ml_home':      market['f5_ml_home'],
         'f5_ml_away':      market['f5_ml_away'],
         'p_f5_home_rl':    market['p_f5_home_rl'],
@@ -1704,6 +2255,10 @@ def project_game(
         'nrfi_odds':           market['nrfi_odds'],                # NRFI fair-value ML (no-vig)
         'yrfi_odds':           market['yrfi_odds'],                # YRFI fair-value ML (no-vig)
         'exp_first_inn_total': sim['exp_first_inn_total'],         # expected 1st inning total
+        # 3yr backtest NRFI filter signals (from simulate() via Bayesian prior blending)
+        'nrfi_combined_signal': sim.get('nrfi_combined_signal'),  # (awayNrfi+homeNrfi)/2, None if missing
+        'nrfi_combined_pass':   sim.get('nrfi_combined_pass'),    # combined >= 0.56
+        'nrfi_both_pass':       sim.get('nrfi_both_pass'),        # both >= 0.56 (stronger gate)
         # SPEC: HR Props per team
         'p_home_hr_any':       round(sim['p_home_hr_any'] * 100, 2),  # P(home team HR>=1) %
         'p_away_hr_any':       round(sim['p_away_hr_any'] * 100, 2),  # P(away team HR>=1) %
@@ -1712,6 +2267,16 @@ def project_game(
         'exp_away_hr':         sim['exp_away_hr'],                    # expected away HR count
         'home_hr_lambda':      sim['home_hr_lambda'],                 # Poisson lambda (home)
         'away_hr_lambda':      sim['away_hr_lambda'],                 # Poisson lambda (away)
+        # SPEC: Inning-by-Inning projections (I1-I9) — surfaced from sim dict
+        'inning_home_exp':         sim['inning_home_exp'],         # [I1..I9] expected home runs per inning
+        'inning_away_exp':         sim['inning_away_exp'],         # [I1..I9] expected away runs per inning
+        'inning_total_exp':        sim['inning_total_exp'],        # [I1..I9] expected combined runs per inning
+        'inning_home_std':         sim['inning_home_std'],         # [I1..I9] std dev home runs per inning
+        'inning_away_std':         sim['inning_away_std'],         # [I1..I9] std dev away runs per inning
+        'inning_p_home_scores':    sim['inning_p_home_scores'],    # [I1..I9] P(home scores >= 1)
+        'inning_p_away_scores':    sim['inning_p_away_scores'],    # [I1..I9] P(away scores >= 1)
+        'inning_p_both_score':     sim['inning_p_both_score'],     # [I1..I9] P(both teams score)
+        'inning_p_neither_score':  sim['inning_p_neither_score'],  # [I1..I9] P(neither scores) = NRFI per inning
         # Meta
         'elapsed_sec':     elapsed,
         'error':           None,

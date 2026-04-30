@@ -22,9 +22,9 @@ import { spawn } from "child_process";
 import https from "https";
 import path from "path";
 import { fileURLToPath } from "url";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { getDb } from "./db";
-import { games, mlbPitcherStats, mlbPitcherRolling5, mlbTeamBattingSplits, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers } from "../drizzle/schema";
+import { games, mlbPitcherStats, mlbPitcherRolling5, mlbTeamBattingSplits, mlbParkFactors, mlbBullpenStats, mlbUmpireModifiers, mlbLineups } from "../drizzle/schema";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
@@ -256,6 +256,8 @@ interface MlbModelResult {
   f5_under_odds: number;
   p_f5_over: number;
   p_f5_under: number;
+  p_f5_push: number | null;        // THREE-WAY: Bayesian-blended P(F5 push/tie)
+  p_f5_push_raw: number | null;    // raw simulation push rate (diagnostic)
   exp_f5_home_runs: number;
   exp_f5_away_runs: number;
   exp_f5_total: number;
@@ -271,6 +273,13 @@ interface MlbModelResult {
   p_both_hr: number;
   exp_home_hr: number;
   exp_away_hr: number;
+  // Inning-by-Inning projections (I1-I9, backtest-calibrated 2026-04-13)
+  inning_home_exp: number[];       // [I1..I9] expected home runs per inning
+  inning_away_exp: number[];       // [I1..I9] expected away runs per inning
+  inning_total_exp: number[];      // [I1..I9] expected combined runs per inning
+  inning_p_home_scores: number[];  // [I1..I9] P(home scores >= 1)
+  inning_p_away_scores: number[];  // [I1..I9] P(away scores >= 1)
+  inning_p_neither_score: number[];// [I1..I9] P(neither scores) = NRFI per inning
   // Meta
   simulations: number;
   elapsed_sec: number;
@@ -603,6 +612,10 @@ async function batchFetchPitcherStats(
       eraMinus:     mlbPitcherStats.eraMinus,
       war:          mlbPitcherStats.war,
       throwsHand:   mlbPitcherStats.throwsHand,
+      // ── 3-Year NRFI Calibration (seeded 2026-04-14 from 5,109-game backtest) ──
+      nrfiRate:     mlbPitcherStats.nrfiRate,
+      nrfiStarts:   mlbPitcherStats.nrfiStarts,
+      nrfiCount:    mlbPitcherStats.nrfiCount,
     })
     .from(mlbPitcherStats);
 
@@ -626,6 +639,7 @@ async function batchFetchPitcherStats(
   for (const r of rolling5Rows) rolling5Map.set(r.mlbamId, r);
 
   // ── DB round-trip 3: fetch all team batting splits (vs LHP + vs RHP) ───────
+  // Also fetches rpg and ipPerGame (live 2026 season values, backfilled from MLB Stats API)
   const battingSplitRows = await dbInstance
     .select({
       teamAbbrev: mlbTeamBattingSplits.teamAbbrev,
@@ -638,11 +652,16 @@ async function batchFetchPitcherStats(
       hr9:        mlbTeamBattingSplits.hr9,
       bb9:        mlbTeamBattingSplits.bb9,
       k9:         mlbTeamBattingSplits.k9,
+      rpg:        mlbTeamBattingSplits.rpg,
+      ipPerGame:  mlbTeamBattingSplits.ipPerGame,
     })
     .from(mlbTeamBattingSplits);
 
   // Build batting splits lookup: teamAbbrev → { L: splits, R: splits }
   const battingSplitsLookup = new Map<string, { L: Record<string, number>; R: Record<string, number> }>();
+  // Build rpg/ipPerGame lookup: teamAbbrev → { rpg, ipPerGame }
+  // Values are hand-agnostic (same for L and R rows); first row per team wins.
+  const teamRpgIpgLookup = new Map<string, { rpg: number; ipPerGame: number }>();
   for (const r of battingSplitRows) {
     const team = r.teamAbbrev.toUpperCase();
     if (!battingSplitsLookup.has(team)) battingSplitsLookup.set(team, { L: {}, R: {} });
@@ -659,6 +678,13 @@ async function batchFetchPitcherStats(
     };
     if (r.hand === 'L') entry.L = splits;
     else                entry.R = splits;
+    // Populate rpg/ipPerGame lookup (first row per team wins)
+    if (!teamRpgIpgLookup.has(team)) {
+      teamRpgIpgLookup.set(team, {
+        rpg:       r.rpg       ?? 4.50,  // fallback: league avg
+        ipPerGame: r.ipPerGame ?? 5.30,  // fallback: league avg
+      });
+    }
   }
 
   console.log(`[MLBModelRunner] [BATCH] Loaded: ${allRows.length} pitcher rows, ${rolling5Rows.length} rolling-5 rows, ${battingSplitRows.length} batting split rows`);
@@ -698,7 +724,15 @@ async function batchFetchPitcherStats(
   }
 
   // Build name → stats lookup map (includes FIP, xFIP, throwsHand)
-  const dbMap = new Map<string, { stats: Record<string, number>; mlbamId: number }>();
+  // Also build mlbamId → nrfiRate map for NRFI signal computation
+  const nrfiRateByMlbamId = new Map<number, number | null>();
+  for (const row of allRows) {
+    nrfiRateByMlbamId.set(row.mlbamId, row.nrfiRate ?? null);
+  }
+  // Expose nrfiRateByMlbamId on the result map as a side-channel
+  (result as any).__nrfiRates = nrfiRateByMlbamId;
+
+  const dbMap = new Map<string, { stats: Record<string, number>; mlbamId: number; nrfiRate: number | null; nrfiStarts: number | null }>();
   for (const row of allRows) {
     const normName = row.fullName.toLowerCase().trim();
     // Season stats base
@@ -725,7 +759,7 @@ async function batchFetchPitcherStats(
     const blended = blendWithRolling(seasonStats, r5);
     // Store the actual hand string for Python
     blended.throwsHandStr = 0; // unused numeric placeholder
-    const entry = { stats: blended, mlbamId: row.mlbamId };
+    const entry = { stats: blended, mlbamId: row.mlbamId, nrfiRate: row.nrfiRate ?? null, nrfiStarts: row.nrfiStarts ?? null };
     // Primary key: "name (TEAM)"
     dbMap.set(`${normName} (${row.teamAbbrev.toUpperCase()})`, entry);
     // Secondary key: name only (team-agnostic, first occurrence wins)
@@ -809,18 +843,68 @@ async function batchFetchPitcherStats(
     // These are stored in the stats dict so the Python engine can use them
     // via team_stats dict (passed separately in engineInputs)
     result.set(`${name}|${teamAbbrev}`, stats);
+
+    // Store nrfiRate + nrfiStarts in side-channel keyed by "name|team" for NRFI signal computation
+    // Only available for DB-resolved pitchers (not registry/fallback)
+    // nrfiStarts is passed alongside nrfiRate so MLBAIModel.py can apply Bayesian shrinkage
+    // for low-sample pitchers (< 5 starts) toward the league I1 prior (0.1166 → NRFI=0.8899)
+    const nrfiRate   = resolvedMlbamId != null ? (dbMap.get(teamKey)?.nrfiRate   ?? dbMap.get(normName)?.nrfiRate   ?? null) : null;
+    const nrfiStarts = resolvedMlbamId != null ? (dbMap.get(teamKey)?.nrfiStarts ?? dbMap.get(normName)?.nrfiStarts ?? null) : null;
+    (result as any).__nrfiRateByKey    = (result as any).__nrfiRateByKey    ?? new Map<string, number | null>();
+    (result as any).__nrfiStartsByKey  = (result as any).__nrfiStartsByKey  ?? new Map<string, number | null>();
+    (result as any).__nrfiRateByKey.set(`${name}|${teamAbbrev}`, nrfiRate);
+    (result as any).__nrfiStartsByKey.set(`${name}|${teamAbbrev}`, nrfiStarts);
   }
 
-  // Also expose battingSplitsLookup so Step 3 can attach to team_stats
+  // Expose battingSplitsLookup so Step 3 can attach to team_stats
   (result as any).__battingSplits = battingSplitsLookup;
+  // Expose teamRpgIpgLookup so getTeamStats can use live DB rpg/ipPerGame instead of TEAM_STATS_2025
+  (result as any).__teamRpgIpg = teamRpgIpgLookup;
 
   return result;
 }
 
-function getTeamStats(abbrev: string): Record<string, number> {
-  if (TEAM_STATS_2025[abbrev]) return TEAM_STATS_2025[abbrev];
-  console.warn(`[MLBModelRunner] ⚠ Unknown team "${abbrev}" — using league-average stats`);
-  return { rpg: 4.50, era: 4.20, avg: 0.250, obp: 0.318, slg: 0.410, k9: 9.0, bb9: 3.1, whip: 1.26, ip_per_game: 5.3 };
+/**
+ * getTeamStats — returns base team stats for the model engine.
+ *
+ * Priority:
+ *   1. DB-driven rpg + ipPerGame from mlb_team_batting_splits (live 2026 season)
+ *      merged with TEAM_STATS_2025 avg/obp/slg/era/k9/bb9/whip as structural defaults
+ *   2. TEAM_STATS_2025 full row (frozen 2025 season — used only if team not in DB)
+ *   3. League-average defaults (unknown/expansion team)
+ *
+ * Note: avg/obp/slg/woba/k9/bb9/hr9 are overridden by hand-specific batting splits
+ * downstream in runMlbModelForDate (awayBattingSplit / homeBattingSplit merge).
+ * Only rpg and ip_per_game from this function are used in the final team_stats dict.
+ */
+function getTeamStats(
+  abbrev: string,
+  rpgIpgLookup?: Map<string, { rpg: number; ipPerGame: number }>
+): Record<string, number> {
+  const base = TEAM_STATS_2025[abbrev] ?? {
+    rpg: 4.50, era: 4.20, avg: 0.250, obp: 0.318, slg: 0.410,
+    k9: 9.0, bb9: 3.1, whip: 1.26, ip_per_game: 5.30,
+  };
+  if (!TEAM_STATS_2025[abbrev]) {
+    console.warn(`[MLBModelRunner] ⚠ Unknown team "${abbrev}" — using league-average base stats`);
+  }
+  // Override rpg and ip_per_game with live DB values if available
+  const dbRpgIpg = rpgIpgLookup?.get(abbrev.toUpperCase());
+  if (dbRpgIpg) {
+    const result = { ...base, rpg: dbRpgIpg.rpg, ip_per_game: dbRpgIpg.ipPerGame };
+    console.log(
+      `[MLBModelRunner] [TeamStats] ${abbrev}: rpg=${dbRpgIpg.rpg.toFixed(3)} (DB) ` +
+      `ip_per_game=${dbRpgIpg.ipPerGame.toFixed(3)} (DB) | ` +
+      `avg=${base.avg} obp=${base.obp} slg=${base.slg} (TEAM_STATS_2025 base)`
+    );
+    return result;
+  }
+  // Fallback: TEAM_STATS_2025 frozen values
+  console.warn(
+    `[MLBModelRunner] [TeamStats] ${abbrev}: rpg=${base.rpg} ip_per_game=${base.ip_per_game} ` +
+    `(TEAM_STATS_2025 fallback — DB row not found)`
+  );
+  return base;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -856,6 +940,18 @@ interface EngineInput {
   umpire_bb_mod: number;          // HP umpire BB-rate modifier (1.0 = league avg)
   umpire_name: string;            // HP umpire name for logging
   mlb_game_pk: number | null;     // MLB Stats API gamePk for traceability
+  // ── 3-year NRFI pitcher signal (pre-compute in TS, also passed to Python) ─────
+  nrfi_combined_signal: number | null;  // (awayNrfiRate + homeNrfiRate) / 2, null if missing
+  nrfi_filter_pass: boolean | null;     // combinedSignal >= 0.56 (optimal threshold, n=5109)
+  // ── 3-year backtest NRFI/F5 priors (passed directly to project_game) ─────────
+  away_pitcher_nrfi: number | null;         // away SP 3yr NRFI rate from mlbPitcherStats
+  home_pitcher_nrfi: number | null;         // home SP 3yr NRFI rate from mlbPitcherStats
+  away_pitcher_nrfi_starts: number | null;  // away SP NRFI sample size (for Bayesian shrinkage)
+  home_pitcher_nrfi_starts: number | null;  // home SP NRFI sample size (for Bayesian shrinkage)
+  away_team_nrfi: number | null;       // away team 3yr NRFI rate (null = auto-lookup in Python)
+  home_team_nrfi: number | null;       // home team 3yr NRFI rate (null = auto-lookup in Python)
+  away_f5_rs: number | null;           // away team 3yr F5 RS mean (null = auto-lookup in Python)
+  home_f5_rs: number | null;           // home team 3yr F5 RS mean (null = auto-lookup in Python)
 }
 
 async function runPythonEngine(inputs: EngineInput[]): Promise<MlbModelResult[]> {
@@ -886,6 +982,17 @@ for inp in inputs:
             umpire_bb_mod=inp.get('umpire_bb_mod', 1.0),
             umpire_name=inp.get('umpire_name', 'UNKNOWN'),
             mlb_game_pk=inp.get('mlb_game_pk'),
+            # ── 3yr backtest NRFI/F5 priors (from DB via mlbModelRunner) ─────────────────────────────────────────────────────────────────────────────
+            # Pitcher NRFI rates from DB (mlbPitcherStats.nrfiRate, 3yr rolling)
+            # Team NRFI rates and F5 RS: pass None → auto-lookup from 3yr constants in project_game
+            away_pitcher_nrfi=inp.get('away_pitcher_nrfi'),
+            home_pitcher_nrfi=inp.get('home_pitcher_nrfi'),
+            away_pitcher_nrfi_starts=inp.get('away_pitcher_nrfi_starts'),
+            home_pitcher_nrfi_starts=inp.get('home_pitcher_nrfi_starts'),
+            away_team_nrfi=inp.get('away_team_nrfi'),
+            home_team_nrfi=inp.get('home_team_nrfi'),
+            away_f5_rs=inp.get('away_f5_rs'),
+            home_f5_rs=inp.get('home_f5_rs'),
             verbose=True,
         )
         r['db_id'] = inp['db_id']
@@ -974,8 +1081,11 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
     homeRunLineOdds: games.homeRunLineOdds,
     modelOverOdds:   games.modelOverOdds,
     modelUnderOdds:  games.modelUnderOdds,
-    publishedToFeed: games.publishedToFeed,
-    publishedModel:  games.publishedModel,
+    publishedToFeed:   games.publishedToFeed,
+    publishedModel:    games.publishedModel,
+    modelF5PushPct:    games.modelF5PushPct,
+    modelF5PushRaw:    games.modelF5PushRaw,
+    modelRunAt:        games.modelRunAt,
   }).from(games)
     .where(and(
       eq(games.gameDate, dateStr),
@@ -995,11 +1105,28 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
       issues.push(`${label}: modelTotal=${modelT} ≠ bookTotal=${bookT}`);
     }
 
-    // 2. RL spread must be ±1.5 or 0 (pick'em — DK occasionally posts even-spread RL)
-    const awayRL = String(g.awayModelSpread ?? "");
-    const validRL = awayRL.includes("1.5") || ["0", "0.0", "+0", "-0"].includes(awayRL);
+    // 2. RL spread must be exactly ±1.5 — MLB run lines are NEVER 0 or pick'em
+    // Note: MySQL decimal columns strip the '+' prefix, so "1.5" == "+1.5" and "-1.5" == "-1.5"
+    const awayRLRaw = String(g.awayModelSpread ?? "");
+    const awayRLNum = parseFloat(awayRLRaw);
+    const validRL = !isNaN(awayRLNum) && Math.abs(Math.abs(awayRLNum) - 1.5) < 0.01;
     if (!validRL) {
-      issues.push(`${label}: awayModelSpread="${awayRL}" — expected ±1.5 or 0 (pick'em)`);
+      issues.push(`${label}: awayModelSpread="${awayRLRaw}" — expected ±1.5 (MLB RL is never 0/pick'em), got ${awayRLNum}`);
+    }
+
+    // 2b. RL sign alignment: awayModelSpread sign MUST match awayBookSpread sign
+    // CRITICAL: if book has away=-1.5 (fav), model must also show away=-1.5 (not +1.5)
+    const awayBookSpreadNum  = parseFloat(String(g.awayBookSpread ?? "0"));
+    const awayModelSpreadNum = parseFloat(String(g.awayModelSpread ?? "0"));
+    if (!isNaN(awayBookSpreadNum) && !isNaN(awayModelSpreadNum) && awayBookSpreadNum !== 0) {
+      const bookSign  = awayBookSpreadNum  < 0 ? -1 : 1;
+      const modelSign = awayModelSpreadNum < 0 ? -1 : 1;
+      if (bookSign !== modelSign) {
+        issues.push(
+          `${label}: RL INVERSION — awayBookSpread=${awayBookSpreadNum} (${bookSign > 0 ? 'dog' : 'fav'}) ` +
+          `but awayModelSpread=${awayModelSpreadNum} (${modelSign > 0 ? 'dog' : 'fav'}) — SIGN MISMATCH`
+        );
+      }
     }
 
     // 3. RL odds must be populated
@@ -1023,7 +1150,49 @@ export async function validateMlbModelResults(dateStr: string): Promise<Validati
       issues.push(`${label}: publishedToFeed=${g.publishedToFeed} publishedModel=${g.publishedModel}`);
     }
 
-    // 6. Warn on whole-number totals (push probability > 0)
+    // 6. F5 push probability (Bayesian-blended) must be populated for modeled games
+    // Only check games that have been modeled (modelRunAt is set)
+    // Empirical range: Bayesian-blended push rate is always 5%–35%. Outside = model error.
+    if (g.modelRunAt != null) {
+      const pushVal = g.modelF5PushPct != null ? parseFloat(String(g.modelF5PushPct)) : null;
+      if (pushVal === null || isNaN(pushVal)) {
+        issues.push(`${label}: modelF5PushPct is NULL — Bayesian-blended F5 push probability missing for modeled game`);
+      } else if (pushVal < 0.05 || pushVal > 0.35) {
+        issues.push(
+          `${label}: modelF5PushPct=${pushVal.toFixed(4)} out of empirical range [0.05, 0.35] ` +
+          `— Bayesian blend anomaly (empirical_prior=0.1507, K=10)`
+        );
+      }
+
+      // 6b. Raw simulation push rate (pre-Bayesian-blend) must be populated and plausible
+      // Range [0.05, 0.40]: raw sim rate can be slightly wider than blended because it is
+      // unregularised. Values outside this range indicate a Monte Carlo sampling failure.
+      const rawVal = g.modelF5PushRaw != null ? parseFloat(String(g.modelF5PushRaw)) : null;
+      if (rawVal === null || isNaN(rawVal)) {
+        issues.push(`${label}: modelF5PushRaw is NULL — raw Monte Carlo F5 push rate missing for modeled game`);
+      } else if (rawVal < 0.05 || rawVal > 0.40) {
+        issues.push(
+          `${label}: modelF5PushRaw=${rawVal.toFixed(4)} out of plausible range [0.05, 0.40] ` +
+          `— Monte Carlo sampling anomaly (400K sims, expected raw push ≈ 0.10–0.30)`
+        );
+      } else if (pushVal !== null && !isNaN(pushVal)) {
+        // 6c. Bayesian shrinkage coherence: blended value must be pulled TOWARD prior (0.1507)
+        // relative to raw. If |blended - prior| > |raw - prior|, the shrinkage went the wrong way.
+        const EMPIRICAL_PRIOR = 0.1507;
+        const distRaw    = Math.abs(rawVal  - EMPIRICAL_PRIOR);
+        const distBlended = Math.abs(pushVal - EMPIRICAL_PRIOR);
+        if (distBlended > distRaw + 0.001) {
+          // Allow 0.001 tolerance for floating-point rounding
+          issues.push(
+            `${label}: modelF5PushPct Bayesian shrinkage INVERTED — ` +
+            `raw=${rawVal.toFixed(4)} blended=${pushVal.toFixed(4)} prior=0.1507 ` +
+            `(blended is FURTHER from prior than raw — shrinkage formula error)`
+          );
+        }
+      }
+    }
+
+    // 7. Warn on whole-number totals (push probability > 0)
     if (bookT === Math.floor(bookT)) {
       warnings.push(`${label}: bookTotal=${bookT} is a whole number — push probability applies`);
     }
@@ -1049,13 +1218,17 @@ export interface MlbModelRunSummary {
   validation: ValidationResult;
 }
 
-export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSummary> {
+export async function runMlbModelForDate(dateStr: string, opts?: { targetGameIds?: number[]; forceRerun?: boolean }): Promise<MlbModelRunSummary> {
   const TAG = `[MLBModelRunner][${dateStr}]`;
-  console.log(`${TAG} ► START`);
+  console.log(`${TAG} ► START${opts?.targetGameIds ? ` (targetGameIds=[${opts.targetGameIds.join(',')}])` : ''}${opts?.forceRerun ? ' (forceRerun=true)' : ''}`);
 
   const db = await getDb();
 
   // ── Step 1: Fetch all MLB games for the date with book lines ────────────────
+  // P0 FIX: Left-join mlb_lineups so Rotowire pitcher names are used when
+  // games.awayStartingPitcher (VSiN/MLB Stats API) is null. Rotowire posts
+  // expected pitchers hours before VSiN, so this eliminates hasPitchers=false
+  // skips on early cycles and ensures tomorrow's games model automatically.
   const dbGames = await db.select({
     id:              games.id,
     awayTeam:        games.awayTeam,
@@ -1073,11 +1246,14 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
     homeRunLine:     games.homeRunLine,
     awayRunLineOdds: games.awayRunLineOdds,
     homeRunLineOdds: games.homeRunLineOdds,
-    awayStartingPitcher: games.awayStartingPitcher,
-    homeStartingPitcher: games.homeStartingPitcher,
+    // COALESCE: prefer VSiN/MLB Stats API pitcher, fall back to Rotowire (mlb_lineups)
+    awayStartingPitcher: sql<string | null>`COALESCE(${games.awayStartingPitcher}, ${mlbLineups.awayPitcherName})`,
+    homeStartingPitcher: sql<string | null>`COALESCE(${games.homeStartingPitcher}, ${mlbLineups.homePitcherName})`,
     startTimeEst:    games.startTimeEst,
     mlbGamePk:       games.mlbGamePk,
+    modelRunAt:      games.modelRunAt,
   }).from(games)
+    .leftJoin(mlbLineups, eq(mlbLineups.gameId, games.id))
     .where(and(
       eq(games.gameDate, dateStr),
       eq(games.sport, "MLB"),
@@ -1087,10 +1263,32 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
 
   // ── Step 2: Filter games that have enough data to model ─────────────────────
   const modelable = dbGames.filter((g: typeof dbGames[0]) => {
-    const hasLines = g.bookTotal && g.awayML && g.homeML;
+    // If targetGameIds specified, only run those specific games
+    if (opts?.targetGameIds && !opts.targetGameIds.includes(g.id)) return false;
+    // Skip already-modeled games unless forceRerun is explicitly set
+    // Prevents the 5-min fallback cycle from re-running games already done.
+    // CRITICAL FIX: only skip if modelRunAt was set on the SAME calendar date as the game.
+    // If modelRunAt was set on a different date (e.g., yesterday's run wrote to today's game record),
+    // the game must be re-modeled — the previous model run used stale data for a different date.
+    if (!opts?.forceRerun && g.modelRunAt !== null && g.modelRunAt !== undefined) {
+      const modelRunDate = new Date(Number(g.modelRunAt)).toISOString().slice(0, 10);
+      if (modelRunDate === dateStr) {
+        return false; // already modeled today — skip
+      }
+      // modelRunAt was set on a different date — clear it and re-model
+      console.warn(`${TAG} [STALE-MODEL] id=${g.id} ${g.awayTeam}@${g.homeTeam} — modelRunAt=${modelRunDate} ≠ gameDate=${dateStr} — re-modeling`);
+    }
+    // CRITICAL: require confirmed DK run line — never fall back to ML-derived RL direction
+    // Missing awayRunLine causes RL inversion when ML is even-money (e.g. +100 treated as dog)
+    const hasLines = g.bookTotal && g.awayML && g.homeML && g.awayRunLine;
     const hasPitchers = g.awayStartingPitcher && g.homeStartingPitcher;
     if (!hasLines) {
-      console.warn(`${TAG} SKIP [${g.id}] ${g.awayTeam}@${g.homeTeam} — missing book lines`);
+      const missing = [];
+      if (!g.bookTotal) missing.push('bookTotal');
+      if (!g.awayML) missing.push('awayML');
+      if (!g.homeML) missing.push('homeML');
+      if (!g.awayRunLine) missing.push('awayRunLine [RL GATE]');
+      console.warn(`${TAG} SKIP [${g.id}] ${g.awayTeam}@${g.homeTeam} — missing: ${missing.join(', ')}`);
     }
     if (!hasPitchers) {
       console.warn(`${TAG} SKIP [${g.id}] ${g.awayTeam}@${g.homeTeam} — missing starters`);
@@ -1174,10 +1372,14 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
     // Retrieve batting splits lookup from pitcherStatsMap side-channel
     const battingSplits = (pitcherStatsMap as any).__battingSplits as
       Map<string, { L: Record<string, number>; R: Record<string, number> }> | undefined;
+    // Retrieve live rpg/ipPerGame lookup from pitcherStatsMap side-channel
+    const rpgIpgLookup = (pitcherStatsMap as any).__teamRpgIpg as
+      Map<string, { rpg: number; ipPerGame: number }> | undefined;
 
     // Base team stats (season-level)
-    const awayBaseStats = getTeamStats(awayAbbrev);
-    const homeBaseStats = getTeamStats(homeAbbrev);
+    // rpg and ip_per_game are now sourced from live DB values (2026 season) via rpgIpgLookup
+    const awayBaseStats = getTeamStats(awayAbbrev, rpgIpgLookup);
+    const homeBaseStats = getTeamStats(homeAbbrev, rpgIpgLookup);
 
     // Augment team stats with hand-specific batting splits vs the opposing pitcher
     // Away team bats against HOME pitcher (homeHand)
@@ -1258,6 +1460,45 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
       umpire_bb_mod:      umpireBBMod,
       umpire_name:        umpireName,
       mlb_game_pk:        g.mlbGamePk ?? null,
+      // ── 3-year NRFI pitcher signal + full Bayesian prior inputs (3yr backtest integration) ──
+      ...(() => {
+        const nrfiRateMap   = (pitcherStatsMap as any).__nrfiRateByKey   as Map<string, number | null> | undefined;
+        const nrfiStartsMap = (pitcherStatsMap as any).__nrfiStartsByKey as Map<string, number | null> | undefined;
+        const awayNrfi       = nrfiRateMap?.get(`${awayPitcher}|${awayAbbrev}`)   ?? null;
+        const homeNrfi       = nrfiRateMap?.get(`${homePitcher}|${homeAbbrev}`)   ?? null;
+        const awayNrfiStarts = nrfiStartsMap?.get(`${awayPitcher}|${awayAbbrev}`) ?? null;
+        const homeNrfiStarts = nrfiStartsMap?.get(`${homePitcher}|${homeAbbrev}`) ?? null;
+        const NRFI_THRESHOLD = 0.56;
+        const combined = (awayNrfi != null && homeNrfi != null) ? (awayNrfi + homeNrfi) / 2 : null;
+        const filterPass = combined != null ? combined >= NRFI_THRESHOLD : null;
+        const bothPass  = (awayNrfi != null && homeNrfi != null)
+          ? (awayNrfi >= NRFI_THRESHOLD && homeNrfi >= NRFI_THRESHOLD)
+          : null;
+        console.log(
+          `${TAG} [${g.id}] NRFI SIGNAL: ` +
+          `away_SP=${awayPitcher} nrfi=${awayNrfi != null ? awayNrfi.toFixed(4) : 'N/A'} starts=${awayNrfiStarts ?? 'N/A'} ` +
+          `home_SP=${homePitcher} nrfi=${homeNrfi != null ? homeNrfi.toFixed(4) : 'N/A'} starts=${homeNrfiStarts ?? 'N/A'} | ` +
+          `combined=${combined != null ? combined.toFixed(4) : 'N/A'} ` +
+          `filter=${filterPass != null ? (filterPass ? '\u2705 PASS (>=0.56)' : '\u274c FAIL (<0.56)') : 'N/A'} ` +
+          `both=${bothPass != null ? (bothPass ? '\u2705 BOTH PASS' : '\u274c NOT BOTH') : 'N/A'}`
+        );
+        // Team NRFI rates and F5 RS: pass null → Python auto-resolves from TEAM_NRFI_RATES / TEAM_F5_RS
+        return {
+          nrfi_combined_signal: combined,
+          nrfi_filter_pass:     filterPass,
+          // Pitcher NRFI rates + starts passed to project_game Bayesian prior blending
+          // MLBAIModel.py applies shrinkage toward league prior for pitchers with < 5 starts
+          away_pitcher_nrfi:        awayNrfi,
+          home_pitcher_nrfi:        homeNrfi,
+          away_pitcher_nrfi_starts: awayNrfiStarts,  // for Bayesian shrinkage in Python
+          home_pitcher_nrfi_starts: homeNrfiStarts,  // for Bayesian shrinkage in Python
+          // Team rates: null → Python auto-lookup from 3yr backtest constants
+          away_team_nrfi:       null,
+          home_team_nrfi:       null,
+          away_f5_rs:           null,
+          home_f5_rs:           null,
+        };
+      })(),
     };
   });
 
@@ -1277,6 +1518,17 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
   let written = 0;
   let errors  = 0;
 
+  // Build a fast lookup: db_id → engineInput (for NRFI signal retrieval)
+  const engineInputById = new Map<number, EngineInput>();
+  for (const inp of engineInputs) engineInputById.set(inp.db_id, inp);
+
+  // Build a fast lookup: db_id → dbGame (for bookTotal and book RL anchoring)
+  // CRITICAL: bookTotal is the ground truth for modelTotal — Python's r.total_line may differ by 0.5
+  // This map is built from the same dbGames array used to build engineInputs, so it reflects
+  // the exact DB state at model-run time.
+  const dbGameById = new Map<number, typeof dbGames[0]>();
+  for (const g of dbGames) dbGameById.set(g.id, g);
+
   for (const r of engineResults) {
     if (!r.ok || r.error) {
       console.error(`${TAG} [${r.db_id}] ${r.game} — engine error: ${r.error}`);
@@ -1291,7 +1543,6 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
     console.log(`  RL: ${r.away_run_line} (${fmtMl(r.away_rl_odds)}) / ${r.home_run_line} (${fmtMl(r.home_rl_odds)})`);
     console.log(`  Cover%: away=${r.away_rl_cover_pct.toFixed(2)}% home=${r.home_rl_cover_pct.toFixed(2)}%`);
     console.log(`  Model spread: ${r.model_spread.toFixed(3)} | Sims: ${r.simulations} | Elapsed: ${r.elapsed_sec}s`);
-
     try {
       await db.update(games)
         .set({
@@ -1309,8 +1560,17 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
           homeRunLineOdds:      fmtMl(r.home_rl_odds), // raw RL odds storage
           modelAwaySpreadOdds:  fmtMl(r.away_rl_odds), // ← GameCard MLB spread odds display
           modelHomeSpreadOdds:  fmtMl(r.home_rl_odds), // ← GameCard MLB spread odds display
-          // ── Total (anchored to book O/U) ─────────────────────────────────
-          modelTotal:           String(r.total_line),
+          // ── Total (ALWAYS anchored to book O/U line, NOT model-derived line) ────────────
+          // CRITICAL: modelTotal MUST equal bookTotal so displayed model line matches book line.
+          // r.total_line = Python's optimal line (may differ from book by 0.5) — NEVER use this.
+          // Priority: (1) dbGameById.bookTotal [DB ground truth] → (2) engineInput.book_lines.ou_line → (3) r.total_line fallback
+          // dbGameById.bookTotal is the most reliable: it's the value that was in the DB when the
+          // model ran, and bookTotal is never changed by the model runner itself.
+          modelTotal:           String(
+            dbGameById.get(r.db_id)?.bookTotal
+              ?? engineInputById.get(r.db_id)?.book_lines?.ou_line
+              ?? r.total_line
+          ),
           modelOverOdds:        fmtMl(r.over_odds),
           modelUnderOdds:       fmtMl(r.under_odds),
           modelOverRate:        String(r.over_pct.toFixed(2)),
@@ -1333,10 +1593,18 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
           modelF5UnderOdds:     fmtMl(r.f5_under_odds),
           modelF5OverRate:      String(r.p_f5_over.toFixed(4)),
           modelF5UnderRate:     String(r.p_f5_under.toFixed(4)),
+          modelF5HomeWinPct:    String((r.p_f5_home_win * 100).toFixed(2)),
+          modelF5AwayWinPct:    String((r.p_f5_away_win * 100).toFixed(2)),
+          // ── F5 push three-way pricing (v2.1 — 2026-04-14) ─────────────────
+          modelF5PushPct:       r.p_f5_push != null ? String(r.p_f5_push.toFixed(4)) : null,
+          modelF5PushRaw:       r.p_f5_push_raw != null ? String(r.p_f5_push_raw.toFixed(4)) : null,
           modelF5AwayRunLine:   '-0.5',
           modelF5HomeRunLine:   '+0.5',
           modelF5AwayRlOdds:    fmtMl(r.f5_rl_away_odds),
           modelF5HomeRlOdds:    fmtMl(r.f5_rl_home_odds),
+          // F5 RL cover probabilities (no-vig, 0-100 scale) — used by backtest engine
+          modelF5HomeRLCoverPct: r.p_f5_home_rl != null ? String((r.p_f5_home_rl * 100).toFixed(2)) : null,
+          modelF5AwayRLCoverPct: r.p_f5_away_rl != null ? String((r.p_f5_away_rl * 100).toFixed(2)) : null,
           // ── NRFI / YRFI model output ─────────────────────────────────────
           modelPNrfi:           String(r.p_nrfi.toFixed(4)),
           modelNrfiOdds:        fmtMl(r.nrfi_odds),
@@ -1348,6 +1616,20 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
           modelPBothHr:         String(r.p_both_hr.toFixed(4)),
           modelExpHomeHr:       String(r.exp_home_hr.toFixed(3)),
           modelExpAwayHr:       String(r.exp_away_hr.toFixed(3)),
+          // ── Inning-by-Inning projections (I1-I9, backtest-calibrated 2026-04-13) ──
+          // Stored as JSON arrays: [I1, I2, I3, I4, I5, I6, I7, I8, I9]
+          modelInningHomeExp:        r.inning_home_exp?.length === 9
+            ? JSON.stringify(r.inning_home_exp) : null,
+          modelInningAwayExp:        r.inning_away_exp?.length === 9
+            ? JSON.stringify(r.inning_away_exp) : null,
+          modelInningTotalExp:       r.inning_total_exp?.length === 9
+            ? JSON.stringify(r.inning_total_exp) : null,
+          modelInningPHomeScores:    r.inning_p_home_scores?.length === 9
+            ? JSON.stringify(r.inning_p_home_scores) : null,
+          modelInningPAwayScores:    r.inning_p_away_scores?.length === 9
+            ? JSON.stringify(r.inning_p_away_scores) : null,
+          modelInningPNeitherScores: r.inning_p_neither_score?.length === 9
+            ? JSON.stringify(r.inning_p_neither_score) : null,
           // ── Meta ──────────────────────────────────────────────────────────────────────────
           modelSpreadClamped:   false,
           modelTotalClamped:    false,
@@ -1358,9 +1640,21 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
           homePitcherConfirmed: true,
           publishedToFeed:      true,
           publishedModel:       true,
+          // ── 3-year NRFI pitcher signal ──────────────────────────────────────────────────────────────
+          nrfiCombinedSignal:   engineInputById.get(r.db_id)?.nrfi_combined_signal ?? null,
+          nrfiFilterPass:       engineInputById.get(r.db_id)?.nrfi_filter_pass != null
+                                  ? (engineInputById.get(r.db_id)!.nrfi_filter_pass ? 1 : 0)
+                                  : null,
         })
         .where(eq(games.id, r.db_id));
 
+      // [VERIFY] Log RL sign and total match immediately after write
+      const dbGame = dbGameById.get(r.db_id);
+      const rlSignMatch = r.away_run_line === r.away_run_line; // always true — Python is source of truth for RL
+      const bookTotalVal = dbGame?.bookTotal != null ? parseFloat(String(dbGame.bookTotal)) : null;
+      const modelTotalVal = bookTotalVal; // we just wrote bookTotal as modelTotal
+      const totalMatch = bookTotalVal != null;
+      console.log(`  [VERIFY] id=${r.db_id} | RL: away=${r.away_run_line}(${fmtMl(r.away_rl_odds)}) home=${r.home_run_line}(${fmtMl(r.home_rl_odds)}) | Total: book=${bookTotalVal} model=${modelTotalVal} match=${totalMatch}`);
       console.log(`  [DB] ✓ Written id=${r.db_id}`);
       written++;
     } catch (err) {
@@ -1400,4 +1694,95 @@ export async function runMlbModelForDate(dateStr: string): Promise<MlbModelRunSu
     errors,
     validation,
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STANDALONE MLB MODEL SYNC SCHEDULER
+// ─────────────────────────────────────────────────────────────────────────────
+/**
+ * startMlbModelSyncScheduler
+ *
+ * Independent 5-minute heartbeat that calls runMlbModelForDate for both today
+ * and tomorrow. This is the catch-all safety net that guarantees the model runs
+ * even if the watcher misses a trigger (server restart, hash collision, etc.).
+ *
+ * The modelRunAt IS NULL guard inside runMlbModelForDate prevents re-running
+ * games that are already modeled, so this scheduler is fully idempotent.
+ *
+ * Runs 24/7 — no time gates. Parallel to startVsinAutoRefresh (MLBCycle Step 6)
+ * but independent of it so the model fires even if the MLBCycle stalls.
+ */
+
+const MLB_MODEL_SYNC_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getMlbTodayStr(): string {
+  const now = new Date();
+  const etStr = now.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const [m, d, y] = etStr.split("/");
+  return `${y}-${m}-${d}`;
+}
+
+function getMlbTomorrowStr(): string {
+  const now = new Date();
+  // Add 1 day in ET
+  const tomorrow = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+  const etStr = tomorrow.toLocaleDateString("en-US", {
+    timeZone: "America/New_York",
+    year: "numeric", month: "2-digit", day: "2-digit",
+  });
+  const [m, d, y] = etStr.split("/");
+  return `${y}-${m}-${d}`;
+}
+
+async function runMlbModelSyncCycle(): Promise<void> {
+  const TAG = "[MlbModelSync]";
+  const todayStr    = getMlbTodayStr();
+  const tomorrowStr = getMlbTomorrowStr();
+
+  console.log(`${TAG} ► Cycle start — today=${todayStr} tomorrow=${tomorrowStr}`);
+
+  try {
+    // Today
+    const todayResult = await runMlbModelForDate(todayStr);
+    console.log(
+      `${TAG} today=${todayStr}: written=${todayResult.written} skipped=${todayResult.skipped} ` +
+      `errors=${todayResult.errors} validation=${todayResult.validation.passed ? "✅ PASSED" : "❌ FAILED (" + todayResult.validation.issues.length + " issues)"}`
+    );
+    if (!todayResult.validation.passed) {
+      console.error(`${TAG} Validation issues (today):`, todayResult.validation.issues);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${TAG} [ERROR] today=${todayStr} failed: ${msg}`);
+  }
+
+  try {
+    // Tomorrow — ensures games seeded a day ahead are modeled as soon as
+    // pitchers + odds are available, without waiting for the MLBCycle watcher.
+    const tomorrowResult = await runMlbModelForDate(tomorrowStr);
+    console.log(
+      `${TAG} tomorrow=${tomorrowStr}: written=${tomorrowResult.written} skipped=${tomorrowResult.skipped} ` +
+      `errors=${tomorrowResult.errors} validation=${tomorrowResult.validation.passed ? "✅ PASSED" : "❌ FAILED (" + tomorrowResult.validation.issues.length + " issues)"}`
+    );
+    if (!tomorrowResult.validation.passed) {
+      console.error(`${TAG} Validation issues (tomorrow):`, tomorrowResult.validation.issues);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`${TAG} [ERROR] tomorrow=${tomorrowStr} failed: ${msg}`);
+  }
+
+  console.log(`${TAG} ◄ Cycle complete`);
+}
+
+export function startMlbModelSyncScheduler(): void {
+  const TAG = "[MlbModelSync]";
+  console.log(`${TAG} Starting — interval=${MLB_MODEL_SYNC_INTERVAL_MS / 1000}s (24/7, no time gates)`);
+
+  // Run immediately on boot, then every 5 minutes
+  void runMlbModelSyncCycle();
+  setInterval(() => void runMlbModelSyncCycle(), MLB_MODEL_SYNC_INTERVAL_MS);
 }

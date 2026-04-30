@@ -10,6 +10,7 @@
 
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
+import { getGameTeamColorsClient } from "@shared/teamColors";
 import { OddsHistoryPanel } from "./OddsHistoryPanel";
 
 type MobileMarket = "spread" | "total" | "ml";
@@ -37,6 +38,8 @@ interface BettingSplitsPanelProps {
   homeLabel: string;
   awayNickname?: string;
   homeNickname?: string;
+  /** IntersectionObserver gate — only fetch data when card is in viewport */
+  enabled?: boolean;
   /** Called whenever the user switches the SPREAD/TOTAL/MONEYLINE toggle */
   onMarketChange?: (market: MobileMarket) => void;
 }
@@ -560,10 +563,8 @@ export function BettingSplitsPanel({
     onMarketChange?.(m);
   };
   const sport = (game.sport ?? "NBA") as "MLB" | "NBA" | "NHL";
-  const { data: colors } = trpc.teamColors.getForGame.useQuery(
-    { awayTeam: game.awayTeam, homeTeam: game.homeTeam, sport },
-    { staleTime: 1000 * 60 * 60 }
-  );
+  // Performance Fix #5: client-side color lookup (eliminates tRPC round-trip per card)
+  const colors = getGameTeamColorsClient(game.awayTeam, game.homeTeam, sport);
 
   const homeColor = pickBarColor(
     colors?.home?.primaryColor, colors?.home?.secondaryColor, colors?.home?.tertiaryColor, FALLBACK_HOME
@@ -633,8 +634,7 @@ export function BettingSplitsPanel({
             const isActive = m === activeMarket;
             const isAvailable = availableMarkets.includes(m);
             return (
-              <button
-                key={m}
+              <button type="button" key={m}
                 onClick={() => handleMarketChange(m)}
                 disabled={!isAvailable}
                 style={{

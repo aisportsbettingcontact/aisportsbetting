@@ -31,14 +31,14 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 import {
   ArrowLeft, Plus, Pencil, Trash2, Shield, User, Crown, RefreshCw,
-  Eye, EyeOff, ChevronDown, ArrowUp, ArrowDown, ChevronsUpDown, X, LogOut, ShieldAlert,
+  Eye, EyeOff, ChevronDown, ArrowUp, ArrowDown, ChevronsUpDown, X, LogOut, ShieldAlert, BarChart2,
 } from "lucide-react";
 
 type AppUserRow = {
   id: number;
   email: string;
   username: string;
-  role: "owner" | "admin" | "user";
+  role: "owner" | "admin" | "handicapper" | "user";
   hasAccess: boolean;
   expiryDate: number | null;
   createdAt: Date;
@@ -51,15 +51,17 @@ type AppUserRow = {
 };
 
 const ROLE_ICONS = {
-  owner: <Crown className="w-3 h-3" />,
-  admin: <Shield className="w-3 h-3" />,
-  user: <User className="w-3 h-3" />,
+  owner:       <Crown className="w-3 h-3" />,
+  admin:       <Shield className="w-3 h-3" />,
+  handicapper: <BarChart2 className="w-3 h-3" />,
+  user:        <User className="w-3 h-3" />,
 };
 
 const ROLE_COLORS = {
-  owner: "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
-  admin: "bg-blue-500/15 text-blue-400 border-blue-500/30",
-  user: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+  owner:       "bg-yellow-500/15 text-yellow-400 border-yellow-500/30",
+  admin:       "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  handicapper: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30",
+  user:        "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
 };
 
 const EST_OPTS: Intl.DateTimeFormatOptions = { timeZone: "America/New_York" };
@@ -76,15 +78,19 @@ function formatExpiry(expiryDate: number | null) {
 function formatDate(d: Date | null) {
   if (!d) return "Never";
   const dt = new Date(d);
+  // [STEP] Build MM/DD/YYYY date string in EST
+  const date = dt.toLocaleDateString("en-US", { ...EST_OPTS, month: "2-digit", day: "2-digit", year: "numeric" });
+  // [STEP] Build HH:MM AM/PM time string in EST
   const time = dt.toLocaleTimeString("en-US", { ...EST_OPTS, hour: "2-digit", minute: "2-digit", hour12: true });
-  return `${time} EST`;
+  // [OUTPUT] Full format: MM/DD/YYYY HH:MM AM/PM EST
+  return `${date} ${time} EST`;
 }
 
 type FormState = {
   email: string;
   username: string;
   password: string;
-  role: "owner" | "admin" | "user";
+  role: "owner" | "admin" | "handicapper" | "user";
   hasAccess: boolean;
   expiryType: "lifetime" | "custom";
   expiryDateStr: string;
@@ -159,8 +165,7 @@ function ColFilterDropdown({
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen((v) => !v)}
+      <button type="button" onClick={() => setOpen((v) => !v)}
         className={`flex items-center gap-1 group transition-colors ${
           isActive ? "text-white" : "text-zinc-400 hover:text-zinc-200"
         }`}
@@ -186,16 +191,14 @@ function ColFilterDropdown({
           {/* Sort options */}
           <div className="px-2 py-1 border-b border-white/8">
             <p className="text-[10px] text-zinc-500 tracking-wider mb-1 px-1">SORT</p>
-            <button
-              onClick={() => toggleSort("asc")}
+            <button type="button" onClick={() => toggleSort("asc")}
               className={`flex items-center gap-2 w-full px-2 py-1 rounded text-xs transition-colors ${
                 state.sort === "asc" ? "bg-blue-500/20 text-blue-300" : "text-zinc-300 hover:bg-white/5"
               }`}
             >
               <ArrowUp className="w-3 h-3" /> Ascending
             </button>
-            <button
-              onClick={() => toggleSort("desc")}
+            <button type="button" onClick={() => toggleSort("desc")}
               className={`flex items-center gap-2 w-full px-2 py-1 rounded text-xs transition-colors ${
                 state.sort === "desc" ? "bg-blue-500/20 text-blue-300" : "text-zinc-300 hover:bg-white/5"
               }`}
@@ -209,7 +212,7 @@ function ColFilterDropdown({
             <div className="flex items-center justify-between mb-1 px-1">
               <p className="text-[10px] text-zinc-500 tracking-wider">FILTER</p>
               {isFiltered && (
-                <button onClick={selectAll} className="text-[10px] text-blue-400 hover:text-blue-300">
+                <button type="button" onClick={selectAll} className="text-[10px] text-blue-400 hover:text-blue-300">
                   All
                 </button>
               )}
@@ -238,8 +241,7 @@ function ColFilterDropdown({
           {/* Clear all */}
           {isActive && (
             <div className="border-t border-white/8 px-2 py-1">
-              <button
-                onClick={() => { clearAll(); setOpen(false); }}
+              <button type="button" onClick={() => { clearAll(); setOpen(false); }}
                 className="flex items-center gap-1.5 w-full px-2 py-1 rounded text-xs text-red-400 hover:bg-red-500/10 transition-colors"
               >
                 <X className="w-3 h-3" /> Clear filters
@@ -253,7 +255,7 @@ function ColFilterDropdown({
 }
 
 // ── Sort helpers ─────────────────────────────────────────────────────────────
-const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, user: 2 };
+const ROLE_ORDER: Record<string, number> = { owner: 0, admin: 1, handicapper: 2, user: 3 };
 
 function getSortValue(u: AppUserRow, key: ColKey): string | number {
   switch (key) {
@@ -268,6 +270,123 @@ function getSortValue(u: AppUserRow, key: ColKey): string | number {
     case "lastSignIn":
       return u.lastSignedIn ? new Date(u.lastSignedIn).getTime() : 0;
   }
+}
+
+// ── Metrics Panel ───────────────────────────────────────────────────────────
+/** Formats milliseconds → HH:MM:SS */
+function fmtDuration(ms: number): string {
+  if (!ms || ms <= 0) return "00:00:00";
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+function MetricsPanel() {
+  const { data: sessionData, isLoading: sessLoading } = trpc.metrics.getSessionMetrics.useQuery(undefined, {
+    refetchInterval: 60_000, // refresh every 60s
+  });
+  const { data: memberData, isLoading: membLoading } = trpc.metrics.getMemberMetrics.useQuery(undefined, {
+    refetchInterval: 60_000,
+  });
+
+  const loading = sessLoading || membLoading;
+
+  const sessionKpis = [
+    {
+      label: "DAILY ACTIVE USERS",
+      sublabel: "Unique logins in last 24 hours",
+      value: loading ? "—" : String(sessionData?.dau ?? 0),
+      color: "text-emerald-400",
+      border: "border-emerald-500/20",
+    },
+    {
+      label: "WEEKLY ACTIVE USERS",
+      sublabel: "Unique logins in last 7 days",
+      value: loading ? "—" : String(sessionData?.wau ?? 0),
+      color: "text-blue-400",
+      border: "border-blue-500/20",
+    },
+    {
+      label: "MONTHLY ACTIVE USERS",
+      sublabel: "Unique logins in last 30 days",
+      value: loading ? "—" : String(sessionData?.mau ?? 0),
+      color: "text-violet-400",
+      border: "border-violet-500/20",
+    },
+    {
+      label: "AVG SESSION DURATION",
+      sublabel: "Average time on platform per day",
+      value: loading ? "—" : fmtDuration(sessionData?.avgSessionDurationMs ?? 0),
+      color: "text-amber-400",
+      border: "border-amber-500/20",
+    },
+  ];
+
+  const memberKpis = [
+    {
+      label: "TOTAL PAYING MEMBERS",
+      sublabel: "Active paid access (all tiers)",
+      value: loading ? "—" : String(memberData?.totalPaying ?? 0),
+      color: "text-yellow-400",
+      border: "border-yellow-500/20",
+    },
+    {
+      label: "LIFETIME MEMBERS",
+      sublabel: "Never-expiring access accounts",
+      value: loading ? "—" : String(memberData?.lifetimeMembers ?? 0),
+      color: "text-orange-400",
+      border: "border-orange-500/20",
+    },
+    {
+      label: "NON-PAYING MEMBERS",
+      sublabel: "Accounts without active access",
+      value: loading ? "—" : String(memberData?.nonPaying ?? 0),
+      color: "text-zinc-400",
+      border: "border-zinc-500/20",
+    },
+    {
+      label: "CONNECTED DISCORD USERS",
+      sublabel: "Accounts with Discord linked",
+      value: loading ? "—" : String(memberData?.discordConnected ?? 0),
+      color: "text-indigo-400",
+      border: "border-indigo-500/20",
+    },
+  ];
+
+  return (
+    <div className="mb-6 space-y-3">
+      {/* Section label */}
+      <div className="flex items-center gap-2">
+        <span className="text-[10px] font-semibold tracking-[0.15em] text-zinc-500 uppercase">Platform Metrics</span>
+        <div className="flex-1 h-px bg-white/6" />
+        {loading && <RefreshCw className="w-3 h-3 text-zinc-600 animate-spin" />}
+      </div>
+
+      {/* Row 1 — Session KPIs */}
+      <div className="grid grid-cols-4 gap-3">
+        {sessionKpis.map((k) => (
+          <div key={k.label} className={`bg-white/3 border ${k.border} rounded-lg px-4 py-3`}>
+            <div className={`text-xl font-bold font-mono ${k.color}`}>{k.value}</div>
+            <div className="text-[10px] font-semibold tracking-wider text-zinc-300 mt-0.5">{k.label}</div>
+            <div className="text-[10px] text-zinc-600 mt-0.5">{k.sublabel}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Row 2 — Member KPIs */}
+      <div className="grid grid-cols-4 gap-3">
+        {memberKpis.map((k) => (
+          <div key={k.label} className={`bg-white/3 border ${k.border} rounded-lg px-4 py-3`}>
+            <div className={`text-xl font-bold font-mono ${k.color}`}>{k.value}</div>
+            <div className="text-[10px] font-semibold tracking-wider text-zinc-300 mt-0.5">{k.label}</div>
+            <div className="text-[10px] text-zinc-600 mt-0.5">{k.sublabel}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -484,8 +603,7 @@ export default function UserManagement() {
       {/* Header */}
       <div className="sticky top-0 z-40 bg-[#0a0a0a]/95 backdrop-blur border-b border-white/8">
         <div className="max-w-6xl mx-auto px-4 py-3 flex items-center gap-4">
-          <button
-            onClick={() => navigate("/dashboard")}
+          <button type="button" onClick={() => navigate("/dashboard")}
             className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors text-sm"
           >
             <ArrowLeft className="w-4 h-4" />
@@ -529,11 +647,12 @@ export default function UserManagement() {
 
       {/* Stats bar */}
       <div className="max-w-6xl mx-auto px-4 py-4">
-        <div className="grid grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-5 gap-3 mb-6">
           {[
             { label: "Total Accounts", value: rawUsers.length },
             { label: "Owners", value: rawUsers.filter((u) => u.role === "owner").length },
             { label: "Admins", value: rawUsers.filter((u) => u.role === "admin").length },
+            { label: "Handicappers", value: rawUsers.filter((u) => u.role === "handicapper").length },
             { label: "Active Access", value: rawUsers.filter((u) => u.hasAccess).length },
           ].map((stat) => (
             <div key={stat.label} className="bg-white/4 border border-white/8 rounded-lg px-4 py-3">
@@ -542,6 +661,9 @@ export default function UserManagement() {
             </div>
           ))}
         </div>
+
+        {/* ── Metrics Panel ─────────────────────────────────────────────── */}
+        <MetricsPanel />
 
         {/* Search bar */}
         <div className="mb-4 relative">
@@ -556,8 +678,7 @@ export default function UserManagement() {
             className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-9 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:border-white/25 transition-colors"
           />
           {searchQuery && (
-            <button
-              onClick={() => setSearchQuery("")}
+            <button type="button" onClick={() => setSearchQuery("")}
               className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
             >
               <X className="w-3.5 h-3.5" />
@@ -569,8 +690,7 @@ export default function UserManagement() {
         {users.length !== rawUsers.length && (
           <div className="mb-3 flex items-center gap-2 text-xs text-zinc-400">
             <span>Showing <span className="text-white font-semibold">{users.length}</span> of <span className="text-white font-semibold">{rawUsers.length}</span> accounts</span>
-            <button
-              onClick={() => {
+            <button type="button" onClick={() => {
                 setSearchQuery("");
                 setCols({
                   username: defaultColState(), email: defaultColState(), role: defaultColState(),
@@ -698,14 +818,12 @@ export default function UserManagement() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => openEdit(user)}
+                        <button type="button" onClick={() => openEdit(user)}
                           className="p-1.5 rounded hover:bg-white/8 text-zinc-400 hover:text-white transition-colors"
                         >
                           <Pencil className="w-3.5 h-3.5" />
                         </button>
-                        <button
-                          onClick={() => forceLogoutUserMutation.mutate({ id: user.id })}
+                        <button type="button" onClick={() => forceLogoutUserMutation.mutate({ id: user.id })}
                           className="p-1.5 rounded hover:bg-orange-500/15 text-zinc-400 hover:text-orange-400 transition-colors"
                           disabled={user.id === appUser?.id || forceLogoutUserMutation.isPending}
                           title="Force logout this user"
@@ -717,8 +835,7 @@ export default function UserManagement() {
                          * Users cannot disconnect their own Discord — this is admin-only.
                          * Logs CHECKPOINT:ADMIN_DISCORD_DISCONNECT on the server. */}
                         {user.discordId && (
-                          <button
-                            onClick={() => {
+                          <button type="button" onClick={() => {
                               if (confirm(`Unlink Discord @${user.discordUsername ?? user.discordId} from ${user.username}?\n\nThis cannot be undone by the user — only you can re-link it.`)) {
                                 console.log(`[UserMgmt] ADMIN_DISCORD_DISCONNECT.INITIATED: userId=${user.id} username=${user.username} discordUsername=${user.discordUsername}`);
                                 disconnectDiscordMutation.mutate({ id: user.id });
@@ -734,8 +851,7 @@ export default function UserManagement() {
                             </svg>
                           </button>
                         )}
-                        <button
-                          onClick={() => setDeleteConfirm(user)}
+                        <button type="button" onClick={() => setDeleteConfirm(user)}
                           className="p-1.5 rounded hover:bg-red-500/15 text-zinc-400 hover:text-red-400 transition-colors"
                           disabled={user.id === appUser?.id}
                         >
@@ -795,9 +911,7 @@ export default function UserManagement() {
                   placeholder={editUser ? "••••••••" : "Min 8 characters"}
                   className="bg-white/5 border-white/10 text-white placeholder:text-zinc-600 pr-10"
                 />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((v) => !v)}
+                <button type="button" onClick={() => setShowPassword((v) => !v)}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-500 hover:text-zinc-300 transition-colors"
                   tabIndex={-1}
                   aria-label={showPassword ? "Hide password" : "Show password"}
@@ -816,6 +930,7 @@ export default function UserManagement() {
                   <SelectContent className="bg-[#1a1a1a] border-white/10">
                     <SelectItem value="owner">Owner</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="handicapper">Handicapper</SelectItem>
                     <SelectItem value="user">User</SelectItem>
                   </SelectContent>
                 </Select>

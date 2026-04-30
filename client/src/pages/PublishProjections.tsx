@@ -809,8 +809,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
         {showDeleteButton && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <button
-                disabled={deleteMutation.isPending}
+              <button type="button" disabled={deleteMutation.isPending}
                 className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all"
                 style={{ background: "rgba(239,68,68,0.12)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.35)" }}
                 title="Permanently delete this game from the database"
@@ -872,8 +871,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
 
 
         {/* Publish toggle */}
-        <button
-          onClick={handleTogglePublish}
+        <button type="button" onClick={handleTogglePublish}
           disabled={publishMutation.isPending || saving || (!game.publishedToFeed && !hasOdds)}
           className="flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold transition-all"
           style={game.publishedToFeed
@@ -1042,8 +1040,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
             <div>
               <div className="mt-2 flex items-center justify-between gap-2">
                 {hasAnyModel ? (
-                  <button
-                    onClick={handleReset}
+                  <button type="button" onClick={handleReset}
                     disabled={saving}
                     className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all"
                     style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}
@@ -1428,8 +1425,7 @@ function EditableGameCard({ game, onSaved, showDeleteButton = false }: { game: G
           <div className="px-3 pt-2 pb-3">
             <div className="flex items-center justify-between gap-2">
               {hasAnyModel ? (
-                <button
-                  onClick={handleReset}
+                <button type="button" onClick={handleReset}
                   disabled={saving}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all"
                   style={{ background: "rgba(239,68,68,0.1)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}
@@ -1877,8 +1873,7 @@ export default function PublishProjections() {
         <div className="relative flex items-center px-4 py-2 max-w-5xl mx-auto">
 
           {/* Back button */}
-          <button
-            onClick={() => setLocation("/dashboard")}
+          <button type="button" onClick={() => setLocation("/dashboard")}
             className="p-1.5 rounded-lg transition-colors hover:bg-white/10 mr-2 flex-shrink-0"
           >
             <ChevronLeft size={18} style={{ color: "hsl(var(--muted-foreground))" }} />
@@ -1950,8 +1945,7 @@ export default function PublishProjections() {
         {/* Date navigation row */}
         <div className="px-4 pb-1.5 max-w-5xl mx-auto flex items-center gap-2">
           {/* Prev day */}
-          <button
-            onClick={() => setGameDate(d => addDays(d, -1))}
+          <button type="button" onClick={() => setGameDate(d => addDays(d, -1))}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0"
           >
             <ChevronLeft size={14} style={{ color: "hsl(var(--muted-foreground))" }} />
@@ -1973,16 +1967,14 @@ export default function PublishProjections() {
           </div>
 
           {/* Next day */}
-          <button
-            onClick={() => setGameDate(d => addDays(d, 1))}
+          <button type="button" onClick={() => setGameDate(d => addDays(d, 1))}
             className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 flex-shrink-0"
           >
             <ChevronRight size={14} style={{ color: "hsl(var(--muted-foreground))" }} />
           </button>
 
           {/* Refresh Now button — sport-aware */}
-          <button
-            onClick={handleRefreshNow}
+          <button type="button" onClick={handleRefreshNow}
             disabled={isRefreshing || triggerRefreshMutation.isPending || triggerNbaModelSyncMutation.isPending}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all flex-shrink-0"
             style={isRefreshing || triggerRefreshMutation.isPending || triggerNbaModelSyncMutation.isPending
@@ -2007,8 +1999,7 @@ export default function PublishProjections() {
         <div className="px-4 pb-1 max-w-5xl mx-auto flex items-center gap-2">
 
           {/* MLB button — primary sport, leftmost */}
-          <button
-            onClick={() => setSelectedSport("MLB")}
+          <button type="button" onClick={() => setSelectedSport("MLB")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
             style={selectedSport === "MLB"
               ? { background: "rgba(0,45,114,0.25)", color: "#E31837", border: "1px solid rgba(227,24,55,0.5)" }
@@ -2025,8 +2016,7 @@ export default function PublishProjections() {
             MLB
           </button>
           {/* NHL button */}
-          <button
-            onClick={() => setSelectedSport("NHL")}
+          <button type="button" onClick={() => setSelectedSport("NHL")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
             style={selectedSport === "NHL"
               ? { background: "rgba(0,100,200,0.18)", color: "#0099e6", border: "1px solid rgba(0,100,200,0.5)" }
@@ -2043,8 +2033,7 @@ export default function PublishProjections() {
             NHL
           </button>
           {/* NBA button */}
-          <button
-            onClick={() => setSelectedSport("NBA")}
+          <button type="button" onClick={() => setSelectedSport("NBA")}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold transition-all"
             style={selectedSport === "NBA"
               ? { background: "rgba(200,16,46,0.15)", color: "#C8102E", border: "1px solid rgba(200,16,46,0.5)" }
@@ -2269,8 +2258,7 @@ export default function PublishProjections() {
                         )}
                       </div>
                     )}
-                    <button
-                      onClick={() => checkGoaliesMutation.mutate()}
+                    <button type="button" onClick={() => checkGoaliesMutation.mutate()}
                       disabled={checkGoaliesMutation.isPending}
                       className="flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold transition-all"
                       style={checkGoaliesMutation.isPending
