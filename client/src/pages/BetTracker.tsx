@@ -1544,9 +1544,172 @@ export default function BetTracker() {
     invalidate();
   }, [utils, invalidate]);
 
-  const createMut    = trpc.betTracker.create.useMutation({ onSuccess: invalidate });
-  const updateMut    = trpc.betTracker.update.useMutation({ onSuccess: invalidate });
-  const deleteMut    = trpc.betTracker.delete.useMutation({ onSuccess: invalidate });
+  // ── IntersectionObserver sentinel — auto-fetches next page when scrolled into view ──
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = loadMoreRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting && paginatedQuery.hasNextPage && !paginatedQuery.isFetchingNextPage) {
+          console.log("[BetTracker][STEP] IntersectionObserver: sentinel visible — fetching next page");
+          paginatedQuery.fetchNextPage();
+        }
+      },
+      { rootMargin: "200px" } // pre-load 200px before sentinel is visible
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [paginatedQuery.hasNextPage, paginatedQuery.isFetchingNextPage, paginatedQuery.fetchNextPage]);
+
+  // ── Prefetch helper — builds query input for a given sport+dateRange combination ──
+  const buildPrefetchInput = useCallback((sport: SportOrAll, range: typeof dateRange) => {
+    const _today = todayPt();
+    let dFrom: string | undefined;
+    let dTo:   string | undefined;
+    if (range === "TODAY")  { dFrom = _today; dTo = _today; }
+    else if (range === "L7")  { dFrom = subtractDays(_today, 6);  dTo = _today; }
+    else if (range === "L14") { dFrom = subtractDays(_today, 13); dTo = _today; }
+    else if (range === "1M")  { dFrom = subtractDays(_today, 29); dTo = _today; }
+    else if (range === "SEASON") {
+      const start = { MLB: "2026-03-25", NHL: "2025-10-04", NBA: "2025-10-22", NCAAM: "2025-11-04", ALL: "2025-10-04" }[sport] ?? "2025-10-04";
+      dFrom = start; dTo = _today;
+    }
+    const _isHistorical = range !== "TODAY" && range !== "SEASON" && dTo !== undefined && dTo < _today;
+    return {
+      sport:        sport === "ALL" ? undefined : (sport as "MLB" | "NHL" | "NBA" | "NCAAM" | "NFL" | "CUSTOM"),
+      gameDate:     undefined,
+      dateFrom:     range !== "ALL_TIME" ? dFrom : undefined,
+      dateTo:       range !== "ALL_TIME" ? dTo   : undefined,
+      result:       filterResult || undefined,
+      targetUserId: effectiveUserId,
+      unitSize:     unitSize > 0 ? unitSize : 100,
+      limit:        50,
+      isHistorical: _isHistorical,
+    };
+  }, [filterResult, effectiveUserId, unitSize]);
+
+  const handlePrefetch = useCallback((sport: SportOrAll, range: typeof dateRange) => {
+    const input = buildPrefetchInput(sport, range);
+    // prefetchInfinite only needs the input key; staleTime is respected from existing cache
+    utils.betTracker.listWithStatsPaginated.prefetchInfinite(input, {
+      pages: 1,
+      getNextPageParam: (lastPage: { nextCursor: string | null }) => lastPage.nextCursor ?? undefined,
+    }).catch(() => {}); // fire-and-forget, never throw
+  }, [utils, buildPrefetchInput]);
+
+  function _isHistoricalInput(input: { dateTo?: string }): boolean {
+    const _today = todayPt();
+    return !!(input.dateTo && input.dateTo < _today);
+  }
+
+  const createMut    = trpc.betTracker.create.useMutation({
+    // ── Optimistic create: insert bet into cache immediately before server confirms ──
+    onMutate: async (newBet) => {
+      await utils.betTracker.listWithStatsPaginated.cancel();
+      const previousData = utils.betTracker.listWithStatsPaginated.getInfiniteData(paginatedQueryInput);
+      utils.betTracker.listWithStatsPaginated.setInfiniteData(paginatedQueryInput, (old) => {
+        if (!old) return old;
+        const optimisticBet = {
+          id: -Date.now(), // temp negative ID
+          ...newBet,
+          result: "PENDING" as const,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          userId: effectiveUserId ?? 0,
+          // enrichment fields (all nullable — server will fill on settle)
+          awayScore: null, homeScore: null, gameStatus: null,
+          awayAbbrev: newBet.awayTeam ?? null, homeAbbrev: newBet.homeTeam ?? null,
+          anGameId: newBet.anGameId ?? null,
+          awayLogo: null, homeLogo: null,
+          awayFull: null, homeFull: null,
+          awayNickname: null, homeNickname: null,
+          awayColor: null, homeColor: null,
+          gameTime: null, startUtc: null,
+          // required non-null fields with defaults
+          notes: newBet.notes ?? null,
+          market: newBet.market ?? null,
+          betType: null,
+          wagerType: newBet.wagerType ?? null,
+          timeframe: newBet.timeframe ?? null,
+          riskUnits: newBet.riskUnits ?? null,
+          toWinUnits: newBet.toWinUnits ?? null,
+          lineMovement: null,
+          gradedAt: null,
+          isParlay: null,
+          parlayLegs: null,
+          pick: "",
+        } as unknown as typeof old.pages[0]['bets'][0];
+        return {
+          ...old,
+          pages: old.pages.map((page, i) =>
+            i === 0
+              ? { ...page, bets: [optimisticBet, ...page.bets] }
+              : page
+          ),
+        };
+      });
+      return { previousData };
+    },
+    onError: (_err, _newBet, context: any) => {
+      // Rollback on error
+      if (context?.previousData) {
+        utils.betTracker.listWithStatsPaginated.setInfiniteData(paginatedQueryInput, context.previousData);
+      }
+    },
+    onSettled: () => invalidate(),
+  });
+  const updateMut    = trpc.betTracker.update.useMutation({
+    // ── Optimistic update: apply result/notes change immediately ──
+    onMutate: async (updated) => {
+      await utils.betTracker.listWithStatsPaginated.cancel();
+      const previousData = utils.betTracker.listWithStatsPaginated.getInfiniteData(paginatedQueryInput);
+      utils.betTracker.listWithStatsPaginated.setInfiniteData(paginatedQueryInput, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map(page => ({
+            ...page,
+            bets: page.bets.map(b =>
+              b.id === updated.id ? { ...b, ...updated } : b
+            ),
+          })),
+        } as typeof old;
+      });
+      return { previousData };
+    },
+    onError: (_err, _updated, context: any) => {
+      if (context?.previousData) {
+        utils.betTracker.listWithStatsPaginated.setInfiniteData(paginatedQueryInput, context.previousData);
+      }
+    },
+    onSettled: () => invalidate(),
+  });
+  const deleteMut    = trpc.betTracker.delete.useMutation({
+    // ── Optimistic delete: remove bet from cache immediately ──
+    onMutate: async ({ id }) => {
+      await utils.betTracker.listWithStatsPaginated.cancel();
+      const previousData = utils.betTracker.listWithStatsPaginated.getInfiniteData(paginatedQueryInput);
+      utils.betTracker.listWithStatsPaginated.setInfiniteData(paginatedQueryInput, (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          pages: old.pages.map(page => ({
+            ...page,
+            bets: page.bets.filter((b: { id: number }) => b.id !== id),
+          })),
+        };
+      });
+      return { previousData };
+    },
+    onError: (_err, _vars, context: any) => {
+      if (context?.previousData) {
+        utils.betTracker.listWithStatsPaginated.setInfiniteData(paginatedQueryInput, context.previousData);
+      }
+    },
+    onSettled: () => invalidate(),
+  });
   const submitRequestMut = trpc.betTracker.submitEditRequest.useMutation({ onSuccess: invalidateLogs });
   const reviewMut    = trpc.betTracker.reviewEditRequest.useMutation({ onSuccess: invalidateLogs });
   const autoGradeMut = trpc.betTracker.autoGrade.useMutation({
@@ -1960,9 +2123,10 @@ export default function BetTracker() {
         {/* Sport tabs: scrollable on mobile so all tabs are always visible */}
         <div className="w-full overflow-x-auto scrollbar-none">
           <div className="flex gap-0 px-4 sm:px-6 lg:px-8 min-w-max sm:min-w-0">
-            {(["ALL", ...SPORTS] as SportOrAll[]).map(s => (
+             {(["ALL", ...SPORTS] as SportOrAll[]).map(s => (
               <button type="button" key={s}
                 onClick={() => setActiveSport(s)}
+                onMouseEnter={() => s !== activeSport && handlePrefetch(s, dateRange)}
                 className={`flex-shrink-0 px-4 py-2.5 text-xs font-bold tracking-wider transition-all border-b-2 ${
                   activeSport === s ? "border-emerald-400 text-emerald-400" : "border-transparent text-zinc-500 hover:text-zinc-300"
                 }`}
@@ -2001,6 +2165,7 @@ export default function BetTracker() {
                   setFilterAllTime(r === "ALL_TIME");
                   console.log(`[BetTracker][INPUT] dateRange changed to ${r}`);
                 }}
+                onMouseEnter={() => r !== dateRange && handlePrefetch(activeSport, r)}
                 className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
                   dateRange === r
                     ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
@@ -2612,26 +2777,16 @@ export default function BetTracker() {
                   </div>
                 )}
 
-                {/* ── Load More — infinite scroll pagination ── */}
-                {!listQuery.isLoading && hasNextPage && (
-                  <div className="flex justify-center pt-2 pb-1">
-                    <button
-                      type="button"
-                      onClick={() => paginatedQuery.fetchNextPage()}
-                      disabled={isFetchingNextPage}
-                      className="flex items-center gap-2 px-5 py-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs font-bold tracking-wider text-zinc-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isFetchingNextPage ? (
-                        <>
-                          <div className="w-3 h-3 border border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                          LOADING…
-                        </>
-                      ) : (
-                        <>LOAD MORE BETS</>
-                      )}
-                    </button>
-                  </div>
-                )}
+                {/* ── IntersectionObserver sentinel — auto-triggers next page fetch when scrolled into view ── */}
+                {/* Placed 200px before list end; observer pre-loads next page before user reaches bottom */}
+                <div ref={loadMoreRef} className="flex justify-center py-4 min-h-[1px]">
+                  {isFetchingNextPage && (
+                    <div className="flex items-center gap-2 text-xs text-zinc-500">
+                      <div className="w-3 h-3 border border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                      Loading more bets…
+                    </div>
+                  )}
+                </div>
               </>
             )}
 

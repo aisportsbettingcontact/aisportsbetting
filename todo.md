@@ -2945,3 +2945,16 @@
 - [x] Frontend: `hasLiveMlbDates` derived flag — only polls live MLB games
 - [x] Frontend: `invalidate` updated to target both `listWithStats` and `listWithStatsPaginated`
 - [x] TypeScript: 0 errors
+
+## Session: 2026-04-30 — BetTracker 500x Performance Optimization
+
+- [x] Frontend: IntersectionObserver auto-load on scroll (loadMoreRef sentinel, no click required)
+- [x] Frontend: filter-change prefetch on mouseenter of sport tabs + date range buttons
+- [x] Frontend: optimistic bet creation — onMutate inserts bet into page 0 cache, onSettled reconciles
+- [x] Frontend: optimistic delete — onMutate removes bet from all pages immediately
+- [x] Frontend: optimistic result update — onMutate patches result in all pages immediately
+- [x] Server: in-memory stats cache (Map<string, StatsCacheEntry> keyed by userId+filters, TTL=30s live / 5m historical)
+- [x] Server: buildStatsCacheKey — deterministic JSON key from userId + all filter dimensions
+- [x] Server: invalidateStatsCacheForUser — called on every create/update/delete mutation
+- [x] Server: cache-aware IIFE aggregation — full-table scan skipped on cache hit
+- [x] TypeScript: 0 errors

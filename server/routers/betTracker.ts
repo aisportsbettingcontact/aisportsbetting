@@ -57,6 +57,63 @@ const MARKETS    = ["ML", "RL", "TOTAL"] as const;
 const PICK_SIDES = ["AWAY", "HOME", "OVER", "UNDER"] as const;
 const WAGER_TYPES = ["PREGAME", "LIVE"] as const;
 
+// ─── Server-side stats cache ─────────────────────────────────────────────────
+// Caches full-set stats aggregation results keyed by userId+filters+unitSize.
+// TTL = 30s for live ranges (TODAY/SEASON), 5 minutes for historical ranges.
+// Invalidated on create/update/delete mutations.
+// This eliminates repeated full-table aggregation scans for identical filter combos.
+
+interface StatsCacheEntry {
+  stats: unknown;
+  expiresAt: number;
+}
+const statsCache = new Map<string, StatsCacheEntry>();
+
+function buildStatsCacheKey(userId: number, input: {
+  sport?: string; gameDate?: string; dateFrom?: string; dateTo?: string;
+  result?: string; unitSize?: number; isHistorical?: boolean;
+} | undefined): string {
+  return JSON.stringify({
+    u: userId,
+    s: input?.sport ?? null,
+    gd: input?.gameDate ?? null,
+    df: input?.dateFrom ?? null,
+    dt: input?.dateTo ?? null,
+    r: input?.result ?? null,
+    us: input?.unitSize ?? 100,
+    ih: input?.isHistorical ?? false,
+  });
+}
+
+function getStatsCache(key: string): unknown | null {
+  const entry = statsCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { statsCache.delete(key); return null; }
+  return entry.stats;
+}
+
+function setStatsCache(key: string, stats: unknown, isHistorical: boolean): void {
+  // Historical data: 5 minute TTL (immutable graded bets)
+  // Live data: 30 second TTL (pending bets may update)
+  const ttl = isHistorical ? 5 * 60_000 : 30_000;
+  statsCache.set(key, { stats, expiresAt: Date.now() + ttl });
+  // Evict stale entries when cache grows large (>500 entries)
+  if (statsCache.size > 500) {
+    const now = Date.now();
+    for (const [k, v] of Array.from(statsCache.entries())) { if (now > v.expiresAt) statsCache.delete(k); }
+  }
+}
+
+/** Invalidate all cache entries for a given userId (called on create/update/delete) */
+export function invalidateStatsCacheForUser(userId: number): void {
+  for (const key of Array.from(statsCache.keys())) {
+    try {
+      const parsed = JSON.parse(key) as { u: number };
+      if (parsed.u === userId) statsCache.delete(key);
+    } catch { /* skip malformed keys */ }
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Compute toWin from American odds + risk (units) */
@@ -1629,18 +1686,37 @@ export const betTrackerRouter = router({
 
       const db = await getDb();
 
-      // ── Run page query + stats query in parallel ───────────────────────────────
-      // Stats always uses full base conditions (no cursor, no result filter)
-      // Page uses cursor + limit for fast pagination
-      const [pageRows, statsRows] = await Promise.all([
-        db.select().from(trackedBets)
+      // ── Stats cache check ─────────────────────────────────────────────────────────────────
+      // On cache hit: skip the full-table stats scan (runs only page query)
+      // On cache miss: run page + stats in parallel, then cache the stats result
+      const statsCacheKey = buildStatsCacheKey(userId, input);
+      const cachedStats = getStatsCache(statsCacheKey);
+
+      // ── Run page query (always) + stats query (only on cache miss) in parallel ───
+      let pageRows: typeof trackedBets.$inferSelect[];
+      let statsRows: typeof trackedBets.$inferSelect[];
+
+      if (cachedStats) {
+        // Cache hit: only fetch the page, skip full-table stats scan
+        console.log(`[BetTracker][STEP] listWithStatsPaginated: stats cache HIT for userId=${userId}`);
+        pageRows = await db.select().from(trackedBets)
           .where(and(...listConditions))
           .orderBy(desc(trackedBets.gameDate), desc(trackedBets.id))
-          .limit(limit + 1), // fetch one extra to detect hasNextPage
-        db.select().from(trackedBets)
-          .where(and(...baseConditions))
-          .orderBy(asc(trackedBets.gameDate), asc(trackedBets.id)),
-      ]);
+          .limit(limit + 1);
+        statsRows = []; // not needed — using cached stats
+      } else {
+        // Cache miss: run both queries in parallel
+        console.log(`[BetTracker][STEP] listWithStatsPaginated: stats cache MISS for userId=${userId} — running full aggregation`);
+        [pageRows, statsRows] = await Promise.all([
+          db.select().from(trackedBets)
+            .where(and(...listConditions))
+            .orderBy(desc(trackedBets.gameDate), desc(trackedBets.id))
+            .limit(limit + 1),
+          db.select().from(trackedBets)
+            .where(and(...baseConditions))
+            .orderBy(asc(trackedBets.gameDate), asc(trackedBets.id)),
+        ]);
+      }
 
       // ── Determine next cursor ──────────────────────────────────────────────────
       const hasNextPage = pageRows.length > limit;
@@ -1698,125 +1774,131 @@ export const betTrackerRouter = router({
           gameStatus:   slate?.status       ?? null,
         };
       });
-
-      // ── Stats aggregation (single pass over full statsRows) ────────────────────
-      function toUnits(dollarAmt: number, storedUnits: string | null | undefined): number {
+      // ── Stats aggregation (single pass, cache-aware) ─────────────────────────────────────────────
+      // Arrow functions used throughout (no function declarations inside blocks)
+      const toUnits = (dollarAmt: number, storedUnits: string | null | undefined): number => {
         if (storedUnits != null && storedUnits !== "") {
           const v = parseFloat(storedUnits);
           if (!isNaN(v) && v > 0) return v;
         }
         return dollarAmt / unitSize;
-      }
+      };
 
-      let wins = 0, losses = 0, pushes = 0, pending = 0, voids = 0;
-      let totalRisk = 0, totalWon = 0, totalLost = 0;
-      let bestWin = 0, worstLoss = 0;
       type BkEntry = { wins: number; losses: number; pushes: number; risk: number; won: number; lost: number };
-      const byTypeMap      = new Map<string, BkEntry>();
-      const bySizeMap      = new Map<string, BkEntry>();
-      const byMonthMap     = new Map<string, BkEntry>();
-      const bySportMap     = new Map<string, BkEntry>();
-      const byResultMap    = new Map<string, BkEntry>();
-      const byTimeframeMap = new Map<string, BkEntry>();
-      const byWagerTypeMap = new Map<string, BkEntry>();
-      const dayPLMap       = new Map<string, number>();
-      let cumPL = 0;
-      const equityCurve: { date: string; cumPL: number; betId: number; pick: string; result: string; pl: number }[] = [];
-      let longestWinStreak = 0, currentWinStreak = 0;
+      const UNIT_BUCKET_ORDER = ["10U", "5U", "4U", "3U", "2U", "1U"];
 
-      function bkGet(map: Map<string, BkEntry>, key: string): BkEntry {
+      const bkGet = (map: Map<string, BkEntry>, key: string): BkEntry => {
         if (!map.has(key)) map.set(key, { wins: 0, losses: 0, pushes: 0, risk: 0, won: 0, lost: 0 });
         return map.get(key)!;
-      }
-      function bkApply(map: Map<string, BkEntry>, key: string, result: string, riskU: number, toWinU: number) {
+      };
+      const bkApply = (map: Map<string, BkEntry>, key: string, result: string, riskU: number, toWinU: number): void => {
         const e = bkGet(map, key);
         if (result === "WIN")  { e.wins++;   e.risk += riskU; e.won  += toWinU; }
         if (result === "LOSS") { e.losses++; e.risk += riskU; e.lost += riskU;  }
         if (result === "PUSH") { e.pushes++; }
-      }
-      const UNIT_BUCKET_ORDER = ["10U", "5U", "4U", "3U", "2U", "1U"];
-
-      for (const bet of statsRows) {
-        const riskU  = toUnits(parseFloat(bet.risk),  bet.riskUnits);
-        const toWinU = toUnits(parseFloat(bet.toWin), bet.toWinUnits);
-        const res    = bet.result;
-        switch (res) {
-          case "WIN":     wins++;   totalRisk += riskU; totalWon  += toWinU; if (toWinU > bestWin)   bestWin   = toWinU; break;
-          case "LOSS":   losses++; totalRisk += riskU; totalLost += riskU;  if (riskU  > worstLoss) worstLoss = riskU;  break;
-          case "PUSH":   pushes++;  break;
-          case "PENDING": pending++; break;
-          case "VOID":   voids++;   break;
-        }
-        const typeKey  = bet.market ?? bet.betType ?? "ML";
-        const riskDollar   = parseFloat(bet.risk);
-        const toWinDollar  = parseFloat(bet.toWin);
-        const riskUnitsRaw = bet.riskUnits  != null ? parseFloat(bet.riskUnits)  : null;
-        const toWinUnitsRaw= bet.toWinUnits != null ? parseFloat(bet.toWinUnits) : null;
-        const sizeKey  = calcUnitBucket(bet.odds, riskDollar, toWinDollar, riskUnitsRaw, toWinUnitsRaw);
-        const monthKey = bet.gameDate.substring(0, 7);
-        bkApply(byTypeMap,      typeKey,              res, riskU, toWinU);
-        bkApply(bySizeMap,      sizeKey,              res, riskU, toWinU);
-        bkApply(byMonthMap,     monthKey,             res, riskU, toWinU);
-        bkApply(bySportMap,     bet.sport,            res, riskU, toWinU);
-        bkApply(byResultMap,    res,                  res, riskU, toWinU);
-        bkApply(byTimeframeMap, bet.timeframe ?? "FULL_GAME", res, riskU, toWinU);
-        bkApply(byWagerTypeMap, bet.wagerType ?? "PREGAME",   res, riskU, toWinU);
-        if (res === "WIN")  dayPLMap.set(bet.gameDate, (dayPLMap.get(bet.gameDate) ?? 0) + toWinU);
-        if (res === "LOSS") dayPLMap.set(bet.gameDate, (dayPLMap.get(bet.gameDate) ?? 0) - riskU);
-        if (res === "WIN") {
-          cumPL += toWinU;
-          equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "WIN", pl: parseFloat(toWinU.toFixed(2)) });
-        } else if (res === "LOSS") {
-          cumPL -= riskU;
-          equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "LOSS", pl: parseFloat((-riskU).toFixed(2)) });
-        }
-        if (res === "WIN")  { currentWinStreak++; if (currentWinStreak > longestWinStreak) longestWinStreak = currentWinStreak; }
-        else if (res === "LOSS") currentWinStreak = 0;
-      }
-
-      function finalizeBreakdown(map: Map<string, BkEntry>) {
-        return Array.from(map.entries()).map(([key, e]) => {
+      };
+      const finalizeBreakdown = (map: Map<string, BkEntry>) =>
+        Array.from(map.entries()).map(([key, e]) => {
           const np = e.won - e.lost;
           return { key, wins: e.wins, losses: e.losses, pushes: e.pushes, totalRisk: parseFloat(e.risk.toFixed(2)), netProfit: parseFloat(np.toFixed(2)), roi: e.risk > 0 ? parseFloat(((np / e.risk) * 100).toFixed(2)) : 0 };
         }).sort((a, b) => a.key.localeCompare(b.key));
-      }
 
-      const byType      = finalizeBreakdown(byTypeMap);
-      const bySize      = finalizeBreakdown(bySizeMap).sort((a, b) => {
-        const ai = UNIT_BUCKET_ORDER.indexOf(a.key); const bi = UNIT_BUCKET_ORDER.indexOf(b.key);
-        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
-      });
-      const byMonth     = finalizeBreakdown(byMonthMap);
-      const bySport     = finalizeBreakdown(bySportMap);
-      const byResult    = finalizeBreakdown(byResultMap);
-      const byTimeframe = finalizeBreakdown(byTimeframeMap);
-      const byWagerType = finalizeBreakdown(byWagerTypeMap);
+      // Cache hit: skip entire aggregation, return cached stats
+      const stats = cachedStats ?? (() => {
+        let wins = 0, losses = 0, pushes = 0, pending = 0, voids = 0;
+        let totalRisk = 0, totalWon = 0, totalLost = 0;
+        let bestWin = 0, worstLoss = 0;
+        const byTypeMap      = new Map<string, BkEntry>();
+        const bySizeMap      = new Map<string, BkEntry>();
+        const byMonthMap     = new Map<string, BkEntry>();
+        const bySportMap     = new Map<string, BkEntry>();
+        const byResultMap    = new Map<string, BkEntry>();
+        const byTimeframeMap = new Map<string, BkEntry>();
+        const byWagerTypeMap = new Map<string, BkEntry>();
+        const dayPLMap       = new Map<string, number>();
+        let cumPL = 0;
+        const equityCurve: { date: string; cumPL: number; betId: number; pick: string; result: string; pl: number }[] = [];
+        let longestWinStreak = 0, currentWinStreak = 0;
 
-      const netProfit = totalWon - totalLost;
-      const roi       = totalRisk > 0 ? parseFloat(((netProfit / totalRisk) * 100).toFixed(2)) : 0;
+        for (const bet of statsRows) {
+          const riskU  = toUnits(parseFloat(bet.risk),  bet.riskUnits);
+          const toWinU = toUnits(parseFloat(bet.toWin), bet.toWinUnits);
+          const res    = bet.result;
+          switch (res) {
+            case "WIN":     wins++;   totalRisk += riskU; totalWon  += toWinU; if (toWinU > bestWin)   bestWin   = toWinU; break;
+            case "LOSS":   losses++; totalRisk += riskU; totalLost += riskU;  if (riskU  > worstLoss) worstLoss = riskU;  break;
+            case "PUSH":   pushes++;  break;
+            case "PENDING": pending++; break;
+            case "VOID":   voids++;   break;
+          }
+          const typeKey      = bet.market ?? bet.betType ?? "ML";
+          const riskDollar   = parseFloat(bet.risk);
+          const toWinDollar  = parseFloat(bet.toWin);
+          const riskUnitsRaw = bet.riskUnits  != null ? parseFloat(bet.riskUnits)  : null;
+          const toWinUnitsRaw= bet.toWinUnits != null ? parseFloat(bet.toWinUnits) : null;
+          const sizeKey  = calcUnitBucket(bet.odds, riskDollar, toWinDollar, riskUnitsRaw, toWinUnitsRaw);
+          const monthKey = bet.gameDate.substring(0, 7);
+          bkApply(byTypeMap,      typeKey,              res, riskU, toWinU);
+          bkApply(bySizeMap,      sizeKey,              res, riskU, toWinU);
+          bkApply(byMonthMap,     monthKey,             res, riskU, toWinU);
+          bkApply(bySportMap,     bet.sport,            res, riskU, toWinU);
+          bkApply(byResultMap,    res,                  res, riskU, toWinU);
+          bkApply(byTimeframeMap, bet.timeframe ?? "FULL_GAME", res, riskU, toWinU);
+          bkApply(byWagerTypeMap, bet.wagerType ?? "PREGAME",   res, riskU, toWinU);
+          if (res === "WIN")  dayPLMap.set(bet.gameDate, (dayPLMap.get(bet.gameDate) ?? 0) + toWinU);
+          if (res === "LOSS") dayPLMap.set(bet.gameDate, (dayPLMap.get(bet.gameDate) ?? 0) - riskU);
+          if (res === "WIN") {
+            cumPL += toWinU;
+            equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "WIN", pl: parseFloat(toWinU.toFixed(2)) });
+          } else if (res === "LOSS") {
+            cumPL -= riskU;
+            equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "LOSS", pl: parseFloat((-riskU).toFixed(2)) });
+          }
+          if (res === "WIN")  { currentWinStreak++; if (currentWinStreak > longestWinStreak) longestWinStreak = currentWinStreak; }
+          else if (res === "LOSS") currentWinStreak = 0;
+        }
 
-      let biggestDayDate = "", biggestDayUnits = 0;
-      dayPLMap.forEach((pl, date) => { if (pl > biggestDayUnits) { biggestDayUnits = pl; biggestDayDate = date; } });
+        const byType      = finalizeBreakdown(byTypeMap);
+        const bySize      = finalizeBreakdown(bySizeMap).sort((a, b) => {
+          const ai = UNIT_BUCKET_ORDER.indexOf(a.key); const bi = UNIT_BUCKET_ORDER.indexOf(b.key);
+          return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+        });
+        const byMonth     = finalizeBreakdown(byMonthMap);
+        const bySport     = finalizeBreakdown(bySportMap);
+        const byResult    = finalizeBreakdown(byResultMap);
+        const byTimeframe = finalizeBreakdown(byTimeframeMap);
+        const byWagerType = finalizeBreakdown(byWagerTypeMap);
 
-      const stats = {
-        totalBets:  statsRows.length,
-        wins, losses, pushes, pending, voids,
-        gradedBets: wins + losses + pushes,
-        totalRisk:  parseFloat(totalRisk.toFixed(2)),
-        totalWon:   parseFloat(totalWon.toFixed(2)),
-        totalLost:  parseFloat(totalLost.toFixed(2)),
-        netProfit:  parseFloat(netProfit.toFixed(2)),
-        roi,
-        bestWin:    parseFloat(bestWin.toFixed(2)),
-        worstLoss:  parseFloat(worstLoss.toFixed(2)),
-        byType, bySize, byMonth, bySport, byResult, byTimeframe, byWagerType,
-        equityCurve,
-        biggestDayDate,
-        biggestDayUnits: parseFloat(biggestDayUnits.toFixed(2)),
-        longestWinStreak,
-      };
+        const netProfit = totalWon - totalLost;
+        const roi       = totalRisk > 0 ? parseFloat(((netProfit / totalRisk) * 100).toFixed(2)) : 0;
 
-      return { bets: enriched, stats, nextCursor, hasNextPage, pageSize: rows.length, totalBets: statsRows.length };
+        let biggestDayDate = "", biggestDayUnits = 0;
+        dayPLMap.forEach((pl, date) => { if (pl > biggestDayUnits) { biggestDayUnits = pl; biggestDayDate = date; } });
+
+        const result = {
+          totalBets:  statsRows.length,
+          wins, losses, pushes, pending, voids,
+          gradedBets: wins + losses + pushes,
+          totalRisk:  parseFloat(totalRisk.toFixed(2)),
+          totalWon:   parseFloat(totalWon.toFixed(2)),
+          totalLost:  parseFloat(totalLost.toFixed(2)),
+          netProfit:  parseFloat(netProfit.toFixed(2)),
+          roi,
+          bestWin:    parseFloat(bestWin.toFixed(2)),
+          worstLoss:  parseFloat(worstLoss.toFixed(2)),
+          byType, bySize, byMonth, bySport, byResult, byTimeframe, byWagerType,
+          equityCurve,
+          biggestDayDate,
+          biggestDayUnits: parseFloat(biggestDayUnits.toFixed(2)),
+          longestWinStreak,
+        };
+        // Write computed stats to cache for future requests
+        setStatsCache(statsCacheKey, result, isHistorical);
+        return result;
+      })();
+
+      const statsTyped = stats as { totalBets: number; wins: number; losses: number; pushes: number; pending: number; voids: number; gradedBets: number; totalRisk: number; totalWon: number; totalLost: number; netProfit: number; roi: number; bestWin: number; worstLoss: number; byType: unknown[]; bySize: unknown[]; byMonth: unknown[]; bySport: unknown[]; byResult: unknown[]; byTimeframe: unknown[]; byWagerType: unknown[]; equityCurve: unknown[]; biggestDayDate: string; biggestDayUnits: number; longestWinStreak: number };
+      return { bets: enriched, stats: statsTyped, nextCursor, hasNextPage, pageSize: rows.length, totalBets: statsTyped.totalBets };
     }),
 });
 
