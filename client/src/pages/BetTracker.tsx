@@ -25,7 +25,7 @@ import { useAppAuth } from "@/_core/hooks/useAppAuth";
 import {
   Clock, TrendingUp, Minus, AlertCircle,
   ChevronLeft, Plus, Pencil, Trash2, CheckCircle2,
-  DollarSign, Hash, ChevronDown, Zap, RefreshCw, BarChart2,
+  DollarSign, Hash, ChevronDown, Zap, BarChart2,
   FileText, Radio, Lock,
 } from "lucide-react";
 import type { TrackedBet } from "@shared/types";
@@ -2245,20 +2245,9 @@ export default function BetTracker() {
                   </div>
                   <div className="ml-auto flex items-center gap-2 self-end pb-2">
                     <span className="text-xs text-zinc-500">{bets.length} bet{bets.length !== 1 ? "s" : ""}</span>
-                    {linescoreQuery.isFetching && (
-                      <div className="w-3 h-3 border border-emerald-500 border-t-transparent rounded-full animate-spin" title="Refreshing linescores…" />
+                    {(linescoreQuery.isFetching || autoGradeMut.isPending) && (
+                      <div className="w-3 h-3 border border-emerald-500 border-t-transparent rounded-full animate-spin" title={autoGradeMut.isPending ? "Auto-grading…" : "Refreshing linescores…"} />
                     )}
-                    <button type="button" onClick={() => {
-                        autoGradeMut.mutate({ sport: activeSport, gameDate: filterAllTime ? undefined : (filterDate || undefined) });
-                      }}
-                      disabled={autoGradeMut.isPending || enrichedBets.filter(b => b.result === "PENDING").length === 0}
-                      title="Auto-grade all pending bets using official league scores"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[11px] font-bold tracking-wider hover:bg-emerald-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                    >
-                      {autoGradeMut.isPending
-                        ? <><RefreshCw size={11} className="animate-spin" /> Grading…</>
-                        : <><Zap size={11} /> GRADE BETS</>}
-                    </button>
                   </div>
                 </div>
 

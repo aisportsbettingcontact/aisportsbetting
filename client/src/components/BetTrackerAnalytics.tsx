@@ -59,27 +59,56 @@ export type StatsData = {
 // ─── EquityChart ──────────────────────────────────────────────────────────────
 
 export function EquityChart({ points }: { points: EquityPoint[] }) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [dims, setDims] = useState({ w: 0, h: 0 });
   const [tooltip, setTooltip] = useState<{
-    x: number;
-    y: number;
+    x: number;       // pixel X of the data-point dot (relative to canvas)
+    dotY: number;    // pixel Y of the data-point dot (relative to canvas)
     point: EquityPoint;
+    flipLeft: boolean;
   } | null>(null);
 
+  // ── Responsive resize observer ──────────────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      const w = entry.contentRect.width;
+      // Dynamic height: 28% of width, clamped [160, 340]
+      const h = Math.round(Math.min(340, Math.max(160, w * 0.28)));
+      console.log(`[EquityChart][STATE] ResizeObserver: w=${w} h=${h}`);
+      setDims({ w, h });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ── Canvas draw ─────────────────────────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas || points.length === 0) return;
+    if (!canvas || points.length === 0 || dims.w === 0) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const W = canvas.offsetWidth;
-    const H = canvas.offsetHeight;
-    canvas.width = W * dpr;
-    canvas.height = H * dpr;
+    const W = dims.w;
+    const H = dims.h;
+
+    // Set physical pixel size
+    canvas.width = Math.round(W * dpr);
+    canvas.height = Math.round(H * dpr);
     ctx.scale(dpr, dpr);
 
-    const PAD = { top: 20, right: 20, bottom: 36, left: 56 };
+    // Padding: left wide enough for Y labels, bottom for X labels
+    const PAD = {
+      top: 20,
+      right: 16,
+      bottom: 34,
+      left: 58,
+    };
     const chartW = W - PAD.left - PAD.right;
     const chartH = H - PAD.top - PAD.bottom;
 
@@ -109,8 +138,8 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
       ctx.moveTo(PAD.left, y);
       ctx.lineTo(W - PAD.right, y);
       ctx.stroke();
-      ctx.fillStyle = "rgba(255,255,255,0.4)";
-      ctx.font = `10px JetBrains Mono, monospace`;
+      ctx.fillStyle = "rgba(255,255,255,0.38)";
+      ctx.font = `${Math.max(9, Math.round(W / 80))}px JetBrains Mono, monospace`;
       ctx.textAlign = "right";
       ctx.fillText(
         `${v >= 0 ? "+" : ""}${v.toFixed(1)}u`,
@@ -120,7 +149,7 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
     }
 
     // Zero line (dashed)
-    ctx.strokeStyle = "rgba(255,255,255,0.2)";
+    ctx.strokeStyle = "rgba(255,255,255,0.20)";
     ctx.lineWidth = 1;
     ctx.setLineDash([4, 4]);
     ctx.beginPath();
@@ -133,13 +162,13 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
     const lastPL = points[points.length - 1]?.cumPL ?? 0;
     const grad = ctx.createLinearGradient(0, PAD.top, 0, H - PAD.bottom);
     if (lastPL >= 0) {
-      grad.addColorStop(0, "rgba(52,211,153,0.30)");
+      grad.addColorStop(0, "rgba(52,211,153,0.28)");
       grad.addColorStop(0.7, "rgba(52,211,153,0.04)");
       grad.addColorStop(1, "rgba(52,211,153,0)");
     } else {
       grad.addColorStop(0, "rgba(239,68,68,0)");
       grad.addColorStop(0.3, "rgba(239,68,68,0.04)");
-      grad.addColorStop(1, "rgba(239,68,68,0.30)");
+      grad.addColorStop(1, "rgba(239,68,68,0.28)");
     }
     ctx.beginPath();
     ctx.moveTo(toX(0), zeroY);
@@ -168,19 +197,29 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
       ctx.fill();
     });
 
-    // X-axis date labels
-    const step = Math.max(1, Math.floor(points.length / 10));
+    // X-axis date labels — compute step from available width
+    // Minimum 52px per label to avoid clamping
+    const minLabelPx = 52;
+    const maxLabels = Math.max(2, Math.floor(chartW / minLabelPx));
+    const step = Math.max(1, Math.ceil((points.length - 1) / maxLabels));
+    const labelFontSize = Math.max(8, Math.min(10, Math.round(W / 90)));
     ctx.fillStyle = "rgba(255,255,255,0.35)";
-    ctx.font = `9px monospace`;
+    ctx.font = `${labelFontSize}px monospace`;
     ctx.textAlign = "center";
     points.forEach((p, i) => {
       if (i % step === 0 || i === points.length - 1) {
         const d = p.date.substring(5); // MM-DD
-        ctx.fillText(d, toX(i), H - PAD.bottom + 18);
+        const xPos = toX(i);
+        // Clamp label within canvas bounds
+        const clampedX = Math.max(PAD.left + 12, Math.min(W - PAD.right - 12, xPos));
+        ctx.fillText(d, clampedX, H - PAD.bottom + 16);
       }
     });
-  }, [points]);
 
+    console.log(`[EquityChart][OUTPUT] Rendered: W=${W} H=${H} points=${points.length} step=${step} maxLabels=${maxLabels}`);
+  }, [points, dims]);
+
+  // ── Mouse interaction ───────────────────────────────────────────────────────
   const handleMouseMove = useCallback(
     (e: React.MouseEvent<HTMLCanvasElement>) => {
       if (points.length === 0) return;
@@ -188,20 +227,41 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
       if (!canvas) return;
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
-      const W = canvas.offsetWidth;
-      const PAD_LEFT = 56;
-      const PAD_RIGHT = 20;
+
+      const W = dims.w;
+      const H = dims.h;
+      const PAD_LEFT = 58;
+      const PAD_RIGHT = 16;
+      const PAD_TOP = 20;
+      const PAD_BOTTOM = 34;
       const chartW = W - PAD_LEFT - PAD_RIGHT;
+      const chartH = H - PAD_TOP - PAD_BOTTOM;
+
       const idx = Math.round(
         ((mx - PAD_LEFT) / chartW) * (points.length - 1)
       );
       const clamped = Math.max(0, Math.min(points.length - 1, idx));
       const point = points[clamped];
+
+      const values = points.map((p) => p.cumPL);
+      const minV = Math.min(0, ...values);
+      const maxV = Math.max(0, ...values);
+      const range = maxV - minV || 1;
+
       const toX = (i: number) =>
         PAD_LEFT + (i / Math.max(points.length - 1, 1)) * chartW;
-      setTooltip({ x: toX(clamped), y: e.clientY - rect.top, point });
+      const toY = (v: number) =>
+        PAD_TOP + chartH - ((v - minV) / range) * chartH;
+
+      const dotX = toX(clamped);
+      const dotY = toY(point.cumPL);
+
+      // Flip tooltip to left side when near right edge (tooltip width ~180px)
+      const flipLeft = dotX + 14 + 180 > W;
+
+      setTooltip({ x: dotX, dotY, point, flipLeft });
     },
-    [points]
+    [points, dims]
   );
 
   if (points.length === 0) {
@@ -215,20 +275,24 @@ export function EquityChart({ points }: { points: EquityPoint[] }) {
   const finalPL = points[points.length - 1]?.cumPL ?? 0;
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative w-full">
       <canvas
         ref={canvasRef}
-        style={{ width: "100%", height: 200 }}
+        style={{ width: "100%", height: dims.h || 200, display: "block" }}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setTooltip(null)}
-        className="rounded-lg cursor-crosshair block"
+        className="rounded-lg cursor-crosshair"
       />
       {tooltip && (
         <div
           className="absolute z-10 pointer-events-none bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs shadow-xl min-w-[160px]"
           style={{
-            left: Math.min(tooltip.x + 14, 240),
-            top: Math.max(4, tooltip.y - 50),
+            // Position tooltip above the dot, anchored to dot X
+            left: tooltip.flipLeft
+              ? Math.max(0, tooltip.x - 174)
+              : Math.min(tooltip.x + 14, dims.w - 180),
+            // Place above the dot with 8px gap; clamp to top of chart
+            top: Math.max(4, tooltip.dotY - 82),
           }}
         >
           <div className="font-bold text-white truncate">{tooltip.point.pick}</div>
@@ -270,40 +334,56 @@ export function BreakdownPanel({
 }) {
   if (entries.length === 0) return null;
   return (
-    <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-3">
+    <div className="bg-zinc-900/60 border border-zinc-800 rounded-xl p-3">
+      {/* Panel header */}
+      <div className="flex items-center gap-1.5 mb-2.5">
         <span className="text-zinc-400">{icon}</span>
-        <span className="text-[11px] font-bold tracking-widest text-zinc-400 uppercase">
+        <span className="text-[10px] font-bold tracking-widest text-zinc-400 uppercase">
           {title}
         </span>
       </div>
-      <div className="space-y-3">
+
+      {/* Rows */}
+      <div className="space-y-2.5">
         {entries.map((e) => {
           const settled = e.wins + e.losses;
           const winPct = settled > 0 ? (e.wins / settled) * 100 : 0;
           const isPos = e.netProfit >= 0;
+
           return (
-            <div key={e.key} className="space-y-1">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-white text-xs font-bold truncate flex-1">
+            <div key={e.key}>
+              {/* Row 1: label + stats inline */}
+              <div className="flex items-baseline justify-between gap-1 flex-wrap">
+                {/* Label */}
+                <span className="text-white text-[11px] font-bold leading-tight shrink-0 mr-1">
                   {e.key}
                 </span>
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-[10px] text-zinc-500 font-mono">
-                    {e.wins}W-{e.losses}L
-                    {e.pushes > 0 ? `-${e.pushes}P` : ""}
+
+                {/* Stats cluster — right-aligned, wraps on very narrow */}
+                <div className="flex items-center gap-2 ml-auto flex-wrap justify-end">
+                  {/* W-L (WP%) */}
+                  <span className="text-[10px] text-zinc-400 font-mono whitespace-nowrap">
+                    {e.wins}W–{e.losses}L
+                    {e.pushes > 0 ? `–${e.pushes}P` : ""}{" "}
+                    <span className="text-zinc-500">
+                      ({winPct.toFixed(0)}%)
+                    </span>
                   </span>
+
+                  {/* Net P/L */}
                   <span
-                    className={`text-[10px] font-bold font-mono w-16 text-right ${
+                    className={`text-[10px] font-bold font-mono whitespace-nowrap ${
                       isPos ? "text-green-400" : "text-red-400"
                     }`}
                   >
                     {e.netProfit >= 0 ? "+" : ""}
                     {e.netProfit.toFixed(2)}u
                   </span>
+
+                  {/* ROI */}
                   <span
-                    className={`text-[10px] font-mono w-14 text-right ${
-                      isPos ? "text-green-400/70" : "text-red-400/70"
+                    className={`text-[10px] font-mono whitespace-nowrap ${
+                      isPos ? "text-green-400/75" : "text-red-400/75"
                     }`}
                   >
                     {e.roi >= 0 ? "+" : ""}
@@ -311,15 +391,14 @@ export function BreakdownPanel({
                   </span>
                 </div>
               </div>
+
               {/* Win% bar */}
-              <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+              <div className="mt-1 h-[3px] bg-zinc-800 rounded-full overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all ${
                     isPos ? "bg-green-500" : "bg-red-500"
                   }`}
-                  style={{
-                    width: `${Math.max(0, Math.min(100, winPct))}%`,
-                  }}
+                  style={{ width: `${Math.max(0, Math.min(100, winPct))}%` }}
                 />
               </div>
             </div>
@@ -333,7 +412,10 @@ export function BreakdownPanel({
 // ─── BreakdownGrid ────────────────────────────────────────────────────────────
 
 /** Remap raw server keys to human-readable display labels */
-function remapKey(dimension: "type" | "size" | "month" | "sport" | "timeframe", key: string): string {
+function remapKey(
+  dimension: "type" | "size" | "month" | "sport" | "timeframe",
+  key: string
+): string {
   if (dimension === "type") {
     if (key === "ML") return "MONEY LINE";
     if (key === "RL") return "RUN LINE";
@@ -341,9 +423,21 @@ function remapKey(dimension: "type" | "size" | "month" | "sport" | "timeframe", 
     return key;
   }
   if (dimension === "month") {
-    // Format: "2026-03" → "MARCH 2026"
-    const MONTHS = ["","JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
-      "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+    const MONTHS = [
+      "",
+      "JANUARY",
+      "FEBRUARY",
+      "MARCH",
+      "APRIL",
+      "MAY",
+      "JUNE",
+      "JULY",
+      "AUGUST",
+      "SEPTEMBER",
+      "OCTOBER",
+      "NOVEMBER",
+      "DECEMBER",
+    ];
     const m = key.match(/^(\d{4})-(\d{2})$/);
     if (m) {
       const month = parseInt(m[2], 10);
@@ -362,36 +456,39 @@ function remapKey(dimension: "type" | "size" | "month" | "sport" | "timeframe", 
   return key;
 }
 
-function remapEntries(dimension: "type" | "size" | "month" | "sport" | "timeframe", entries: BreakdownEntry[]): BreakdownEntry[] {
-  return entries.map(e => ({ ...e, key: remapKey(dimension, e.key) }));
+function remapEntries(
+  dimension: "type" | "size" | "month" | "sport" | "timeframe",
+  entries: BreakdownEntry[]
+): BreakdownEntry[] {
+  return entries.map((e) => ({ ...e, key: remapKey(dimension, e.key) }));
 }
 
 export function BreakdownGrid({ stats }: { stats: StatsData }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 items-start">
+    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 items-start">
       <BreakdownPanel
         title="By Bet Type"
-        icon={<BarChart2 size={13} />}
+        icon={<BarChart2 size={12} />}
         entries={remapEntries("type", stats.byType)}
       />
       <BreakdownPanel
         title="By Unit Size"
-        icon={<Activity size={13} />}
+        icon={<Activity size={12} />}
         entries={remapEntries("size", stats.bySize)}
       />
       <BreakdownPanel
         title="By Month"
-        icon={<Activity size={13} />}
+        icon={<Activity size={12} />}
         entries={remapEntries("month", stats.byMonth)}
       />
       <BreakdownPanel
         title="By Sport"
-        icon={<Activity size={13} />}
+        icon={<Activity size={12} />}
         entries={remapEntries("sport", stats.bySport)}
       />
       <BreakdownPanel
         title="By Timeframe"
-        icon={<Activity size={13} />}
+        icon={<Activity size={12} />}
         entries={remapEntries("timeframe", stats.byTimeframe)}
       />
     </div>
@@ -408,82 +505,42 @@ export function HandicapperSelector({
 }: {
   handicappers: Array<{ id: number; username: string; role: string }>;
   selectedId: number | undefined;
-  onSelect: (id: number | undefined) => void;
-  currentUserId: number;
+  onSelect: (id: number) => void;
+  currentUserId: number | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handler(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node))
-        setOpen(false);
-    }
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const selected = selectedId
-    ? handicappers.find((h) => h.id === selectedId)
-    : null;
-  const label = selected ? `@${selected.username}` : "All Handicappers";
+  const selected = handicappers.find((h) => h.id === selectedId);
 
   return (
-    <div ref={ref} className="relative">
+    <div className="relative">
       <button
         type="button"
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 transition-colors"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-800/60 border border-zinc-700 text-xs text-white hover:bg-zinc-700/60 transition-all"
       >
-        <Users size={13} className="text-zinc-400 shrink-0" />
-        <span className="font-medium">{label}</span>
-        <ChevronDown
-          size={12}
-          className={`text-zinc-500 transition-transform ${open ? "rotate-180" : ""}`}
-        />
+        <Users size={12} className="text-zinc-400" />
+        <span className="font-mono">
+          {selected?.username ?? "Select Handicapper"}
+        </span>
+        <ChevronDown size={12} className="text-zinc-500" />
       </button>
       {open && (
-        <div className="absolute z-50 top-full mt-1 left-0 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden min-w-[180px]">
-          <button
-            type="button"
-            onClick={() => {
-              onSelect(undefined);
-              setOpen(false);
-            }}
-            className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-zinc-800 transition-colors text-left text-sm ${
-              !selectedId ? "text-emerald-400 font-bold" : "text-zinc-300"
-            }`}
-          >
-            All Handicappers
-          </button>
+        <div className="absolute top-full mt-1 left-0 z-20 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl min-w-[180px] py-1">
           {handicappers.map((h) => (
             <button
-              type="button"
               key={h.id}
+              type="button"
               onClick={() => {
                 onSelect(h.id);
                 setOpen(false);
               }}
-              className={`w-full flex items-center gap-2 px-3 py-2.5 hover:bg-zinc-800 transition-colors text-left text-sm ${
-                selectedId === h.id
-                  ? "text-emerald-400 font-bold"
-                  : "text-zinc-300"
+              className={`w-full text-left px-3 py-2 text-xs hover:bg-zinc-800 transition-colors ${
+                h.id === selectedId ? "text-emerald-400 font-bold" : "text-white"
               }`}
             >
-              <span>@{h.username}</span>
-              <span
-                className={`ml-auto text-[10px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                  h.role === "owner"
-                    ? "bg-yellow-500/10 text-yellow-400"
-                    : h.role === "admin"
-                    ? "bg-blue-500/10 text-blue-400"
-                    : "bg-emerald-500/10 text-emerald-400"
-                }`}
-              >
-                {h.role}
-              </span>
+              {h.username}
               {h.id === currentUserId && (
-                <span className="text-[9px] text-zinc-600 ml-1">(you)</span>
+                <span className="text-zinc-500 ml-1">(you)</span>
               )}
             </button>
           ))}
