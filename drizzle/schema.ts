@@ -251,7 +251,7 @@ export const games = mysqlTable("games", {
   /** Whether the winner of this game fills the 'top' or 'bottom' slot in the next game */
   nextBracketSlot: mysqlEnum("nextBracketSlot", ["top", "bottom"]),
   /** Game status: 'upcoming' (pre-game), 'live' (in-progress), 'final' (completed), 'postponed' (game postponed/cancelled) */
-  gameStatus: mysqlEnum("gameStatus", ["upcoming", "live", "final", "postponed"]).notNull().default("upcoming"),
+  gameStatus: mysqlEnum("gameStatus", ["upcoming", "live", "final", "postponed", "suspended"]).notNull().default("upcoming"),
   /** Away team current/final score (null = not started) */
   awayScore: int("awayScore"),
   /** Home team current/final score (null = not started) */

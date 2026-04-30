@@ -1543,6 +1543,37 @@ export function startVsinAutoRefresh() {
     const todayStr = datePst();
     console.log(`[MLBCycle] ► START — ${new Date().toISOString()} | date: ${todayStr}`);
 
+    // Step 0: Postponed/Suspended game lifecycle tracking
+    // — Rescheduled game detection: scans MLB Stats API schedule for next 14 days
+    //   to detect when a postponed game has been assigned a new gamePk/date.
+    // — Suspended game resume detection: checks if any suspended games are now final.
+    // Non-fatal — errors are swallowed so the main cycle continues.
+    try {
+      const { detectRescheduledGames, detectResumedSuspendedGames } = await import("./mlbPostponedTracker.js");
+      const [reschedResult, resumeResult] = await Promise.allSettled([
+        detectRescheduledGames(),
+        detectResumedSuspendedGames(),
+      ]);
+      if (reschedResult.status === 'fulfilled') {
+        console.log(
+          `[MLBCycle] PostponedTracker: rescheduled=${reschedResult.value.detected}` +
+          ` | checked postponed/suspended games for reschedule in next 14 days`
+        );
+      } else {
+        console.warn("[MLBCycle] PostponedTracker rescheduled detection failed (non-fatal):", reschedResult.reason);
+      }
+      if (resumeResult.status === 'fulfilled') {
+        console.log(
+          `[MLBCycle] PostponedTracker: resumed=${resumeResult.value.resumed}` +
+          ` errors=${resumeResult.value.errors.length}`
+        );
+      } else {
+        console.warn("[MLBCycle] PostponedTracker resume detection failed (non-fatal):", resumeResult.reason);
+      }
+    } catch (err) {
+      console.warn("[MLBCycle] PostponedTracker failed (non-fatal):", err);
+    }
+
     // Step 1: Live scores from MLB Stats API
     // newlyFinalGamePks captures games that transitioned to 'final' this cycle
     // — used to trigger an immediate K-Props backtest without waiting for the next tick

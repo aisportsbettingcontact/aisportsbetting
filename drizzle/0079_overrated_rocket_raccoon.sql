@@ -1,0 +1,1 @@
+ALTER TABLE `games` MODIFY COLUMN `gameStatus` enum('upcoming','live','final','postponed','suspended') NOT NULL DEFAULT 'upcoming';

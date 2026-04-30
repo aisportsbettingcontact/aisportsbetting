@@ -365,6 +365,41 @@ export const appRouter = router({
     }),
 
     /**
+     * Owner-only: list all postponed and suspended games across all sports.
+     * Used by the admin postponed-game audit view.
+     */
+    listPostponed: ownerProcedure
+      .query(async () => {
+        const { listPostponedGames } = await import('./mlbPostponedTracker.js');
+        const rows = await listPostponedGames();
+        console.log(`[tRPC][games.listPostponed] Returned ${rows.length} postponed/suspended games`);
+        return rows;
+      }),
+
+    /**
+     * Owner-only: manually override a game's status.
+     * Useful for correcting postponed/suspended games that the API hasn't updated yet.
+     */
+    markGameStatus: ownerProcedure
+      .input(z.object({
+        id: z.number().int().positive(),
+        status: z.enum(["upcoming", "live", "final", "postponed", "suspended"]),
+      }))
+      .mutation(async ({ input }) => {
+        const { getDb } = await import('./db.js');
+        const { games: gamesTable } = await import('../drizzle/schema.js');
+        const { eq } = await import('drizzle-orm');
+        const db = await getDb();
+        if (!db) throw new Error('DB unavailable');
+        await db
+          .update(gamesTable)
+          .set({ gameStatus: input.status })
+          .where(eq(gamesTable.id, input.id));
+        console.log(`[tRPC][games.markGameStatus] id=${input.id} → status=${input.status}`);
+        return { success: true, id: input.id, status: input.status };
+      }),
+
+    /**
      * Hard-delete a single game by ID. Owner-only. Irreversible.
      */
     deleteGame: ownerProcedure

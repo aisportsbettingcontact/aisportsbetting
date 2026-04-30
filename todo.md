@@ -2865,3 +2865,19 @@
 - [x] Remove Net P/L stat card (replaced by +/- Units in chart title)
 - [x] Remove MLB 9-inning linescore from BetCard
 - [x] todayPt() helper (UTC-8 Pacific Time) and subtractDays() utility added
+
+## Session: Postponed Game Follow-up Features
+
+- [ ] Feature 1: Postponed/rescheduled game detection — auto-detect when a postponed game gets rescheduled on a future date, log with structured output, notify owner
+- [ ] Feature 2: Admin postponed-game view — filter toggle in owner dashboard to audit all postponed games across the season
+- [ ] Feature 3: Suspended game handling — 'suspended' as distinct status, resume detection, feed exclusion
+
+## Session: Postponed Game Follow-up Features (v15)
+
+- [x] Feature 1: Rescheduled game detection — mlbPostponedTracker.ts detectRescheduledGames() scans MLB Stats API schedule 14 days forward, detects when a postponed game has a new gamePk/date, logs it and sends owner notification
+- [x] Feature 2: Admin postponed-game view — /admin/postponed-games page with full audit table, status badges, filter/sort, manual status override dialog, 60s auto-refresh; wired into admin nav dropdown
+- [x] Feature 3: Suspended game handling — 'suspended' added to gameStatus enum (migration 0079), detectResumedSuspendedGames() checks MLB API for final status, auto-updates DB and notifies owner
+- [x] Step 0 in runMlbCycle — detectRescheduledGames + detectResumedSuspendedGames run every 10 min before score refresh, non-fatal
+- [x] games.listPostponed tRPC procedure — owner-only, returns all postponed/suspended games
+- [x] games.markGameStatus tRPC procedure — owner-only manual status override
+- [x] listGames feed filter extended — excludes both 'postponed' AND 'suspended' from public feed

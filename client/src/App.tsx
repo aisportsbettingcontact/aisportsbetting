@@ -16,6 +16,7 @@ import NbaTeamSchedule from "./pages/NbaTeamSchedule";
 import NhlTeamSchedule from "./pages/NhlTeamSchedule";
 import BetTracker from "@/pages/BetTracker";
 import AdminModelStatus from "@/pages/AdminModelStatus";
+import PostponedGames from "@/pages/PostponedGames";
 
 function Router() {
   return (
@@ -49,6 +50,8 @@ function Router() {
       <Route path="/bet-tracker" component={BetTracker} />
       {/* Owner-only: Real-time model pipeline health dashboard (MLB + NHL) */}
       <Route path="/admin/model-status" component={AdminModelStatus} />
+      {/* Owner-only: Postponed and suspended game audit view */}
+      <Route path="/admin/postponed-games" component={PostponedGames} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
