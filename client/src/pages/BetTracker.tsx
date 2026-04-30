@@ -282,7 +282,7 @@ function SelectField({
 }
 
 function PickButton({
-  selected, onClick, logo, teamAbbr, teamNickname, odds, line, side, disabled,
+  selected, onClick, logo, teamAbbr, teamNickname, odds, line, side, disabled, customLine,
 }: {
   selected:     boolean;
   onClick:      () => void;
@@ -293,6 +293,7 @@ function PickButton({
   line?:        number | null;
   side:         "AWAY" | "HOME" | "OVER" | "UNDER";
   disabled?:    boolean;
+  customLine?:  string; // when set, override the API line display
 }) {
   const isTotal = side === "OVER" || side === "UNDER";
   const sideLabel = isTotal ? (side === "OVER" ? "OVER" : "UNDER") : (side === "AWAY" ? "AWAY" : "HOME");
@@ -333,11 +334,18 @@ function PickButton({
           <div className="text-[11px] font-black text-zinc-300 tracking-wider">{sideLabel}</div>
         )}
       </div>
-      {line !== null && line !== undefined && (
-        <div className="text-[10px] font-bold text-zinc-400">
-          {line > 0 ? `+${line}` : `${line}`}
+      {/* Line display: prefer customLine over API line; TOTAL shows bare number, RL shows signed */}
+      {(customLine !== undefined && customLine !== "" && customLine !== null) ? (
+        <div className="text-[10px] font-bold text-emerald-400">
+          {isTotal
+            ? `${parseFloat(customLine)}`
+            : (parseFloat(customLine) > 0 ? `+${parseFloat(customLine)}` : `${parseFloat(customLine)}`)}
         </div>
-      )}
+      ) : (line !== null && line !== undefined) ? (
+        <div className="text-[10px] font-bold text-zinc-400">
+          {isTotal ? `${line}` : (line > 0 ? `+${line}` : `${line}`)}
+        </div>
+      ) : null}
       <div className={`text-[11px] font-bold font-mono ${odds !== null ? (odds >= 0 ? "text-emerald-400" : "text-zinc-300") : "text-zinc-600"}`}>
         {odds !== null ? fmtOdds(odds) : "—"}
       </div>
@@ -346,15 +354,62 @@ function PickButton({
 }
 
 function GameSelector({
-  games, selectedId, onSelect, loading, sport, formDate,
+  games, selectedId, onSelect, loading, sport, formDate, linescoreByTeams,
 }: {
-  games:      SlateGame[];
-  selectedId: number | null;
-  onSelect:   (game: SlateGame) => void;
-  loading:    boolean;
-  sport:      string;
-  formDate:   string;
+  games:              SlateGame[];
+  selectedId:         number | null;
+  onSelect:           (game: SlateGame) => void;
+  loading:            boolean;
+  sport:              string;
+  formDate:           string;
+  linescoreByTeams?:  Map<string, LinescoreEntry>;
 }) {
+  /** Get linescore for a game using the gameDate:away:home key */
+  function getLs(g: SlateGame): LinescoreEntry | undefined {
+    if (!linescoreByTeams) return undefined;
+    return linescoreByTeams.get(`${g.gameDate}:${g.awayTeam}:${g.homeTeam}`);
+  }
+  /** Render inline score/status for a game */
+  function GameStatus({ g, compact }: { g: SlateGame; compact?: boolean }) {
+    const ls = getLs(g);
+    const isComplete = g.status === "complete" || ls?.status === "Final";
+    const isLive = !isComplete && (g.status === "in_progress" || ls?.status === "Live");
+    if (isComplete) {
+      const awayR = ls?.awayR ?? null;
+      const homeR = ls?.homeR ?? null;
+      if (awayR !== null && homeR !== null) {
+        return (
+          <span className="flex items-center gap-1 shrink-0">
+            <span className="text-[10px] font-bold font-mono text-zinc-300">{awayR}–{homeR}</span>
+            <span className="text-[9px] font-bold text-yellow-400 uppercase">FINAL</span>
+          </span>
+        );
+      }
+      return <span className="text-[9px] font-bold text-yellow-400 uppercase">FINAL</span>;
+    }
+    if (isLive) {
+      const awayR = ls?.awayR ?? null;
+      const homeR = ls?.homeR ?? null;
+      const inn = ls?.currentInning;
+      const state = ls?.inningState;
+      const innLabel = inn ? `${state === "Top" ? "▲" : state === "Bottom" ? "▼" : ""}${inn}` : "";
+      return (
+        <span className="flex items-center gap-1 shrink-0">
+          {awayR !== null && homeR !== null && (
+            <span className="text-[10px] font-bold font-mono text-white">{awayR}–{homeR}</span>
+          )}
+          <span className="flex items-center gap-0.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-[9px] font-bold text-emerald-400 uppercase">
+              {innLabel ? `${innLabel}${compact ? "" : " INN"}` : "LIVE"}
+            </span>
+          </span>
+        </span>
+      );
+    }
+    // Not started — show start time in EST
+    return <span className="text-zinc-500 text-xs">{g.gameTime} ET</span>;
+  }
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -399,10 +454,7 @@ function GameSelector({
             <img src={selected.homeLogo} alt={selected.homeTeam} className="w-5 h-5 object-contain shrink-0"
               onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
             <span className="font-bold text-white">{selected.homeTeam}</span>
-            <span className="text-zinc-600 text-xs ml-1">{selected.gameTime} ET</span>
-            {selected.status !== "scheduled" && (
-              <span className="text-[10px] text-yellow-400 font-bold ml-1 uppercase">{selected.status}</span>
-            )}
+            <span className="ml-1"><GameStatus g={selected} compact /></span>
           </>
         ) : (
           <span className="text-zinc-500">Select game…</span>
@@ -423,12 +475,10 @@ function GameSelector({
               <img src={g.homeLogo} alt={g.homeTeam} className="w-6 h-6 object-contain shrink-0"
                 onError={e => { (e.target as HTMLImageElement).style.display = "none"; }} />
               <span className="font-bold text-white text-sm w-8 shrink-0">{g.homeTeam}</span>
-              <span className="text-zinc-500 text-xs ml-1">{g.gameTime} ET</span>
-              {g.status !== "scheduled" && (
-                <span className="text-[9px] font-bold text-yellow-400 uppercase ml-auto shrink-0">{g.status}</span>
-              )}
-              {g.odds?.awayMl && (
-                <span className="text-[10px] text-zinc-600 ml-auto shrink-0 font-mono">
+              <span className="ml-auto"><GameStatus g={g} compact /></span>
+              {/* Show ML odds only for scheduled games */}
+              {g.status === "scheduled" && g.odds?.awayMl && (
+                <span className="text-[10px] text-zinc-600 shrink-0 font-mono">
                   {fmtOdds(g.odds.awayMl.odds)} / {g.odds.homeMl ? fmtOdds(g.odds.homeMl.odds) : "—"}
                 </span>
               )}
@@ -564,14 +614,43 @@ function BetCard({
     : bet.market === "RL" ? (bet.sport === "NHL" ? "PL" : "RL")
     : "TOT";
 
-  const awayAbbrev = linescore?.awayAbbrev || bet.awayTeam || "AWY";
-  const homeAbbrev = linescore?.homeAbbrev || bet.homeTeam || "HME";
-
-  // Custom line display (for RL/TOTAL bets)
+  // Custom line display (for RL/TOTAL bets) — must be computed BEFORE getFullPickLabel
   const customLine = (bet as any).customLine;
   const lineDisplay = customLine !== null && customLine !== undefined
     ? parseFloat(String(customLine))
     : null;
+
+  // Full team name for pick display (e.g. "DIAMONDBACKS" instead of "ARI")
+  const awayFullName = (bet as any).awayFull as string | null | undefined;
+  const homeFullName = (bet as any).homeFull as string | null | undefined;
+  // Build display pick: replace abbrev with full nickname (last word of full name)
+  function getFullPickLabel(): string {
+    const side = bet.pickSide;
+    if (side === "OVER") {
+      const line = lineDisplay !== null ? ` ${lineDisplay}` : "";
+      return `OVER${line}`;
+    }
+    if (side === "UNDER") {
+      const line = lineDisplay !== null ? ` ${lineDisplay}` : "";
+      return `UNDER${line}`;
+    }
+    const fullName = side === "AWAY" ? awayFullName : homeFullName;
+    // Use last word of full name as nickname (e.g. "Arizona Diamondbacks" -> "DIAMONDBACKS")
+    const nickname = fullName ? fullName.trim().split(" ").pop()?.toUpperCase() ?? bet.awayTeam : (side === "AWAY" ? bet.awayTeam : bet.homeTeam);
+    const mkt = bet.market === "ML" ? "ML"
+      : bet.market === "RL" ? (bet.sport === "NHL" ? "PL" : "RL")
+      : "TOT";
+    if (bet.market === "RL" && lineDisplay !== null) {
+      const rlSign = (side === "AWAY" ? lineDisplay : -lineDisplay);
+      const rlStr = rlSign > 0 ? `+${rlSign}` : `${rlSign}`;
+      return `${nickname} ${rlStr}`;
+    }
+    return `${nickname} ${mkt}`;
+  }
+  const fullPickLabel = getFullPickLabel();
+
+  const awayAbbrev = linescore?.awayAbbrev || bet.awayTeam || "AWY";
+  const homeAbbrev = linescore?.homeAbbrev || bet.homeTeam || "HME";
 
   // Wager type badge
   const wagerType = (bet as any).wagerType as WagerType | undefined;
@@ -594,7 +673,7 @@ function BetCard({
 
       <div className="pl-4 pr-3 pt-3 pb-3 space-y-3">
 
-        {/* ── Row 1: Matchup header with large logos ── */}
+          {/* ── Row 1: Matchup header with large logos ── */}
         <div className="flex items-center gap-3">
           {/* Away team */}
           <div className="flex flex-col items-center gap-1 shrink-0">
@@ -612,9 +691,19 @@ function BetCard({
           {/* Center: score / status / time */}
           <div className="flex-1 flex flex-col items-center gap-0.5 min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="text-[9px] tracking-widest text-zinc-600 uppercase">{bet.sport}</span>
-              <span className="text-zinc-700 text-[9px]">·</span>
-              <span className="text-[9px] text-zinc-600">{fmtDate(bet.gameDate)}</span>
+              {/* League logo */}
+              {bet.sport === "MLB" && (
+                <img src="https://www.mlbstatic.com/team-logos/league-on-dark/1.svg" alt="MLB" className="w-4 h-4 object-contain shrink-0" />
+              )}
+              {bet.sport === "NHL" && (
+                <img src="https://assets.nhle.com/logos/nhl/svg/NHL_light.svg" alt="NHL" className="w-4 h-4 object-contain shrink-0" />
+              )}
+              {bet.sport === "NBA" && (
+                <img src="https://cdn.nba.com/logos/leagues/logo-nba.svg" alt="NBA" className="w-4 h-4 object-contain shrink-0" />
+              )}
+              <span className="text-sm font-bold tracking-widest text-white uppercase">{bet.sport}</span>
+              <span className="text-zinc-600 text-sm">·</span>
+              <span className="text-sm font-semibold text-white">{fmtDate(bet.gameDate)}</span>
               {/* Wager type badge */}
               {wagerType === "LIVE" && (
                 <span className="flex items-center gap-0.5 text-[9px] font-bold text-red-400 bg-red-500/10 border border-red-500/20 px-1.5 py-0.5 rounded">
@@ -740,15 +829,7 @@ function BetCard({
             {(pickIsHome && bet.homeLogo) && (
               <img src={bet.homeLogo} alt="" className="w-4 h-4 object-contain opacity-80" />
             )}
-            <span className="text-white font-bold text-sm">{bet.pick}</span>
-            {/* Custom line display for RL/TOTAL */}
-            {lineDisplay !== null && (bet.market === "RL" || bet.market === "TOTAL") && (
-              <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono">
-                {bet.market === "TOTAL"
-                  ? `${bet.pickSide === "OVER" ? "O" : "U"} ${lineDisplay}`
-                  : (lineDisplay > 0 ? `+${lineDisplay}` : `${lineDisplay}`)}
-              </span>
-            )}
+            <span className="text-white font-bold text-sm">{fullPickLabel}</span>
             <span className="text-[9px] bg-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded font-medium tracking-wider">{mktLabel}</span>
             {tfShort && (
               <span className="text-[9px] bg-zinc-800 text-zinc-500 px-1.5 py-0.5 rounded font-medium">{tfShort}</span>
@@ -1237,6 +1318,7 @@ export default function BetTracker() {
       sport:        filterAllTime ? undefined : activeSport,
       gameDate:     filterAllTime ? undefined : (filterDate || undefined),
       targetUserId: effectiveUserId,
+      unitSize:     unitSize > 0 ? unitSize : 100,
     },
     { enabled: canAccess }
   );
@@ -1379,9 +1461,11 @@ export default function BetTracker() {
       return (
         <div className="flex gap-2">
           <PickButton selected={formPickSide === "OVER"} onClick={() => handlePickSide("OVER")}
-            odds={odds?.over?.odds ?? null} line={getPickLine(odds, "TOTAL", "OVER")} side="OVER" />
+            odds={odds?.over?.odds ?? null} line={getPickLine(odds, "TOTAL", "OVER")} side="OVER"
+            customLine={formCustomLine || undefined} />
           <PickButton selected={formPickSide === "UNDER"} onClick={() => handlePickSide("UNDER")}
-            odds={odds?.under?.odds ?? null} line={getPickLine(odds, "TOTAL", "UNDER")} side="UNDER" />
+            odds={odds?.under?.odds ?? null} line={getPickLine(odds, "TOTAL", "UNDER")} side="UNDER"
+            customLine={formCustomLine || undefined} />
         </div>
       );
     }
@@ -1391,14 +1475,20 @@ export default function BetTracker() {
     const awayLine = formMarket === "RL" ? (odds?.awayRl?.value ?? null) : null;
     const homeLine = formMarket === "RL" ? (odds?.homeRl?.value ?? null) : null;
 
+    // For RL: customLine is a magnitude (e.g. "1.5"), apply sign per side
+    const awayCustomLine = formMarket === "RL" && formCustomLine
+      ? String(-Math.abs(parseFloat(formCustomLine))) : undefined;
+    const homeCustomLine = formMarket === "RL" && formCustomLine
+      ? String(+Math.abs(parseFloat(formCustomLine))) : undefined;
+
     return (
       <div className="flex gap-2">
         <PickButton selected={formPickSide === "AWAY"} onClick={() => handlePickSide("AWAY")}
           logo={awayLogo} teamAbbr={awayTeam} teamNickname={awayNickname}
-          odds={awayOdds} line={awayLine} side="AWAY" />
+          odds={awayOdds} line={awayLine} side="AWAY" customLine={awayCustomLine} />
         <PickButton selected={formPickSide === "HOME"} onClick={() => handlePickSide("HOME")}
           logo={homeLogo} teamAbbr={homeTeam} teamNickname={homeNickname}
-          odds={homeOdds} line={homeLine} side="HOME" />
+          odds={homeOdds} line={homeLine} side="HOME" customLine={homeCustomLine} />
       </div>
     );
   }, [formGame, formMarket, formPickSide, handlePickSide]);
@@ -1442,6 +1532,13 @@ export default function BetTracker() {
 
     console.log(`[BetTracker][INPUT] create: sport=${activeSport} date=${formDate} game=${formGame.awayTeam}@${formGame.homeTeam} market=${effectiveMarket} pickSide=${effectivePickSide} odds=${oddsNum} risk=${riskDollars} toWin=${toWinFinal} wagerType=${formWagerType} customLine=${effectiveCustomLine ?? "null"}`);
 
+    // Compute unit-denominated values for accurate bySize analytics
+    const riskUnitsVal  = stakeMode === "U" ? riskNum : (unitSize > 0 ? riskDollars / unitSize : riskDollars);
+    const toWinFinalU   = !isNaN(toWinNum) && toWinNum > 0
+      ? (stakeMode === "U" ? toWinNum : (unitSize > 0 ? toWinFinal / unitSize : toWinFinal))
+      : (stakeMode === "U" ? (autoToWin ?? 0) : (unitSize > 0 ? toWinFinal / unitSize : toWinFinal));
+    console.log(`[BetTracker][STATE] riskUnits=${riskUnitsVal.toFixed(2)} toWinUnits=${toWinFinalU.toFixed(2)}`);
+
     await createMut.mutateAsync({
       anGameId:   formGame.id,
       sport:      activeSport,
@@ -1454,6 +1551,8 @@ export default function BetTracker() {
       odds:       oddsNum,
       risk:       riskDollars,
       toWin:      toWinFinal,
+      riskUnits:  parseFloat(riskUnitsVal.toFixed(4)),
+      toWinUnits: parseFloat(toWinFinalU.toFixed(4)),
       line:       linePick,
       notes:      formNotes || undefined,
       wagerType:  formWagerType,
@@ -1740,7 +1839,7 @@ export default function BetTracker() {
             <div>
               <div className="flex items-center gap-2 mb-3">
                 <TrendingUp size={14} className="text-emerald-400" />
-                <span className="text-xs font-bold tracking-widest text-zinc-400 uppercase">Equity Curve</span>
+                <span className="text-xs font-bold tracking-widest text-zinc-400 uppercase">+/- UNITS</span>
                 <span className="text-[10px] text-zinc-600 ml-1">
                   {filterAllTime ? "All-Time" : `${activeSport} · ${filterDate ? fmtDate(filterDate) : "All Dates"}`}
                 </span>
@@ -1815,6 +1914,7 @@ export default function BetTracker() {
                 loading={slateQuery.isLoading}
                 sport={activeSport}
                 formDate={formDate}
+                linescoreByTeams={linescoreByTeams}
               />
             </div>
 
@@ -1885,9 +1985,7 @@ export default function BetTracker() {
                   step="0.5"
                   className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 transition-colors"
                 />
-                <p className="text-[10px] text-zinc-600">
-                  Override the API line. Leave blank to use the default line from the slate.
-                </p>
+
               </div>
             )}
 
@@ -2085,7 +2183,7 @@ export default function BetTracker() {
                         const record = `${item.wins}W-${item.losses}L${item.pushes > 0 ? `-${item.pushes}P` : ""}${item.pending > 0 ? ` (${item.pending} pending)` : ""}`;
                         return (
                           <div key={`sep-${item.date}-${idx}`} className="flex items-center gap-3 py-2">
-                            <div className="text-[10px] font-bold tracking-widest text-zinc-500 uppercase">
+                            <div className="text-base font-bold tracking-wider text-white">
                               {item.date ? fmtDate(item.date) : "Unknown Date"}
                             </div>
                             <div className="flex-1 h-px bg-zinc-800" />

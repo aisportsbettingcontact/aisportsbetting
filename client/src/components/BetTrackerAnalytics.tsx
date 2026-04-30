@@ -332,33 +332,67 @@ export function BreakdownPanel({
 
 // ─── BreakdownGrid ────────────────────────────────────────────────────────────
 
+/** Remap raw server keys to human-readable display labels */
+function remapKey(dimension: "type" | "size" | "month" | "sport" | "timeframe", key: string): string {
+  if (dimension === "type") {
+    if (key === "ML") return "MONEY LINE";
+    if (key === "RL") return "RUN LINE";
+    if (key === "TOTAL") return "OVER/UNDER";
+    return key;
+  }
+  if (dimension === "month") {
+    // Format: "2026-03" → "MARCH 2026"
+    const MONTHS = ["","JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE",
+      "JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];
+    const m = key.match(/^(\d{4})-(\d{2})$/);
+    if (m) {
+      const month = parseInt(m[2], 10);
+      return `${MONTHS[month] ?? key} ${m[1]}`;
+    }
+    return key;
+  }
+  if (dimension === "timeframe") {
+    if (key === "FULL_GAME") return "Full Game";
+    if (key === "FIRST_5") return "First 5";
+    if (key === "FIRST_HALF") return "First Half";
+    if (key === "FIRST_PERIOD") return "First Period";
+    if (key === "FIRST_QUARTER") return "First Quarter";
+    return key;
+  }
+  return key;
+}
+
+function remapEntries(dimension: "type" | "size" | "month" | "sport" | "timeframe", entries: BreakdownEntry[]): BreakdownEntry[] {
+  return entries.map(e => ({ ...e, key: remapKey(dimension, e.key) }));
+}
+
 export function BreakdownGrid({ stats }: { stats: StatsData }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
       <BreakdownPanel
         title="By Bet Type"
         icon={<BarChart2 size={13} />}
-        entries={stats.byType}
+        entries={remapEntries("type", stats.byType)}
       />
       <BreakdownPanel
         title="By Unit Size"
         icon={<Activity size={13} />}
-        entries={stats.bySize}
+        entries={remapEntries("size", stats.bySize)}
       />
       <BreakdownPanel
         title="By Month"
         icon={<Activity size={13} />}
-        entries={stats.byMonth}
+        entries={remapEntries("month", stats.byMonth)}
       />
       <BreakdownPanel
         title="By Sport"
         icon={<Activity size={13} />}
-        entries={stats.bySport}
+        entries={remapEntries("sport", stats.bySport)}
       />
       <BreakdownPanel
         title="By Timeframe"
         icon={<Activity size={13} />}
-        entries={stats.byTimeframe}
+        entries={remapEntries("timeframe", stats.byTimeframe)}
       />
     </div>
   );

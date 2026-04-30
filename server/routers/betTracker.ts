@@ -107,15 +107,24 @@ function derivePickLabel(
  * Buckets: 10U, 5U, 4U, 3U, 2U, 1U (exact integer matching).
  * Any non-integer or out-of-range value maps to the nearest bucket.
  */
-function calcUnitBucket(odds: number, risk: number, toWin: number): string {
-  // Determine the "unit count" for this bet
+function calcUnitBucket(
+  odds: number,
+  risk: number,
+  toWin: number,
+  riskUnits?: number | null,
+  toWinUnits?: number | null,
+): string {
+  // Prefer stored unit-denominated values (accurate regardless of user's unit size setting).
+  // Fall back to raw dollar amounts only if unit values were not stored (legacy bets).
   let unitCount: number;
-  if (odds >= 100) {
-    // Plus money: risk IS the unit count
-    unitCount = risk;
+  if (odds > 0) {
+    // Plus money (+odds): the RISK amount IS the unit count
+    // e.g. ARI ML +155 at 3U risk → 3U play
+    unitCount = riskUnits != null ? riskUnits : risk;
   } else {
-    // Minus money: toWin IS the unit count
-    unitCount = toWin;
+    // Minus money (-odds): the TO WIN amount IS the unit count
+    // e.g. NYM ML -153 to win 5U → 5U play
+    unitCount = toWinUnits != null ? toWinUnits : toWin;
   }
 
   // Round to nearest integer for bucket assignment
@@ -275,6 +284,9 @@ export const betTrackerRouter = router({
       customLine: z.number().optional(),         // Exact custom line override (e.g. 8.0 for Over 8)
       wagerType:  z.enum(WAGER_TYPES).default("PREGAME"),
       notes:      z.string().max(2000).optional(),
+      // Unit-denominated amounts for accurate analytics bucketing
+      riskUnits:  z.number().positive().optional(),  // e.g. 3.0 for a 3U play
+      toWinUnits: z.number().positive().optional(),  // e.g. 5.0 for a 5U to-win play
     }))
     .mutation(async ({ ctx, input }) => {
       const userId = ctx.appUser.id;
@@ -300,6 +312,8 @@ export const betTrackerRouter = router({
         odds:       input.odds,
         risk:       String(input.risk),
         toWin:      String(toWin),
+        riskUnits:  input.riskUnits !== undefined ? String(input.riskUnits) : null,
+        toWinUnits: input.toWinUnits !== undefined ? String(input.toWinUnits) : null,
         book:       null,
         line:       input.line !== undefined ? String(input.line) : null,
         customLine: input.customLine !== undefined ? String(input.customLine) : null,
@@ -975,6 +989,8 @@ export const betTrackerRouter = router({
       sport:         z.enum(SPORTS).optional(),
       gameDate:      z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       targetUserId:  z.number().int().positive().optional(),
+      /** Client-side unit size (e.g. 100 = $100/unit). Used to normalize legacy bets lacking riskUnits/toWinUnits. */
+      unitSize:      z.number().positive().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
       const role = ctx.appUser.role;
@@ -985,7 +1001,9 @@ export const betTrackerRouter = router({
         }
         userId = input.targetUserId;
       }
-      console.log(`[BetTracker][INPUT] getStats: viewerId=${ctx.appUser.id} targetUserId=${userId} sport=${input?.sport ?? "ALL"} date=${input?.gameDate ?? "ALL"}`);
+      // Unit size for normalizing legacy dollar amounts to unit counts
+      const unitSize = input?.unitSize ?? 100;
+      console.log(`[BetTracker][INPUT] getStats: viewerId=${ctx.appUser.id} targetUserId=${userId} sport=${input?.sport ?? "ALL"} date=${input?.gameDate ?? "ALL"} unitSize=${unitSize}`);
 
       const conditions = [eq(trackedBets.userId, userId)];
       if (input?.sport)    conditions.push(eq(trackedBets.sport, input.sport));
@@ -998,22 +1016,35 @@ export const betTrackerRouter = router({
         .where(and(...conditions))
         .orderBy(asc(trackedBets.gameDate), asc(trackedBets.createdAt));
 
-      // ── Overall aggregation ──────────────────────────────────────────────────
+      /**
+       * Normalize a dollar amount to unit count.
+       * Prefer stored riskUnits/toWinUnits (set at bet creation time).
+       * Fall back to dividing by unitSize for legacy bets.
+       */
+      function toUnits(dollarAmt: number, storedUnits: string | null | undefined): number {
+        if (storedUnits != null && storedUnits !== "") {
+          const v = parseFloat(storedUnits);
+          if (!isNaN(v) && v > 0) return v;
+        }
+        return dollarAmt / unitSize;
+      }
+
+      // ── Overall aggregation (unit-denominated) ───────────────────────────────
       let wins = 0, losses = 0, pushes = 0, pending = 0, voids = 0;
       let totalRisk = 0, totalWon = 0, totalLost = 0;
       let bestWin = 0, worstLoss = 0;
 
       for (const bet of rows) {
-        const risk  = parseFloat(bet.risk);
-        const toWin = parseFloat(bet.toWin);
+        const riskU  = toUnits(parseFloat(bet.risk),  bet.riskUnits);
+        const toWinU = toUnits(parseFloat(bet.toWin), bet.toWinUnits);
         switch (bet.result) {
           case "WIN":
-            wins++; totalRisk += risk; totalWon += toWin;
-            if (toWin > bestWin) bestWin = toWin;
+            wins++; totalRisk += riskU; totalWon += toWinU;
+            if (toWinU > bestWin) bestWin = toWinU;
             break;
           case "LOSS":
-            losses++; totalRisk += risk; totalLost += risk;
-            if (risk > worstLoss) worstLoss = risk;
+            losses++; totalRisk += riskU; totalLost += riskU;
+            if (riskU > worstLoss) worstLoss = riskU;
             break;
           case "PUSH":    pushes++;  break;
           case "PENDING": pending++; break;
@@ -1023,7 +1054,7 @@ export const betTrackerRouter = router({
       const netProfit = totalWon - totalLost;
       const roi       = totalRisk > 0 ? parseFloat(((netProfit / totalRisk) * 100).toFixed(2)) : 0;
 
-      // ── Breakdown helper ─────────────────────────────────────────────────────
+      // ── Breakdown helper (unit-denominated) ──────────────────────────────────
       type BreakdownEntry = {
         key: string;
         wins: number; losses: number; pushes: number;
@@ -1035,10 +1066,10 @@ export const betTrackerRouter = router({
           const key = keyFn(bet);
           if (!map.has(key)) map.set(key, { wins: 0, losses: 0, pushes: 0, risk: 0, won: 0, lost: 0 });
           const e = map.get(key)!;
-          const risk  = parseFloat(bet.risk);
-          const toWin = parseFloat(bet.toWin);
-          if (bet.result === "WIN")  { e.wins++;   e.risk += risk; e.won  += toWin; }
-          if (bet.result === "LOSS") { e.losses++; e.risk += risk; e.lost += risk;  }
+          const riskU  = toUnits(parseFloat(bet.risk),  bet.riskUnits);
+          const toWinU = toUnits(parseFloat(bet.toWin), bet.toWinUnits);
+          if (bet.result === "WIN")  { e.wins++;   e.risk += riskU; e.won  += toWinU; }
+          if (bet.result === "LOSS") { e.losses++; e.risk += riskU; e.lost += riskU;  }
           if (bet.result === "PUSH") { e.pushes++; }
         }
         return Array.from(map.entries()).map(([key, e]) => {
@@ -1064,9 +1095,11 @@ export const betTrackerRouter = router({
       // Buckets: 10U, 5U, 4U, 3U, 2U, 1U
       const UNIT_BUCKET_ORDER = ["10U", "5U", "4U", "3U", "2U", "1U"];
       const bySize = buildBreakdown(bet => {
-        const risk  = parseFloat(bet.risk);
-        const toWin = parseFloat(bet.toWin);
-        return calcUnitBucket(bet.odds, risk, toWin);
+        const risk       = parseFloat(bet.risk);
+        const toWin      = parseFloat(bet.toWin);
+        const riskUnits  = bet.riskUnits  != null ? parseFloat(bet.riskUnits)  : null;
+        const toWinUnits = bet.toWinUnits != null ? parseFloat(bet.toWinUnits) : null;
+        return calcUnitBucket(bet.odds, risk, toWin, riskUnits, toWinUnits);
       }).sort((a, b) => {
         const ai = UNIT_BUCKET_ORDER.indexOf(a.key);
         const bi = UNIT_BUCKET_ORDER.indexOf(b.key);
@@ -1087,22 +1120,20 @@ export const betTrackerRouter = router({
 
       // ── By Wager Type (PREGAME / LIVE) ───────────────────────────────────────
       const byWagerType = buildBreakdown(bet => bet.wagerType ?? "PREGAME");
-
-      // ── Equity Curve ─────────────────────────────────────────────────────────
+      // ── Equity Curve (unit-denominated) ───────────────────────────────────────────────
       let cumPL = 0;
       const equityCurve: { date: string; cumPL: number; betId: number; pick: string; result: string; pl: number }[] = [];
       for (const bet of rows) {
         if (bet.result === "WIN") {
-          const pl = parseFloat(bet.toWin);
+          const pl = toUnits(parseFloat(bet.toWin), bet.toWinUnits);
           cumPL += pl;
           equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "WIN", pl: parseFloat(pl.toFixed(2)) });
         } else if (bet.result === "LOSS") {
-          const pl = -parseFloat(bet.risk);
+          const pl = -toUnits(parseFloat(bet.risk), bet.riskUnits);
           cumPL += pl;
           equityCurve.push({ date: bet.gameDate, cumPL: parseFloat(cumPL.toFixed(2)), betId: bet.id, pick: bet.pick, result: "LOSS", pl: parseFloat(pl.toFixed(2)) });
         }
       }
-
       const stats = {
         totalBets:  rows.length,
         wins, losses, pushes, pending, voids,

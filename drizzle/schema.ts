@@ -2009,6 +2009,16 @@ export const trackedBets = mysqlTable("tracked_bets", {
   risk: decimal("risk", { precision: 10, scale: 2 }).notNull(),
   /** To-win amount in dollars (auto-calculated: risk * (100/|odds|) for fav, risk * (odds/100) for dog) */
   toWin: decimal("toWin", { precision: 10, scale: 2 }).notNull(),
+  /**
+   * Risk amount expressed in units (e.g. 3.0 for a 3U play).
+   * Stored at creation time so analytics can bucket correctly regardless of the user's unit size setting.
+   */
+  riskUnits: decimal("riskUnits", { precision: 8, scale: 2 }),
+  /**
+   * To-win amount expressed in units (e.g. 5.0 for a 5U to-win play).
+   * Stored at creation time for accurate bySize analytics.
+   */
+  toWinUnits: decimal("toWinUnits", { precision: 8, scale: 2 }),
   /** Sportsbook name, e.g. "DK NJ", "FanDuel NJ", "Caesars NJ" */
   book: varchar("book", { length: 64 }),
   /** Optional free-text notes */
