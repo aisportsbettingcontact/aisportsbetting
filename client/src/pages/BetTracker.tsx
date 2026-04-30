@@ -206,6 +206,63 @@ function timeframeShort(tf: string): string {
   }
 }
 
+// ─── Team nickname fallback map ──────────────────────────────────────────────
+// Used when awayFull/homeFull are null (Action Network API returns 403 for
+// historical dates). Maps DB abbreviations → display nicknames.
+const MLB_TEAM_NICKNAMES: Record<string, string> = {
+  // American League East
+  BAL:  "Orioles",
+  BOS:  "Red Sox",
+  NYY:  "Yankees",
+  TB:   "Rays",
+  TOR:  "Blue Jays",
+  // American League Central
+  CWS:  "White Sox",
+  CLE:  "Guardians",
+  DET:  "Tigers",
+  KC:   "Royals",
+  MIN:  "Twins",
+  // American League West
+  ATH:  "Athletics",
+  HOU:  "Astros",
+  LAA:  "Angels",
+  SEA:  "Mariners",
+  TEX:  "Rangers",
+  // National League East
+  ATL:  "Braves",
+  MIA:  "Marlins",
+  NYM:  "Mets",
+  PHI:  "Phillies",
+  WSH:  "Nationals",
+  // National League Central
+  CHC:  "Cubs",
+  CIN:  "Reds",
+  MIL:  "Brewers",
+  PIT:  "Pirates",
+  STL:  "Cardinals",
+  // National League West
+  ARI:  "Diamondbacks",
+  AZ:   "Diamondbacks",  // MLB Stats API alias
+  COL:  "Rockies",
+  LAD:  "Dodgers",
+  SD:   "Padres",
+  SF:   "Giants",
+};
+
+/**
+ * Resolve team nickname from full name string or abbreviation fallback map.
+ * Priority: (1) last word of awayFull/homeFull, (2) MLB_TEAM_NICKNAMES map, (3) raw abbreviation.
+ */
+function resolveNickname(fullName: string | null | undefined, abbrev: string): string {
+  if (fullName) {
+    const last = fullName.trim().split(" ").pop();
+    if (last) return last.toUpperCase();
+  }
+  const mapped = MLB_TEAM_NICKNAMES[abbrev];
+  if (mapped) return mapped.toUpperCase();
+  return abbrev.toUpperCase();
+}
+
 function getPickOdds(odds: GameOdds | null, market: Market, pickSide: PickSide): number | null {
   if (!odds) return null;
   switch (market) {
@@ -615,15 +672,18 @@ function BetCard({
     : "TOT";
 
   // Custom line display (for RL/TOTAL bets) — must be computed BEFORE getFullPickLabel
+  // Priority: (1) customLine (user-entered override), (2) bet.line (API value from DB)
   const customLine = (bet as any).customLine;
-  const lineDisplay = customLine !== null && customLine !== undefined
+  const betLine    = (bet as any).line;
+  const lineDisplay = (customLine !== null && customLine !== undefined)
     ? parseFloat(String(customLine))
-    : null;
+    : (betLine !== null && betLine !== undefined ? parseFloat(String(betLine)) : null);
+  console.log(`[BetCard][STATE] id=${bet.id} market=${bet.market} customLine=${customLine} betLine=${betLine} lineDisplay=${lineDisplay}`);
 
   // Full team name for pick display (e.g. "DIAMONDBACKS" instead of "ARI")
   const awayFullName = (bet as any).awayFull as string | null | undefined;
   const homeFullName = (bet as any).homeFull as string | null | undefined;
-  // Build display pick: replace abbrev with full nickname (last word of full name)
+  // Build display pick: use resolveNickname() for full name with abbreviation fallback
   function getFullPickLabel(): string {
     const side = bet.pickSide;
     if (side === "OVER") {
@@ -635,8 +695,8 @@ function BetCard({
       return `UNDER${line}`;
     }
     const fullName = side === "AWAY" ? awayFullName : homeFullName;
-    // Use last word of full name as nickname (e.g. "Arizona Diamondbacks" -> "DIAMONDBACKS")
-    const nickname = fullName ? fullName.trim().split(" ").pop()?.toUpperCase() ?? bet.awayTeam : (side === "AWAY" ? bet.awayTeam : bet.homeTeam);
+    const abbrev   = (side === "AWAY" ? bet.awayTeam : bet.homeTeam) ?? "?";
+    const nickname = resolveNickname(fullName, abbrev);
     const mkt = bet.market === "ML" ? "ML"
       : bet.market === "RL" ? (bet.sport === "NHL" ? "PL" : "RL")
       : "TOT";
@@ -710,9 +770,7 @@ function BetCard({
                   <Radio size={8} />LIVE
                 </span>
               )}
-              {wagerType === "PREGAME" && (
-                <span className="text-[9px] font-bold text-zinc-500 bg-zinc-800 px-1.5 py-0.5 rounded">PRE</span>
-              )}
+{/* PRE badge removed — only LIVE badge shown */}
             </div>
 
             {isFinal && hasScore ? (
@@ -1787,7 +1845,7 @@ export default function BetTracker() {
             <div className="hidden sm:block">
               <StatCard
                 label="Net P/L"
-                value={fmtStake(stats.netProfit)}
+                value={stakeMode === "$" ? fmtDollar(stats.netProfit * unitSize) : fmtUnits(stats.netProfit)}
                 color={stats.netProfit >= 0 ? "text-green-400" : "text-red-400"}
               />
             </div>
@@ -1796,20 +1854,20 @@ export default function BetTracker() {
                 label="ROI"
                 value={`${stats.roi}%`}
                 color={stats.roi >= 0 ? "text-green-400" : "text-red-400"}
-                sub={`on ${fmtStake(stats.totalRisk)} risked`}
+                sub={`on ${stakeMode === "$" ? fmtDollar(stats.totalRisk * unitSize) : fmtUnits(stats.totalRisk)} risked`}
               />
             </div>
             <div className="hidden sm:block">
               <StatCard
                 label="Best Win"
-                value={stats.bestWin > 0 ? `+${fmtStake(stats.bestWin)}` : "—"}
+                value={stats.bestWin > 0 ? `+${stakeMode === "$" ? fmtDollar(stats.bestWin * unitSize) : fmtUnits(stats.bestWin)}` : "—"}
                 color="text-green-400"
               />
             </div>
             <div className="hidden sm:block">
               <StatCard
                 label="Worst L"
-                value={stats.worstLoss > 0 ? `-${fmtStake(stats.worstLoss)}` : "—"}
+                value={stats.worstLoss > 0 ? `-${stakeMode === "$" ? fmtDollar(stats.worstLoss * unitSize) : fmtUnits(stats.worstLoss)}` : "—"}
                 color="text-red-400"
               />
             </div>
@@ -1819,14 +1877,14 @@ export default function BetTracker() {
           <div className="grid grid-cols-2 gap-2 mt-2 sm:hidden">
             <StatCard
               label="Net P/L"
-              value={fmtStake(stats.netProfit)}
+              value={stakeMode === "$" ? fmtDollar(stats.netProfit * unitSize) : fmtUnits(stats.netProfit)}
               color={stats.netProfit >= 0 ? "text-green-400" : "text-red-400"}
             />
             <StatCard
               label="ROI"
               value={`${stats.roi}%`}
               color={stats.roi >= 0 ? "text-green-400" : "text-red-400"}
-              sub={`on ${fmtStake(stats.totalRisk)} risked`}
+              sub={`on ${stakeMode === "$" ? fmtDollar(stats.totalRisk * unitSize) : fmtUnits(stats.totalRisk)} risked`}
             />
           </div>
         </div>
