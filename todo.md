@@ -2903,3 +2903,11 @@
 - [x] Season chart title: sport emoji + "2026 MLB SEASON" (sport-specific) + PREZ BETS sub + +/- units
 - [x] Other modes: existing trend icon + units + subtitle (L7/L14 labels shortened)
 - [x] TypeScript: 0 errors
+
+## Session: BetTracker v18 — Collapsible Sections
+- [x] Add Bet form: collapsible on mobile with chevron toggle (collapsed by default, always open on lg+)
+- [x] Bet log: each date section collapses to a strip showing DATE W-L +/-UNITS
+- [x] All dates default to collapsed (empty expandedDates Set)
+- [x] Per-date expand/collapse is independent (Set-based toggle, no mutual exclusion)
+- [x] netProfit per day computed from riskUnits/toWinUnits + result (WIN=+toWin, LOSS=-risk, PUSH/VOID/PENDING=0)
+- [x] TypeScript: 0 errors

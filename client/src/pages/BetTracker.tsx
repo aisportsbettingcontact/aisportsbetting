@@ -1332,6 +1332,25 @@ export default function BetTracker() {
 
   // Auto-grade toast
   const [gradeToast, setGradeToast] = useState<{ graded: number; wins: number; losses: number; pushes: number; stillPending: number } | null>(null);
+  // ── Mobile collapsible sections ───────────────────────────────────────────
+  // Add Bet form: collapsed by default on mobile
+  const [addBetOpen, setAddBetOpen] = useState(false);
+  // Per-date expanded state: Set of date strings that are currently expanded
+  // Default: all collapsed (empty Set)
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
+  const toggleDate = (date: string) => {
+    setExpandedDates(prev => {
+      const next = new Set(prev);
+      if (next.has(date)) {
+        next.delete(date);
+        console.log(`[BetTracker][INPUT] date collapsed: ${date}`);
+      } else {
+        next.add(date);
+        console.log(`[BetTracker][INPUT] date expanded: ${date}`);
+      }
+      return next;
+    });
+  };
 
   // ── Derived values ────────────────────────────────────────────────────────
   const oddsNum = parseInt(formOdds, 10);
@@ -1736,7 +1755,7 @@ export default function BetTracker() {
   // ── Bet list with day separators ──────────────────────────────────────────
   const bets = listQuery.data ?? [];
   const betsWithSeparators = useMemo(() => {
-    const result: Array<{ type: "separator"; date: string; wins: number; losses: number; pushes: number; pending: number } | { type: "bet"; bet: EnrichedBet }> = [];
+    const result: Array<{ type: "separator"; date: string; wins: number; losses: number; pushes: number; pending: number; netProfit: number } | { type: "bet"; bet: EnrichedBet }> = [];
 
     // ── Sort logic within each date group ──────────────────────────────────
     // Rule 1: Wins before Losses (PUSH/PENDING/VOID after)
@@ -1776,7 +1795,20 @@ export default function BetTracker() {
       const losses  = dayBets.filter(b => b.result === "LOSS").length;
       const pushes  = dayBets.filter(b => b.result === "PUSH").length;
       const pending = dayBets.filter(b => b.result === "PENDING").length;
-      result.push({ type: "separator", date: d, wins, losses, pushes, pending });
+      // Net P/L for the day: computed from result + riskUnits/toWinUnits
+      // WIN  → +toWinUnits
+      // LOSS → -riskUnits
+      // PUSH/VOID → 0
+      // PENDING → 0 (not yet settled)
+      const netProfit = dayBets.reduce((sum, b) => {
+        const risk   = parseFloat(String(b.riskUnits   ?? 0));
+        const toWin  = parseFloat(String(b.toWinUnits  ?? 0));
+        if (b.result === "WIN")  return sum + (isNaN(toWin) ? 0 : toWin);
+        if (b.result === "LOSS") return sum - (isNaN(risk)  ? 0 : risk);
+        return sum; // PUSH / VOID / PENDING = 0
+      }, 0);
+      console.log(`[BetTracker][STATE] date=${d} wins=${wins} losses=${losses} netProfit=${netProfit.toFixed(2)}u`);
+      result.push({ type: "separator", date: d, wins, losses, pushes, pending, netProfit });
       // Sort within this date group before pushing
       for (const bet of sortDayBets(dayBets)) {
         result.push({ type: "bet", bet });
@@ -2087,11 +2119,28 @@ export default function BetTracker() {
           {/* ── Left Column: Add Bet Form + Breakdowns ───────────────────── */}
           <div className="flex flex-col gap-4">
           {/* ── Add Bet Form ──────────────────────────────────────────────── */}
-          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-5 space-y-4 h-fit">
-            <div className="flex items-center gap-2 pb-1 border-b border-zinc-800">
-              <Plus size={15} className="text-emerald-400" />
-              <h2 className="font-bold text-sm tracking-wider">ADD BET</h2>
-            </div>
+          <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl h-fit">
+            {/* Header — always visible; tap to collapse/expand on mobile */}
+            <button
+              type="button"
+              onClick={() => {
+                setAddBetOpen(prev => !prev);
+                console.log(`[BetTracker][INPUT] addBet toggled: ${!addBetOpen}`);
+              }}
+              className="w-full flex items-center gap-2 px-5 pt-5 pb-4 border-b border-zinc-800 lg:cursor-default"
+            >
+              <Plus size={15} className="text-emerald-400 shrink-0" />
+              <h2 className="font-bold text-sm tracking-wider flex-1 text-left">ADD BET</h2>
+              {/* Chevron: only visible on mobile/tablet (hidden on lg+) */}
+              <ChevronDown
+                size={16}
+                className={`text-zinc-400 transition-transform duration-200 lg:hidden ${addBetOpen ? "rotate-180" : ""}`}
+              />
+            </button>
+            {/* Body — always visible on lg+; toggle on mobile */}
+            <div className={`p-5 space-y-4 ${
+              addBetOpen ? "block" : "hidden"
+            } lg:block`}>
 
             {/* DATE */}
             <div className="flex flex-col gap-1">
@@ -2306,9 +2355,10 @@ export default function BetTracker() {
             >
               {createMut.isPending ? "Saving…" : "TRACK BET"}
             </button>
-          </div>
+            </div>{/* end Add Bet body */}
+          </div>{/* end Add Bet card */}
 
-          {/* ── Breakdowns (below Add Bet, same left column) ─────────────── */}
+          {/* ── Breakdowns (below Add Bet, same left column) ───────────── */}
           <div className="hidden lg:block">
             <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl p-4 space-y-3">
               <div className="flex items-center gap-2 pb-1 border-b border-zinc-800">
@@ -2403,50 +2453,96 @@ export default function BetTracker() {
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {betsWithSeparators.map((item, idx) => {
-                      if (item.type === "separator") {
-                        const record = `${item.wins}W-${item.losses}L${item.pushes > 0 ? `-${item.pushes}P` : ""}${item.pending > 0 ? ` (${item.pending} pending)` : ""}`;
+                    {(() => {
+                      // ── Build grouped structure for collapsible date sections ──
+                      // Each date section = { separator, bets[] }
+                      type DaySection = {
+                        sep: { date: string; wins: number; losses: number; pushes: number; pending: number; netProfit: number };
+                        bets: EnrichedBet[];
+                      };
+                      const sections: DaySection[] = [];
+                      let current: DaySection | null = null;
+                      for (const item of betsWithSeparators) {
+                        if (item.type === "separator") {
+                          current = { sep: item, bets: [] };
+                          sections.push(current);
+                        } else if (current) {
+                          current.bets.push(item.bet);
+                        }
+                      }
+
+                      return sections.map(section => {
+                        const { sep } = section;
+                        const isExpanded = expandedDates.has(sep.date);
+                        const record = `${sep.wins}W-${sep.losses}L${sep.pushes > 0 ? `-${sep.pushes}P` : ""}`;
+                        const pl = sep.netProfit;
+                        const plStr = `${pl >= 0 ? "+" : ""}${pl.toFixed(2)}u`;
+                        const plColor = pl > 0 ? "text-emerald-400" : pl < 0 ? "text-red-400" : "text-zinc-400";
+
                         return (
-                          <div key={`sep-${item.date}-${idx}`} className="flex items-center gap-3 py-2">
-                            <div className="text-base font-bold tracking-wider text-white">
-                              {item.date ? fmtDate(item.date) : "Unknown Date"}
-                            </div>
-                            <div className="flex-1 h-px bg-zinc-800" />
-                            <div className="text-[10px] font-mono text-zinc-600">{record}</div>
+                          <div key={`day-${sep.date}`} className="rounded-xl overflow-hidden border border-zinc-800/60">
+                            {/* ── Collapsible strip: DATE  W-L  +/-UNITS  chevron ── */}
+                            <button
+                              type="button"
+                              onClick={() => toggleDate(sep.date)}
+                              className="w-full flex items-center gap-3 px-3 py-2.5 bg-zinc-900/80 hover:bg-zinc-800/80 transition-colors"
+                            >
+                              {/* Date label */}
+                              <span className="text-sm font-bold tracking-wide text-white whitespace-nowrap">
+                                {sep.date ? fmtDate(sep.date) : "Unknown Date"}
+                              </span>
+                              {/* Divider line */}
+                              <div className="flex-1 h-px bg-zinc-700/50" />
+                              {/* W-L record */}
+                              <span className="text-xs font-mono text-zinc-400 whitespace-nowrap">{record}</span>
+                              {/* +/- units */}
+                              <span className={`text-xs font-bold font-mono whitespace-nowrap ${plColor}`}>{plStr}</span>
+                              {/* Chevron */}
+                              <ChevronDown
+                                size={14}
+                                className={`text-zinc-500 shrink-0 transition-transform duration-200 ${isExpanded ? "rotate-180" : ""}`}
+                              />
+                            </button>
+
+                            {/* ── Expanded bet cards ── */}
+                            {isExpanded && (
+                              <div className="space-y-2 p-2 bg-zinc-950/40">
+                                {section.bets.map(bet => {
+                                  const ls = bet.sport === "MLB"
+                                    ? linescoreByTeams.get(`${bet.gameDate}:${bet.awayTeam}:${bet.homeTeam}`) ?? undefined
+                                    : undefined;
+                                  const betOwnerIsHandicapper = bet.userId === appUser?.id && role === "handicapper";
+                                  const canDirectEdit = isOwnerOrAdmin || !betOwnerIsHandicapper;
+                                  return (
+                                    <BetCard
+                                      key={bet.id}
+                                      bet={bet}
+                                      stakeMode={stakeMode}
+                                      unitSize={unitSize}
+                                      onResult={handleResult}
+                                      onDelete={id => {
+                                        setDeleteId(id);
+                                        setDeleteIsRequest(!isOwnerOrAdmin);
+                                        setDeleteRequestReason("");
+                                      }}
+                                      onEdit={b => {
+                                        setEditBet(b);
+                                        setEditNotes(b.notes ?? "");
+                                        setEditResult(b.result as Result);
+                                        setEditIsRequest(!isOwnerOrAdmin);
+                                        setEditRequestReason("");
+                                      }}
+                                      linescore={ls}
+                                      canDirectEdit={canDirectEdit}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            )}
                           </div>
                         );
-                      }
-                      const ls = item.bet.sport === "MLB"
-                        ? linescoreByTeams.get(`${item.bet.gameDate}:${item.bet.awayTeam}:${item.bet.homeTeam}`) ?? undefined
-                        : undefined;
-                      // canDirectEdit: owner/admin can always edit; handicapper can only edit their own
-                      // porter/hank (handicapper role) must submit request
-                      const betOwnerIsHandicapper = item.bet.userId === appUser?.id && role === "handicapper";
-                      const canDirectEdit = isOwnerOrAdmin || !betOwnerIsHandicapper;
-                      return (
-                        <BetCard
-                          key={item.bet.id}
-                          bet={item.bet}
-                          stakeMode={stakeMode}
-                          unitSize={unitSize}
-                          onResult={handleResult}
-                          onDelete={id => {
-                            setDeleteId(id);
-                            setDeleteIsRequest(!isOwnerOrAdmin);
-                            setDeleteRequestReason("");
-                          }}
-                          onEdit={b => {
-                            setEditBet(b);
-                            setEditNotes(b.notes ?? "");
-                            setEditResult(b.result as Result);
-                            setEditIsRequest(!isOwnerOrAdmin);
-                            setEditRequestReason("");
-                          }}
-                          linescore={ls}
-                          canDirectEdit={canDirectEdit}
-                        />
-                      );
-                    })}
+                      });
+                    })()}
                   </div>
                 )}
               </>
