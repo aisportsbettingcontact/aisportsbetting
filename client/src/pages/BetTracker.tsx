@@ -1272,20 +1272,36 @@ export default function BetTracker() {
   const [activeSport, setActiveSport]   = useState<SportOrAll>("ALL");
   const [filterDate, setFilterDate]     = useState(todayEst);
   const [filterResult, setFilterResult] = useState<Result | "">("");
-  // Date range filter: ALL_TIME | TODAY | L7 | L14 | 1M
-  type DateRange = "ALL_TIME" | "TODAY" | "L7" | "L14" | "1M";
+  // Date range filter: ALL_TIME | TODAY | L7 | L14 | 1M | SEASON
+  // SEASON = from sport's season start date through today
+  // MLB 2026 season started 2026-03-25 (Yankees vs Giants)
+  type DateRange = "ALL_TIME" | "TODAY" | "L7" | "L14" | "1M" | "SEASON";
   const [dateRange, setDateRange] = useState<DateRange>("ALL_TIME");
+
+  // Season start dates per sport (YYYY-MM-DD)
+  const SEASON_START: Record<string, string> = {
+    MLB:   "2026-03-25",
+    NHL:   "2025-10-04", // 2025-26 NHL season
+    NBA:   "2025-10-22", // 2025-26 NBA season
+    NCAAM: "2025-11-04", // 2025-26 NCAAM season
+    ALL:   "2025-10-04", // earliest of all sports
+  };
 
   // Compute dateFrom/dateTo from dateRange (UTC-8 based)
   const { dateFrom, dateTo } = useMemo(() => {
     const today = todayPt();
-    console.log(`[BetTracker][STATE] dateRange=${dateRange} todayPt=${today}`);
+    console.log(`[BetTracker][STATE] dateRange=${dateRange} activeSport=${activeSport} todayPt=${today}`);
     if (dateRange === "TODAY")    return { dateFrom: today, dateTo: today };
     if (dateRange === "L7")       return { dateFrom: subtractDays(today, 6), dateTo: today };
     if (dateRange === "L14")      return { dateFrom: subtractDays(today, 13), dateTo: today };
     if (dateRange === "1M")       return { dateFrom: subtractDays(today, 29), dateTo: today };
+    if (dateRange === "SEASON") {
+      const start = SEASON_START[activeSport] ?? SEASON_START.ALL;
+      console.log(`[BetTracker][STATE] SEASON start=${start} for sport=${activeSport}`);
+      return { dateFrom: start, dateTo: today };
+    }
     return { dateFrom: undefined, dateTo: undefined }; // ALL_TIME
-  }, [dateRange]);
+  }, [dateRange, activeSport]);
 
   // ── Form state ────────────────────────────────────────────────────────────
   const [formDate, setFormDate]           = useState(todayEst);
@@ -1881,40 +1897,46 @@ export default function BetTracker() {
       <div className="bg-zinc-900/50 border-b border-zinc-800/60">
         <div className="w-full px-4 sm:px-6 lg:px-8 py-3 space-y-3">
 
-          {/* Handicapper selector + Date range pills */}
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2">
+          {/* Handicapper selector + Date range pills — all in one scrollable row */}
+          <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
+            {/* Handicapper selector (owner/admin only) */}
             {isOwnerOrAdmin && (handicappersQuery.data?.length ?? 0) > 0 && (
-              <HandicapperSelector
-                handicappers={handicappersQuery.data ?? []}
-                selectedId={targetUserId}
-                onSelect={setTargetUserId}
-                currentUserId={appUser!.id}
-              />
+              <div className="flex-shrink-0">
+                <HandicapperSelector
+                  handicappers={handicappersQuery.data ?? []}
+                  selectedId={targetUserId}
+                  onSelect={setTargetUserId}
+                  currentUserId={appUser!.id}
+                />
+              </div>
             )}
-            {/* Date range filter pills — single scrollable row on mobile, wrap on sm+ */}
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-0.5 sm:flex-wrap sm:overflow-visible">
-              {(["ALL_TIME", "TODAY", "L7", "L14", "1M"] as const).map(r => (
-                <button
-                  key={r}
-                  type="button"
-                  onClick={() => {
-                    setDateRange(r);
-                    setFilterAllTime(r === "ALL_TIME");
-                    console.log(`[BetTracker][INPUT] dateRange changed to ${r}`);
-                  }}
-                  className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
-                    dateRange === r
-                      ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
-                      : "bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  {r === "ALL_TIME" ? "All-Time" : r === "TODAY" ? "Today" : r === "L7" ? "L7 Days" : r === "L14" ? "L14 Days" : "1M"}
-                </button>
-              ))}
-              {statsQuery.isLoading && (
-                <div className="flex-shrink-0 w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-              )}
-            </div>
+            {/* Date range filter pills */}
+            {(["ALL_TIME", "TODAY", "L7", "L14", "1M", "SEASON"] as const).map(r => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => {
+                  setDateRange(r);
+                  setFilterAllTime(r === "ALL_TIME");
+                  console.log(`[BetTracker][INPUT] dateRange changed to ${r}`);
+                }}
+                className={`flex-shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${
+                  dateRange === r
+                    ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
+                    : "bg-zinc-900 border-zinc-700 text-zinc-500 hover:text-zinc-300"
+                }`}
+              >
+                {r === "ALL_TIME" ? "All-Time"
+                  : r === "TODAY"  ? "Today"
+                  : r === "L7"     ? "L7"
+                  : r === "L14"    ? "L14"
+                  : r === "1M"     ? "1M"
+                  : "Season"}
+              </button>
+            ))}
+            {statsQuery.isLoading && (
+              <div className="flex-shrink-0 w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            )}
           </div>
 
           {/* Stat cards — desktop/tablet: centered flex-wrap row with equal spacing */}
@@ -1988,24 +2010,68 @@ export default function BetTracker() {
           <div className="w-full px-4 sm:px-6 lg:px-8 py-4 space-y-4">
             <div>
               <div className="flex flex-col items-center justify-center gap-1 mb-3">
-                <div className="flex items-center gap-2.5">
-                  <TrendingUp size={28} className={stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"} />
-                  <span className={`text-3xl sm:text-4xl font-bold tracking-widest uppercase ${stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                    {stats.netProfit >= 0 ? "+" : ""}{fmtUnits(stats.netProfit)}
-                  </span>
-                </div>
-                <span className="text-[10px] text-zinc-500">
-                  {dateRange === "ALL_TIME"
-                    ? (activeSport === "ALL" ? "All Sports · All-Time" : `${activeSport} · All-Time`)
-                    : dateRange === "TODAY"
-                      ? (activeSport === "ALL" ? "All Sports · Today" : `${activeSport} · Today`)
-                      : dateRange === "L7"
-                        ? (activeSport === "ALL" ? "All Sports · Last 7 Days" : `${activeSport} · Last 7 Days`)
-                        : dateRange === "L14"
-                          ? (activeSport === "ALL" ? "All Sports · Last 14 Days" : `${activeSport} · Last 14 Days`)
-                          : (activeSport === "ALL" ? "All Sports · Last 30 Days" : `${activeSport} · Last 30 Days`)
-                  }
-                </span>
+                {dateRange === "SEASON" ? (
+                  /* ── Season mode: sport logo + season title + PREZ BETS + units ── */
+                  <>
+                    {/* Sport-specific season title */}
+                    <div className="flex items-center gap-2 mb-0.5">
+                      {/* Sport logo/emoji */}
+                      {activeSport === "MLB" && (
+                        <span className="text-2xl" role="img" aria-label="MLB">⚾</span>
+                      )}
+                      {activeSport === "NHL" && (
+                        <span className="text-2xl" role="img" aria-label="NHL">🏒</span>
+                      )}
+                      {activeSport === "NBA" && (
+                        <span className="text-2xl" role="img" aria-label="NBA">🏀</span>
+                      )}
+                      {activeSport === "NCAAM" && (
+                        <span className="text-2xl" role="img" aria-label="NCAAM">🏀</span>
+                      )}
+                      {activeSport === "ALL" && (
+                        <span className="text-2xl" role="img" aria-label="All Sports">🏆</span>
+                      )}
+                      <span className="text-lg sm:text-xl font-bold tracking-widest uppercase text-white">
+                        {activeSport === "MLB"   ? "2026 MLB SEASON"
+                          : activeSport === "NHL"   ? "2025-26 NHL SEASON"
+                          : activeSport === "NBA"   ? "2025-26 NBA SEASON"
+                          : activeSport === "NCAAM" ? "2025-26 NCAAM SEASON"
+                          : "2025-26 SEASON"}
+                      </span>
+                    </div>
+                    {/* PREZ BETS sub-label */}
+                    <span className="text-[10px] text-zinc-500 tracking-widest uppercase font-semibold mb-1">PREZ BETS</span>
+                    {/* +/- Units for the season */}
+                    <div className="flex items-center gap-2">
+                      <TrendingUp size={24} className={stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"} />
+                      <span className={`text-3xl sm:text-4xl font-bold tracking-widest ${stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {stats.netProfit >= 0 ? "+" : ""}{fmtUnits(stats.netProfit)}
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  /* ── All other modes: trend icon + units value ── */
+                  <>
+                    <div className="flex items-center gap-2.5">
+                      <TrendingUp size={28} className={stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"} />
+                      <span className={`text-3xl sm:text-4xl font-bold tracking-widest uppercase ${stats.netProfit >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                        {stats.netProfit >= 0 ? "+" : ""}{fmtUnits(stats.netProfit)}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-zinc-500">
+                      {dateRange === "ALL_TIME"
+                        ? (activeSport === "ALL" ? "All Sports · All-Time" : `${activeSport} · All-Time`)
+                        : dateRange === "TODAY"
+                          ? (activeSport === "ALL" ? "All Sports · Today" : `${activeSport} · Today`)
+                          : dateRange === "L7"
+                            ? (activeSport === "ALL" ? "All Sports · L7" : `${activeSport} · L7`)
+                            : dateRange === "L14"
+                              ? (activeSport === "ALL" ? "All Sports · L14" : `${activeSport} · L14`)
+                              : (activeSport === "ALL" ? "All Sports · 1M" : `${activeSport} · 1M`)
+                      }
+                    </span>
+                  </>
+                )}
               </div>
               <EquityChart points={stats.equityCurve} />
             </div>

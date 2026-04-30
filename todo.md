@@ -2894,3 +2894,12 @@
 - [x] EquityChart X-axis: xLabelFontSize=max(10,min(11,W/65)), lastLabelX dedup, PAD.bottom=46
 - [x] Mouse handler: dynamic PAD_LEFT computed from same formula as draw (no hardcoded 58)
 - [x] Header: flex-shrink-0 right side, narrower unit input on mobile (w-12 sm:w-16)
+
+## Session: BetTracker v17 — Season Filter + Stats Bar Layout
+- [x] Filters moved inline with user dropdown (single scrollable row, no separate row)
+- [x] L7 Days → L7, L14 Days → L14 (shortened labels)
+- [x] Season filter added after 1M
+- [x] SEASON_START map: MLB=2026-03-25, NHL=2025-10-04, NBA=2025-10-22, NCAAM=2025-11-04
+- [x] Season chart title: sport emoji + "2026 MLB SEASON" (sport-specific) + PREZ BETS sub + +/- units
+- [x] Other modes: existing trend icon + units + subtitle (L7/L14 labels shortened)
+- [x] TypeScript: 0 errors
